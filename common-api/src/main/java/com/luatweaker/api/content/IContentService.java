@@ -61,14 +61,19 @@ public interface IContentService {
     @LuaDoc(description = "Creates and registers a custom Wall block.", params = {"id: string", "baseBlockId: string"}, returnType = "IBlockBuilder")
     IBlockBuilder createWall(String id, String baseBlockId);
 
+    @LuaDoc(description = "Creates and registers a custom Entity Type.", params = {"id: string", "builder: function(entity)"}, returnType = "IEntityBuilder")
+    IEntityBuilder createEntity(String id, Consumer<IEntityBuilder> builderConsumer);
+
     Collection<IItemBuilder> getRegisteredItems();
 
     Collection<IBlockBuilder> getRegisteredBlocks();
     Collection<IFluidBuilder> getRegisteredFluids();
     Collection<ICreativeTabBuilder> getRegisteredTabs();
     Collection<IArmorMaterialBuilder> getRegisteredArmorMaterials();
+    Collection<IEntityBuilder> getRegisteredEntities();
     IArmorMaterialBuilder getArmorMaterial(String id);
 }
+
 
 
 

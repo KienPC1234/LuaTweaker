@@ -23,7 +23,18 @@ public class CreativeTabBuilderImpl implements ICreativeTabBuilder {
         return this;
     }
 
-    @Override public String getId() { return id; }
-    @Override public String getTitle() { return title; }
-    @Override public String getIconItem() { return iconItem; }
+    @Override
+    public String getId() {
+        return id;
+    }
+
+    @Override
+    public String getTitle() {
+        return title;
+    }
+
+    @Override
+    public String getIconItem() {
+        return iconItem;
+    }
 }

@@ -11,11 +11,12 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
-public class NeoForgePlayerWrapper implements IPlayer {
+public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPlayer {
 
     private final Player player;
 
     public NeoForgePlayerWrapper(Player player) {
+        super(player);
         this.player = player;
     }
 
@@ -72,16 +73,63 @@ public class NeoForgePlayerWrapper implements IPlayer {
     }
 
     @Override
-    public void addEffect(String effectId, int durationTicks, int amplifier) {
-        if (player != null && effectId != null && !effectId.isBlank()) {
-            ResourceLocation rl = effectId.contains(":") ? ResourceLocation.parse(effectId) : ResourceLocation.fromNamespaceAndPath("minecraft", effectId);
-            net.minecraft.core.Holder<net.minecraft.world.effect.MobEffect> effectHolder = BuiltInRegistries.MOB_EFFECT.getHolder(rl).orElse(null);
-            if (effectHolder != null) {
-                player.addEffect(new net.minecraft.world.effect.MobEffectInstance(effectHolder, durationTicks, amplifier));
+    public String getMainHandItem() {
+        if (player != null) {
+            ItemStack stack = player.getMainHandItem();
+            return stack.isEmpty() ? "minecraft:air" : BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+        }
+        return "minecraft:air";
+    }
+
+    @Override
+    public String getOffHandItem() {
+        if (player != null) {
+            ItemStack stack = player.getOffhandItem();
+            return stack.isEmpty() ? "minecraft:air" : BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+        }
+        return "minecraft:air";
+    }
+
+    @Override
+    public void setMainHandItem(String itemId, int count) {
+        if (player != null && itemId != null) {
+            ResourceLocation rl = itemId.contains(":") ? ResourceLocation.parse(itemId) : ResourceLocation.fromNamespaceAndPath("luatweaker", itemId);
+            Item item = BuiltInRegistries.ITEM.get(rl);
+            if (item != null) {
+                player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, new ItemStack(item, Math.max(1, count)));
             }
         }
     }
 
+    @Override
+    public void clearInventory() {
+        if (player != null) {
+            player.getInventory().clearContent();
+        }
+    }
+
+    @Override
+    public void dropItem(String itemId, int count) {
+        if (player != null && itemId != null) {
+            ResourceLocation rl = itemId.contains(":") ? ResourceLocation.parse(itemId) : ResourceLocation.fromNamespaceAndPath("luatweaker", itemId);
+            Item item = BuiltInRegistries.ITEM.get(rl);
+            if (item != null && item != Items.AIR) {
+                player.drop(new ItemStack(item, Math.max(1, count)), false);
+            }
+        }
+    }
+
+    @Override
+    public int getFoodLevel() {
+        return player != null ? player.getFoodData().getFoodLevel() : 20;
+    }
+
+    @Override
+    public void setFoodLevel(int level) {
+        if (player != null) {
+            player.getFoodData().setFoodLevel(level);
+        }
+    }
 
     @Override
     public void playSound(String soundId, float volume, float pitch) {
@@ -90,12 +138,10 @@ public class NeoForgePlayerWrapper implements IPlayer {
             ResourceLocation rl = soundId.contains(":")
                     ? ResourceLocation.parse(soundId)
                     : ResourceLocation.fromNamespaceAndPath("luatweaker", soundId);
-            // Look up in the registry first; fall back to a wrapper SoundEvent if not registered
-            // (works for vanilla sounds and any mod sounds registered in sounds.json)
             SoundEvent sound = BuiltInRegistries.SOUND_EVENT.get(rl);
             if (sound != null) {
                 player.level().playSound(
-                        null,                  // null = play for everyone near position
+                        null,
                         player.getX(), player.getY(), player.getZ(),
                         sound,
                         SoundSource.PLAYERS,
@@ -114,36 +160,36 @@ public class NeoForgePlayerWrapper implements IPlayer {
     }
 
     @Override
-    public float getHealth() {
-        return player != null ? player.getHealth() : 0.0f;
-    }
-
-    @Override
-    public void setHealth(float health) {
-        if (player != null) {
-            player.setHealth(health);
+    public void sendTitle(String title, String subtitle, int fadeInTicks, int stayTicks, int fadeOutTicks) {
+        if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            if (title != null) {
+                serverPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket(Component.literal(title)));
+            }
+            if (subtitle != null) {
+                serverPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket(Component.literal(subtitle)));
+            }
+            serverPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket(fadeInTicks, stayTicks, fadeOutTicks));
         }
     }
 
     @Override
-    public float getMaxHealth() {
-        return player != null ? player.getMaxHealth() : 20.0f;
-    }
-
-    @Override
-    public boolean isAlive() {
-        return player != null && player.isAlive();
-    }
-
-    @Override
-    public void remove() {
-        if (player != null) {
-            player.discard();
+    public void heal(float amount) {
+        if (player != null && amount > 0) {
+            player.heal(amount);
         }
     }
 
     @Override
-    public Object getRawEntity() {
-        return player;
+    public void feed(int foodAmount, float saturation) {
+        if (player != null) {
+            player.getFoodData().eat(Math.max(1, foodAmount), saturation);
+        }
+    }
+
+    @Override
+    public void teleport(double x, double y, double z) {
+        if (player != null) {
+            player.teleportTo(x, y, z);
+        }
     }
 }

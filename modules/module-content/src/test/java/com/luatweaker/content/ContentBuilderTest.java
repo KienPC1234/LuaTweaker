@@ -104,4 +104,33 @@ public class ContentBuilderTest {
         assertEquals(1, datapackService.getVirtualFiles().size());
         assertTrue(datapackService.getVirtualFiles().containsKey("data/luatweaker/recipe/custom_crafting.json"));
     }
+
+    @Test
+    public void testCreateEntityFromLua() throws IOException {
+        String script = """
+            startup:createEntity("custom_zombie", function(entity)
+                entity:category("MONSTER")
+                      :dimensions(0.8, 2.0)
+                      :maxHealth(50.0)
+                      :movementSpeed(0.3)
+                      :attackDamage(8.0)
+                      :spawnEgg(0x00FF00, 0x0000FF)
+            end)
+        """;
+        File file = createTempScript(script);
+        engine.executeScript(file, "TEST");
+
+        assertEquals(1, contentService.getRegisteredEntities().size());
+        var builder = contentService.getRegisteredEntities().iterator().next();
+        assertEquals("custom_zombie", builder.getId());
+        assertEquals("MONSTER", builder.getCategory());
+        assertEquals(0.8f, builder.getWidth());
+        assertEquals(2.0f, builder.getHeight());
+        assertEquals(50.0, builder.getMaxHealth());
+        assertEquals(0.3, builder.getMovementSpeed());
+        assertEquals(8.0, builder.getAttackDamage());
+        assertTrue(builder.hasSpawnEgg());
+        assertEquals(0x00FF00, builder.getPrimaryColor());
+        assertEquals(0x0000FF, builder.getSecondaryColor());
+    }
 }

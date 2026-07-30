@@ -171,6 +171,18 @@ public class ContentServiceImpl implements IContentService {
         return builder;
     }
 
+    private final Map<String, IEntityBuilder> entities = new LinkedHashMap<>();
+
+    @Override
+    public IEntityBuilder createEntity(String id, Consumer<IEntityBuilder> builderConsumer) {
+        EntityBuilderImpl builder = new EntityBuilderImpl(id);
+        if (builderConsumer != null) {
+            builderConsumer.accept(builder);
+        }
+        entities.put(id, builder);
+        return builder;
+    }
+
     @Override
     public Collection<IItemBuilder> getRegisteredItems() {
         return Collections.unmodifiableCollection(items.values());
@@ -194,6 +206,11 @@ public class ContentServiceImpl implements IContentService {
     @Override
     public Collection<IArmorMaterialBuilder> getRegisteredArmorMaterials() {
         return Collections.unmodifiableCollection(armorMaterials.values());
+    }
+
+    @Override
+    public Collection<IEntityBuilder> getRegisteredEntities() {
+        return Collections.unmodifiableCollection(entities.values());
     }
 
     @Override

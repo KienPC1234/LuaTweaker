@@ -86,6 +86,9 @@ public class LuaTweakerMod {
         modEventBus.register(new com.luatweaker.platform.content.NeoForgeContentRegistry(contentService));
         modEventBus.register(new com.luatweaker.platform.content.LuaAssetsPackFinder(luaDir, datapackService, contentService));
 
+        // Register Game Event Bus listeners (gameplay events)
+        NeoForge.EVENT_BUS.register(new com.luatweaker.platform.content.NeoForgeContentRegistry.BossBarTickHandler(contentService));
+
         // Build the command registry (core commands auto-registered inside)
         commandRegistry = new LuaTweakerCommandRegistry(luaDir);
 

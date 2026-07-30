@@ -29,9 +29,34 @@ public class NeoForgePlatformHelper implements IPlatformHelper {
     }
 
     @Override
+    public boolean blockExists(String blockId) {
+        return BuiltInRegistries.BLOCK.containsKey(ResourceLocation.parse(blockId));
+    }
+
+    @Override
+    public boolean fluidExists(String fluidId) {
+        return BuiltInRegistries.FLUID.containsKey(ResourceLocation.parse(fluidId));
+    }
+
+    @Override
     public boolean tagExists(String tagId) {
         TagKey<Item> tagKey = TagKey.create(Registries.ITEM, ResourceLocation.parse(tagId));
         return BuiltInRegistries.ITEM.getTag(tagKey).isPresent();
+    }
+
+    @Override
+    public boolean isModLoaded(String modId) {
+        return net.neoforged.fml.ModList.get() != null && net.neoforged.fml.ModList.get().isLoaded(modId);
+    }
+
+    @Override
+    public String getPlatformName() {
+        return "NeoForge";
+    }
+
+    @Override
+    public java.util.Set<String> getSupportedMobParents() {
+        return com.luatweaker.platform.content.MobParentRegistry.getSupportedMobs();
     }
 
     @Override

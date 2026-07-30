@@ -9,7 +9,7 @@
 [![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-brightgreen.svg?style=for-the-badge&logo=minecraft)](https://minecraft.net)
 [![NeoForge](https://img.shields.io/badge/NeoForge-21.1.242-orange.svg?style=for-the-badge)](https://neoforged.net)
 [![Java](https://img.shields.io/badge/Java-21-blue.svg?style=for-the-badge&logo=openjdk)](https://adoptium.net)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE.txt)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](LICENSE.txt)
 
 ---
 
@@ -201,4 +201,4 @@ Explore the comprehensive topic guides in the [`docs/`](docs/README.md) director
 
 ## 📜 License
 
-This project is licensed under the **[MIT License](LICENSE.txt)**.
+This project is licensed under the **[Apache License 2.0](LICENSE.txt)**.

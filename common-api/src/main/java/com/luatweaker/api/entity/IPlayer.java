@@ -34,4 +34,38 @@ public interface IPlayer extends IEntity {
     @LuaDoc(description = "Plays a sound event at the player's position. e.g. player:playSound('luatweaker:ruby_equip') or player:playSound('minecraft:entity.experience_orb.pickup', 1.0, 1.0)",
             params = {"soundId: string — ResourceLocation of sound event", "volume: number (optional, default 1.0)", "pitch: number (optional, default 1.0)"})
     void playSound(String soundId, float volume, float pitch);
+
+    @LuaDoc(description = "Returns item ID held in main hand.", returnType = "string")
+    default String getMainHandItem() { return "minecraft:air"; }
+
+    @LuaDoc(description = "Returns item ID held in off hand.", returnType = "string")
+    default String getOffHandItem() { return "minecraft:air"; }
+
+    @LuaDoc(description = "Sets item held in main hand.", params = {"itemId: string", "count: integer"})
+    default void setMainHandItem(String itemId, int count) {}
+
+    @LuaDoc(description = "Clears all items from the player's inventory.")
+    default void clearInventory() {}
+
+    @LuaDoc(description = "Drops specified item from the player.", params = {"itemId: string", "count: integer"})
+    default void dropItem(String itemId, int count) {}
+
+    @LuaDoc(description = "Returns current hunger / food level.", returnType = "integer")
+    default int getFoodLevel() { return 20; }
+
+    @LuaDoc(description = "Sets hunger / food level.", params = {"level: integer"})
+    default void setFoodLevel(int level) {}
+
+    @LuaDoc(description = "Displays title and subtitle on player screen.", params = {"title: string", "subtitle: string", "fadeIn: integer", "stay: integer", "fadeOut: integer"})
+    default void sendTitle(String title, String subtitle, int fadeInTicks, int stayTicks, int fadeOutTicks) {}
+    default void sendTitle(String title, String subtitle) { sendTitle(title, subtitle, 10, 70, 20); }
+
+    @LuaDoc(description = "Heals the player by specified health amount.", params = {"amount: number"})
+    default void heal(float amount) { setHealth(Math.min(getMaxHealth(), getHealth() + Math.max(0, amount))); }
+
+    @LuaDoc(description = "Feeds the player by adding food and saturation points.", params = {"foodAmount: integer", "saturation: number"})
+    default void feed(int foodAmount, float saturation) {}
+
+    @LuaDoc(description = "Teleports player to target coordinates.", params = {"x: number", "y: number", "z: number"})
+    default void teleport(double x, double y, double z) {}
 }

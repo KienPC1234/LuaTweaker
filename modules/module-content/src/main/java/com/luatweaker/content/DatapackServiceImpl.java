@@ -49,8 +49,7 @@ public class DatapackServiceImpl implements IDatapackService {
 
     @Override
     public void addData(String relPath, String jsonContent) {
-        // Normalize: ensure it starts with "data/"
-        String key = relPath.startsWith("data/") ? relPath : "data/" + relPath;
+        String key = (relPath.startsWith("data/") || relPath.startsWith("assets/")) ? relPath : "data/" + relPath;
         virtualFiles.put(key, jsonContent);
     }
 

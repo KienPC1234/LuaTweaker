@@ -64,4 +64,23 @@ public class PlayerEntityTest {
         assertEquals(1, mockPlayer.messages.size());
         assertEquals("Hello Minecraft!", mockPlayer.messages.get(0));
     }
+
+    @Test
+    public void testEntityMethodsFromLua() throws IOException {
+        var playerTable = EntitiesLuaBinding.createPlayerLuaTable(engine, mockPlayer);
+        engine.getGlobalEnvironment().rawset("player", playerTable);
+
+        String script = """
+            player:setHealth(10.0)
+            player:heal(5.0)
+            player:addTag("test_tag")
+        """;
+        File file = File.createTempFile("test_entity_methods", ".lua");
+        file.deleteOnExit();
+        Files.writeString(file.toPath(), script);
+
+        engine.executeScript(file, "TEST");
+
+        assertEquals(15.0f, mockPlayer.getHealth());
+    }
 }

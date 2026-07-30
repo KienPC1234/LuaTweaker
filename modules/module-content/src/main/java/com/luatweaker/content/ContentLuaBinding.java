@@ -221,6 +221,27 @@ public class ContentLuaBinding {
             return null;
         });
 
+        // startup:createEntity("custom_zombie", function(entity) ... end)
+        startupTable.rawset("createEntity", args -> {
+            if (args.length < 2) throw new IllegalArgumentException("startup:createEntity requires (id, builderFunc)");
+            String id = args[1].asString();
+            ILuaValue callbackVal = args[2];
+
+            contentService.createEntity(id, builder -> {
+                if (callbackVal != null && callbackVal.isFunction()) {
+                    ILuaTable entityTable = engine.createTable();
+                    bindEntityBuilderMethods(engine, entityTable, builder, datapackService);
+                    try {
+                        engine.callFunction(callbackVal, entityTable);
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error in entity builder callback for '" + id + "': " + e.getMessage());
+                    }
+                }
+            });
+            LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom Entity Type builder: " + id);
+            return null;
+        });
+
 
         env.rawset("startup", startupTable);
 
@@ -618,6 +639,16 @@ public class ContentLuaBinding {
         table.rawset("flowingTexture", args -> { builder.flowingTexture(args[1].asString()); return table; });
         table.rawset("temperature", args -> { builder.temperature(args[1].asInt()); return table; });
         table.rawset("viscosity", args -> { builder.viscosity(args[1].asInt()); return table; });
+        table.rawset("density", args -> { builder.density(args[1].asInt()); return table; });
+        table.rawset("lightLevel", args -> { builder.lightLevel(args[1].asInt()); return table; });
+        table.rawset("light", args -> { builder.lightLevel(args[1].asInt()); return table; });
+        table.rawset("slopeFindDistance", args -> { builder.slopeFindDistance(args[1].asInt()); return table; });
+        table.rawset("levelDecreasePerBlock", args -> { builder.levelDecreasePerBlock(args[1].asInt()); return table; });
+        table.rawset("tickRate", args -> { builder.tickRate(args[1].asInt()); return table; });
+        table.rawset("explosionResistance", args -> { builder.explosionResistance((float) args[1].asDouble()); return table; });
+        table.rawset("rarity", args -> { builder.rarity(args[1].asString()); return table; });
+        table.rawset("creativeTab", args -> { builder.creativeTab(args[1].asString()); return table; });
+        table.rawset("tabGroup", args -> { builder.creativeTab(args[1].asString()); return table; });
         table.rawset("onTouch", args -> {
             ILuaValue func = args[1];
             if (func.isFunction()) {
@@ -630,6 +661,53 @@ public class ContentLuaBinding {
                     }
                 });
             }
+            return table;
+        });
+    }
+
+    private static void bindEntityBuilderMethods(ILuaEngine engine, ILuaTable table, IEntityBuilder builder, IDatapackService datapackService) {
+        table.rawset("category", args -> { builder.category(args[1].asString()); return table; });
+        table.rawset("dimensions", args -> {
+            if (args.length >= 3) builder.dimensions((float) args[1].asDouble(), (float) args[2].asDouble());
+            return table;
+        });
+        table.rawset("maxHealth", args -> { builder.maxHealth(args[1].asDouble()); return table; });
+        table.rawset("movementSpeed", args -> { builder.movementSpeed(args[1].asDouble()); return table; });
+        table.rawset("speed", args -> { builder.movementSpeed(args[1].asDouble()); return table; });
+        table.rawset("attackDamage", args -> { builder.attackDamage(args[1].asDouble()); return table; });
+        table.rawset("followRange", args -> { builder.followRange(args[1].asDouble()); return table; });
+        table.rawset("armor", args -> { builder.armor(args[1].asDouble()); return table; });
+        table.rawset("knockbackResistance", args -> { builder.knockbackResistance(args[1].asDouble()); return table; });
+        table.rawset("spawnEgg", args -> {
+            if (args.length >= 3) builder.spawnEgg(args[1].asInt(), args[2].asInt());
+            return table;
+        });
+        table.rawset("model", args -> { builder.model(args[1].asString()); return table; });
+        table.rawset("texture", args -> { builder.texture(args[1].asString()); return table; });
+        table.rawset("bbmodel", args -> { builder.bbmodel(args[1].asString()); return table; });
+        table.rawset("ambientSound", args -> { builder.ambientSound(args[1].asString()); return table; });
+        table.rawset("hurtSound", args -> { builder.hurtSound(args[1].asString()); return table; });
+        table.rawset("deathSound", args -> { builder.deathSound(args[1].asString()); return table; });
+        table.rawset("drop", args -> {
+            if (args.length >= 2) {
+                String itemId = args[1].asString();
+                int minCount = args.length >= 3 ? args[2].asInt() : 1;
+                int maxCount = args.length >= 4 ? args[3].asInt() : minCount;
+                builder.drop(itemId, minCount, maxCount);
+            }
+            return table;
+        });
+        table.rawset("experience", args -> { builder.experience(args[1].asInt()); return table; });
+        table.rawset("creativeTab", args -> { builder.creativeTab(args[1].asString()); return table; });
+        table.rawset("spawnEggTexture", args -> { builder.spawnEggTexture(args[1].asString()); return table; });
+        table.rawset("eggTexture", args -> { builder.spawnEggTexture(args[1].asString()); return table; });
+        table.rawset("parent", args -> { builder.parent(args[1].asString()); return table; });
+        table.rawset("parentMob", args -> { builder.parentMob(args[1].asString()); return table; });
+        table.rawset("bossBar", args -> {
+            String title = args[1].asString();
+            String color = args.length >= 3 ? args[2].asString() : "RED";
+            String overlay = args.length >= 4 ? args[3].asString() : "PROGRESS";
+            builder.bossBar(title, color, overlay);
             return table;
         });
     }
