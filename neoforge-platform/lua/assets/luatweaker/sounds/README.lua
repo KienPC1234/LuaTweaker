@@ -1,0 +1,14 @@
+-- Thư mục này chứa các file âm thanh .ogg cho luatweaker
+-- 
+-- Cấu trúc:
+--   lua/assets/luatweaker/sounds/item/ruby_equip.ogg   → tên file audio
+--   lua/assets/luatweaker/sounds/block/ruby_mine.ogg   → tên file audio
+--
+-- Đặt file .ogg thật vào đây, sounds.json (cùng thư mục assets/luatweaker/)
+-- sẽ đăng ký chúng tự động.
+--
+-- Ví dụ dùng trong Lua script (dùng với custom block/item):
+--
+--   startup:createItem("custom_ruby", function(item)
+--       item:soundOnEquip("luatweaker:ruby_equip")
+--   end)

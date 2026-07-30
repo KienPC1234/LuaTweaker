@@ -322,6 +322,45 @@ public class CobaltLuaEngine implements ILuaEngine {
     }
 
     @Override
+    public void registerService(String name, Object service) {
+        LuaServiceRegistry.register(name, service);
+    }
+
+    @Override
+    public ILuaTable getGlobalEnvironment() {
+        return new CobaltLuaTable(state.globals());
+    }
+
+    @Override
+    public ILuaValue toLuaValue(Object obj) {
+        if (obj == null) return nilValue();
+        if (obj instanceof ILuaValue lv) return lv;
+        if (obj instanceof String s) return wrapString(s);
+        if (obj instanceof Number n) return wrapNumber(n.doubleValue());
+        if (obj instanceof Boolean b) return wrapBoolean(b);
+        if (obj instanceof ILuaTable t) return t;
+        return wrapUserdata(obj);
+    }
+
+    @Override
+    public ILuaValue callFunction(ILuaValue function, ILuaValue... args) {
+        if (function instanceof CobaltLuaValue clv) {
+            try {
+                LuaValue cobaltFunc = clv.getCobaltValue();
+                LuaValue[] cobaltArgs = new LuaValue[args.length];
+                for (int i = 0; i < args.length; i++) {
+                    cobaltArgs[i] = ((CobaltLuaValue) args[i]).getCobaltValue();
+                }
+                Varargs result = org.squiddev.cobalt.function.Dispatch.invoke(state, cobaltFunc, ValueFactory.varargsOf(cobaltArgs));
+                return new CobaltLuaValue(result.arg(1));
+            } catch (Throwable e) {
+                AsyncFileLogger.get().error("FUNCTION_CALL", "Lua error executing callback: " + e.getMessage(), state);
+            }
+        }
+        return nilValue();
+    }
+
+    @Override
     public void registerGlobal(String name, ILuaValue value) {
         state.globals().rawset(name, ((CobaltLuaValue) value).getCobaltValue());
     }

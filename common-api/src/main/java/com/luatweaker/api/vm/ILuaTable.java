@@ -17,6 +17,8 @@ public interface ILuaTable extends ILuaValue {
     ILuaValue rawget(int index);
     
     int length();
+
+    void setMetatable(ILuaTable meta);
     
     // For iteration
     java.util.Map<ILuaValue, ILuaValue> asMap();

@@ -19,8 +19,17 @@ public class CobaltLuaValue implements ILuaValue {
 
     @Override
     public String asString() {
+        if (value instanceof org.squiddev.cobalt.LuaString) {
+            byte[] bytes = value.toString().getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        }
         return value.toString();
     }
+
+
+
+
+
 
     @Override
     public int asInt() {
@@ -48,6 +57,11 @@ public class CobaltLuaValue implements ILuaValue {
     }
 
     @Override
+    public boolean isFunction() {
+        return value instanceof org.squiddev.cobalt.function.LuaFunction;
+    }
+
+    @Override
     public ILuaTable asTable() {
         if (value instanceof LuaTable tbl) {
             return new CobaltLuaTable(tbl);
@@ -59,6 +73,18 @@ public class CobaltLuaValue implements ILuaValue {
     public Object toJavaObject() {
         if (value instanceof LuaUserdata u) {
             return u.instance;
+        }
+        if (value instanceof org.squiddev.cobalt.LuaInteger i) {
+            return i.toInteger();
+        }
+        if (value instanceof org.squiddev.cobalt.LuaDouble d) {
+            return d.toDouble();
+        }
+        if (value instanceof org.squiddev.cobalt.LuaBoolean b) {
+            return b.toBoolean();
+        }
+        if (value instanceof org.squiddev.cobalt.LuaString s) {
+            return s.toString();
         }
         return value;
     }

@@ -14,7 +14,9 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.npc.VillagerProfession;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.*;
+
 import net.minecraft.world.item.trading.ItemCost;
 import net.minecraft.world.item.trading.MerchantOffer;
 import net.minecraft.world.level.Level;
@@ -624,8 +626,13 @@ public class InterceptionHelper {
     }
 
     private static ItemStack createItemStack(ItemCount data) {
+        if (data == null || data.itemId() == null) return ItemStack.EMPTY;
         Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.itemId()));
-        ItemStack stack = new ItemStack(item, data.count());
+        if (item == null || item == Items.AIR) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RECIPE_APPLY, "Invalid or unregistered item ID: '" + data.itemId() + "'");
+            return ItemStack.EMPTY;
+        }
+        ItemStack stack = new ItemStack(item, Math.max(1, data.count()));
 
         if (data.damage() > 0 && stack.isDamageableItem()) {
             stack.setDamageValue(data.damage());
@@ -673,6 +680,10 @@ public class InterceptionHelper {
     private static void addShapeless(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.ShapelessData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
+        if (outputStack.isEmpty()) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RECIPE_APPLY, "Skipping shapeless recipe '" + id + "' because output item is invalid or empty!");
+            return;
+        }
 
         NonNullList<Ingredient> ingredients = NonNullList.create();
         for (IngredientWrapper wrap : data.ingredients()) {
@@ -689,6 +700,10 @@ public class InterceptionHelper {
     private static void addShaped(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.ShapedData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
+        if (outputStack.isEmpty()) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RECIPE_APPLY, "Skipping shaped recipe '" + id + "' because output item is invalid or empty!");
+            return;
+        }
 
         int height = data.pattern().size();
         int width = data.pattern().get(0).length();
@@ -725,6 +740,7 @@ public class InterceptionHelper {
     private static void addSmelting(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.CookingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
+        if (outputStack.isEmpty()) return;
         SmeltingRecipe recipe = new SmeltingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input().descriptor()), outputStack, data.xp(), data.cookTime());
         RecipeHolder<SmeltingRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
@@ -734,6 +750,7 @@ public class InterceptionHelper {
     private static void addBlasting(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.CookingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
+        if (outputStack.isEmpty()) return;
         BlastingRecipe recipe = new BlastingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input().descriptor()), outputStack, data.xp(), data.cookTime());
         RecipeHolder<BlastingRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
@@ -743,6 +760,7 @@ public class InterceptionHelper {
     private static void addSmoking(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.CookingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
+        if (outputStack.isEmpty()) return;
         SmokingRecipe recipe = new SmokingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input().descriptor()), outputStack, data.xp(), data.cookTime());
         RecipeHolder<SmokingRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
@@ -752,6 +770,7 @@ public class InterceptionHelper {
     private static void addCampfire(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.CookingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
+        if (outputStack.isEmpty()) return;
         CampfireCookingRecipe recipe = new CampfireCookingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input().descriptor()), outputStack, data.xp(), data.cookTime());
         RecipeHolder<CampfireCookingRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
@@ -761,6 +780,7 @@ public class InterceptionHelper {
     private static void addStonecutting(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.StonecuttingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
+        if (outputStack.isEmpty()) return;
         StonecutterRecipe recipe = new StonecutterRecipe("", parseIngredient(data.input().descriptor()), outputStack);
         RecipeHolder<StonecutterRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
@@ -770,6 +790,7 @@ public class InterceptionHelper {
     private static void addSmithing(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.SmithingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack resultStack = createItemStack(data.result());
+        if (resultStack.isEmpty()) return;
         SmithingTransformRecipe recipe = new SmithingTransformRecipe(
             parseIngredient(data.template().descriptor()),
             parseIngredient(data.base().descriptor()),
@@ -778,6 +799,7 @@ public class InterceptionHelper {
         );
         RecipeHolder<SmithingTransformRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
+
         recipes.computeIfAbsent(RecipeType.SMITHING, k -> new HashMap<>()).put(id, holder);
     }
 

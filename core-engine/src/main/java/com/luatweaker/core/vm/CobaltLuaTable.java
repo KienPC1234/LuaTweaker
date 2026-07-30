@@ -107,6 +107,15 @@ public class CobaltLuaTable extends CobaltLuaValue implements ILuaTable {
     }
 
     @Override
+    public void setMetatable(ILuaTable meta) {
+        if (meta instanceof CobaltLuaTable wrapper) {
+            table.setMetatable(null, wrapper.table);
+        }
+    }
+
+
+
+    @Override
     public Map<ILuaValue, ILuaValue> asMap() {
         Map<ILuaValue, ILuaValue> map = new HashMap<>();
         LuaValue k = Constants.NIL;

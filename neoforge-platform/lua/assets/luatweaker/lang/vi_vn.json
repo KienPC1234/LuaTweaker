@@ -1,0 +1,20 @@
+{
+  "item.luatweaker.custom_ruby":      "Ruby Huyền Bí",
+  "item.luatweaker.ruby_sword":       "Kiếm Ruby",
+  "item.luatweaker.ruby_pickaxe":     "Cuốc Ruby",
+  "item.luatweaker.ruby_axe":         "Rìu Ruby",
+  "item.luatweaker.ruby_shovel":      "Xẻng Ruby",
+  "item.luatweaker.ruby_hoe":         "Cào Ruby",
+  "item.luatweaker.ruby_helmet":      "Mũ Ruby",
+  "item.luatweaker.ruby_chestplate":  "Giáp Ngực Ruby",
+  "item.luatweaker.ruby_leggings":    "Giáp Chân Ruby",
+  "item.luatweaker.ruby_boots":       "Giày Ruby",
+  "item.luatweaker.magic_staff":      "Quyền Trượng Ma Thuật",
+  "block.luatweaker.ruby_ore":        "Quặng Ruby",
+  "block.luatweaker.ruby_block":      "Khối Ruby",
+  "block.luatweaker.wood_crate":      "Thùng Gỗ",
+  "itemGroup.luatweaker.ruby_tab":    "Kho Báu Ruby",
+  "subtitles.luatweaker.ruby_equip":  "Trang bị Ruby va chạm",
+  "subtitles.luatweaker.ruby_mine":   "Quặng Ruby rung động",
+  "subtitles.luatweaker.ruby_magic":  "Ma thuật bùng phát"
+}

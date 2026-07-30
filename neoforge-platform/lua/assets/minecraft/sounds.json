@@ -1,0 +1,30 @@
+{
+  "ambient.cave": {
+    "replace": false,
+    "sounds": [
+      { "name": "minecraft:ambient/cave/cave1", "volume": 0.7, "pitch": 0.9, "weight": 2 },
+      { "name": "minecraft:ambient/cave/cave2", "volume": 0.7, "pitch": 1.0, "weight": 2 },
+      { "name": "minecraft:ambient/cave/cave3", "volume": 0.6, "pitch": 0.95, "weight": 2 },
+      { "name": "minecraft:ambient/cave/cave4", "volume": 0.8, "pitch": 1.0, "weight": 1 },
+      { "name": "minecraft:ambient/cave/cave5", "volume": 0.7, "pitch": 1.1, "weight": 1 }
+    ]
+  },
+  "weather.rain": {
+    "replace": false,
+    "sounds": [
+      { "name": "minecraft:ambient/weather/rain1", "volume": 0.5, "pitch": 1.0, "stream": true },
+      { "name": "minecraft:ambient/weather/rain2", "volume": 0.5, "pitch": 0.95, "stream": true },
+      { "name": "minecraft:ambient/weather/rain3", "volume": 0.5, "pitch": 1.05, "stream": true },
+      { "name": "minecraft:ambient/weather/rain4", "volume": 0.5, "pitch": 0.9, "stream": true },
+      { "name": "minecraft:ambient/weather/rain5", "volume": 0.5, "pitch": 1.0, "stream": true }
+    ]
+  },
+  "weather.thunder": {
+    "replace": false,
+    "sounds": [
+      { "name": "minecraft:ambient/weather/thunder1", "volume": 0.9, "pitch": 0.9, "stream": false },
+      { "name": "minecraft:ambient/weather/thunder2", "volume": 0.9, "pitch": 1.0, "stream": false },
+      { "name": "minecraft:ambient/weather/thunder3", "volume": 1.0, "pitch": 0.95, "stream": false }
+    ]
+  }
+}

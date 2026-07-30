@@ -7,6 +7,7 @@ public interface ILuaValue {
     boolean asBoolean();
     boolean isNil();
     boolean isTable();
+    boolean isFunction();
     ILuaTable asTable();
     Object toJavaObject();
 }

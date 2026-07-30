@@ -1,0 +1,20 @@
+{
+  "item.luatweaker.custom_ruby":      "Enchanted Ruby",
+  "item.luatweaker.ruby_sword":       "Ruby Greatsword",
+  "item.luatweaker.ruby_pickaxe":     "Ruby Pickaxe",
+  "item.luatweaker.ruby_axe":         "Ruby Battleaxe",
+  "item.luatweaker.ruby_shovel":      "Ruby Shovel",
+  "item.luatweaker.ruby_hoe":         "Ruby Hoe",
+  "item.luatweaker.ruby_helmet":      "Ruby Helmet",
+  "item.luatweaker.ruby_chestplate":  "Ruby Chestplate",
+  "item.luatweaker.ruby_leggings":    "Ruby Leggings",
+  "item.luatweaker.ruby_boots":       "Ruby Boots",
+  "item.luatweaker.magic_staff":      "Magic Staff of Rubies",
+  "block.luatweaker.ruby_ore":        "Ruby Ore",
+  "block.luatweaker.ruby_block":      "Block of Ruby",
+  "block.luatweaker.wood_crate":      "Wooden Crate",
+  "itemGroup.luatweaker.ruby_tab":    "Ruby Treasures",
+  "subtitles.luatweaker.ruby_equip":  "Ruby equipment rustles",
+  "subtitles.luatweaker.ruby_mine":   "Ruby ore resonates",
+  "subtitles.luatweaker.ruby_magic":  "Magic surges"
+}

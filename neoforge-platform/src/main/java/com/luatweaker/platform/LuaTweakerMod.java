@@ -49,8 +49,12 @@ public class LuaTweakerMod {
     /** The command registry; held as a field so external modules can register commands before build(). */
     private final LuaTweakerCommandRegistry commandRegistry;
 
+    private final com.luatweaker.content.ContentServiceImpl contentService;
+    private final com.luatweaker.content.StorageServiceImpl storageService;
+    private final com.luatweaker.content.DatapackServiceImpl datapackService;
+
     public LuaTweakerMod(IEventBus modEventBus, ModContainer modContainer) {
-        System.err.println("LuaTweakerMod: constructor at " + new java.util.Date());
+        System.err.println("LuaTweakerMod: static init at " + new java.util.Date());
         LOGGER.info("LuaTweaker constructor starting");
         LOGGER.info("CWD: {}", new File(".").getAbsolutePath());
 
@@ -69,11 +73,45 @@ public class LuaTweakerMod {
         // Create user directories if they don't exist
         initializeUserDirectories();
 
+        // Initialize Content, Storage, Datapack Services
+        File luaDir = getLuaDirectory();
+        this.contentService = new com.luatweaker.content.ContentServiceImpl();
+        this.storageService = new com.luatweaker.content.StorageServiceImpl(new File(luaDir, "storage.json"));
+        this.datapackService = new com.luatweaker.content.DatapackServiceImpl();
+
+        // Run startup scripts (Mod Construction phase)
+        runStartupScripts(luaDir);
+
+        // Register Mod Event Bus listeners for Content Registry and Asset Pack Finder
+        modEventBus.register(new com.luatweaker.platform.content.NeoForgeContentRegistry(contentService));
+        modEventBus.register(new com.luatweaker.platform.content.LuaAssetsPackFinder(luaDir, datapackService, contentService));
+
         // Build the command registry (core commands auto-registered inside)
-        commandRegistry = new LuaTweakerCommandRegistry(getLuaDirectory());
+        commandRegistry = new LuaTweakerCommandRegistry(luaDir);
 
         // Register all NeoForge event listeners (game event bus)
         NeoForge.EVENT_BUS.register(this);
+    }
+
+    private void runStartupScripts(File luaDir) {
+        File startupDir = new File(luaDir, "startup");
+        if (!startupDir.exists() || !startupDir.isDirectory()) return;
+
+        ILuaEngine startupEngine = new CobaltLuaEngine(isDebugEnabled());
+        com.luatweaker.content.ContentLuaBinding.registerBindings(startupEngine, contentService, storageService, datapackService);
+
+        File[] files = startupDir.listFiles((dir, name) -> name.endsWith(".lua"));
+        if (files != null) {
+            Arrays.sort(files, Comparator.comparing(File::getName));
+            for (File f : files) {
+                com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SCRIPT_LOAD, "Executing startup script: " + f.getName());
+                try {
+                    startupEngine.executeScript(f, "STARTUP");
+                } catch (Exception e) {
+                    LOGGER.error("Failed to execute startup script: " + f.getName(), e);
+                }
+            }
+        }
     }
 
     /** Expose the registry so addon modules can call commandRegistry.register(myCmd) during setup. */
@@ -235,11 +273,16 @@ public class LuaTweakerMod {
             com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.STUB_GEN, "Generating autocomplete stubs...");
             LtvmStubGenerator stubGen = new LtvmStubGenerator();
             stubGen.registerService("Recipes", com.luatweaker.api.recipe.IRecipeManagerService.class);
+            stubGen.registerService("Startup", com.luatweaker.api.content.IContentService.class);
+            stubGen.registerService("Storage", com.luatweaker.api.content.IStorageService.class);
+            stubGen.registerService("Datapack", com.luatweaker.api.content.IDatapackService.class);
             LtvmStubExporter.exportToWorkspace(new File(".").toPath(), stubGen);
         }
 
         NeoForgeRecipeManager recipeManager = new NeoForgeRecipeManager();
         ILuaEngine engine = new CobaltLuaEngine(debugMode);
+
+        com.luatweaker.content.ContentLuaBinding.registerBindings(engine, contentService, storageService, datapackService);
 
         ILuaTable recipesTable = engine.createTable();
         RecipesLuaBinding.bind(recipesTable, recipeManager);

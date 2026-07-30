@@ -13,7 +13,12 @@ allprojects {
         maven { url = 'https://modmaven.dev' }
         maven { url = 'https://maven.blamejared.com/' }
     }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
 }
+
 
 // Ensure all subproject jars exist before the IDE sync task runs.
 // This prevents "archive does not exist" classpath errors after a clean build.

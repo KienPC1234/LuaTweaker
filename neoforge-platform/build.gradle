@@ -11,6 +11,8 @@ group = mod_group_id
 evaluationDependsOn(':common-api')
 evaluationDependsOn(':core-engine')
 evaluationDependsOn(':modules:module-recipes')
+evaluationDependsOn(':modules:module-content')
+evaluationDependsOn(':modules:module-entities')
 
 sourceSets.main.resources {
     srcDir('src/generated/resources')
@@ -55,6 +57,8 @@ neoForge {
             sourceSet(project(':common-api').sourceSets.main)
             sourceSet(project(':core-engine').sourceSets.main)
             sourceSet(project(':modules:module-recipes').sourceSets.main)
+            sourceSet(project(':modules:module-content').sourceSets.main)
+            sourceSet(project(':modules:module-entities').sourceSets.main)
         }
     }
 }
@@ -69,11 +73,15 @@ dependencies {
     jarJar(project(':common-api'))
     jarJar(project(':core-engine'))
     jarJar(project(':modules:module-recipes'))
+    jarJar(project(':modules:module-content'))
+    jarJar(project(':modules:module-entities'))
 
     // Also needed at compile time
     implementation project(':common-api')
     implementation project(':core-engine')
     implementation project(':modules:module-recipes')
+    implementation project(':modules:module-content')
+    implementation project(':modules:module-entities')
 
     // JEI integration for checking recipes in-game easily
     implementation "mezz.jei:jei-1.21.1-neoforge:19.32.0.359"
