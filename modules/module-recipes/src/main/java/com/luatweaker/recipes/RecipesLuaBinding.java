@@ -17,6 +17,9 @@ public class RecipesLuaBinding {
 
     private static ItemCount parseItemCount(ILuaValue val, String argName) {
         Object obj = val.toJavaObject();
+        if (obj instanceof ItemCount ic) {
+            return ic;
+        }
         if (obj instanceof String s) {
             return new ItemCount(s, 1);
         }
@@ -30,9 +33,47 @@ public class RecipesLuaBinding {
             Object idObj = idVal.toJavaObject();
             if (idObj instanceof String idStr) {
                 ILuaValue countVal = tbl.rawget("count");
-                Object countObj = countVal.toJavaObject();
-                int count = (countObj instanceof Number n) ? n.intValue() : 1;
-                return new ItemCount(idStr, count);
+                int count = (countVal.toJavaObject() instanceof Number n) ? n.intValue() : 1;
+
+                ILuaValue dmgVal = tbl.rawget("damage");
+                if (dmgVal.isNil()) dmgVal = tbl.rawget("durability");
+                int damage = (dmgVal.toJavaObject() instanceof Number n) ? n.intValue() : 0;
+
+                ILuaValue nameVal = tbl.rawget("name");
+                if (nameVal.isNil()) nameVal = tbl.rawget("displayName");
+                String name = (nameVal.toJavaObject() instanceof String s) ? s : null;
+
+                List<String> loreList = new ArrayList<>();
+                ILuaValue loreVal = tbl.rawget("lore");
+                if (loreVal.isTable()) {
+                    ILuaTable loreTbl = loreVal.asTable();
+                    int len = loreTbl.length();
+                    for (int i = 1; i <= len; i++) {
+                        Object lObj = loreTbl.rawget(i).toJavaObject();
+                        if (lObj instanceof String s) loreList.add(s);
+                    }
+                }
+
+                Map<String, Integer> enchs = new HashMap<>();
+                ILuaValue enchVal = tbl.rawget("enchantments");
+                if (enchVal.isNil()) enchVal = tbl.rawget("enchants");
+                if (enchVal.isTable()) {
+                    ILuaTable enchTbl = enchVal.asTable();
+                    for (Map.Entry<ILuaValue, ILuaValue> entry : enchTbl.asMap().entrySet()) {
+                        String enchKey = entry.getKey().asString();
+                        int lvl = (entry.getValue().toJavaObject() instanceof Number n) ? n.intValue() : 1;
+                        enchs.put(enchKey, lvl);
+                    }
+                }
+
+                ILuaValue nbtVal = tbl.rawget("nbt");
+                if (nbtVal.isNil()) nbtVal = tbl.rawget("components");
+                String nbtStr = null;
+                if (!nbtVal.isNil()) {
+                    nbtStr = nbtVal.toJavaObject().toString();
+                }
+
+                return new ItemCount(idStr, count, damage, name, loreList, enchs, nbtStr);
             }
         }
         // Fallback: try asString (may work for string Lua values)

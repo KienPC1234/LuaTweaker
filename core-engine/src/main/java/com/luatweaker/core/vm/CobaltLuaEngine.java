@@ -13,9 +13,14 @@ import org.squiddev.cobalt.compiler.LoadState;
 import org.squiddev.cobalt.function.LuaClosure;
 import org.squiddev.cobalt.function.VarArgFunction;
 
+import com.luatweaker.api.wrapper.IngredientWrapper;
+import com.luatweaker.api.wrapper.ItemCount;
+
 import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
 
 public class CobaltLuaEngine implements ILuaEngine {
     private final LuaState state;
@@ -117,29 +122,198 @@ public class CobaltLuaEngine implements ILuaEngine {
         globals.rawset("Mod", modTable);
         globals.rawset("game", modTable);
 
-        // 5. item(id, count) function using abstract PAL helper
-        globals.rawset("item", new VarArgFunction() {
+        // 5. item(id, count, [nbt/options]) function (KubeJS style)
+        VarArgFunction itemFunc = new VarArgFunction() {
             @Override
             public Varargs invoke(LuaState state, Varargs args) throws LuaError {
-                String itemId = args.arg(1).checkLuaString().toString();
-                int count = args.arg(2).isNil() ? 1 : args.arg(2).checkInteger();
-                if (Platform.isInitialized()) {
-                    IItem item = Platform.get().createItem(itemId, count);
-                    return new LuaUserdata(item);
-                } else {
-                    throw new LuaError("Platform helper is not initialized");
-                }
-            }
-        });
+                LuaValue first = args.arg(1);
+                if (first instanceof LuaTable tbl) {
+                    LuaValue idVal = tbl.rawget(ValueFactory.valueOf("id"));
+                    if (idVal.isNil()) idVal = tbl.rawget(ValueFactory.valueOf("item"));
+                    String id = idVal.checkLuaString().toString();
+                    LuaValue cVal = tbl.rawget(ValueFactory.valueOf("count"));
+                    int count = (cVal instanceof LuaInteger || cVal instanceof LuaDouble) ? cVal.toInteger() : 1;
 
-        // 6. ingredient(descriptor) function
-        globals.rawset("ingredient", new VarArgFunction() {
+                    ItemCount ic = new ItemCount(id, count);
+                    LuaValue dmgVal = tbl.rawget(ValueFactory.valueOf("damage"));
+                    if (dmgVal instanceof LuaInteger || dmgVal instanceof LuaDouble) ic = ic.withDamage(dmgVal.toInteger());
+                    LuaValue nameVal = tbl.rawget(ValueFactory.valueOf("name"));
+                    if (nameVal instanceof LuaString) ic = ic.withName(nameVal.toString());
+                    LuaValue nbtVal = tbl.rawget(ValueFactory.valueOf("nbt"));
+                    if (!nbtVal.isNil()) ic = ic.withNbt(nbtVal.toString());
+                    return createItemUserdata(ic);
+                }
+
+                String itemId = first.checkLuaString().toString();
+                if (itemId.startsWith("#") || itemId.startsWith("tag:") || itemId.startsWith("oredict:")) {
+                    return createIngredientUserdata(new IngredientWrapper(itemId));
+                }
+
+                int count = args.arg(2).isNil() ? 1 : args.arg(2).checkInteger();
+                ItemCount ic = new ItemCount(itemId, count);
+
+                LuaValue third = args.arg(3);
+                if (!third.isNil()) {
+                    if (third instanceof LuaTable opts) {
+                        LuaValue dmg = opts.rawget(ValueFactory.valueOf("damage"));
+                        if (dmg instanceof LuaInteger || dmg instanceof LuaDouble) ic = ic.withDamage(dmg.toInteger());
+                        LuaValue name = opts.rawget(ValueFactory.valueOf("name"));
+                        if (name instanceof LuaString) ic = ic.withName(name.toString());
+                        LuaValue nbt = opts.rawget(ValueFactory.valueOf("nbt"));
+                        if (!nbt.isNil()) ic = ic.withNbt(nbt.toString());
+                    } else {
+                        ic = ic.withNbt(third.toString());
+                    }
+                }
+                return createItemUserdata(ic);
+            }
+        };
+
+        // 6. ingredient(descriptor), tag(name), oredict(name)
+        VarArgFunction ingFunc = new VarArgFunction() {
             @Override
             public Varargs invoke(LuaState state, Varargs args) throws LuaError {
-                String descriptor = args.arg(1).checkLuaString().toString();
-                return new LuaUserdata(new com.luatweaker.api.wrapper.IngredientWrapper(descriptor));
+                String desc = args.arg(1).checkLuaString().toString();
+                return createIngredientUserdata(new IngredientWrapper(desc));
             }
-        });
+        };
+        VarArgFunction tagFunc = new VarArgFunction() {
+            @Override
+            public Varargs invoke(LuaState state, Varargs args) throws LuaError {
+                String desc = args.arg(1).checkLuaString().toString();
+                if (!desc.startsWith("#")) desc = "#" + desc;
+                return createIngredientUserdata(new IngredientWrapper(desc));
+            }
+        };
+
+        globals.rawset("item", itemFunc);
+        globals.rawset("ingredient", ingFunc);
+        globals.rawset("tag", tagFunc);
+        globals.rawset("oredict", tagFunc);
+    }
+
+    private LuaUserdata createItemUserdata(ItemCount ic) {
+        LuaTable meta = new LuaTable();
+
+        VarArgFunction withCount = new VarArgFunction() {
+            @Override
+            public Varargs invoke(LuaState state, Varargs args) throws LuaError {
+                LuaUserdata ud = (LuaUserdata) args.arg(1);
+                ItemCount current = (ItemCount) ud.instance;
+                int count = args.arg(2).checkInteger();
+                return createItemUserdata(current.withCount(count));
+            }
+        };
+        VarArgFunction withDamage = new VarArgFunction() {
+            @Override
+            public Varargs invoke(LuaState state, Varargs args) throws LuaError {
+                LuaUserdata ud = (LuaUserdata) args.arg(1);
+                ItemCount current = (ItemCount) ud.instance;
+                int dmg = args.arg(2).checkInteger();
+                return createItemUserdata(current.withDamage(dmg));
+            }
+        };
+        VarArgFunction withName = new VarArgFunction() {
+            @Override
+            public Varargs invoke(LuaState state, Varargs args) throws LuaError {
+                LuaUserdata ud = (LuaUserdata) args.arg(1);
+                ItemCount current = (ItemCount) ud.instance;
+                String name = args.arg(2).checkLuaString().toString();
+                return createItemUserdata(current.withName(name));
+            }
+        };
+        VarArgFunction withLore = new VarArgFunction() {
+            @Override
+            public Varargs invoke(LuaState state, Varargs args) throws LuaError {
+                LuaUserdata ud = (LuaUserdata) args.arg(1);
+                ItemCount current = (ItemCount) ud.instance;
+                List<String> loreList = new ArrayList<>();
+                if (args.arg(2) instanceof LuaTable tbl) {
+                    int len = tbl.length();
+                    for (int i = 1; i <= len; i++) {
+                        loreList.add(tbl.rawget(i).toString());
+                    }
+                } else {
+                    loreList.add(args.arg(2).toString());
+                }
+                return createItemUserdata(current.withLore(loreList));
+            }
+        };
+        VarArgFunction withEnchantment = new VarArgFunction() {
+            @Override
+            public Varargs invoke(LuaState state, Varargs args) throws LuaError {
+                LuaUserdata ud = (LuaUserdata) args.arg(1);
+                ItemCount current = (ItemCount) ud.instance;
+                String ench = args.arg(2).checkLuaString().toString();
+                int level = args.arg(3).isNil() ? 1 : args.arg(3).checkInteger();
+                return createItemUserdata(current.withEnchantment(ench, level));
+            }
+        };
+        VarArgFunction withNbt = new VarArgFunction() {
+            @Override
+            public Varargs invoke(LuaState state, Varargs args) throws LuaError {
+                LuaUserdata ud = (LuaUserdata) args.arg(1);
+                ItemCount current = (ItemCount) ud.instance;
+                String nbt = args.arg(2).toString();
+                return createItemUserdata(current.withNbt(nbt));
+            }
+        };
+
+        try {
+            meta.rawset("withCount", withCount);       meta.rawset("count", withCount);
+            meta.rawset("withDamage", withDamage);     meta.rawset("damage", withDamage);
+            meta.rawset("withName", withName);         meta.rawset("name", withName);
+            meta.rawset("withLore", withLore);         meta.rawset("lore", withLore);
+            meta.rawset("withEnchantment", withEnchantment); meta.rawset("enchant", withEnchantment);
+            meta.rawset("withNbt", withNbt);           meta.rawset("nbt", withNbt);
+
+            LuaTable indexTable = new LuaTable();
+            indexTable.rawset("id", ValueFactory.valueOf(ic.itemId()));
+            indexTable.rawset("count", ValueFactory.valueOf(ic.count()));
+            indexTable.rawset("damage", ValueFactory.valueOf(ic.damage()));
+
+            meta.rawset(Constants.INDEX, new VarArgFunction() {
+                @Override
+                public Varargs invoke(LuaState state, Varargs args) throws LuaError {
+                    LuaValue key = args.arg(2);
+                    LuaValue val = meta.rawget(key);
+                    if (!val.isNil()) return val;
+                    return indexTable.rawget(key);
+                }
+            });
+        } catch (LuaError ignored) {}
+
+        LuaUserdata ud = new LuaUserdata(ic);
+        ud.setMetatable(state, meta);
+        return ud;
+    }
+
+    private LuaUserdata createIngredientUserdata(IngredientWrapper ing) {
+        LuaTable meta = new LuaTable();
+        VarArgFunction orFunc = new VarArgFunction() {
+            @Override
+            public Varargs invoke(LuaState state, Varargs args) throws LuaError {
+                LuaUserdata ud = (LuaUserdata) args.arg(1);
+                IngredientWrapper current = (IngredientWrapper) ud.instance;
+                LuaValue otherArg = args.arg(2);
+                if (otherArg instanceof LuaUserdata otherUd && otherUd.instance instanceof IngredientWrapper otherIng) {
+                    return createIngredientUserdata(current.or(otherIng));
+                }
+                return createIngredientUserdata(current.or(otherArg.toString()));
+            }
+        };
+
+        try {
+            meta.rawset("orIngredient", orFunc);
+            meta.rawset("alt", orFunc);
+            meta.rawset("otherwise", orFunc);
+            meta.rawset("or", orFunc);
+            meta.rawset(Constants.INDEX, meta);
+        } catch (LuaError ignored) {}
+
+        LuaUserdata ud = new LuaUserdata(ing);
+        ud.setMetatable(state, meta);
+        return ud;
     }
 
     @Override

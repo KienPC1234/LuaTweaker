@@ -20,6 +20,10 @@ public class NeoForgeCommandSender implements ICommandSender {
         this.source = source;
     }
 
+    public CommandSourceStack getSource() {
+        return source;
+    }
+
     @Override
     public void sendMessage(String message) {
         source.sendSystemMessage(Component.literal(message));

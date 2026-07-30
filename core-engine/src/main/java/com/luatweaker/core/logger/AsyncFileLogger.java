@@ -18,14 +18,8 @@ import java.util.concurrent.LinkedBlockingQueue;
  * Asynchronous file-backed implementation of {@link ILuaTweakerLog}.
  *
  * <p>Writes are dispatched to a background thread so the game thread is
- * never blocked by I/O. The file is always recreated fresh on each load
- * ({@code append=false}).</p>
- *
- * <h3>Log format</h3>
- * <pre>
- * 2026-07-30 10:00:01 [RECIPE_ADD  ] (server/mymod.lua:12)  [INFO ] Added shapeless: my_mod:bread
- * 2026-07-30 10:00:01 [RECIPE_APPLY]                        [INFO ] Stage complete in 4 ms
- * </pre>
+ * never blocked by I/O. Log entries are formatted cleanly in latest.log and
+ * mirrored to standard output without clutter.</p>
  */
 public class AsyncFileLogger implements ILuaTweakerLog {
 
@@ -43,21 +37,31 @@ public class AsyncFileLogger implements ILuaTweakerLog {
     private volatile boolean running = true;
     private volatile boolean debugEnabled = false;
 
-    private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    private static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm:ss");
+    private static final SimpleDateFormat HEADER_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
     private static final String SEPARATOR = "─".repeat(72);
 
     private final File logFile;
 
     private AsyncFileLogger() {
         this.logFile = new File("logs/luatweaker/latest.log");
-        this.logFile.getParentFile().mkdirs();
+        ensureParentDir();
 
         this.workerThread = new Thread(this::processQueue, "LuaTweaker-AsyncLogger");
         this.workerThread.setDaemon(true);
         this.workerThread.start();
     }
 
+    private void ensureParentDir() {
+        File parent = logFile.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+    }
+
     public void setDebugEnabled(boolean enabled) { this.debugEnabled = enabled; }
+
+    public String getLogFile() { return this.logFile.getAbsolutePath(); }
 
     // ── ILuaTweakerLog implementation ─────────────────────────────────────
 
@@ -99,16 +103,16 @@ public class AsyncFileLogger implements ILuaTweakerLog {
 
     @Override
     public void section(String title) {
-        String line = "┌─ " + title + " " + "─".repeat(Math.max(0, 60 - title.length()));
+        String line = "┌─ " + title + " " + "─".repeat(Math.max(0, 56 - title.length()));
         queue.offer(line);
+        System.out.println("[LuaTweaker] " + line);
     }
 
     // ── Legacy raw API (backward-compat with old call sites) ──────────────
 
     public void log(String context, String message, LuaState state) {
         String fileLine = resolveFileLine(state);
-        String formatted = formatLine(context, "INFO ", fileLine, message);
-        queue.offer(formatted);
+        enqueueRaw(context, "INFO ", fileLine, message);
     }
 
     public void info(String context, String message, LuaState state) {
@@ -116,33 +120,55 @@ public class AsyncFileLogger implements ILuaTweakerLog {
     }
 
     public void warn(String context, String message, LuaState state) {
-        log(context, "[WARN] " + message, state);
+        String fileLine = resolveFileLine(state);
+        enqueueRaw(context, "WARN ", fileLine, message);
     }
 
     public void error(String context, String message, LuaState state) {
-        log(context, "[ERROR] " + message, state);
+        String fileLine = resolveFileLine(state);
+        enqueueRaw(context, "ERROR", fileLine, message);
     }
 
     // ── Internals ─────────────────────────────────────────────────────────
 
     private void enqueue(LogStage stage, String level, String fileLine, int line, String message) {
-        String formatted = formatLine(stage.name(), level, fileLine != null ? fileLine : "system", message);
+        enqueueRaw(stage.name(), level, fileLine, message);
+    }
+
+    private void enqueueRaw(String stage, String level, String fileLine, String message) {
+        if (message == null) message = "";
+        String location = (fileLine != null && !"system".equalsIgnoreCase(fileLine)) ? fileLine : null;
+        String formatted = formatLine(stage, level, location, message);
         queue.offer(formatted);
+
+        // Clean console output without ugly system padding
+        String lvl = level.trim();
+        String prefix = location != null ? String.format("[LuaTweaker/%s] (%s) ", stage, location)
+                                         : String.format("[LuaTweaker/%s] ", stage);
+
+        if (message.isBlank()) {
+            System.out.println();
+        } else if ("ERROR".equals(lvl)) {
+            System.err.println(prefix + message);
+        } else {
+            System.out.println(prefix + message);
+        }
     }
 
     private String formatLine(String stage, String level, String location, String message) {
-        String ts = DATE_FORMAT.format(new Date());
+        String ts = TIME_FORMAT.format(new Date());
         String stageCol = String.format("%-12s", stage);
-        String locCol   = String.format("%-30s", location != null ? location : "system");
-        return String.format("%s [%s] (%s) [%s] %s", ts, stageCol, locCol, level, message);
+        String locStr   = location != null ? String.format("(%s) ", location) : "";
+        String lvlStr   = ("INFO ".equals(level) || "INFO".equals(level.trim())) ? "" : "[" + level.trim() + "] ";
+        return String.format("%s [%s] %s%s%s", ts, stageCol, locStr, lvlStr, message);
     }
 
     private static String resolveFileLine(LuaState state) {
-        if (state == null || state.getCurrentThread() == null) return "system";
+        if (state == null || state.getCurrentThread() == null) return null;
         try {
             String fl = DebugHelpers.fileLine(state.getCurrentThread());
-            return fl != null ? fl : "system";
-        } catch (Exception ignored) { return "system"; }
+            return (fl != null && !"system".equalsIgnoreCase(fl)) ? fl : null;
+        } catch (Exception ignored) { return null; }
     }
 
     public void shutdown() {
@@ -151,19 +177,26 @@ public class AsyncFileLogger implements ILuaTweakerLog {
     }
 
     private void processQueue() {
-        try (PrintWriter writer = new PrintWriter(new FileWriter(logFile, false), true)) {
-            writer.println(SEPARATOR);
-            writer.println("  LuaTweaker Log — " + DATE_FORMAT.format(new Date()));
-            writer.println(SEPARATOR);
-            while (running || !queue.isEmpty()) {
-                try {
-                    writer.println(queue.take());
-                } catch (InterruptedException e) {
-                    if (!running) break;
+        while (running || !queue.isEmpty()) {
+            ensureParentDir();
+            try (PrintWriter writer = new PrintWriter(new FileWriter(logFile, false), true)) {
+                writer.println(SEPARATOR);
+                writer.println("  LuaTweaker Log — " + HEADER_DATE_FORMAT.format(new Date()));
+                writer.println(SEPARATOR);
+                while (running || !queue.isEmpty()) {
+                    try {
+                        String line = queue.take();
+                        writer.println(line);
+                    } catch (InterruptedException e) {
+                        if (!running) break;
+                    }
                 }
+            } catch (IOException e) {
+                System.err.println("[LuaTweaker] Logger write error: " + e.getMessage());
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ignored) {}
             }
-        } catch (IOException e) {
-            System.err.println("[LuaTweaker] Logger fatal write error: " + e.getMessage());
         }
     }
 }

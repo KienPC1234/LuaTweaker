@@ -5,6 +5,7 @@ import com.google.common.collect.Multimap;
 import com.luatweaker.api.recipe.IRecipeManagerService;
 import com.luatweaker.api.wrapper.IngredientWrapper;
 import com.luatweaker.api.wrapper.ItemCount;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -49,6 +50,18 @@ public class InterceptionHelper {
         PENDING_TRADES.clear();
         PENDING_BREWING.clear();
         PENDING_ANVIL.clear();
+    }
+
+    public static void populatePendingEvents(List<NeoForgeRecipeManager.RecipeModification> modifications) {
+        clearPending();
+        for (NeoForgeRecipeManager.RecipeModification mod : modifications) {
+            switch (mod.type()) {
+                case ADD_ANVIL   -> schedulePendingAnvil((NeoForgeRecipeManager.AnvilData) mod.data());
+                case ADD_BREWING -> schedulePendingBrewing((NeoForgeRecipeManager.BrewingData) mod.data());
+                case ADD_TRADE   -> schedulePendingTrade((NeoForgeRecipeManager.TradeData) mod.data());
+                default -> {}
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -162,20 +175,21 @@ public class InterceptionHelper {
             for (Map.Entry<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> entry : baseRecipes.entrySet()) {
                 newRecipes.put(entry.getKey(), new HashMap<>(entry.getValue()));
             }
+            HolderLookup.Provider registries = findRegistries(recipeManager);
             Map<ResourceLocation, RecipeHolder<?>> newByName = new HashMap<>(byName);
 
             for (NeoForgeRecipeManager.RecipeModification mod : modifications) {
                 switch (mod.type()) {
-                    case REMOVE_BY_OUTPUT   -> removeByOutput(newRecipes, newByName, (String) mod.data());
+                    case REMOVE_BY_OUTPUT   -> removeByOutput(newRecipes, newByName, (String) mod.data(), registries);
                     case REMOVE_BY_INPUT    -> removeByInput(newRecipes, newByName, (String) mod.data());
                     case REMOVE_BY_ID       -> removeById(newRecipes, newByName, (String) mod.data());
                     case REMOVE_BY_MOD      -> removeByMod(newRecipes, newByName, (String) mod.data());
-                    case REMOVE_BY_TAG      -> removeByTag(newRecipes, newByName, (String) mod.data());
+                    case REMOVE_BY_TAG      -> removeByTag(newRecipes, newByName, (String) mod.data(), registries);
                     case REMOVE_ALL         -> { newRecipes.clear(); newByName.clear(); }
                     case ADD_SHAPELESS      -> addShapeless(newRecipes, newByName, (NeoForgeRecipeManager.ShapelessData) mod.data());
                     case ADD_SHAPED         -> addShaped(newRecipes, newByName, (NeoForgeRecipeManager.ShapedData) mod.data());
-                    case REPLACE_INPUT      -> replaceInput(newRecipes, newByName, (NeoForgeRecipeManager.ReplacementData) mod.data());
-                    case REPLACE_OUTPUT     -> replaceOutput(newRecipes, newByName, (NeoForgeRecipeManager.ReplacementData) mod.data());
+                    case REPLACE_INPUT      -> replaceInput(newRecipes, newByName, (NeoForgeRecipeManager.ReplacementData) mod.data(), registries);
+                    case REPLACE_OUTPUT     -> replaceOutput(newRecipes, newByName, (NeoForgeRecipeManager.ReplacementData) mod.data(), registries);
                     case ADD_SMELTING       -> addSmelting(newRecipes, newByName, (NeoForgeRecipeManager.CookingData) mod.data());
                     case ADD_BLASTING       -> addBlasting(newRecipes, newByName, (NeoForgeRecipeManager.CookingData) mod.data());
                     case ADD_SMOKING        -> addSmoking(newRecipes, newByName, (NeoForgeRecipeManager.CookingData) mod.data());
@@ -218,10 +232,12 @@ public class InterceptionHelper {
             // escape regex special chars in separator for split()
             String escaped = separator.replace("\\", "\\\\").replace(".", "\\.").replace("|", "\\|");
             for (String line : sw.toString().split(escaped)) {
-                com.luatweaker.api.log.LuaTweakerLog.get().info(
-                    com.luatweaker.api.log.LogStage.RECIPE_APPLY,
-                    "  " + line
-                );
+                if (!line.isBlank()) {
+                    com.luatweaker.api.log.LuaTweakerLog.get().info(
+                        com.luatweaker.api.log.LogStage.RECIPE_APPLY,
+                        "  " + line
+                    );
+                }
             }
         }
     }
@@ -319,12 +335,40 @@ public class InterceptionHelper {
         throw new NoSuchFieldException("byName Map field in RecipeManager");
     }
 
-    private static void removeByOutput(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, String outputId) {
+    private static HolderLookup.Provider findRegistries(RecipeManager recipeManager) {
+        for (Field f : RecipeManager.class.getDeclaredFields()) {
+            if (HolderLookup.Provider.class.isAssignableFrom(f.getType())) {
+                f.setAccessible(true);
+                try {
+                    Object val = f.get(recipeManager);
+                    if (val instanceof HolderLookup.Provider provider) {
+                        return provider;
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+        return null;
+    }
+
+    private static ItemStack getResultItemSafely(Recipe<?> recipe, HolderLookup.Provider registries) {
+        if (recipe == null) return ItemStack.EMPTY;
+        try {
+            if (registries != null) {
+                return recipe.getResultItem(registries);
+            }
+        } catch (Exception ignored) {}
+        try {
+            return recipe.getResultItem(null);
+        } catch (Exception ignored) {}
+        return ItemStack.EMPTY;
+    }
+
+    private static void removeByOutput(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, String outputId, HolderLookup.Provider registries) {
         ResourceLocation target = ResourceLocation.parse(outputId);
         List<ResourceLocation> toRemove = new ArrayList<>();
         for (RecipeHolder<?> holder : byName.values()) {
-            ItemStack result = holder.value().getResultItem(null);
-            if (BuiltInRegistries.ITEM.getKey(result.getItem()).equals(target)) {
+            ItemStack result = getResultItemSafely(holder.value(), registries);
+            if (!result.isEmpty() && BuiltInRegistries.ITEM.getKey(result.getItem()).equals(target)) {
                 toRemove.add(holder.id());
             }
         }
@@ -361,13 +405,13 @@ public class InterceptionHelper {
     }
 
     // ─── removeByTag ────────────────────────────────────────────────────────────
-    private static void removeByTag(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, String tagStr) {
+    private static void removeByTag(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, String tagStr, HolderLookup.Provider registries) {
         String normalized = tagStr.startsWith("#") ? tagStr.substring(1) : tagStr;
         TagKey<Item> tagKey = TagKey.create(Registries.ITEM, ResourceLocation.parse(normalized));
         List<ResourceLocation> toRemove = new ArrayList<>();
         for (RecipeHolder<?> holder : byName.values()) {
             // Check output
-            ItemStack result = holder.value().getResultItem(null);
+            ItemStack result = getResultItemSafely(holder.value(), registries);
             if (!result.isEmpty() && result.is(tagKey)) {
                 toRemove.add(holder.id());
                 continue;
@@ -504,18 +548,13 @@ public class InterceptionHelper {
             Ingredient left = parseIngredient(data.leftInput().descriptor());
             Ingredient right = parseIngredient(data.rightInput().descriptor());
 
-            boolean leftMatch = Arrays.stream(left.getItems())
-                .anyMatch(s -> s.getItem() == event.getLeft().getItem());
-            boolean rightMatch = Arrays.stream(right.getItems())
-                .anyMatch(s -> s.getItem() == event.getRight().getItem());
+            boolean leftMatch = left.test(event.getLeft());
+            boolean rightMatch = right.test(event.getRight());
 
             if (leftMatch && rightMatch) {
-                Item outputItem = BuiltInRegistries.ITEM.get(
-                    ResourceLocation.parse(data.output().itemId()));
-                ItemStack outputStack = new ItemStack(outputItem, data.output().count());
+                ItemStack outputStack = createItemStack(data.output());
 
-                // Preserve data components (enchantments etc.) from left item if same type
-                if (outputItem == event.getLeft().getItem()) {
+                if (outputStack.getItem() == event.getLeft().getItem() && (data.output().customName() == null || data.output().customName().isEmpty())) {
                     outputStack.applyComponents(event.getLeft().getComponentsPatch());
                 }
 
@@ -547,10 +586,93 @@ public class InterceptionHelper {
         }
     }
 
+    private static net.minecraft.network.chat.Component parseColoredText(String text) {
+        if (text == null || text.isEmpty()) return net.minecraft.network.chat.Component.empty();
+        String formatted = text.replace("Â§", "§").replaceAll("&([0-9a-fA-FK-ORk-or])", "§$1");
+        
+        net.minecraft.network.chat.MutableComponent root = null;
+        String[] parts = formatted.split("§");
+        for (String part : parts) {
+            if (part.isEmpty()) continue;
+            net.minecraft.ChatFormatting style = net.minecraft.ChatFormatting.getByCode(part.charAt(0));
+            String content = (style != null && part.length() > 1) ? part.substring(1) : part;
+            net.minecraft.network.chat.MutableComponent comp = net.minecraft.network.chat.Component.literal(content);
+            if (style != null) {
+                comp.withStyle(style);
+            }
+            if (root == null) {
+                root = comp;
+            } else {
+                root.append(comp);
+            }
+        }
+        return root != null ? root : net.minecraft.network.chat.Component.literal(formatted);
+    }
+
+    public static net.minecraft.core.RegistryAccess getRegistryAccess() {
+        if (net.neoforged.fml.loading.FMLEnvironment.dist == net.neoforged.api.distmarker.Dist.CLIENT) {
+            net.minecraft.client.Minecraft client = net.minecraft.client.Minecraft.getInstance();
+            if (client != null && client.level != null) {
+                return client.level.registryAccess();
+            }
+        }
+        net.minecraft.server.MinecraftServer server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (server != null) {
+            return server.registryAccess();
+        }
+        return null;
+    }
+
+    private static ItemStack createItemStack(ItemCount data) {
+        Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.itemId()));
+        ItemStack stack = new ItemStack(item, data.count());
+
+        if (data.damage() > 0 && stack.isDamageableItem()) {
+            stack.setDamageValue(data.damage());
+        }
+
+        if (data.customName() != null && !data.customName().isEmpty()) {
+            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, parseColoredText(data.customName()));
+        }
+
+        if (data.lore() != null && !data.lore().isEmpty()) {
+            List<net.minecraft.network.chat.Component> loreComponents = data.lore().stream()
+                .map(InterceptionHelper::parseColoredText)
+                .map(c -> (net.minecraft.network.chat.Component) c)
+                .toList();
+            stack.set(net.minecraft.core.component.DataComponents.LORE, new net.minecraft.world.item.component.ItemLore(loreComponents));
+        }
+
+        if (data.enchantments() != null && !data.enchantments().isEmpty()) {
+            net.minecraft.core.RegistryAccess registryAccess = getRegistryAccess();
+            if (registryAccess != null) {
+                var enchRegistry = registryAccess.registryOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT);
+                net.minecraft.world.item.enchantment.EnchantmentHelper.updateEnchantments(stack, mutable -> {
+                    for (var entry : data.enchantments().entrySet()) {
+                        ResourceLocation enchLoc = ResourceLocation.parse(entry.getKey());
+                        var key = net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.ENCHANTMENT, enchLoc);
+                        var holderOpt = enchRegistry.getHolder(key);
+                        holderOpt.ifPresent(holder -> mutable.set(holder, entry.getValue()));
+                    }
+                });
+            }
+        }
+
+        if (data.nbtJson() != null && !data.nbtJson().isEmpty()) {
+            try {
+                net.minecraft.nbt.CompoundTag compound = net.minecraft.nbt.TagParser.parseTag(data.nbtJson());
+                net.minecraft.world.item.component.CustomData.update(net.minecraft.core.component.DataComponents.CUSTOM_DATA, stack, tag -> tag.merge(compound));
+            } catch (Exception e) {
+                com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RECIPE_APPLY, "Failed to parse NBT JSON for " + data.itemId() + ": " + data.nbtJson() + " (" + e.getMessage() + ")");
+            }
+        }
+
+        return stack;
+    }
+
     private static void addShapeless(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.ShapelessData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
-        Item outputItem = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.output().itemId()));
-        ItemStack outputStack = new ItemStack(outputItem, data.output().count());
+        ItemStack outputStack = createItemStack(data.output());
 
         NonNullList<Ingredient> ingredients = NonNullList.create();
         for (IngredientWrapper wrap : data.ingredients()) {
@@ -566,8 +688,7 @@ public class InterceptionHelper {
 
     private static void addShaped(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.ShapedData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
-        Item outputItem = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.output().itemId()));
-        ItemStack outputStack = new ItemStack(outputItem, data.output().count());
+        ItemStack outputStack = createItemStack(data.output());
 
         int height = data.pattern().size();
         int width = data.pattern().get(0).length();
@@ -603,8 +724,7 @@ public class InterceptionHelper {
 
     private static void addSmelting(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.CookingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
-        Item outputItem = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.output().itemId()));
-        ItemStack outputStack = new ItemStack(outputItem, data.output().count());
+        ItemStack outputStack = createItemStack(data.output());
         SmeltingRecipe recipe = new SmeltingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input().descriptor()), outputStack, data.xp(), data.cookTime());
         RecipeHolder<SmeltingRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
@@ -613,8 +733,7 @@ public class InterceptionHelper {
 
     private static void addBlasting(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.CookingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
-        Item outputItem = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.output().itemId()));
-        ItemStack outputStack = new ItemStack(outputItem, data.output().count());
+        ItemStack outputStack = createItemStack(data.output());
         BlastingRecipe recipe = new BlastingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input().descriptor()), outputStack, data.xp(), data.cookTime());
         RecipeHolder<BlastingRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
@@ -623,8 +742,7 @@ public class InterceptionHelper {
 
     private static void addSmoking(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.CookingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
-        Item outputItem = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.output().itemId()));
-        ItemStack outputStack = new ItemStack(outputItem, data.output().count());
+        ItemStack outputStack = createItemStack(data.output());
         SmokingRecipe recipe = new SmokingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input().descriptor()), outputStack, data.xp(), data.cookTime());
         RecipeHolder<SmokingRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
@@ -633,8 +751,7 @@ public class InterceptionHelper {
 
     private static void addCampfire(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.CookingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
-        Item outputItem = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.output().itemId()));
-        ItemStack outputStack = new ItemStack(outputItem, data.output().count());
+        ItemStack outputStack = createItemStack(data.output());
         CampfireCookingRecipe recipe = new CampfireCookingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input().descriptor()), outputStack, data.xp(), data.cookTime());
         RecipeHolder<CampfireCookingRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
@@ -643,8 +760,7 @@ public class InterceptionHelper {
 
     private static void addStonecutting(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.StonecuttingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
-        Item outputItem = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.output().itemId()));
-        ItemStack outputStack = new ItemStack(outputItem, data.output().count());
+        ItemStack outputStack = createItemStack(data.output());
         StonecutterRecipe recipe = new StonecutterRecipe("", parseIngredient(data.input().descriptor()), outputStack);
         RecipeHolder<StonecutterRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
@@ -653,8 +769,7 @@ public class InterceptionHelper {
 
     private static void addSmithing(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.SmithingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
-        Item resultItem = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.result().itemId()));
-        ItemStack resultStack = new ItemStack(resultItem, data.result().count());
+        ItemStack resultStack = createItemStack(data.result());
         SmithingTransformRecipe recipe = new SmithingTransformRecipe(
             parseIngredient(data.template().descriptor()),
             parseIngredient(data.base().descriptor()),
@@ -666,46 +781,17 @@ public class InterceptionHelper {
         recipes.computeIfAbsent(RecipeType.SMITHING, k -> new HashMap<>()).put(id, holder);
     }
 
-    private static void replaceInput(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.ReplacementData data) {
+    private static void replaceInput(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.ReplacementData data, HolderLookup.Provider registries) {
         Ingredient target = parseIngredient(data.target());
         Ingredient replacement = parseIngredient(data.replacement());
 
-        Map<ResourceLocation, RecipeHolder<?>> updatedByName = new HashMap<>();
-        for (Map.Entry<ResourceLocation, RecipeHolder<?>> entry : byName.entrySet()) {
+        for (Map.Entry<ResourceLocation, RecipeHolder<?>> entry : new ArrayList<>(byName.entrySet())) {
             RecipeHolder<?> holder = entry.getValue();
             Recipe<?> rawRecipe = holder.value();
 
-            boolean matches = false;
-            for (Ingredient ing : rawRecipe.getIngredients()) {
-                if (Arrays.stream(ing.getItems()).anyMatch(stack -> Arrays.stream(target.getItems()).anyMatch(t -> t.getItem() == stack.getItem()))) {
-                    matches = true;
-                    break;
-                }
-            }
-
-            if (matches) {
-                RecipeHolder<?> intercepted = new RecipeHolder<>(holder.id(), new InterceptedRecipe<>(rawRecipe, target, replacement));
-                updatedByName.put(entry.getKey(), intercepted);
-                Map<ResourceLocation, RecipeHolder<?>> typeMap = recipes.get(rawRecipe.getType());
-                if (typeMap != null) {
-                    typeMap.put(entry.getKey(), intercepted);
-                }
-            }
-        }
-    }
-
-    private static void replaceOutput(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.ReplacementData data) {
-        ResourceLocation targetLoc = ResourceLocation.parse(data.target());
-        Item replacementItem = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.replacement()));
-
-        for (Map.Entry<ResourceLocation, RecipeHolder<?>> entry : byName.entrySet()) {
-            RecipeHolder<?> holder = entry.getValue();
-            Recipe<?> rawRecipe = holder.value();
-
-            ItemStack result = rawRecipe.getResultItem(null);
-            if (BuiltInRegistries.ITEM.getKey(result.getItem()).equals(targetLoc)) {
-                ItemStack newResult = new ItemStack(replacementItem, result.getCount());
-                RecipeHolder<?> intercepted = new RecipeHolder<>(holder.id(), new OutputInterceptedRecipe<>(rawRecipe, newResult));
+            Recipe<?> newRecipe = createInputReplacedRecipe(rawRecipe, target, replacement, registries);
+            if (newRecipe != null) {
+                RecipeHolder<?> intercepted = new RecipeHolder<>(holder.id(), newRecipe);
                 byName.put(entry.getKey(), intercepted);
                 Map<ResourceLocation, RecipeHolder<?>> typeMap = recipes.get(rawRecipe.getType());
                 if (typeMap != null) {
@@ -715,94 +801,92 @@ public class InterceptionHelper {
         }
     }
 
-    private static Ingredient parseIngredient(String desc) {
-        if (desc.startsWith("#")) {
-            TagKey<Item> tagKey = TagKey.create(Registries.ITEM, ResourceLocation.parse(desc.substring(1)));
-            return Ingredient.of(tagKey);
-        }
-        Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(desc));
-        return Ingredient.of(item);
-    }
+    private static void replaceOutput(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.ReplacementData data, HolderLookup.Provider registries) {
+        ResourceLocation targetLoc = ResourceLocation.parse(data.target());
+        Item replacementItem = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.replacement()));
 
-    private record InterceptedRecipe<I extends RecipeInput>(Recipe<I> original, Ingredient target, Ingredient replacement) implements Recipe<I> {
-        @Override
-        public boolean matches(I input, Level level) {
-            return original.matches(input, level);
-        }
+        for (Map.Entry<ResourceLocation, RecipeHolder<?>> entry : new ArrayList<>(byName.entrySet())) {
+            RecipeHolder<?> holder = entry.getValue();
+            Recipe<?> rawRecipe = holder.value();
 
-        @Override
-        public ItemStack assemble(I input, net.minecraft.core.HolderLookup.Provider registries) {
-            return original.assemble(input, registries);
-        }
-
-        @Override
-        public boolean canCraftInDimensions(int width, int height) {
-            return original.canCraftInDimensions(width, height);
-        }
-
-        @Override
-        public ItemStack getResultItem(net.minecraft.core.HolderLookup.Provider registries) {
-            return original.getResultItem(registries);
-        }
-
-        @Override
-        public NonNullList<Ingredient> getIngredients() {
-            NonNullList<Ingredient> list = NonNullList.create();
-            for (Ingredient ing : original.getIngredients()) {
-                if (Arrays.stream(ing.getItems()).anyMatch(stack -> Arrays.stream(target.getItems()).anyMatch(t -> t.getItem() == stack.getItem()))) {
-                    list.add(replacement);
-                } else {
-                    list.add(ing);
+            ItemStack result = getResultItemSafely(rawRecipe, registries);
+            if (!result.isEmpty() && BuiltInRegistries.ITEM.getKey(result.getItem()).equals(targetLoc)) {
+                ItemStack newResult = new ItemStack(replacementItem, result.getCount());
+                Recipe<?> newRecipe = createOutputReplacedRecipe(rawRecipe, newResult, registries);
+                if (newRecipe != null) {
+                    RecipeHolder<?> intercepted = new RecipeHolder<>(holder.id(), newRecipe);
+                    byName.put(entry.getKey(), intercepted);
+                    Map<ResourceLocation, RecipeHolder<?>> typeMap = recipes.get(rawRecipe.getType());
+                    if (typeMap != null) {
+                        typeMap.put(entry.getKey(), intercepted);
+                    }
                 }
             }
-            return list;
-        }
-
-        @Override
-        public RecipeSerializer<?> getSerializer() {
-            return original.getSerializer();
-        }
-
-        @Override
-        public RecipeType<?> getType() {
-            return original.getType();
         }
     }
 
-    private record OutputInterceptedRecipe<I extends RecipeInput>(Recipe<I> original, ItemStack newOutput) implements Recipe<I> {
-        @Override
-        public boolean matches(I input, Level level) {
-            return original.matches(input, level);
+    private static Recipe<?> createInputReplacedRecipe(Recipe<?> rawRecipe, Ingredient target, Ingredient replacement, HolderLookup.Provider registries) {
+        NonNullList<Ingredient> ingredients = rawRecipe.getIngredients();
+        boolean hasMatch = false;
+        NonNullList<Ingredient> newIngredients = NonNullList.create();
+        for (Ingredient ing : ingredients) {
+            if (Arrays.stream(ing.getItems()).anyMatch(stack -> Arrays.stream(target.getItems()).anyMatch(t -> t.getItem() == stack.getItem()))) {
+                newIngredients.add(replacement);
+                hasMatch = true;
+            } else {
+                newIngredients.add(ing);
+            }
         }
+        if (!hasMatch) return null;
 
-        @Override
-        public ItemStack assemble(I input, net.minecraft.core.HolderLookup.Provider registries) {
-            return newOutput.copy();
-        }
+        ItemStack resultStack = getResultItemSafely(rawRecipe, registries);
 
-        @Override
-        public boolean canCraftInDimensions(int width, int height) {
-            return original.canCraftInDimensions(width, height);
+        if (rawRecipe instanceof ShapelessRecipe shapeless) {
+            return new ShapelessRecipe(shapeless.getGroup(), shapeless.category(), resultStack, newIngredients);
+        } else if (rawRecipe instanceof ShapedRecipe shaped) {
+            ShapedRecipePattern newPattern = new ShapedRecipePattern(shaped.getWidth(), shaped.getHeight(), newIngredients, Optional.empty());
+            return new ShapedRecipe(shaped.getGroup(), shaped.category(), newPattern, resultStack);
+        } else if (rawRecipe instanceof SmeltingRecipe smelting) {
+            return new SmeltingRecipe(smelting.getGroup(), smelting.category(), newIngredients.get(0), resultStack, smelting.getExperience(), smelting.getCookingTime());
+        } else if (rawRecipe instanceof BlastingRecipe blasting) {
+            return new BlastingRecipe(blasting.getGroup(), blasting.category(), newIngredients.get(0), resultStack, blasting.getExperience(), blasting.getCookingTime());
+        } else if (rawRecipe instanceof SmokingRecipe smoking) {
+            return new SmokingRecipe(smoking.getGroup(), smoking.category(), newIngredients.get(0), resultStack, smoking.getExperience(), smoking.getCookingTime());
+        } else if (rawRecipe instanceof CampfireCookingRecipe campfire) {
+            return new CampfireCookingRecipe(campfire.getGroup(), campfire.category(), newIngredients.get(0), resultStack, campfire.getExperience(), campfire.getCookingTime());
+        } else if (rawRecipe instanceof StonecutterRecipe stonecut) {
+            return new StonecutterRecipe(stonecut.getGroup(), newIngredients.get(0), resultStack);
         }
+        return null;
+    }
 
-        @Override
-        public ItemStack getResultItem(net.minecraft.core.HolderLookup.Provider registries) {
-            return newOutput.copy();
+    private static Recipe<?> createOutputReplacedRecipe(Recipe<?> rawRecipe, ItemStack newOutput, HolderLookup.Provider registries) {
+        if (rawRecipe instanceof ShapelessRecipe shapeless) {
+            return new ShapelessRecipe(shapeless.getGroup(), shapeless.category(), newOutput, shapeless.getIngredients());
+        } else if (rawRecipe instanceof ShapedRecipe shaped) {
+            ShapedRecipePattern pattern = new ShapedRecipePattern(shaped.getWidth(), shaped.getHeight(), shaped.getIngredients(), Optional.empty());
+            return new ShapedRecipe(shaped.getGroup(), shaped.category(), pattern, newOutput);
+        } else if (rawRecipe instanceof SmeltingRecipe smelting) {
+            return new SmeltingRecipe(smelting.getGroup(), smelting.category(), smelting.getIngredients().get(0), newOutput, smelting.getExperience(), smelting.getCookingTime());
+        } else if (rawRecipe instanceof BlastingRecipe blasting) {
+            return new BlastingRecipe(blasting.getGroup(), blasting.category(), blasting.getIngredients().get(0), newOutput, blasting.getExperience(), blasting.getCookingTime());
+        } else if (rawRecipe instanceof SmokingRecipe smoking) {
+            return new SmokingRecipe(smoking.getGroup(), smoking.category(), smoking.getIngredients().get(0), newOutput, smoking.getExperience(), smoking.getCookingTime());
+        } else if (rawRecipe instanceof CampfireCookingRecipe campfire) {
+            return new CampfireCookingRecipe(campfire.getGroup(), campfire.category(), campfire.getIngredients().get(0), newOutput, campfire.getExperience(), campfire.getCookingTime());
+        } else if (rawRecipe instanceof StonecutterRecipe stonecut) {
+            return new StonecutterRecipe(stonecut.getGroup(), stonecut.getIngredients().get(0), newOutput);
         }
+        return null;
+    }
 
-        @Override
-        public NonNullList<Ingredient> getIngredients() {
-            return original.getIngredients();
+    private static Ingredient parseIngredient(String desc) {
+        String normalized = IngredientWrapper.normalizeDescriptor(desc);
+        if (normalized.startsWith("#")) {
+            TagKey<Item> tagKey = TagKey.create(Registries.ITEM, ResourceLocation.parse(normalized.substring(1)));
+            return Ingredient.of(tagKey);
         }
-
-        @Override
-        public RecipeSerializer<?> getSerializer() {
-            return original.getSerializer();
-        }
-
-        @Override
-        public RecipeType<?> getType() {
-            return original.getType();
-        }
+        Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(normalized));
+        return Ingredient.of(item);
     }
 }

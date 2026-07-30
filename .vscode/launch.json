@@ -2,21 +2,40 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "▶ Run Client (NeoForge)",
       "type": "java",
       "request": "launch",
+      "name": "Run Client (NeoForge)",
       "projectName": "neoforge-platform",
       "mainClass": "net.neoforged.devlaunch.Main",
       "args": [
-        "@${workspaceFolder}\\neoforge-platform\\build\\moddev\\clientRunProgramArgs.txt"
+        "@${workspaceFolder}/neoforge-platform/build/moddev/clientRunProgramArgs.txt"
       ],
       "vmArgs": [
-        "@${workspaceFolder}\\neoforge-platform\\build\\moddev\\clientRunVmArgs.txt"
+        "@${workspaceFolder}/neoforge-platform/build/moddev/clientRunVmArgs.txt",
+        "-Dfml.modFolders=luatweaker%%${workspaceFolder}/neoforge-platform/build/resources/main"
       ],
-      "cwd": "${workspaceFolder}\\run",
+      "cwd": "${workspaceFolder}/run",
       "console": "internalConsole",
-      "shortenCommandLine": "none",
-      "preLaunchTask": "gradle: syncLua"
+      "shortenCommandLine": "argFile",
+      "preLaunchTask": "gradle: build"
+    },
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "Run Server (NeoForge)",
+      "projectName": "neoforge-platform",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@${workspaceFolder}/neoforge-platform/build/moddev/serverRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@${workspaceFolder}/neoforge-platform/build/moddev/serverRunVmArgs.txt",
+        "-Dfml.modFolders=luatweaker%%${workspaceFolder}/neoforge-platform/build/resources/main"
+      ],
+      "cwd": "${workspaceFolder}/run",
+      "console": "internalConsole",
+      "shortenCommandLine": "argFile",
+      "preLaunchTask": "gradle: prepareServerRun"
     },
     {
       "type": "java",
@@ -29,16 +48,16 @@
       "projectName": "neoforge-platform",
       "mainClass": "net.neoforged.devlaunch.Main",
       "args": [
-        "@C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\neoforge-platform\\build\\moddev\\clientRunProgramArgs.txt"
+        "@${workspaceFolder}/neoforge-platform/build/moddev/clientRunProgramArgs.txt"
       ],
       "vmArgs": [
-        "@C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\neoforge-platform\\build\\moddev\\clientRunVmArgs.txt",
-        "-Dfml.modFolders\u003dluatweaker%%C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\neoforge-platform\\bin\\main;luatweaker%%C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\common-api\\bin\\main;luatweaker%%C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\core-engine\\bin\\main;luatweaker%%C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\modules\\module-recipes\\bin\\main"
+        "@${workspaceFolder}/neoforge-platform/build/moddev/clientRunVmArgs.txt",
+        "-Dfml.modFolders=luatweaker%%${workspaceFolder}/neoforge-platform/build/resources/main"
       ],
-      "cwd": "${workspaceFolder}\\run",
+      "cwd": "${workspaceFolder}/run",
       "env": {},
       "console": "internalConsole",
-      "shortenCommandLine": "none"
+      "shortenCommandLine": "argFile"
     },
     {
       "type": "java",
@@ -51,16 +70,16 @@
       "projectName": "neoforge-platform",
       "mainClass": "net.neoforged.devlaunch.Main",
       "args": [
-        "@C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\neoforge-platform\\build\\moddev\\serverRunProgramArgs.txt"
+        "@${workspaceFolder}/neoforge-platform/build/moddev/serverRunProgramArgs.txt"
       ],
       "vmArgs": [
-        "@C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\neoforge-platform\\build\\moddev\\serverRunVmArgs.txt",
-        "-Dfml.modFolders\u003dluatweaker%%C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\neoforge-platform\\bin\\main;luatweaker%%C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\common-api\\bin\\main;luatweaker%%C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\core-engine\\bin\\main;luatweaker%%C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\modules\\module-recipes\\bin\\main"
+        "@${workspaceFolder}/neoforge-platform/build/moddev/serverRunVmArgs.txt",
+        "-Dfml.modFolders=luatweaker%%${workspaceFolder}/neoforge-platform/build/resources/main"
       ],
-      "cwd": "${workspaceFolder}\\run",
+      "cwd": "${workspaceFolder}/run",
       "env": {},
       "console": "internalConsole",
-      "shortenCommandLine": "none"
+      "shortenCommandLine": "argFile"
     }
   ]
 }

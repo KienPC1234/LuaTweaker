@@ -29,6 +29,8 @@ import net.neoforged.neoforge.event.brewing.RegisterBrewingRecipesEvent;
 import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
 import net.neoforged.neoforge.event.village.VillagerTradesEvent;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.util.Arrays;
@@ -38,18 +40,31 @@ import java.util.Comparator;
 public class LuaTweakerMod {
     public static final String MODID = "luatweaker";
 
+    static {
+        System.err.println("LuaTweakerMod: static init at " + new java.util.Date());
+    }
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(LuaTweakerMod.class);
+
     /** The command registry; held as a field so external modules can register commands before build(). */
     private final LuaTweakerCommandRegistry commandRegistry;
 
     public LuaTweakerMod(IEventBus modEventBus, ModContainer modContainer) {
+        System.err.println("LuaTweakerMod: constructor at " + new java.util.Date());
+        LOGGER.info("LuaTweaker constructor starting");
+        LOGGER.info("CWD: {}", new File(".").getAbsolutePath());
+
         // Register NeoForge configuration specification
         modContainer.registerConfig(ModConfig.Type.COMMON, LuaTweakerConfig.COMMON_SPEC);
 
         // Initialize Platform Abstraction Layer (PAL) Helper
         Platform.set(new NeoForgePlatformHelper());
+        LOGGER.info("Platform helper set");
 
         // Setup the global stage-aware logger
-        com.luatweaker.api.log.LuaTweakerLog.set(AsyncFileLogger.get());
+        AsyncFileLogger fileLogger = AsyncFileLogger.get();
+        LOGGER.info("AsyncFileLogger obtained, log file: {}", fileLogger.getLogFile());
+        com.luatweaker.api.log.LuaTweakerLog.set(fileLogger);
 
         // Create user directories if they don't exist
         initializeUserDirectories();
@@ -59,9 +74,6 @@ public class LuaTweakerMod {
 
         // Register all NeoForge event listeners (game event bus)
         NeoForge.EVENT_BUS.register(this);
-
-        // Register mod-bus events (e.g., brewing recipe registration fires on mod bus)
-        modEventBus.addListener(this::onRegisterBrewingRecipes);
     }
 
     /** Expose the registry so addon modules can call commandRegistry.register(myCmd) during setup. */
@@ -79,7 +91,7 @@ public class LuaTweakerMod {
             );
         }
 
-        String[] requiredSubDirs = new String[] { "startup", "server", "client", "lib", ".luatweaker/stubs" };
+        String[] requiredSubDirs = new String[] { "startup", "server", "client", "lib", ".luatweaker/stubs", "logs/luatweaker" };
         for (String sub : requiredSubDirs) {
             File subDir = new File(luaDir, sub);
             if (!subDir.exists()) {
@@ -163,6 +175,7 @@ public class LuaTweakerMod {
 
     @SubscribeEvent
     public void onServerAboutToStart(ServerAboutToStartEvent event) {
+        LOGGER.info("ServerAboutToStartEvent fired, calling reloadServerRecipes");
         reloadServerRecipes(event.getServer());
     }
 
@@ -176,7 +189,10 @@ public class LuaTweakerMod {
         InterceptionHelper.applyPendingAnvil(event);
     }
 
+    @SubscribeEvent
     public void onRegisterBrewingRecipes(RegisterBrewingRecipesEvent event) {
+        LOGGER.info("RegisterBrewingRecipesEvent fired, executing Lua scripts for brewing registration...");
+        reloadServerRecipes(null);
         InterceptionHelper.applyPendingBrewing(event);
     }
 
@@ -204,13 +220,13 @@ public class LuaTweakerMod {
     }
 
     public void reloadServerRecipes(MinecraftServer server) {
-        if (server == null) return;
+        LOGGER.info("reloadServerRecipes started (server: {})", server != null ? "active" : "null/early");
         long startTime = System.currentTimeMillis();
         boolean debugMode = isDebugEnabled();
 
         AsyncFileLogger.get().setDebugEnabled(debugMode);
         com.luatweaker.api.log.LuaTweakerLog.get().stageBegin(com.luatweaker.api.log.LogStage.RELOAD);
-        com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.RELOAD, "Reloading Lua server scripts for active server... (Debug: " + debugMode + ")");
+        com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.RELOAD, "Reloading Lua server scripts... (Debug: " + debugMode + ")");
 
         // Clear pending Anvil/Brewing/Trade from previous reload cycle
         InterceptionHelper.clearPending();
@@ -230,22 +246,33 @@ public class LuaTweakerMod {
         engine.registerService("Recipes", recipesTable);
 
         File serverDir = new File(getLuaDirectory(), "server");
+        LOGGER.info("Lua server dir: {} (exists: {})", serverDir.getAbsolutePath(), serverDir.exists());
 
         if (serverDir.exists() && serverDir.isDirectory()) {
             File[] files = serverDir.listFiles((dir, name) -> name.endsWith(".lua"));
             if (files != null) {
                 Arrays.sort(files, Comparator.comparing(File::getName));
+                LOGGER.info("Found {} Lua scripts to execute", files.length);
                 for (File f : files) {
                     com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SCRIPT_LOAD, "Executing script: " + f.getName());
-                    engine.executeScript(f, "SERVER");
+                    try {
+                        engine.executeScript(f, "SERVER");
+                    } catch (Exception e) {
+                        LOGGER.error("Failed to execute script: " + f.getName(), e);
+                    }
                 }
             }
         }
 
-        com.luatweaker.api.log.LuaTweakerLog.get().stageBegin(com.luatweaker.api.log.LogStage.RECIPE_APPLY);
-        RecipeManager mcRecipeManager = server.getRecipeManager();
-        InterceptionHelper.applyModifications(mcRecipeManager, recipeManager.getModifications());
-        com.luatweaker.api.log.LuaTweakerLog.get().stageEnd(com.luatweaker.api.log.LogStage.RECIPE_APPLY, System.currentTimeMillis() - startTime);
+        InterceptionHelper.populatePendingEvents(recipeManager.getModifications());
+
+        if (server != null) {
+            com.luatweaker.api.log.LuaTweakerLog.get().stageBegin(com.luatweaker.api.log.LogStage.RECIPE_APPLY);
+            RecipeManager mcRecipeManager = server.getRecipeManager();
+            InterceptionHelper.applyModifications(mcRecipeManager, recipeManager.getModifications());
+            com.luatweaker.api.log.LuaTweakerLog.get().stageEnd(com.luatweaker.api.log.LogStage.RECIPE_APPLY, System.currentTimeMillis() - startTime);
+        }
         com.luatweaker.api.log.LuaTweakerLog.get().stageEnd(com.luatweaker.api.log.LogStage.RELOAD, System.currentTimeMillis() - startTime);
+        LOGGER.info("reloadServerRecipes completed in {}ms", System.currentTimeMillis() - startTime);
     }
 }
