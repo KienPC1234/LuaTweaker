@@ -1,0 +1,6 @@
+{
+  "itemGroup.luatweaker": "LuaTweaker",
+  "luatweaker.configuration.title": "LuaTweaker Configs",
+  "luatweaker.configuration.debug": "Enable Debug Logging",
+  "luatweaker.configuration.autoGenerateStubs": "Auto Generate Stubs"
+}

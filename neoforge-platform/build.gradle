@@ -1,0 +1,130 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'net.neoforged.moddev' version '2.0.142'
+    id 'idea'
+}
+
+version = mod_version
+group = mod_group_id
+
+evaluationDependsOn(':common-api')
+evaluationDependsOn(':core-engine')
+evaluationDependsOn(':modules:module-recipes')
+
+sourceSets.main.resources {
+    srcDir('src/generated/resources')
+    exclude("**/*.bbmodel")
+    exclude("src/generated/**/.cache")
+}
+
+base {
+    archivesName = mod_id
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+neoForge {
+    version = project.neo_version
+
+    parchment {
+        mappingsVersion = project.parchment_mappings_version
+        minecraftVersion = project.parchment_minecraft_version
+    }
+
+    runs {
+        client {
+            client()
+            gameDirectory = file("../run")
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+
+        server {
+            server()
+            gameDirectory = file("../run")
+            programArgument '--nogui'
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+            sourceSet(project(':common-api').sourceSets.main)
+            sourceSet(project(':core-engine').sourceSets.main)
+            sourceSet(project(':modules:module-recipes').sourceSets.main)
+        }
+    }
+}
+configurations {
+    developmentMods
+}
+
+dependencies {
+    developmentMods "mezz.jei:jei-1.21.1-neoforge:19.32.0.359"
+
+    // Embed all submodules into the single output jar via NeoForge Jar-in-Jar
+    jarJar(project(':common-api'))
+    jarJar(project(':core-engine'))
+    jarJar(project(':modules:module-recipes'))
+
+    // Also needed at compile time
+    implementation project(':common-api')
+    implementation project(':core-engine')
+    implementation project(':modules:module-recipes')
+
+    // JEI integration for checking recipes in-game easily
+    implementation "mezz.jei:jei-1.21.1-neoforge:19.32.0.359"
+
+    // FML runtime classpath overrides for dev environment
+    additionalRuntimeClasspath "cc.tweaked:cobalt:0.9.9"
+}
+
+var copyDevelopmentMods = tasks.register('copyDevelopmentMods', Copy) {
+    from configurations.developmentMods
+    into file("run/mods")
+}
+
+var syncLua = tasks.register('syncLua', Sync) {
+    from file("lua")
+    into file("../run/lua")
+    preserve {
+        include ".luatweaker/**"
+    }
+}
+
+tasks.named('processResources') {
+    dependsOn copyDevelopmentMods
+}
+
+tasks.named('runClient') {
+    dependsOn syncLua
+}
+
+tasks.named('runServer') {
+    dependsOn syncLua
+}
+
+var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version            : neo_version,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+    ]
+    inputs.properties replaceProperties
+    expand replaceProperties
+    from "src/main/templates"
+    into "build/generated/sources/modMetadata"
+}
+sourceSets.main.resources.srcDir generateModMetadata
+neoForge.ideSyncTask generateModMetadata
+neoForge.ideSyncTask copyDevelopmentMods
+neoForge.ideSyncTask syncLua
+

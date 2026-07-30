@@ -1,0 +1,17 @@
+────────────────────────────────────────────────────────────────────────
+  LuaTweaker Log — 2026-07-30 11:29:27
+────────────────────────────────────────────────────────────────────────
+2026-07-30 11:29:27 [TEST-SERVER ] (system                        ) [INFO ] [ERROR] 
+========================================================================
+                       LUA SYNTAX ERROR (COMPILE TIME)
+========================================================================
+Source File : syntax_error_test.lua
+Line Number : 5
+Details     : 'end' expected (to close 'if' at line 2) near <eof>
+
+      3 |     print("Testing syntax error traceback representation")
+      4 | -- Missing 'end' to close 'if' statement
+========================================================================
+2026-07-30 11:29:28 [SCRIPT      ] ([string "recipe_test.l..."]:3 ) [INFO ] [INFO] Initializing comprehensive server recipe test suite...
+2026-07-30 11:29:28 [SCRIPT      ] ([string "recipe_test.l..."]:68) [INFO ] [INFO] Comprehensive server recipe test suite executed successfully!
+2026-07-30 11:29:28 [TEST-SERVER ] (system                        ) [INFO ] [INFO] Successfully executed script: recipe_test.lua

@@ -1,0 +1,16 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "gradle: syncLua",
+      "type": "shell",
+      "command": "${workspaceFolder}\\gradlew.bat",
+      "args": [":neoforge-platform:syncLua"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": []
+    }
+  ]
+}

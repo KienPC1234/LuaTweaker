@@ -1,0 +1,66 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "▶ Run Client (NeoForge)",
+      "type": "java",
+      "request": "launch",
+      "projectName": "neoforge-platform",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@${workspaceFolder}\\neoforge-platform\\build\\moddev\\clientRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@${workspaceFolder}\\neoforge-platform\\build\\moddev\\clientRunVmArgs.txt"
+      ],
+      "cwd": "${workspaceFolder}\\run",
+      "console": "internalConsole",
+      "shortenCommandLine": "none",
+      "preLaunchTask": "gradle: syncLua"
+    },
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "neoforge-platform - Client",
+      "presentation": {
+        "group": "Mod Development - neoforge-platform",
+        "order": 0
+      },
+      "projectName": "neoforge-platform",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\neoforge-platform\\build\\moddev\\clientRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\neoforge-platform\\build\\moddev\\clientRunVmArgs.txt",
+        "-Dfml.modFolders\u003dluatweaker%%C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\neoforge-platform\\bin\\main;luatweaker%%C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\common-api\\bin\\main;luatweaker%%C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\core-engine\\bin\\main;luatweaker%%C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\modules\\module-recipes\\bin\\main"
+      ],
+      "cwd": "${workspaceFolder}\\run",
+      "env": {},
+      "console": "internalConsole",
+      "shortenCommandLine": "none"
+    },
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "neoforge-platform - Server",
+      "presentation": {
+        "group": "Mod Development - neoforge-platform",
+        "order": 1
+      },
+      "projectName": "neoforge-platform",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\neoforge-platform\\build\\moddev\\serverRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\neoforge-platform\\build\\moddev\\serverRunVmArgs.txt",
+        "-Dfml.modFolders\u003dluatweaker%%C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\neoforge-platform\\bin\\main;luatweaker%%C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\common-api\\bin\\main;luatweaker%%C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\core-engine\\bin\\main;luatweaker%%C:\\Users\\kien\\Documents\\repos\\LuaTweaker\\modules\\module-recipes\\bin\\main"
+      ],
+      "cwd": "${workspaceFolder}\\run",
+      "env": {},
+      "console": "internalConsole",
+      "shortenCommandLine": "none"
+    }
+  ]
+}
