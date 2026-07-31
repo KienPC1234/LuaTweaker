@@ -375,8 +375,13 @@ luamods/
 ```lua
 print("[my_first_mod] Hello from my first autonomous Lua Mod!")
 
-events:listen("player.join", function(event)
-    print("[my_first_mod] Welcome, " .. event.player:getName() .. "!")
+local EntityService = Mod:GetService("EntityService")
+
+EntityService.EntitySpawned:Connect(function(entity)
+    if entity.Type == "minecraft:player" then
+        print("[my_first_mod] Welcome, " .. entity.Name .. "!")
+        entity:SendMessage("§aWelcome to the server, " .. entity.Name .. "!")
+    end
 end)
 ```
 

@@ -245,42 +245,36 @@ utils.colorInt(255, 128, 0)                -- 16744448
 
 ## Player API (Expanded)
 
-The `Player` object now provides comprehensive player state management.
+The `Player` object now provides comprehensive player state management. Player objects are passed to content callbacks (`startup:createItem(...).onRightClick(player, item)`) or obtained from the `EntityService.EntitySpawned` signal:
 
 ```lua
-events:listen("player.join", function(player)
+local EntityService = Mod:GetService("EntityService")
+
+EntityService.EntitySpawned:Connect(function(player)
+    if player.Type ~= "minecraft:player" then return end
+
     -- Identity
-    print(player:getUsername())
+    print(player:getName())
 
     -- Health
     player:heal(5)
-    player:damage(2)
-    player:setMaxHealth(40)
-    if player:isAlive() then print("Still alive!") end
+    player:setHealth(40)
+    if player:getHealth() > 0 then print("Still alive!") end
 
     -- Position & Teleport
-    local x, y, z = player:getX(), player:getY(), player:getZ()
     player:teleport(0, 100, 0)
-    player:teleportDimension("minecraft:the_nether", 0, 128, 0)
-    local dist = player:distanceTo(100, 64, 100)
 
     -- Experience
-    player:addXP(500)
-    player:setXPLevel(30)
+    player:giveExperience(500)
 
     -- Food
-    player:setFoodLevel(20)
-    player:setSaturation(5.0)
+    player:feed(20, 5.0)
 
     -- Gamemode
-    player:setGamemode("creative")
     if player:isCreative() then print("Creative mode!") end
-    if player:isSurvival() then print("Survival!") end
 
     -- Effects
-    player:addEffect("minecraft:speed", 600, 2)
-    player:removeEffect("minecraft:speed")
-    player:clearEffects()
+    player:addEffect("speed", 600, 2)
 
     -- Messaging
     player:sendMessage("§aWelcome!")

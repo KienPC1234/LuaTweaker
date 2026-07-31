@@ -164,16 +164,23 @@ recipes:replaceOutput("minecraft:dirt", "minecraft:diamond")
 
 ---
 
-## ⚡ Built-In & Custom Event System (`events`)
+## ⚡ Signal-Based Event System (`Signal`, `EntityService`)
 
 ```lua
--- Listen to built-in or custom events
-events:listen("player.chat", function(event)
-    print("Player chat: " .. event.message)
+-- Reactive signal-style event (Roblox `Signal:Connect`)
+local EntityService = Mod:GetService("EntityService")
+EntityService.EntitySpawned:Connect(function(entity)
+    if entity.Type == "minecraft:player" then
+        entity:SendMessage("§aWelcome, " .. entity.Name .. "!")
+    end
 end)
 
--- Post custom event to all event channels
-events:post("myaddon.custom_event", { author = "Kien", score = 100 })
+-- Custom signal
+local onCustom = Signal.new()
+onCustom:Connect(function(author, score)
+    print("Custom event from " .. author .. " (score " .. score .. ")")
+end)
+onCustom:Fire("Kien", 100)
 ```
 
 ---

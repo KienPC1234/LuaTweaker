@@ -1,98 +1,144 @@
-# ⚡ Event Hooks & Custom Channels (`events` & `Signal`)
+# Signal-Based Event System (`Signal`, `EntityService`, `RemoteEvent`)
 
-> **Stage:** `server_scripts/` or `client_scripts/`  
-> **Global Variables:** `events`, `Signal` | **Service Lookup:** `local events = game:GetService("Events")`
+> **Stage:** `server/` or `client/` scripts
+> **Global Variables:** `Signal` | **Service Lookup:** `Mod:GetService("EntityService")`, `Mod:GetService("NetworkService")`
 
-The `events` API and `Signal` engine provide real-time event listeners for game events, reactive signal handles (`Signal:Connect`, `Signal:Wait`), and custom event channels for third-party mod addons.
-
-> 💡 **Service Registry Paradigm**: Access event bus via `events` or `game:GetService("Events")` / `Mod:GetService("Events")`. Create reactive event signals via `Signal.new()`.
+LuaTweaker uses a Roblox-style reactive event system. All built-in game events are exposed as **Signal** objects that you subscribe to with `Signal:Connect(...)`, and you can create your own signals with `Signal.new()`.
 
 ---
 
-## 🎧 1. Listening to Game Events (`events:listen`)
+## 1. Signal API (`Signal`)
 
 ```lua
--- Listen to player chat
-events:listen("player.chat", function(event)
-    print(string.format("Player %s sent chat: %s", event.sender, event.message))
+local onBossDefeated = Signal.new()
+
+-- Subscribe to the signal
+local connection = onBossDefeated:Connect(function(bossName, rewardXp)
+    print(string.format("Boss defeated: %s (+%d XP)", bossName, rewardXp))
 end)
 
--- Listen to player death
-events:listen("player.death", function(event)
-    print(string.format("Player %s was killed by %s!", event.victim, event.killer or "environment"))
+-- Fire the signal
+onBossDefeated:Fire("Wither", 5000)
+
+-- Unsubscribe
+connection:Disconnect()
+
+-- One-time listener (auto-disconnects after first fire)
+onBossDefeated:Once(function()
+    print("Triggers only once!")
 end)
 
--- Listen to item crafting
-events:listen("player.craft_item", function(event)
-    print(string.format("Player %s crafted %d x %s", event.username, event.count, event.item))
-end)
+-- Wait for the next fire (yields the coroutine)
+-- local bossName, xp = onBossDefeated:Wait()
+```
 
--- Listen to block break
-events:listen("block.break", function(event)
-    print(string.format("Player %s broke block %s at (%d, %d, %d)", event.player, event.block, event.x, event.y, event.z))
+---
+
+## 2. Built-In Game Signals
+
+### Entity & Player Signals
+
+Subscribe to entity spawns and react to players via the `EntityService`:
+
+```lua
+local EntityService = Mod:GetService("EntityService")
+
+EntityService.EntitySpawned:Connect(function(entity)
+    -- Roblox-style properties: Name, Type, Health, Position
+    print("[Events] Entity spawned: " .. entity.Name .. " (" .. entity.Type .. ")")
+
+    -- Direct HUD actions on players
+    if entity.Type == "minecraft:player" then
+        entity:SendMessage("§aWelcome to the server, " .. entity.Name .. "!")
+        entity:SendTitle("§6WELCOME!", "§eLuaTweaker Engine v1.0 Active")
+        entity:SendOverlayMessage("§b+100 Bonus Coins Granted!")
+        entity:GiveItem("minecraft:diamond", 3)
+    end
+end)
+```
+
+### Network Signals (`RemoteEvent`)
+
+Roblox-style server/client event channels via `NetworkService`:
+
+```lua
+local NetworkService = Mod:GetService("NetworkService")
+
+local actionEvent = NetworkService:GetOrCreateRemoteEvent("PlayerActionEvent")
+
+actionEvent.OnServerEvent:Connect(function(player, actionType, keyName)
+    local playerName = player and player.Name or "Unknown Player"
+    print("[Network] Received action: " .. tostring(actionType) .. " key=" .. tostring(keyName))
+
+    if player then
+        player:SendMessage("§e[Keybind] Server processed action key '" .. tostring(keyName) .. "'")
+        player:GiveItem("minecraft:emerald", 1)
+    end
+end)
+```
+
+RemoteFunction server invoke handlers:
+
+```lua
+local requestHealth = NetworkService:GetOrCreateRemoteFunction("RequestPlayerHealth")
+requestHealth.OnServerInvoke = function(player)
+    return 100.0
+end
+```
+
+### Client Input Signals
+
+```lua
+UserInputService.InputBegan:Connect(function(keyCode, isTyping)
+    print("[Client] Key pressed: " .. tostring(keyCode))
+end)
+```
+
+### Attribute Change Signals
+
+Blocks, Items, and Entities expose an `AttributeChanged` signal fired when attributes are set:
+
+```lua
+entity:SetAttribute("Phase", "2") -- fires entity.AttributeChanged("Phase", "2")
+
+entity.AttributeChanged:Connect(function(name, value)
+    print("[Events] Attribute " .. name .. " set to " .. value)
 end)
 ```
 
 ---
 
-## 📡 2. Custom Event Channels (`events:post`)
+## 3. String Event Channels (`events:listen` / `events:post`)
 
-Post custom event payloads across all registered Lua scripts and Java addon plugins:
+For lightweight pub/sub between scripts and Java addons, the string-based channel API is also available:
 
 ```lua
--- Post custom event payload
+local events = Mod:GetService("Events")
+
+-- Post a custom event payload
 events:post("myaddon.custom_event", {
     author = "Kien",
     score = 100,
     timestamp = os.time()
 })
 
--- Listen for custom event
+-- Listen for custom events
 events:listen("myaddon.custom_event", function(event)
     print("Received custom event from author: " .. event.author)
 end)
 ```
 
----
+### Built-In String Event Payloads
 
-## 📋 Comprehensive Built-In Event Channels Matrix
+| Event Name | Payload Fields |
+| :--- | :--- |
+| `player.join` / `player.login` | `username`, `uuid`, `x`, `y`, `z` |
+| `player.leave` / `player.logout` | `username`, `uuid` |
+| `player.chat` | `sender`, `message`, `rawText` |
+| `player.death` / `player.died` | `victim`, `source`, `killer` |
+| `block.break` | `player`, `block`, `x`, `y`, `z`, `exp` |
+| `block.place` | `block`, `x`, `y`, `z`, `entity` |
+| `entity.spawn` | `entityId`, `x`, `y`, `z` |
+| `server.tick` | `tick` |
 
-### 👤 Player Events
-| Event Name | Description | Event Payload Fields |
-| :--- | :--- | :--- |
-| `player.join` / `player.login` | Player joins server | `username`, `uuid`, `x`, `y`, `z` |
-| `player.leave` / `player.logout` | Player leaves server | `username`, `uuid` |
-| `player.respawn` | Player respawns | `username`, `isEndConquered` |
-| `player.chat` | Player sends chat | `sender`, `message`, `rawText` |
-| `player.craft_item` / `player.itemCrafted` | Player crafts item | `username`, `item`, `count` |
-| `player.smelt_item` / `player.itemSmelted` | Player smelts item | `username`, `item`, `count` |
-| `player.pickup_item` / `player.itemPickup` | Player picks up item | `username`, `item`, `count` |
-| `player.right_click_block` | Player right-clicks block | `username`, `x`, `y`, `z`, `hand` |
-| `player.right_click_item` | Player right-clicks item | `username`, `item`, `hand` |
-| `player.left_click_block` | Player left-clicks block | `username`, `x`, `y`, `z` |
-| `player.advancement` | Player earns advancement | `username`, `advancementId` |
-| `player.hurt` / `player.damage` | Player receives damage | `victim`, `amount`, `source` |
-| `player.death` / `player.died` | Player dies | `victim`, `source`, `killer` |
-
-### 🐲 Entity Events
-| Event Name | Description | Event Payload Fields |
-| :--- | :--- | :--- |
-| `entity.spawn` | Entity spawns in world | `entityId`, `x`, `y`, `z` |
-| `entity.hurt` | Mob / Entity takes damage | `victim`, `amount`, `source` |
-| `entity.death` | Mob / Entity dies | `victim`, `source`, `killer` |
-| `entity.tame` | Player tames animal | `animal`, `owner` |
-
-### 🧊 Block Events
-| Event Name | Description | Event Payload Fields |
-| :--- | :--- | :--- |
-| `block.break` | Player breaks block | `player`, `block`, `x`, `y`, `z`, `exp` |
-| `block.place` | Player/Entity places block | `block`, `x`, `y`, `z`, `entity` |
-
-### 🌐 World & Server Events
-| Event Name | Description | Event Payload Fields |
-| :--- | :--- | :--- |
-| `server.start` / `server.starting` | Dedicated server boots | `status` |
-| `server.stop` / `server.stopping` | Dedicated server stops | `status` |
-| `server.tick` | Every server tick (20 TPS) | `tick` |
-| `world.load` | World level loads | `level` |
-| `world.save` | World level saves | `level` |
+> For most game events, prefer the Signal-based API (Section 2) — it passes live wrapped objects instead of flat payload tables.

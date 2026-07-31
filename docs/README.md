@@ -46,7 +46,7 @@ Select a topic guide below to explore LuaTweaker's features, APIs, and tutorials
 
 ### ⚡ Event Hooks & Custom Channels
 *   📖 [**EVENTS.md**](EVENTS.md)  
-    Built-in game event hooks (`player.join`, `player.chat`, `block.break`, `server.tick`), event cancellation, and custom event channel posting (`events:post`).
+    Roblox-style signal events (`Signal:Connect`, `EntityService.EntitySpawned`, `RemoteEvent.OnServerEvent`, `UserInputService.InputBegan`), custom signal creation (`Signal.new()`), and lightweight string channels (`events:listen` / `events:post`).
 
 ---
 
@@ -55,7 +55,7 @@ Select a topic guide below to explore LuaTweaker's features, APIs, and tutorials
     Tick-based task scheduler (`scheduler`), particle VFX (`particles`), 3D sound SFX (`sounds`), custom enchantments, mob effects, potions, and creative inventory tabs.
 
 *   📖 [**MOB_AND_SPAWN.md**](MOB_AND_SPAWN.md)  
-    Mob equipment & zombie gear (`entities:spawnMob`), mob loot table custom drops (`loot:addEntityDrop`), world spawn rules, mob deny filters (`worldgen:denySpawn`), dynamic spawn event hooks (`events:listen("entity.spawn")`), and random utilities (`utils.chance`, `utils.weightedRandom`).
+    Mob equipment & zombie gear (`entities:spawnMob`), mob loot table custom drops (`loot:addEntityDrop`), world spawn rules, mob deny filters (`worldgen:denySpawn`), dynamic spawn event hooks (`EntityService.EntitySpawned`), and random utilities (`utils.chance`, `utils.weightedRandom`).
 
 *   📖 [**WORLD_AND_BOSSBAR.md**](WORLD_AND_BOSSBAR.md)  
     Custom BossBar API (`bossbar:create`), Minecraft Game Days (`world:getGameDay()`), real calendar dates, weather control, console command execution (`world:executeCommand`), game rules, block manipulation, and explosions.

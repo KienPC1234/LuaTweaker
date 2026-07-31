@@ -88,25 +88,25 @@ worldgen:denyModSpawns("annoying_mod_id", "minecraft:nether_wastes")
 
 ---
 
-## 4. 🛑 Dynamic Spawn Event Hooks & Deny (`events:listen("entity.spawn")`)
+## 4. 🛑 Dynamic Spawn Event Hooks (`EntityService.EntitySpawned`)
 
-Intercept mob spawning events at runtime and dynamically deny/cancel spawns based on distance, time, chance, or custom logic.
+Intercept entity spawn events at runtime and react to mobs dynamically based on type, position, or custom logic:
 
 ```lua
-events:listen("entity.spawn", function(e)
-    local entityType = e:getEntityType()
-    local x, y, z = e:getX(), e:getY(), e:getZ()
-    local biome = e:getBiome()
+local EntityService = Mod:GetService("EntityService")
 
-    -- Example 1: Deny Creepers with 20% probability
-    if entityType == "minecraft:creeper" and utils.chance(0.20) then
-        print("[LuaTweaker] Dynamic deny Creeper spawn at (" .. x .. ", " .. y .. ", " .. z .. ")")
-        e:deny() -- or e:cancel()
+EntityService.EntitySpawned:Connect(function(entity)
+    local entityType = entity.Type
+    local x, y, z = entity.Position.X, entity.Position.Y, entity.Position.Z
+
+    -- Example 1: Log every Creeper spawn
+    if entityType == "minecraft:creeper" then
+        print("[LuaTweaker] Creeper spawned at (" .. x .. ", " .. y .. ", " .. z .. ")")
     end
 
-    -- Example 2: Deny all monsters above Y=120
-    if y > 120 and e:getSpawnReason() == "NATURAL" then
-        e:deny()
+    -- Example 2: Tag all monsters above Y=120
+    if y > 120 then
+        entity:SetAttribute("IsHighAltitude", "true")
     end
 end)
 ```
