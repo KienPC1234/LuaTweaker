@@ -1,0 +1,4 @@
+────────────────────────────────────────────────────────────────────────
+  LuaTweaker Log — 2026-07-31 09:58:26
+────────────────────────────────────────────────────────────────────────
+09:58:26 [BOOTSTRAP   ] ([string "TEST"]:1) [ERROR] Error running bootstrap script TEST: Service 'NetworkService' not found

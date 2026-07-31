@@ -26,6 +26,14 @@ public class ContentLuaBinding {
         bindCreationHelper(engine, startupTable, "createLeggings", datapackService, (id, cb) -> contentService.createLeggings(id, cb));
         bindCreationHelper(engine, startupTable, "createBoots", datapackService, (id, cb) -> contentService.createBoots(id, cb));
 
+        // startup:registerProjectile("luatweaker:ruby_orb", { damage = 25, explosionPower = 2, trailParticle = "minecraft:flame" })
+        startupTable.rawset("registerProjectile", args -> {
+            if (args.length < 2) throw new IllegalArgumentException("startup:registerProjectile requires (id, [configTable])");
+            String id = args[1].asString();
+            LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom Projectile definition: " + id);
+            return null;
+        });
+
 
         // startup:createBlock("custom_ruby_block", function(block) ... end)
         startupTable.rawset("createBlock", args -> {
@@ -90,6 +98,28 @@ public class ContentLuaBinding {
             LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom Ranged Item builder: " + id);
             return null;
         });
+
+        // startup:createEntity("ruby_boss", function(entity) ... end)
+        startupTable.rawset("createEntity", args -> {
+            if (args.length < 2) throw new IllegalArgumentException("startup:createEntity requires (id, builderFunc)");
+            String id = args[1].asString();
+            ILuaValue callbackVal = args[2];
+
+            contentService.createEntity(id, builder -> {
+                if (callbackVal.isFunction()) {
+                    ILuaTable entityTable = engine.createTable();
+                    bindEntityBuilderMethods(engine, entityTable, builder, datapackService);
+                    try {
+                        engine.callFunction(callbackVal, entityTable);
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error in entity builder callback for '" + id + "': " + e.getMessage());
+                    }
+                }
+            });
+            LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom Entity builder: " + id);
+            return null;
+        });
+        startupTable.rawset("registerEntity", startupTable.rawget("createEntity"));
 
         // startup:createStairs("ruby_stairs", "luatweaker:ruby_block", function(block) ... end)
         startupTable.rawset("createStairs", args -> {

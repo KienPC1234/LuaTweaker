@@ -1,6 +1,6 @@
 local recipes = Mod:GetService("Recipes")
 
-log.info("Initializing comprehensive server recipe test suite...")
+print("Initializing comprehensive server recipe test suite...")
 
 -- 1. Recipe Removals
 recipes:removeByOutput("minecraft:diamond_sword")
@@ -90,4 +90,4 @@ recipes:addTrade("cleric", 3, item("minecraft:emerald", 5), nil, item("minecraft
 recipes:replaceInput("minecraft:coal", "minecraft:charcoal")
 recipes:replaceOutput("minecraft:dirt", "minecraft:cobblestone")
 
-log.info("Comprehensive server recipe test suite executed successfully!")
+print("Comprehensive server recipe test suite executed successfully!")

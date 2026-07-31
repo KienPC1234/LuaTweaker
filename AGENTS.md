@@ -297,6 +297,78 @@ Game directory: `run/`. The `syncLua` Gradle task copies `neoforge-platform/lua/
 
 ---
 
+### Lua Script Style — Roblox (Luau) Convention (Maximize Fidelity)
+
+Lua scripts MUST replicate Roblox Studio's official Lua/Luau style as closely as possible. The auto-generated EmmyLua stubs (`luatweaker-api.lua`) mirror a `--!strict` Roblox API, so every script should read like a Roblox ModuleScript. Copy the look and feel of the existing `neoforge-platform/lua/` scripts.
+
+#### Naming
+
+| Element | Roblox Rule | ✅ Correct | ❌ Wrong |
+|---|---|---|---|
+| Local vars & local functions | `camelCase` | `local maxStack = 64`, `local function registerItems()` | `local MaxStack`, `local max_stack` |
+| Global API / module exports | `PascalCase` | `Mod`, `startup`, `Recipes` | `mod`, `recipesService` |
+| New script file names | `PascalCase` | `RubyRecipes.lua` | `ruby_recipes.lua` |
+| Constants | `UPPER_SNAKE_CASE` | `local MAX_STACK = 64` | `local maxStack = 64` |
+| Booleans | `is*` / `has*` / `can*` prefix | `isServer`, `canAttack` | `getEnabled`, `server` |
+| Events / callbacks | `on*` prefix | `onRightClick`, `onConsume` | `rightClick` |
+
+#### Formatting
+
+- **Indentation**: 4 spaces. **No tabs** (keep consistent with the Java modules).
+- **One statement per line**. Never pack multiple statements into one line.
+- Blank line between logical blocks; blank line **before** each `-- ====` section banner.
+- **Line length**: 120 chars max. Break **before** binary operators (`..`, `and`, `or`).
+- **Strings**: use `[[ ... ]]` long brackets for multi-line data (JSON DataPack patches, long messages). Roblox-style banner:
+
+```lua
+-- ===================================================================
+-- SECTION TITLE
+-- ===================================================================
+```
+
+#### Module Structure (Roblox ModuleScript Pattern)
+
+```lua
+local recipes = Mod:GetService("Recipes")
+
+-- PRIVATE FUNCTIONS
+local function buildRubyBlockPattern()
+    return { "RRR", "RRR", "RRR" }
+end
+
+-- PUBLIC API
+recipes:addShaped("ruby_block_craft", item("luatweaker:ruby_block", 1), buildRubyBlockPattern(), {
+    R = ingredient("luatweaker:custom_ruby")
+})
+```
+
+- All variables declared `local`. **NEVER** create implicit globals.
+- Use colon method syntax: `object:method()`, chained as `obj:a():b():c()` (same as `Player:sendMessage(...)`).
+- Keep callbacks small — extract helpers into `local function` above the call site.
+- Order inside a script: banner header → `Mod:GetService(...)` handles → constants → private functions → public API → final `print()`.
+
+#### EmmyLua Type Annotations (`--!strict` Equivalent)
+
+Annotate every public script function with `---@param` / `---@return`, matching the generated `.luatweaker/stubs/` types:
+
+```lua
+---@param player any
+---@param itemStack any
+local function onRightClick(player, itemStack)
+    player:sendMessage("§6Shine!")
+end
+```
+
+#### Forbidden
+
+- No `goto`.
+- No single-letter variable names (except loop counters `i`).
+- No string concatenation for large/multiline text — use `[[ ]]` blocks or `table.concat`.
+- No nested method chains deeper than ~3 calls — split into named locals.
+- No redundant `return nil` / `return true` at the end of void functions.
+
+---
+
 ### Build Gotchas
 
 - **`syncLua`** must run before client/server launch (auto-wired in `neoforge-platform/build.gradle`).

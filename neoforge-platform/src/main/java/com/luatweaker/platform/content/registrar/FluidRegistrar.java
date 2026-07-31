@@ -200,8 +200,12 @@ public final class FluidRegistrar {
                 createdItems.put(bucketRl, bucketItem);
 
                 if (!bucketRl.equals(altBucketRl)) {
-                    event.register(Registries.ITEM, altBucketRl, () -> bucketItem);
-                    createdItems.put(altBucketRl, bucketItem);
+                    BucketItem altBucketItem = new BucketItem(
+                            stillFluid != null ? stillFluid : net.minecraft.world.level.material.Fluids.WATER,
+                            new Item.Properties().craftRemainder(Items.BUCKET).stacksTo(1)
+                    );
+                    event.register(Registries.ITEM, altBucketRl, () -> altBucketItem);
+                    createdItems.put(altBucketRl, altBucketItem);
                 }
 
                 LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom BucketItem: " + bucketRl);
@@ -225,28 +229,7 @@ public final class FluidRegistrar {
     }
 
     public void registerClientExtensions(RegisterClientExtensionsEvent event) {
-        for (IFluidBuilder builder : contentService.getRegisteredFluids()) {
-            try {
-                ResourceLocation rl = locationParser.apply(builder.getId());
-                FluidType type = getOrCreateFluidType(rl, builder);
-                ResourceLocation stillTex = builder.getStillTexture() != null
-                        ? locationParser.apply(builder.getStillTexture())
-                        : ResourceLocation.fromNamespaceAndPath("minecraft", "block/water_still");
-                ResourceLocation flowTex = builder.getFlowingTexture() != null
-                        ? locationParser.apply(builder.getFlowingTexture())
-                        : ResourceLocation.fromNamespaceAndPath("minecraft", "block/water_flow");
-
-                event.registerFluidType(new IClientFluidTypeExtensions() {
-                    @Override public ResourceLocation getStillTexture() { return stillTex; }
-                    @Override public ResourceLocation getFlowingTexture() { return flowTex; }
-                    @Override public int getTintColor() { return builder.getColor() | 0xFF000000; }
-                }, type);
-
-                LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered IClientFluidTypeExtensions for: " + rl);
-            } catch (Exception e) {
-                LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed client fluid extensions registration for " + builder.getId() + ": " + e.getMessage());
-            }
-        }
+        // FluidType.initializeClient already registers IClientFluidTypeExtensions during creation
     }
 
     public void registerItemColors(RegisterColorHandlersEvent.Item event) {

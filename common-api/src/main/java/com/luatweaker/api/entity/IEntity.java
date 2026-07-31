@@ -109,6 +109,17 @@ public interface IEntity {
     @LuaDoc(description = "Sets the combat target entity for mob AI.", params = {"targetEntity: IEntity"})
     default void setTarget(IEntity target) {}
 
+    @LuaDoc(description = "Returns current combat target entity for mob AI.", returnType = "IEntity")
+    default IEntity getTarget() { return null; }
+
+    default double distanceTo(IEntity other) {
+        if (other == null) return Double.MAX_VALUE;
+        double dx = getX() - other.getX();
+        double dy = getY() - other.getY();
+        double dz = getZ() - other.getZ();
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
     default boolean isPlayer() { return false; }
     default boolean isLiving() { return false; }
 

@@ -8,6 +8,7 @@ public interface ILuaEngine {
     void registerGlobal(String name, ILuaValue value);
     void registerGlobal(String name, ILuaFunction function);
     void executeScript(File file, String context);
+    void executeString(String code, String name);
     
     ILuaTable createTable();
     ILuaValue wrapUserdata(Object userdata);

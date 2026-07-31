@@ -83,6 +83,10 @@ public final class ItemRegistrar {
                             return super.use(level, player, hand);
                         }
                     };
+                    case "HELMET" -> new CustomArmorItem(ArmorMaterials.DIAMOND, ArmorItem.Type.HELMET, props, builder);
+                    case "CHESTPLATE" -> new CustomArmorItem(ArmorMaterials.DIAMOND, ArmorItem.Type.CHESTPLATE, props, builder);
+                    case "LEGGINGS" -> new CustomArmorItem(ArmorMaterials.DIAMOND, ArmorItem.Type.LEGGINGS, props, builder);
+                    case "BOOTS" -> new CustomArmorItem(ArmorMaterials.DIAMOND, ArmorItem.Type.BOOTS, props, builder);
                     default -> new Item(props) {
                         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
                             if (builder.getRightClickHandler() != null) {
@@ -111,10 +115,41 @@ public final class ItemRegistrar {
 
                 event.register(Registries.ITEM, rl, () -> item);
                 createdItems.put(rl, item);
-                LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom Item (" + builder.getType() + ") to NeoForge: " + rl);
             } catch (Exception e) {
                 LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed to register item " + builder.getId() + ": " + e.getMessage());
             }
+        }
+    }
+
+    public static class CustomArmorItem extends ArmorItem {
+        private final IItemBuilder builder;
+
+        public CustomArmorItem(net.minecraft.core.Holder<ArmorMaterial> material, Type type, Properties properties, IItemBuilder builder) {
+            super(material, type, properties);
+            this.builder = builder;
+        }
+
+        @Override
+        public ResourceLocation getArmorTexture(ItemStack stack, net.minecraft.world.entity.Entity entity, net.minecraft.world.entity.EquipmentSlot slot, ArmorMaterial.Layer layer, boolean inner) {
+            String customTex = builder.getArmorTexture();
+            if (customTex == null || customTex.isEmpty()) {
+                customTex = builder.getArmorMaterial();
+            }
+            if (customTex != null && !customTex.isEmpty()) {
+                String domain = "luatweaker";
+                String name = customTex;
+                if (customTex.contains(":")) {
+                    String[] parts = customTex.split(":", 2);
+                    domain = parts[0];
+                    name = parts[1];
+                }
+                String layerSuffix = (slot == net.minecraft.world.entity.EquipmentSlot.LEGS || getType() == Type.LEGGINGS) ? "layer_2" : "layer_1";
+                if (!name.startsWith("textures/")) {
+                    name = "textures/models/armor/" + name + "_" + layerSuffix + ".png";
+                }
+                return ResourceLocation.fromNamespaceAndPath(domain, name);
+            }
+            return super.getArmorTexture(stack, entity, slot, layer, inner);
         }
     }
 }

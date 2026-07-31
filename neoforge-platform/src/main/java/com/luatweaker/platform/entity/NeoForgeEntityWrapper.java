@@ -216,6 +216,13 @@ public class NeoForgeEntityWrapper implements IEntity {
         }
     }
 
+    @Override public IEntity getTarget() {
+        if (entity instanceof Mob mob && mob.getTarget() != null) {
+            return new NeoForgeEntityWrapper(mob.getTarget());
+        }
+        return null;
+    }
+
     @Override public boolean isPlayer() { return entity instanceof Player; }
     @Override public boolean isLiving() { return entity instanceof LivingEntity; }
 

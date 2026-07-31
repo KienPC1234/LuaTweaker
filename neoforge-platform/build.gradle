@@ -13,6 +13,14 @@ evaluationDependsOn(':core-engine')
 evaluationDependsOn(':modules:module-recipes')
 evaluationDependsOn(':modules:module-content')
 evaluationDependsOn(':modules:module-entities')
+evaluationDependsOn(':modules:module-interaction')
+evaluationDependsOn(':modules:module-events')
+evaluationDependsOn(':modules:module-math')
+evaluationDependsOn(':modules:module-storage')
+evaluationDependsOn(':modules:module-network')
+evaluationDependsOn(':modules:module-client')
+evaluationDependsOn(':modules:module-interception')
+evaluationDependsOn(':modules:module-tasks')
 
 sourceSets.main.resources {
     srcDir('src/generated/resources')
@@ -59,6 +67,14 @@ neoForge {
             sourceSet(project(':modules:module-recipes').sourceSets.main)
             sourceSet(project(':modules:module-content').sourceSets.main)
             sourceSet(project(':modules:module-entities').sourceSets.main)
+            sourceSet(project(':modules:module-interaction').sourceSets.main)
+            sourceSet(project(':modules:module-events').sourceSets.main)
+            sourceSet(project(':modules:module-math').sourceSets.main)
+            sourceSet(project(':modules:module-storage').sourceSets.main)
+            sourceSet(project(':modules:module-network').sourceSets.main)
+            sourceSet(project(':modules:module-client').sourceSets.main)
+            sourceSet(project(':modules:module-interception').sourceSets.main)
+            sourceSet(project(':modules:module-tasks').sourceSets.main)
         }
     }
 }
@@ -75,6 +91,14 @@ dependencies {
     jarJar(project(':modules:module-recipes'))
     jarJar(project(':modules:module-content'))
     jarJar(project(':modules:module-entities'))
+    jarJar(project(':modules:module-interaction'))
+    jarJar(project(':modules:module-events'))
+    jarJar(project(':modules:module-math'))
+    jarJar(project(':modules:module-storage'))
+    jarJar(project(':modules:module-network'))
+    jarJar(project(':modules:module-client'))
+    jarJar(project(':modules:module-interception'))
+    jarJar(project(':modules:module-tasks'))
 
     // Also needed at compile time
     implementation project(':common-api')
@@ -82,12 +106,21 @@ dependencies {
     implementation project(':modules:module-recipes')
     implementation project(':modules:module-content')
     implementation project(':modules:module-entities')
+    implementation project(':modules:module-interaction')
+    implementation project(':modules:module-events')
+    implementation project(':modules:module-math')
+    implementation project(':modules:module-storage')
+    implementation project(':modules:module-network')
+    implementation project(':modules:module-client')
+    implementation project(':modules:module-interception')
+    implementation project(':modules:module-tasks')
 
     // JEI integration for checking recipes in-game easily
     implementation "mezz.jei:jei-1.21.1-neoforge:19.32.0.359"
 
     // FML runtime classpath overrides for dev environment
     additionalRuntimeClasspath "cc.tweaked:cobalt:0.9.9"
+    additionalRuntimeClasspath "org.mongodb:bson:5.1.0"
 }
 
 var copyDevelopmentMods = tasks.register('copyDevelopmentMods', Copy) {

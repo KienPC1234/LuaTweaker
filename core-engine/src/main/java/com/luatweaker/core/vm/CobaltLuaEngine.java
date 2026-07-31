@@ -190,6 +190,269 @@ public class CobaltLuaEngine implements ILuaEngine {
         globals.rawset("ingredient", ingFunc);
         globals.rawset("tag", tagFunc);
         globals.rawset("oredict", tagFunc);
+
+        // 7. Bootstrap Roblox task and Signal libraries
+        executeString(
+            "local task = {}\n" +
+            "local deferred = {}\n" +
+            "local delays = {}\n" +
+            "function task.spawn(fn, ...)\n" +
+            "    local thread = coroutine.create(fn)\n" +
+            "    local ok, err = coroutine.resume(thread, ...)\n" +
+            "    if not ok then\n" +
+            "        error(err)\n" +
+            "    end\n" +
+            "    return thread\n" +
+            "end\n" +
+            "function task.defer(fn, ...)\n" +
+            "    local args = {...}\n" +
+            "    table.insert(deferred, { fn = fn, args = args })\n" +
+            "end\n" +
+            "function task.delay(sec, fn, ...)\n" +
+            "    local args = {...}\n" +
+            "    table.insert(delays, { time = os.clock() + sec, fn = fn, args = args })\n" +
+            "end\n" +
+            "function task.wait(sec)\n" +
+            "    sec = sec or 0\n" +
+            "    local thread = coroutine.running()\n" +
+            "    task.delay(sec, function()\n" +
+            "        coroutine.resume(thread)\n" +
+            "    end)\n" +
+            "    return coroutine.yield()\n" +
+            "end\n" +
+            "function task._tick()\n" +
+            "    local def = deferred\n" +
+            "    deferred = {}\n" +
+            "    for _, item in ipairs(def) do\n" +
+            "        task.spawn(item.fn, table.unpack(item.args))\n" +
+            "    end\n" +
+            "    local now = os.clock()\n" +
+            "    local remaining = {}\n" +
+            "    for _, item in ipairs(delays) do\n" +
+            "        if now >= item.time then\n" +
+            "            task.spawn(item.fn, table.unpack(item.args))\n" +
+            "        else\n" +
+            "            table.insert(remaining, item)\n" +
+            "        end\n" +
+            "    end\n" +
+            "    delays = remaining\n" +
+            "end\n" +
+            "_G.task = task\n" +
+            "\n" +
+            "local Signal = {}\n" +
+            "Signal.__index = Signal\n" +
+            "function Signal.new()\n" +
+            "    local self = setmetatable({}, Signal)\n" +
+            "    self._listeners = {}\n" +
+            "    return self\n" +
+            "end\n" +
+            "function Signal:Connect(fn)\n" +
+            "    local listener = { fn = fn, connected = true }\n" +
+            "    table.insert(self._listeners, listener)\n" +
+            "    return {\n" +
+            "        Disconnect = function()\n" +
+            "            listener.connected = false\n" +
+            "            for i, l in ipairs(self._listeners) do\n" +
+            "                if l == listener then\n" +
+            "                    table.remove(self._listeners, i)\n" +
+            "                    break\n" +
+            "                end\n" +
+            "            end\n" +
+            "        end\n" +
+            "    }\n" +
+            "end\n" +
+            "function Signal:Once(fn)\n" +
+            "    local connection\n" +
+            "    connection = self:Connect(function(...)\n" +
+            "        connection:Disconnect()\n" +
+            "        fn(...)\n" +
+            "    end)\n" +
+            "    return connection\n" +
+            "end\n" +
+            "function Signal:Fire(...)\n" +
+            "    local args = {...}\n" +
+            "    for _, listener in ipairs(self._listeners) do\n" +
+            "        if listener.connected then\n" +
+            "            task.spawn(listener.fn, table.unpack(args))\n" +
+            "        end\n" +
+            "    end\n" +
+            "end\n" +
+            "function Signal:Wait()\n" +
+            "    local thread = coroutine.running()\n" +
+            "    local connection\n" +
+            "    connection = self:Connect(function(...)\n" +
+            "        connection:Disconnect()\n" +
+            "        coroutine.resume(thread, ...)\n" +
+            "    end)\n" +
+            "    return coroutine.yield()\n" +
+            "end\n" +
+            "_G.Signal = Signal\n" +
+            "\n" +
+            "local RemoteEvent = {}\n" +
+            "RemoteEvent.__index = RemoteEvent\n" +
+            "function RemoteEvent:new(name, javaNetworkService)\n" +
+            "    local self = setmetatable({}, RemoteEvent)\n" +
+            "    self.Name = name\n" +
+            "    self.OnServerEvent = Signal.new()\n" +
+            "    self.OnClientEvent = Signal.new()\n" +
+            "    self._javaService = javaNetworkService\n" +
+            "    return self\n" +
+            "end\n" +
+            "function RemoteEvent:FireClient(player, ...)\n" +
+            "    local args = {...}\n" +
+            "    local uuid = \"\"\n" +
+            "    if type(player) == \"string\" then\n" +
+            "        uuid = player\n" +
+            "    elseif type(player) == \"userdata\" or type(player) == \"table\" then\n" +
+            "        local raw = player.__instance or player\n" +
+            "        if type(raw) == \"userdata\" then\n" +
+            "            local ok, res = pcall(function() return tostring(raw:getUUID()) end)\n" +
+            "            if ok then uuid = res else\n" +
+            "                local ok2, res2 = pcall(function() return tostring(raw:getUUIDString()) end)\n" +
+            "                if ok2 then uuid = res2 end\n" +
+            "            end\n" +
+            "        end\n" +
+            "    end\n" +
+            "    self._javaService:FireClient(self.Name, uuid, args)\n" +
+            "end\n" +
+            "function RemoteEvent:FireAllClients(...)\n" +
+            "    local args = {...}\n" +
+            "    self._javaService:FireAllClients(self.Name, args)\n" +
+            "end\n" +
+            "function RemoteEvent:FireServer(...)\n" +
+            "    local args = {...}\n" +
+            "    self._javaService:FireServer(self.Name, args)\n" +
+            "end\n" +
+            "_G.RemoteEvent = RemoteEvent\n" +
+            "\n" +
+            "local RemoteFunction = {}\n" +
+            "RemoteFunction.__index = RemoteFunction\n" +
+            "function RemoteFunction:new(name, javaNetworkService)\n" +
+            "    local self = setmetatable({}, RemoteFunction)\n" +
+            "    self.Name = name\n" +
+            "    self.OnServerInvoke = nil\n" +
+            "    self.OnClientInvoke = nil\n" +
+            "    self._javaService = javaNetworkService\n" +
+            "    return self\n" +
+            "end\n" +
+            "function RemoteFunction:InvokeServer(...)\n" +
+            "    local args = {...}\n" +
+            "    return self._javaService:InvokeServer(self.Name, args)\n" +
+            "end\n" +
+            "function RemoteFunction:InvokeClient(player, ...)\n" +
+            "    local args = {...}\n" +
+            "    local uuid = \"\"\n" +
+            "    if type(player) == \"string\" then uuid = player end\n" +
+            "    return self._javaService:InvokeClient(self.Name, uuid, args)\n" +
+            "end\n" +
+            "_G.RemoteFunction = RemoteFunction\n" +
+            "\n" +
+            "local UserInputService = {\n" +
+            "    InputBegan = Signal.new(),\n" +
+            "    InputEnded = Signal.new()\n" +
+            "}\n" +
+            "function UserInputService:IsKeyDown(keyCode)\n" +
+            "    return false -- Handled client-side via PAL\n" +
+            "end\n" +
+            "_G.UserInputService = UserInputService\n" +
+            "\n" +
+            "local RunService = {\n" +
+            "    Heartbeat = Signal.new(),\n" +
+            "    RenderStepped = Signal.new(),\n" +
+            "    Stepped = Signal.new()\n" +
+            "}\n" +
+            "function RunService:IsServer()\n" +
+            "    return true\n" +
+            "end\n" +
+            "function RunService:IsClient()\n" +
+            "    return false\n" +
+            "end\n" +
+            "_G.RunService = RunService\n" +
+            "\n" +
+            "local CFrame = {}\n" +
+            "CFrame.__index = CFrame\n" +
+            "function CFrame.new(x, y, z)\n" +
+            "    local self = setmetatable({}, CFrame)\n" +
+            "    if type(x) == \"table\" and x.X then\n" +
+            "        self.Position = x\n" +
+            "    else\n" +
+            "        self.Position = Vector3.new(x or 0, y or 0, z or 0)\n" +
+            "    end\n" +
+            "    self.LookVector = Vector3.new(0, 0, -1)\n" +
+            "    self.UpVector = Vector3.new(0, 1, 0)\n" +
+            "    return self\n" +
+            "end\n" +
+            "function CFrame.lookAt(eye, target)\n" +
+            "    local cf = CFrame.new(eye)\n" +
+            "    if eye and target then\n" +
+            "        local dir = (target - eye).Unit\n" +
+            "        cf.LookVector = dir\n" +
+            "    end\n" +
+            "    return cf\n" +
+            "end\n" +
+            "_G.CFrame = CFrame\n" +
+            "\n" +
+            "local TweenInfo = {}\n" +
+            "TweenInfo.__index = TweenInfo\n" +
+            "function TweenInfo.new(time, easingStyle, easingDirection, repeatCount, reverses, delayTime)\n" +
+            "    local self = setmetatable({}, TweenInfo)\n" +
+            "    self.Time = time or 1.0\n" +
+            "    self.EasingStyle = easingStyle or \"Linear\"\n" +
+            "    self.EasingDirection = easingDirection or \"Out\"\n" +
+            "    self.RepeatCount = repeatCount or 0\n" +
+            "    self.Reverses = reverses or false\n" +
+            "    self.DelayTime = delayTime or 0\n" +
+            "    return self\n" +
+            "end\n" +
+            "_G.TweenInfo = TweenInfo\n" +
+            "\n" +
+            "local TweenService = {}\n" +
+            "function TweenService:Create(instance, tweenInfo, propertyTable)\n" +
+            "    local tween = {}\n" +
+            "    tween.Completed = Signal.new()\n" +
+            "    function tween:Play()\n" +
+            "        task.spawn(function()\n" +
+            "            if tweenInfo and tweenInfo.DelayTime and tweenInfo.DelayTime > 0 then\n" +
+            "                task.wait(tweenInfo.DelayTime)\n" +
+            "            end\n" +
+            "            if propertyTable then\n" +
+            "                for prop, val in pairs(propertyTable) do\n" +
+            "                    pcall(function() instance[prop] = val end)\n" +
+            "                end\n" +
+            "            end\n" +
+            "            tween.Completed:Fire()\n" +
+            "        end)\n" +
+            "    end\n" +
+            "    function tween:Stop() end\n" +
+            "    function tween:Pause() end\n" +
+            "    return tween\n" +
+            "end\n" +
+            "_G.TweenService = TweenService\n" +
+            "\n" +
+            "local RaycastParams = {}\n" +
+            "RaycastParams.__index = RaycastParams\n" +
+            "function RaycastParams.new()\n" +
+            "    local self = setmetatable({}, RaycastParams)\n" +
+            "    self.FilterDescendantsInstances = {}\n" +
+            "    self.FilterType = \"Exclude\"\n" +
+            "    return self\n" +
+            "end\n" +
+            "_G.RaycastParams = RaycastParams\n" +
+            "\n" +
+            "local Players = { LocalPlayer = nil }\n" +
+            "_G.Players = Players\n",
+            "ROBLOX_BOOTSTRAP"
+        );
+    }
+
+    @Override
+    public void executeString(String code, String name) {
+        try (InputStream stream = new java.io.ByteArrayInputStream(code.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+            LuaClosure closure = LoadState.load(state, stream, name, state.globals());
+            org.squiddev.cobalt.function.Dispatch.call(state, closure);
+        } catch (Throwable e) {
+            AsyncFileLogger.get().error("BOOTSTRAP", "Error running bootstrap script " + name + ": " + e.getMessage(), state);
+        }
     }
 
     private LuaUserdata createItemUserdata(ItemCount ic) {

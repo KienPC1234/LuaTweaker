@@ -134,6 +134,7 @@ public class EntitiesLuaBinding {
 
     public static ILuaTable createEntityLuaTable(ILuaEngine engine, IEntity entity) {
         ILuaTable table = engine.createTable();
+        table.rawset("__entity", engine.wrapUserdata(entity));
         table.rawset("getType", args -> engine.wrapString(entity.getType()));
         table.rawset("getName", args -> engine.wrapString(entity.getName()));
         table.rawset("getHealth", args -> engine.wrapNumber(entity.getHealth()));
@@ -203,6 +204,38 @@ public class EntitiesLuaBinding {
             return null;
         });
 
+        table.rawset("shootProjectile", args -> {
+            if (args.length >= 2) {
+                String projectileType = args[1].asString();
+                double speed = args.length >= 3 ? args[2].asDouble() : 1.5;
+                double inaccuracy = args.length >= 4 ? args[3].asDouble() : 0.0;
+                com.luatweaker.api.pal.Platform.get().shootProjectile(entity, projectileType, speed, inaccuracy);
+            }
+            return null;
+        });
+
+        table.rawset("shootProjectileAt", args -> {
+            if (args.length >= 3) {
+                String projectileType = args[1].asString();
+                com.luatweaker.api.entity.IEntity target = getEntityFromTable(args[2]);
+                double speed = args.length >= 4 ? args[3].asDouble() : 1.5;
+                if (target != null) {
+                    com.luatweaker.api.pal.Platform.get().shootProjectileAt(entity, projectileType, target, speed);
+                }
+            }
+            return null;
+        });
+
+        table.rawset("playAnimation", args -> {
+            if (args.length >= 2) {
+                String animName = args[1].asString();
+                double speed = args.length >= 3 ? args[2].asDouble() : 1.0;
+                double transition = args.length >= 4 ? args[3].asDouble() : 0.1;
+                com.luatweaker.api.pal.Platform.get().playAnimation(entity, animName, speed, transition);
+            }
+            return null;
+        });
+
         table.rawset("teleport", args -> {
             if (args.length >= 4) entity.teleport(args[1].asDouble(), args[2].asDouble(), args[3].asDouble());
             return null;
@@ -265,5 +298,18 @@ public class EntitiesLuaBinding {
         table.rawset("remove", args -> { entity.remove(); return null; });
 
         return table;
+    }
+
+    public static com.luatweaker.api.entity.IEntity getEntityFromTable(com.luatweaker.api.vm.ILuaValue tableVal) {
+        if (tableVal.isTable()) {
+            com.luatweaker.api.vm.ILuaValue entityVal = tableVal.asTable().rawget("__entity");
+            if (entityVal != null && !entityVal.isNil()) {
+                Object obj = entityVal.toJavaObject();
+                if (obj instanceof com.luatweaker.api.entity.IEntity entity) {
+                    return entity;
+                }
+            }
+        }
+        return null;
     }
 }

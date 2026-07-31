@@ -46,6 +46,12 @@ public class LuaTweakerMod {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LuaTweakerMod.class);
 
+    private static ILuaEngine activeEngine;
+
+    public static ILuaEngine getActiveEngine() {
+        return activeEngine;
+    }
+
     /** The command registry; held as a field so external modules can register commands before build(). */
     private final LuaTweakerCommandRegistry commandRegistry;
 
@@ -53,7 +59,14 @@ public class LuaTweakerMod {
     private final com.luatweaker.content.StorageServiceImpl storageService;
     private final com.luatweaker.content.DatapackServiceImpl datapackService;
 
+    private static LuaTweakerMod INSTANCE;
+
+    public static LuaTweakerMod getInstance() {
+        return INSTANCE;
+    }
+
     public LuaTweakerMod(IEventBus modEventBus, ModContainer modContainer) {
+        INSTANCE = this;
         System.err.println("LuaTweakerMod: static init at " + new java.util.Date());
         LOGGER.info("LuaTweaker constructor starting");
         LOGGER.info("CWD: {}", new File(".").getAbsolutePath());
@@ -85,15 +98,15 @@ public class LuaTweakerMod {
         // Register Mod Event Bus listeners for Content Registry and Asset Pack Finder
         modEventBus.register(new com.luatweaker.platform.content.NeoForgeContentRegistry(contentService));
         modEventBus.register(new com.luatweaker.platform.content.LuaAssetsPackFinder(luaDir, datapackService, contentService));
+        modEventBus.addListener(LuaTweakerMod::registerPayloads);
+        modEventBus.addListener(this::onClientSetup);
 
         // Register Game Event Bus listeners (gameplay events)
         NeoForge.EVENT_BUS.register(new com.luatweaker.platform.content.NeoForgeContentRegistry.BossBarTickHandler(contentService));
+        NeoForge.EVENT_BUS.register(new com.luatweaker.platform.event.NeoForgeGameEventListener());
 
         // Build the command registry (core commands auto-registered inside)
         commandRegistry = new LuaTweakerCommandRegistry(luaDir);
-
-        // Register all NeoForge event listeners (game event bus)
-        NeoForge.EVENT_BUS.register(this);
     }
 
     private void runStartupScripts(File luaDir) {
@@ -115,6 +128,46 @@ public class LuaTweakerMod {
                 }
             }
         }
+    }
+
+    public void runClientScripts(File luaDir) {
+        File clientDir = new File(luaDir, "client");
+        if (!clientDir.exists() || !clientDir.isDirectory()) return;
+
+        ILuaEngine engine = activeEngine != null ? activeEngine : new CobaltLuaEngine(isDebugEnabled());
+        activeEngine = engine;
+
+        com.luatweaker.client.ClientServiceImpl clientService = new com.luatweaker.client.ClientServiceImpl();
+        com.luatweaker.client.ClientLuaBinding.registerBindings(engine, clientService);
+
+        com.luatweaker.tasks.TaskServiceImpl taskService = new com.luatweaker.tasks.TaskServiceImpl();
+        com.luatweaker.tasks.TaskLuaBinding.registerBindings(engine, taskService);
+
+        com.luatweaker.interception.InterceptionServiceImpl interceptionService = new com.luatweaker.interception.InterceptionServiceImpl();
+        com.luatweaker.interception.InterceptionLuaBinding.registerBindings(engine, interceptionService);
+
+        com.luatweaker.math.MathLuaBinding.registerBindings(engine);
+        com.luatweaker.network.NetworkServiceImpl clientNetworkService = new com.luatweaker.network.NetworkServiceImpl(engine);
+        com.luatweaker.network.NetworkLuaBinding.registerBindings(engine, clientNetworkService);
+        com.luatweaker.events.EventLuaBinding.registerBindings(engine);
+        com.luatweaker.interaction.InteractionLuaBinding.registerBindings(engine);
+
+        File[] files = clientDir.listFiles((dir, name) -> name.endsWith(".lua"));
+        if (files != null) {
+            Arrays.sort(files, Comparator.comparing(File::getName));
+            for (File f : files) {
+                com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SCRIPT_LOAD, "Executing client script: " + f.getName());
+                try {
+                    engine.executeScript(f, "CLIENT");
+                } catch (Exception e) {
+                    LOGGER.error("Failed to execute client script: " + f.getName(), e);
+                }
+            }
+        }
+    }
+
+    private void onClientSetup(final net.neoforged.fml.event.lifecycle.FMLClientSetupEvent event) {
+        runClientScripts(getLuaDirectory());
     }
 
     /** Expose the registry so addon modules can call commandRegistry.register(myCmd) during setup. */
@@ -254,6 +307,9 @@ public class LuaTweakerMod {
                     com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.STUB_GEN, "Generating autocomplete stubs...");
                     LtvmStubGenerator stubGen = new LtvmStubGenerator();
                     stubGen.registerService("Recipes", com.luatweaker.api.recipe.IRecipeManagerService.class);
+                    stubGen.registerService("AIGoals", com.luatweaker.api.entity.ai.IAIGoalService.class);
+                    stubGen.registerService("WorldAction", com.luatweaker.api.entity.ai.IWorldActionService.class);
+                    stubGen.registerService("Interaction", com.luatweaker.api.interaction.IInteractionService.class);
                     LtvmStubExporter.exportToWorkspace(new File(".").toPath(), stubGen);
                 }
             }
@@ -279,13 +335,34 @@ public class LuaTweakerMod {
             stubGen.registerService("Startup", com.luatweaker.api.content.IContentService.class);
             stubGen.registerService("Storage", com.luatweaker.api.content.IStorageService.class);
             stubGen.registerService("Datapack", com.luatweaker.api.content.IDatapackService.class);
+            stubGen.registerService("AIGoals", com.luatweaker.api.entity.ai.IAIGoalService.class);
+            stubGen.registerService("WorldAction", com.luatweaker.api.entity.ai.IWorldActionService.class);
+            stubGen.registerService("Interaction", com.luatweaker.api.interaction.IInteractionService.class);
+            stubGen.registerService("Events", com.luatweaker.api.event.IEventService.class);
+            stubGen.registerService("WorldStorage", com.luatweaker.api.storage.IRobloxStorageService.IDataStore.class);
+            stubGen.registerService("PlayerStorage", com.luatweaker.api.storage.IRobloxStorageService.class);
+            stubGen.registerService("SessionStorage", com.luatweaker.api.storage.IRobloxStorageService.IDataStore.class);
+            stubGen.registerService("NetworkService", com.luatweaker.api.network.IRocketNetworkService.class);
+            stubGen.registerService("Workspace", com.luatweaker.api.interaction.IInteractionService.class);
+            stubGen.registerService("EntityService", com.luatweaker.api.interaction.IInteractionService.class);
             LtvmStubExporter.exportToWorkspace(new File(".").toPath(), stubGen);
         }
 
         NeoForgeRecipeManager recipeManager = new NeoForgeRecipeManager();
         ILuaEngine engine = new CobaltLuaEngine(debugMode);
+        activeEngine = engine;
+
+        com.luatweaker.storage.StorageServiceImpl robloxStorage = new com.luatweaker.storage.StorageServiceImpl(engine);
+        com.luatweaker.network.NetworkServiceImpl networkService = new com.luatweaker.network.NetworkServiceImpl(engine);
 
         com.luatweaker.content.ContentLuaBinding.registerBindings(engine, contentService, storageService, datapackService);
+        com.luatweaker.entities.AIGoalLuaBinding.registerBindings(engine);
+        com.luatweaker.entities.WorldActionLuaBinding.registerBindings(engine);
+        com.luatweaker.interaction.InteractionLuaBinding.registerBindings(engine);
+        com.luatweaker.events.EventLuaBinding.registerBindings(engine);
+        com.luatweaker.math.MathLuaBinding.registerBindings(engine);
+        com.luatweaker.storage.StorageLuaBinding.registerBindings(engine, robloxStorage);
+        com.luatweaker.network.NetworkLuaBinding.registerBindings(engine, networkService);
 
         ILuaTable recipesTable = engine.createTable();
         RecipesLuaBinding.bind(recipesTable, recipeManager);
@@ -320,5 +397,63 @@ public class LuaTweakerMod {
         }
         com.luatweaker.api.log.LuaTweakerLog.get().stageEnd(com.luatweaker.api.log.LogStage.RELOAD, System.currentTimeMillis() - startTime);
         LOGGER.info("reloadServerRecipes completed in {}ms", System.currentTimeMillis() - startTime);
+    }
+
+    public static void registerPayloads(final net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent event) {
+        final net.neoforged.neoforge.network.registration.PayloadRegistrar registrar = event.registrar(MODID).versioned("1.0.0");
+        registrar.playBidirectional(
+            com.luatweaker.platform.network.LuaTweakerPayload.TYPE,
+            com.luatweaker.platform.network.LuaTweakerPayload.STREAM_CODEC,
+            (payload, context) -> {
+                context.enqueueWork(() -> {
+                    if (context.flow().isServerbound()) {
+                        net.minecraft.world.entity.player.Player player = context.player();
+                        if (player != null) {
+                            String playerUuid = player.getUUID().toString();
+                            ILuaEngine engine = activeEngine;
+                            if (engine != null) {
+                                Object netService = com.luatweaker.core.service.LuaServiceRegistry.get("NetworkService");
+                                if (netService instanceof com.luatweaker.network.NetworkServiceImpl ns) {
+                                    ILuaValue[] args = parseJsonToLua(engine, payload.dataJson());
+                                    ns.OnClientFired(payload.channelName(), playerUuid, args);
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        );
+    }
+
+    private static ILuaValue[] parseJsonToLua(ILuaEngine engine, String json) {
+        try {
+            com.google.gson.JsonArray array = com.google.gson.JsonParser.parseString(json).getAsJsonArray();
+            ILuaValue[] result = new ILuaValue[array.size()];
+            for (int i = 0; i < array.size(); i++) {
+                result[i] = parseElement(engine, array.get(i));
+            }
+            return result;
+        } catch (Exception e) {
+            return new ILuaValue[0];
+        }
+    }
+
+    private static ILuaValue parseElement(ILuaEngine engine, com.google.gson.JsonElement el) {
+        if (el == null || el.isJsonNull()) return engine.nilValue();
+        if (el.isJsonPrimitive()) {
+            com.google.gson.JsonPrimitive p = el.getAsJsonPrimitive();
+            if (p.isBoolean()) return engine.wrapBoolean(p.getAsBoolean());
+            if (p.isNumber()) return engine.wrapNumber(p.getAsDouble());
+            return engine.wrapString(p.getAsString());
+        }
+        if (el.isJsonObject()) {
+            ILuaTable table = engine.createTable();
+            com.google.gson.JsonObject obj = el.getAsJsonObject();
+            for (String key : obj.keySet()) {
+                table.rawset(key, parseElement(engine, obj.get(key)));
+            }
+            return table;
+        }
+        return engine.nilValue();
     }
 }

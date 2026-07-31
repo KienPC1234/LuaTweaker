@@ -7,5 +7,6 @@ java {
 }
 
 dependencies {
-    // Pure Java, no external dependencies
+    // Pure Java, no external runtime dependencies, annotations exposed to consumers transitively
+    api 'org.jetbrains:annotations:24.1.0'
 }
