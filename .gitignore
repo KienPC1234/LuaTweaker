@@ -38,3 +38,7 @@ repo/
 !**/src/**/repo/
 
 neoforge-docs/
+
+### Logs ###
+*.log
+logs/

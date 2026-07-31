@@ -23,6 +23,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class EngineTest {
 
+    private static final long LOG_FLUSH_TIMEOUT_MS = 10_000;
+    private static final long LOG_FLUSH_POLL_INTERVAL_MS = 100;
+
     private static class MockRecipeService implements IRecipeManagerService {
         final List<String> removedOutputs = new ArrayList<>();
         final List<String> removedInputs = new ArrayList<>();
@@ -173,11 +176,10 @@ public class EngineTest {
         File script = findScriptFile("lua/test/syntax_error_test.lua");
         engine.executeScript(script, "TEST-SERVER");
 
-        // Wait for async file logger
-        Thread.sleep(1000);
+        // Wait for async file logger (poll instead of fixed sleep)
+        String logContent = awaitLogFlush(logFile);
 
         assertTrue(logFile.exists(), "Log file should be created");
-        String logContent = Files.readString(logFile.toPath());
         
         System.out.println("--- GATHERED FANCY LOG OUTPUT ---");
         System.out.println(logContent);
@@ -188,6 +190,21 @@ public class EngineTest {
         assertTrue(logContent.contains("Line Number : 5"));
         assertTrue(logContent.contains("Testing syntax error traceback representation"));
         assertTrue(logContent.contains("========"));
+    }
+
+    private String awaitLogFlush(File logFile) throws IOException, InterruptedException {
+        long deadline = System.currentTimeMillis() + LOG_FLUSH_TIMEOUT_MS;
+        String content = "";
+        while (System.currentTimeMillis() < deadline) {
+            if (logFile.exists()) {
+                content = Files.readString(logFile.toPath());
+                if (content.contains("LUA SYNTAX ERROR (COMPILE TIME)")) {
+                    return content;
+                }
+            }
+            Thread.sleep(LOG_FLUSH_POLL_INTERVAL_MS);
+        }
+        return content;
     }
 
     @Test

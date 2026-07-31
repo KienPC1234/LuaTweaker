@@ -10,7 +10,9 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -40,6 +42,7 @@ public class AsyncFileLogger implements ILuaTweakerLog {
     private static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm:ss");
     private static final SimpleDateFormat HEADER_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
     private static final String SEPARATOR = "─".repeat(72);
+    private static final int MAX_BATCH_SIZE = 100;
 
     private final File logFile;
 
@@ -215,23 +218,37 @@ public class AsyncFileLogger implements ILuaTweakerLog {
     }
 
     private void processQueue() {
+        ensureParentDir();
         while (running || !queue.isEmpty()) {
-            ensureParentDir();
-            try (PrintWriter writer = new PrintWriter(new FileWriter(logFile, true), true)) {
-                while (running || !queue.isEmpty()) {
-                    try {
-                        String line = queue.take();
-                        writer.println(line);
-                    } catch (InterruptedException e) {
-                        if (!running) break;
-                    }
+            List<String> batch = new ArrayList<>();
+            try {
+                batch.add(running ? queue.take() : queue.poll());
+                if (batch.get(0) == null) {
+                    break;
                 }
-            } catch (IOException e) {
-                System.err.println("[LuaTweaker] Logger write error: " + e.getMessage());
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException ignored) {}
+            } catch (InterruptedException e) {
+                if (!running) {
+                    continue;
+                }
             }
+            queue.drainTo(batch, MAX_BATCH_SIZE - batch.size());
+            writeBatch(batch);
+        }
+    }
+
+    private void writeBatch(List<String> lines) {
+        if (lines.isEmpty()) {
+            return;
+        }
+        try (PrintWriter writer = new PrintWriter(new FileWriter(logFile, true), true)) {
+            for (String line : lines) {
+                writer.println(line);
+            }
+        } catch (IOException e) {
+            System.err.println("[LuaTweaker] Logger write error: " + e.getMessage());
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException ignored) {}
         }
     }
 }
