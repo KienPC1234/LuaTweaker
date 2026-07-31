@@ -150,81 +150,97 @@ public class EntitiesLuaBinding {
     public static ILuaTable createEntityLuaTable(ILuaEngine engine, IEntity entity) {
         ILuaTable table = engine.createTable();
         table.rawset("__entity", engine.wrapUserdata(entity));
-        table.rawset("getType", args -> engine.wrapString(entity.getType()));
-        table.rawset("getName", args -> engine.wrapString(entity.getName()));
-        table.rawset("getHealth", args -> engine.wrapNumber(entity.getHealth()));
-        table.rawset("getMaxHealth", args -> engine.wrapNumber(entity.getMaxHealth()));
-        table.rawset("setHealth", args -> {
-            if (args.length >= 2) entity.setHealth((float) args[1].asDouble());
+
+        bindMethod(table, "getType", args -> engine.wrapString(entity.getType()));
+        bindMethod(table, "getName", args -> engine.wrapString(entity.getName()));
+        bindMethod(table, "getHealth", args -> engine.wrapNumber(entity.getHealth()));
+        bindMethod(table, "getMaxHealth", args -> engine.wrapNumber(entity.getMaxHealth()));
+
+        bindMethod(table, "setHealth", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) entity.setHealth((float) args[off].asDouble());
             return null;
         });
 
-        table.rawset("heal", args -> {
-            if (args.length >= 2) entity.heal((float) args[1].asDouble());
-            return null;
-        });
-        table.rawset("kill", args -> { entity.kill(); return null; });
-
-        table.rawset("damage", args -> {
-            if (args.length >= 2) entity.damage((float) args[1].asDouble());
-            return null;
-        });
-        table.rawset("hurt", args -> {
-            if (args.length >= 2) entity.damage((float) args[1].asDouble());
+        bindMethod(table, "heal", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) entity.heal((float) args[off].asDouble());
             return null;
         });
 
-        table.rawset("addEffect", args -> {
-            if (args.length >= 2) {
-                String effect = args[1].asString();
-                int duration = args.length >= 3 ? args[2].asInt() : 200;
-                int amp = args.length >= 4 ? args[3].asInt() : 0;
+        bindMethod(table, "kill", args -> { entity.kill(); return null; });
+
+        bindMethod(table, "damage", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) entity.damage((float) args[off].asDouble());
+            return null;
+        });
+        bindMethod(table, "hurt", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) entity.damage((float) args[off].asDouble());
+            return null;
+        });
+
+        bindMethod(table, "addEffect", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                String effect = args[off].asString();
+                int duration = args.length - off >= 2 ? args[off + 1].asInt() : 200;
+                int amp = args.length - off >= 3 ? args[off + 2].asInt() : 0;
                 entity.addEffect(effect, duration, amp);
             }
             return null;
         });
-        table.rawset("removeEffect", args -> {
-            if (args.length >= 2) entity.removeEffect(args[1].asString());
+
+        bindMethod(table, "removeEffect", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) entity.removeEffect(args[off].asString());
             return null;
         });
-        table.rawset("removeAllEffects", args -> { entity.removeAllEffects(); return null; });
-        table.rawset("hasEffect", args -> {
-            if (args.length >= 2) return engine.wrapBoolean(entity.hasEffect(args[1].asString()));
+        bindMethod(table, "removeAllEffects", args -> { entity.removeAllEffects(); return null; });
+
+        bindMethod(table, "hasEffect", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) return engine.wrapBoolean(entity.hasEffect(args[off].asString()));
             return engine.wrapBoolean(false);
         });
 
-        table.rawset("setIgniteSeconds", args -> {
-            if (args.length >= 2) entity.setIgniteSeconds(args[1].asInt());
+        bindMethod(table, "setIgniteSeconds", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) entity.setIgniteSeconds(args[off].asInt());
             return null;
         });
-        table.rawset("extinguish", args -> { entity.extinguish(); return null; });
+        bindMethod(table, "extinguish", args -> { entity.extinguish(); return null; });
 
-        table.rawset("playSound", args -> {
-            if (args.length >= 2) {
-                String soundId = args[1].asString();
-                float volume = args.length >= 3 ? (float) args[2].asDouble() : 1.0f;
-                float pitch  = args.length >= 4 ? (float) args[3].asDouble() : 1.0f;
+        bindMethod(table, "playSound", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                String soundId = args[off].asString();
+                float volume = args.length - off >= 2 ? (float) args[off + 1].asDouble() : 1.0f;
+                float pitch  = args.length - off >= 3 ? (float) args[off + 2].asDouble() : 1.0f;
                 entity.playSound(soundId, volume, pitch);
             }
             return null;
         });
 
-        table.rawset("spawnParticle", args -> {
-            if (args.length >= 2) {
-                String particleId = args[1].asString();
-                int count = args.length >= 3 ? args[2].asInt() : 1;
-                double speed = args.length >= 4 ? args[3].asDouble() : 0.0;
+        bindMethod(table, "spawnParticle", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                String particleId = args[off].asString();
+                int count = args.length - off >= 2 ? args[off + 1].asInt() : 1;
+                double speed = args.length - off >= 3 ? args[off + 2].asDouble() : 0.0;
                 entity.spawnParticle(particleId, count, speed);
             }
             return null;
         });
 
-        table.rawset("spawnEntity", args -> {
-            if (args.length >= 2) {
-                String entityId = args[1].asString();
-                double dx = args.length >= 3 ? args[2].asDouble() : 0.0;
-                double dy = args.length >= 4 ? args[3].asDouble() : 0.0;
-                double dz = args.length >= 5 ? args[4].asDouble() : 0.0;
+        bindMethod(table, "spawnEntity", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                String entityId = args[off].asString();
+                double dx = args.length - off >= 2 ? args[off + 1].asDouble() : 0.0;
+                double dy = args.length - off >= 3 ? args[off + 2].asDouble() : 0.0;
+                double dz = args.length - off >= 4 ? args[off + 3].asDouble() : 0.0;
                 com.luatweaker.api.entity.IEntity spawned = entity.spawnEntity(entityId, dx, dy, dz);
                 if (spawned != null) {
                     return createEntityLuaTable(engine, spawned);
@@ -385,6 +401,22 @@ public class EntitiesLuaBinding {
             }
         }
         return null;
+    }
+
+    public static void registerBindings(ILuaEngine engine) {
+        ILuaTable playersTable = engine.createTable();
+        ILuaFunction getPlayersFn = args -> {
+            java.util.List<com.luatweaker.api.entity.IPlayer> players = com.luatweaker.api.pal.Platform.get().getAllPlayers();
+            ILuaTable result = engine.createTable();
+            for (int i = 0; i < players.size(); i++) {
+                result.rawset(i + 1, createPlayerLuaTable(engine, players.get(i)));
+            }
+            return result;
+        };
+        playersTable.rawset("GetPlayers", getPlayersFn);
+        playersTable.rawset("getPlayers", getPlayersFn);
+        engine.registerService("Players", playersTable);
+        engine.registerGlobal("Players", playersTable);
     }
 
     private static void bindMethod(ILuaTable table, String name, ILuaFunction func) {

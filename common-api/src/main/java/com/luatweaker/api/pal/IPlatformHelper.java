@@ -60,6 +60,11 @@ public interface IPlatformHelper {
     @Nullable
     default com.luatweaker.api.entity.IPlayer getPlayer(@NotNull String uuid) { return null; }
 
+    default java.util.List<com.luatweaker.api.entity.IPlayer> getAllPlayers() { return java.util.List.of(); }
+
+    @Nullable
+    default Object spawnEntity(@NotNull String entityId, double x, double y, double z) { return null; }
+
     default java.io.File getStorageDirectory() { return new java.io.File("luatweaker/storage"); }
     default void sendPayloadPacket(String playerUuid, String channelName, String dataJson) {}
     default void broadcastPayloadPacket(String channelName, String dataJson) {}

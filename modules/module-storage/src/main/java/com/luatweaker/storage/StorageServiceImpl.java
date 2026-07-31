@@ -50,7 +50,9 @@ public class StorageServiceImpl implements IRobloxStorageService {
                         worldDocument.putAll(doc);
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.SYSTEM, "Failed to load world_storage.bson: " + e.getMessage());
+            }
         }
     }
 
@@ -61,7 +63,9 @@ public class StorageServiceImpl implements IRobloxStorageService {
             BsonBinaryWriter writer = new BsonBinaryWriter(buffer);
             new DocumentCodec().encode(writer, worldDocument, EncoderContext.builder().build());
             out.write(buffer.toByteArray());
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.SYSTEM, "Failed to save world_storage.bson: " + e.getMessage());
+        }
     }
 
     private void loadPlayerStorage() {
@@ -76,7 +80,9 @@ public class StorageServiceImpl implements IRobloxStorageService {
                         playerDocument.putAll(doc);
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.SYSTEM, "Failed to load player_storage.bson: " + e.getMessage());
+            }
         }
     }
 
@@ -87,7 +93,9 @@ public class StorageServiceImpl implements IRobloxStorageService {
             BsonBinaryWriter writer = new BsonBinaryWriter(buffer);
             new DocumentCodec().encode(writer, playerDocument, EncoderContext.builder().build());
             out.write(buffer.toByteArray());
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.SYSTEM, "Failed to save player_storage.bson: " + e.getMessage());
+        }
     }
 
     @Override

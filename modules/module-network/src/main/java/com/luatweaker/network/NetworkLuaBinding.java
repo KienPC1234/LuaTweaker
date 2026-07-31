@@ -21,6 +21,9 @@ public class NetworkLuaBinding {
         });
 
         engine.registerService("NetworkService", network);
+        engine.registerService("Network", network);
+        engine.registerService("NetworkServiceImpl", networkService);
         engine.registerGlobal("NetworkService", network);
+        engine.registerGlobal("Network", network);
     }
 }

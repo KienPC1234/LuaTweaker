@@ -227,7 +227,12 @@ public class NeoForgeInteractableEntity implements IInteractableEntity {
         try {
             net.minecraft.nbt.CompoundTag tag = net.minecraft.nbt.TagParser.parseTag(nbtJson);
             entity.getPersistentData().merge(tag);
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(
+                com.luatweaker.api.log.LogStage.SYSTEM,
+                "Failed to parse NBT JSON for entity " + entity.getUUID() + ": " + e.getMessage()
+            );
+        }
     }
 
     @Override

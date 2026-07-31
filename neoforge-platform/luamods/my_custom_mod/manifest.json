@@ -1,0 +1,9 @@
+{
+  "id": "my_custom_mod",
+  "name": "My Custom Mod",
+  "author": "KienDev",
+  "version": "1.0.0",
+  "main": "main.lua",
+  "dependencies": [],
+  "permissions": ["runtime.bytecode_hook"]
+}

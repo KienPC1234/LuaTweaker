@@ -1,9 +1,21 @@
 ────────────────────────────────────────────────────────────────────────
-  LuaTweaker Log — 2026-07-31 16:55:22
+  LuaTweaker Log — 2026-07-31 22:57:10
 ────────────────────────────────────────────────────────────────────────
-16:55:22 [TEST        ] [INFO] Successfully executed script: test_script_6602763740045214086.lua
-16:55:22 [TEST        ] [INFO] Successfully executed script: test_script_1972541850845678358.lua
-16:55:22 [TEST        ] [INFO] Successfully executed script: test_script_7964149848279358986.lua
-16:55:22 [TEST        ] [INFO] Successfully executed script: test_script_9842475441209923897.lua
-16:55:22 [TEST        ] [INFO] Successfully executed script: test_script_10606532879358151300.lua
-16:55:22 [TEST        ] [INFO] Successfully executed script: test_script_411791442965119296.lua
+22:57:11 [PRINT       ] ([string "/lua/luatweak..."]:384) [INFO] [LuaTweaker] System Bootstrap Library loaded successfully!
+22:57:11 [SYSTEM      ] Successfully executed bootstrap resource: /lua/luatweaker_bootstrap.lua
+22:57:11 [TEST        ] [INFO] Successfully executed script: test_script_9682078141872061104.lua
+22:57:11 [PRINT       ] ([string "/lua/luatweak..."]:384) [INFO] [LuaTweaker] System Bootstrap Library loaded successfully!
+22:57:11 [SYSTEM      ] Successfully executed bootstrap resource: /lua/luatweaker_bootstrap.lua
+22:57:11 [TEST        ] [INFO] Successfully executed script: test_script_15032952808764791971.lua
+22:57:11 [PRINT       ] ([string "/lua/luatweak..."]:384) [INFO] [LuaTweaker] System Bootstrap Library loaded successfully!
+22:57:11 [SYSTEM      ] Successfully executed bootstrap resource: /lua/luatweaker_bootstrap.lua
+22:57:11 [TEST        ] [INFO] Successfully executed script: test_script_14905189120188151297.lua
+22:57:11 [PRINT       ] ([string "/lua/luatweak..."]:384) [INFO] [LuaTweaker] System Bootstrap Library loaded successfully!
+22:57:11 [SYSTEM      ] Successfully executed bootstrap resource: /lua/luatweaker_bootstrap.lua
+22:57:11 [TEST        ] [INFO] Successfully executed script: test_script_2755040521763346810.lua
+22:57:11 [PRINT       ] ([string "/lua/luatweak..."]:384) [INFO] [LuaTweaker] System Bootstrap Library loaded successfully!
+22:57:11 [SYSTEM      ] Successfully executed bootstrap resource: /lua/luatweaker_bootstrap.lua
+22:57:11 [TEST        ] [INFO] Successfully executed script: test_script_4274401055191309276.lua
+22:57:11 [PRINT       ] ([string "/lua/luatweak..."]:384) [INFO] [LuaTweaker] System Bootstrap Library loaded successfully!
+22:57:11 [SYSTEM      ] Successfully executed bootstrap resource: /lua/luatweaker_bootstrap.lua
+22:57:11 [TEST        ] [INFO] Successfully executed script: test_script_15289994842504525644.lua

@@ -37,6 +37,17 @@ public class ClientLuaBinding {
         });
         clientTable.rawset("RegisterKeyBind", clientTable.rawget("registerKeyBinding"));
         clientTable.rawset("RegisterKeyBinding", clientTable.rawget("registerKeyBinding"));
+
+        keyBindService.setKeyBindListener((id, payload) -> {
+            String script = String.format(
+                "if Client and Client.OnKeyBindPressed then Client.OnKeyBindPressed:Fire('%s', '%s') end",
+                id, payload != null ? payload : ""
+            );
+            try {
+                engine.executeString(script, "KeyBindTrigger");
+            } catch (Exception ignored) {}
+        });
+
         globals.rawset("Client", clientTable);
 
         ILuaValue uisValue = globals.rawget("UserInputService");
@@ -102,14 +113,25 @@ public class ClientLuaBinding {
             }
             return null;
         });
+        globals.rawset("ClientEffects", clientEffects);
+        engine.registerService("ClientEffects", clientEffects);
 
         // 4. Roblox TweenService
         ILuaTable tweenService = engine.createTable();
         tweenService.rawset("Create", args -> {
             ILuaTable tween = engine.createTable();
-            tween.rawset("Play", a -> null);
-            tween.rawset("Pause", a -> null);
-            tween.rawset("Cancel", a -> null);
+            tween.rawset("Play", a -> {
+                com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM, "[TweenService] Play executed");
+                return null;
+            });
+            tween.rawset("Pause", a -> {
+                com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM, "[TweenService] Pause executed");
+                return null;
+            });
+            tween.rawset("Cancel", a -> {
+                com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM, "[TweenService] Cancel executed");
+                return null;
+            });
             return tween;
         });
         globals.rawset("TweenService", tweenService);

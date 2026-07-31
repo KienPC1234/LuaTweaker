@@ -39,14 +39,26 @@ public class DynamicKeyMappingHandler {
     }
 
     public static void onClientTick(ClientTickEvent.Post event) {
-        for (KeyMappingRecord record : REGISTERED_MAPPINGS.values()) {
+        for (Map.Entry<String, KeyMappingRecord> mapEntry : REGISTERED_MAPPINGS.entrySet()) {
+            String keyBindId = mapEntry.getKey();
+            KeyMappingRecord record = mapEntry.getValue();
             while (record.mapping().consumeClick()) {
-                if (Platform.isInitialized() && record.payload() != null && !record.payload().isEmpty()) {
+                if (Platform.isInitialized()) {
                     com.luatweaker.api.log.LuaTweakerLog.get().info(
                             com.luatweaker.api.log.LogStage.SYSTEM,
-                            "[KeyMapping] Key Pressed! Sending payload: " + record.payload()
+                            "[KeyMapping] KeyMapping Triggered: '" + keyBindId + "' (Payload: " + record.payload() + ")"
                     );
-                    Platform.get().sendPayloadPacketToServer(record.payload(), "[]");
+
+                    // 1. Trigger Client-side Lua Signal by KeyMapping ID
+                    Object service = LuaServiceRegistry.get("KeyBindService");
+                    if (service instanceof IKeyBindService keyBindService) {
+                        keyBindService.triggerKeyBind(keyBindId, record.payload());
+                    }
+
+                    // 2. If payload is present, also send payload packet to server
+                    if (record.payload() != null && !record.payload().isEmpty()) {
+                        Platform.get().sendPayloadPacketToServer(record.payload(), "[]");
+                    }
                 }
             }
         }

@@ -86,8 +86,13 @@ Driven by LTVM (LuaTweaker VM), it provides high-performance recipe manipulation
     type="required"
     # This version range declares a minimum of the current minecraft version up to but not including the next major version
     versionRange="${minecraft_version_range}"
+# Optional soft dependency on JEI (Just Enough Items)
+[[dependencies.${mod_id}]]
+    modId="jei"
+    type="optional"
+    versionRange="[19.0.0,)"
     ordering="NONE"
-    side="BOTH"
+    side="CLIENT"
 
 # Features are specific properties of the game environment, that you may want to declare you require. This example declares
 # that your mod requires GL version 3.2 or higher. Other features will be added. They are side aware so declaring this won't

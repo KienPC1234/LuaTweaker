@@ -238,6 +238,12 @@ public class NeoForgePlatformHelper implements IPlatformHelper {
 
     @Override
     @Nullable
+    public Object spawnEntity(@NotNull String entityId, double x, double y, double z) {
+        return com.luatweaker.platform.interaction.EntityInteractionHelper.spawnEntity(entityId, x, y, z);
+    }
+
+    @Override
+    @Nullable
     public IInteractableItem getInteractableItem(@NotNull Object entityOrBlock, int slot) {
         return new NeoForgeInteractableItem(entityOrBlock, slot);
     }
@@ -285,7 +291,24 @@ public class NeoForgePlatformHelper implements IPlatformHelper {
     }
 
     @Override
+    public java.util.List<com.luatweaker.api.entity.IPlayer> getAllPlayers() {
+        MinecraftServer server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (server != null) {
+            java.util.List<com.luatweaker.api.entity.IPlayer> list = new java.util.ArrayList<>();
+            for (net.minecraft.server.level.ServerPlayer player : server.getPlayerList().getPlayers()) {
+                list.add(new com.luatweaker.platform.entity.NeoForgePlayerWrapper(player));
+            }
+            return list;
+        }
+        return java.util.List.of();
+    }
+
+    @Override
     public void sendPayloadPacket(String playerUuid, String channelName, String dataJson) {
+        com.luatweaker.api.log.LuaTweakerLog.get().info(
+                com.luatweaker.api.log.LogStage.SYSTEM,
+                "[Network] [SERVER -> CLIENT] Sending packet '" + channelName + "' to player UUID: " + playerUuid
+        );
         MinecraftServer server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
         if (server != null) {
             try {
@@ -295,18 +318,28 @@ public class NeoForgePlatformHelper implements IPlatformHelper {
                     com.luatweaker.platform.network.LuaTweakerPayload payload = new com.luatweaker.platform.network.LuaTweakerPayload(channelName, dataJson);
                     net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player, payload);
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.SYSTEM, "Failed sendPayloadPacket: " + e.getMessage());
+            }
         }
     }
 
     @Override
     public void broadcastPayloadPacket(String channelName, String dataJson) {
+        com.luatweaker.api.log.LuaTweakerLog.get().info(
+                com.luatweaker.api.log.LogStage.SYSTEM,
+                "[Network] [SERVER -> ALL CLIENTS] Broadcasting packet '" + channelName + "'"
+        );
         com.luatweaker.platform.network.LuaTweakerPayload payload = new com.luatweaker.platform.network.LuaTweakerPayload(channelName, dataJson);
         net.neoforged.neoforge.network.PacketDistributor.sendToAllPlayers(payload);
     }
 
     @Override
     public void sendPayloadPacketToServer(String channelName, String dataJson) {
+        com.luatweaker.api.log.LuaTweakerLog.get().info(
+                com.luatweaker.api.log.LogStage.SYSTEM,
+                "[Network] [CLIENT -> SERVER] Sending packet '" + channelName + "' with payload: " + dataJson
+        );
         com.luatweaker.platform.network.LuaTweakerPayload payload = new com.luatweaker.platform.network.LuaTweakerPayload(channelName, dataJson);
         net.neoforged.neoforge.network.PacketDistributor.sendToServer(payload);
     }

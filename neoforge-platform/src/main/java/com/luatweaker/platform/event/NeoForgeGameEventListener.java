@@ -174,7 +174,12 @@ public class NeoForgeGameEventListener {
             if (tickFn != null && !tickFn.isNil() && tickFn.isFunction()) {
                 try {
                     engine.callFunction(tickFn);
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    com.luatweaker.api.log.LuaTweakerLog.get().error(
+                        com.luatweaker.api.log.LogStage.SYSTEM,
+                        "[Task Tick Error] Exception running task._tick: " + e.getMessage()
+                    );
+                }
             }
         }
     }

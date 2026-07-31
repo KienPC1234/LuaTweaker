@@ -46,6 +46,11 @@ public class AsyncFileLogger implements ILuaTweakerLog {
     private AsyncFileLogger() {
         this.logFile = new File("logs/luatweaker/latest.log");
         ensureParentDir();
+        try (PrintWriter writer = new PrintWriter(new FileWriter(logFile, false))) {
+            writer.println(SEPARATOR);
+            writer.println("  LuaTweaker Log — " + HEADER_DATE_FORMAT.format(new Date()));
+            writer.println(SEPARATOR);
+        } catch (Exception ignored) {}
 
         this.workerThread = new Thread(this::processQueue, "LuaTweaker-AsyncLogger");
         this.workerThread.setDaemon(true);
@@ -63,6 +68,29 @@ public class AsyncFileLogger implements ILuaTweakerLog {
 
     public String getLogFile() { return this.logFile.getAbsolutePath(); }
 
+    public void initModLog(String modId) {
+        if (modId == null || modId.isBlank()) return;
+        File modsLogDir = new File("logs/luatweaker/mods");
+        if (!modsLogDir.exists()) modsLogDir.mkdirs();
+        File modLogFile = new File(modsLogDir, modId + ".log");
+        try (PrintWriter writer = new PrintWriter(new FileWriter(modLogFile, false))) {
+            writer.println("========================================================================");
+            writer.println("  LuaMod Dedicated Log: " + modId + " — " + HEADER_DATE_FORMAT.format(new Date()));
+            writer.println("========================================================================");
+        } catch (Exception ignored) {}
+    }
+
+    public void logMod(String modId, String level, String message) {
+        if (modId == null || modId.isBlank()) return;
+        File modsLogDir = new File("logs/luatweaker/mods");
+        if (!modsLogDir.exists()) modsLogDir.mkdirs();
+        File modLogFile = new File(modsLogDir, modId + ".log");
+        try (PrintWriter writer = new PrintWriter(new FileWriter(modLogFile, true))) {
+            String ts = TIME_FORMAT.format(new Date());
+            writer.printf("%s [%s] %s%n", ts, level.trim(), message != null ? message : "");
+        } catch (Exception ignored) {}
+    }
+
     // ── ILuaTweakerLog implementation ─────────────────────────────────────
 
     @Override
@@ -78,6 +106,16 @@ public class AsyncFileLogger implements ILuaTweakerLog {
     @Override
     public void error(LogStage stage, String message) {
         enqueue(stage, "ERROR", null, -1, message);
+    }
+
+    public void info(LogStage stage, String message, LuaState state) {
+        String fileLine = resolveFileLine(state);
+        enqueue(stage, "INFO ", fileLine, -1, message);
+    }
+
+    public void error(LogStage stage, String message, LuaState state) {
+        String fileLine = resolveFileLine(state);
+        enqueue(stage, "ERROR", fileLine, -1, message);
     }
 
     @Override
@@ -179,10 +217,7 @@ public class AsyncFileLogger implements ILuaTweakerLog {
     private void processQueue() {
         while (running || !queue.isEmpty()) {
             ensureParentDir();
-            try (PrintWriter writer = new PrintWriter(new FileWriter(logFile, false), true)) {
-                writer.println(SEPARATOR);
-                writer.println("  LuaTweaker Log — " + HEADER_DATE_FORMAT.format(new Date()));
-                writer.println(SEPARATOR);
+            try (PrintWriter writer = new PrintWriter(new FileWriter(logFile, true), true)) {
                 while (running || !queue.isEmpty()) {
                     try {
                         String line = queue.take();

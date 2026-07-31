@@ -61,11 +61,18 @@ public final class EntityInteractionHelper {
             living.swing(net.minecraft.world.InteractionHand.MAIN_HAND, true);
             net.minecraft.world.level.Level level = living.level();
             if (level instanceof ServerLevel serverLevel) {
+                net.minecraft.world.phys.Vec3 look = living.getLookAngle();
+                net.minecraft.world.phys.Vec3 spawnPos = living.getEyePosition().add(look.scale(1.2));
                 net.minecraft.world.entity.projectile.Projectile projectile = createProjectile(serverLevel, living, projectileType);
                 if (projectile != null) {
                     projectile.setOwner(living);
+                    projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
                     projectile.shootFromRotation(living, living.getXRot(), living.getYRot(), 0.0F, (float) speed, (float) inaccuracy);
                     serverLevel.addFreshEntity(projectile);
+                    com.luatweaker.api.log.LuaTweakerLog.get().info(
+                        com.luatweaker.api.log.LogStage.SYSTEM,
+                        "[Projectile] Fired projectile '" + projectileType + "' at pos (" + String.format("%.2f, %.2f, %.2f", spawnPos.x, spawnPos.y, spawnPos.z) + ") with speed " + speed
+                    );
                 }
             }
         }
@@ -76,12 +83,15 @@ public final class EntityInteractionHelper {
             living.swing(net.minecraft.world.InteractionHand.MAIN_HAND, true);
             net.minecraft.world.level.Level level = living.level();
             if (level instanceof ServerLevel serverLevel) {
+                net.minecraft.world.phys.Vec3 look = living.getLookAngle();
+                net.minecraft.world.phys.Vec3 spawnPos = living.getEyePosition().add(look.scale(1.2));
                 net.minecraft.world.entity.projectile.Projectile projectile = createProjectile(serverLevel, living, projectileType);
                 if (projectile != null) {
                     projectile.setOwner(living);
-                    double dx = targetLiving.getX() - living.getX();
-                    double dy = targetLiving.getY(0.5) - living.getY(0.5);
-                    double dz = targetLiving.getZ() - living.getZ();
+                    projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
+                    double dx = targetLiving.getX() - spawnPos.x;
+                    double dy = targetLiving.getY(0.5) - spawnPos.y;
+                    double dz = targetLiving.getZ() - spawnPos.z;
                     projectile.shoot(dx, dy, dz, (float) speed, 1.0F);
                     serverLevel.addFreshEntity(projectile);
                 }
@@ -90,12 +100,12 @@ public final class EntityInteractionHelper {
     }
 
     private static net.minecraft.world.entity.projectile.Projectile createProjectile(ServerLevel level, net.minecraft.world.entity.LivingEntity shooter, String type) {
-        net.minecraft.world.phys.Vec3 look = shooter.getLookAngle();
+        net.minecraft.world.phys.Vec3 look = shooter.getLookAngle().scale(0.5);
         if (type.contains("dragon_fireball")) {
             return new net.minecraft.world.entity.projectile.DragonFireball(level, shooter, look);
         } else if (type.contains("wither_skull")) {
             return new net.minecraft.world.entity.projectile.WitherSkull(level, shooter, look);
-        } else if (type.contains("small_fireball")) {
+        } else if (type.contains("small_fireball") || type.contains("ruby_orb")) {
             return new net.minecraft.world.entity.projectile.SmallFireball(level, shooter, look);
         } else if (type.contains("snowball")) {
             return new net.minecraft.world.entity.projectile.Snowball(level, shooter);
@@ -109,5 +119,23 @@ public final class EntityInteractionHelper {
             living.swing(net.minecraft.world.InteractionHand.MAIN_HAND, true);
             living.getPersistentData().putString("CurrentAnimation", animName);
         }
+    }
+
+    public static Object spawnEntity(@NotNull String entityId, double x, double y, double z) {
+        var server = ServerLifecycleHooks.getCurrentServer();
+        if (server != null) {
+            net.minecraft.resources.ResourceLocation rl = entityId.contains(":") ? net.minecraft.resources.ResourceLocation.parse(entityId) : net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("luatweaker", entityId);
+            net.minecraft.world.entity.EntityType<?> type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.get(rl);
+            if (type != null) {
+                ServerLevel level = server.overworld();
+                Entity entity = type.create(level);
+                if (entity != null) {
+                    entity.moveTo(x, y, z, 0.0f, 0.0f);
+                    level.addFreshEntity(entity);
+                    return entity;
+                }
+            }
+        }
+        return null;
     }
 }

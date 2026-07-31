@@ -59,10 +59,15 @@ public class NeoForgeInteractableBlock implements IInteractableBlock {
         if (level != null) {
             BlockPos pos = new BlockPos(x, y, z);
             ResourceLocation rl = ResourceLocation.parse(blockId);
-            Block block = BuiltInRegistries.BLOCK.get(rl);
-            if (block != null) {
-                level.setBlockAndUpdate(pos, block.defaultBlockState());
+            if (!BuiltInRegistries.BLOCK.containsKey(rl)) {
+                com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "Cannot set block ID '" + blockId + "': Block does not exist in registry!"
+                );
+                return;
             }
+            Block block = BuiltInRegistries.BLOCK.get(rl);
+            level.setBlockAndUpdate(pos, block.defaultBlockState());
         }
     }
 
@@ -193,7 +198,12 @@ public class NeoForgeInteractableBlock implements IInteractableBlock {
                     be.setChanged();
                     BlockState state = level.getBlockState(pos);
                     level.sendBlockUpdated(pos, state, state, 3);
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    com.luatweaker.api.log.LuaTweakerLog.get().error(
+                        com.luatweaker.api.log.LogStage.SYSTEM,
+                        "Failed to parse NBT JSON for block at (" + x + "," + y + "," + z + "): " + e.getMessage()
+                    );
+                }
             }
         }
     }

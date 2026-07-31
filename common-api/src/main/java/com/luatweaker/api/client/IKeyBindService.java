@@ -28,4 +28,13 @@ public interface IKeyBindService {
         returnType = "List<KeyBindEntry>"
     )
     List<KeyBindEntry> getRegisteredKeyBinds();
+
+    @LuaDoc(
+        description = "Triggers a key binding activation event on the client.",
+        params = {"id: string", "payload: string"},
+        returnType = "void"
+    )
+    void triggerKeyBind(String id, String payload);
+
+    void setKeyBindListener(java.util.function.BiConsumer<String, String> listener);
 }

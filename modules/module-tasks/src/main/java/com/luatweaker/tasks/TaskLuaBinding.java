@@ -12,6 +12,16 @@ public class TaskLuaBinding {
 
     public static void registerBindings(@NotNull ILuaEngine engine, @NotNull ITaskService taskService) {
         ILuaTable globals = engine.getGlobalEnvironment();
+
+        ILuaValue existingTask = globals.rawget("task");
+        if (existingTask != null && !existingTask.isNil() && existingTask.isTable()) {
+            ILuaTable nativeTaskTable = existingTask.asTable();
+            globals.rawset("Task", nativeTaskTable);
+            engine.registerService("TaskService", nativeTaskTable);
+            engine.registerService("Task", nativeTaskTable);
+            return;
+        }
+
         ILuaTable taskTable = engine.createTable();
 
         taskTable.rawset("spawn", args -> {

@@ -36,7 +36,24 @@ public final class ItemRegistrar {
                 if (builder.getMaxStackSize() > 0) props.stacksTo(builder.getMaxStackSize());
                 if (builder.getDurability() > 0) props.durability(builder.getDurability());
 
+                if (builder.getFoodHunger() > 0) {
+                    net.minecraft.world.food.FoodProperties.Builder foodBuilder = new net.minecraft.world.food.FoodProperties.Builder()
+                            .nutrition(builder.getFoodHunger())
+                            .saturationModifier(builder.getFoodSaturation());
+                    if (builder.isAlwaysEdible()) {
+                        foodBuilder.alwaysEdible();
+                    }
+                    props.food(foodBuilder.build());
+                }
+
+                float dmg = builder.getAttackDamage();
+                float spd = builder.getAttackSpeed() != 0 ? builder.getAttackSpeed() : -2.4f;
+                if (dmg > 0) {
+                    props.attributes(SwordItem.createAttributes(Tiers.DIAMOND, Math.max(0, (int) dmg - 3), spd));
+                }
+
                 String type = builder.getType() != null ? builder.getType().toUpperCase() : "SIMPLE";
+
                 Item item = switch (type) {
                     case "SWORD" -> new SwordItem(Tiers.IRON, props) {
                         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
@@ -95,9 +112,14 @@ public final class ItemRegistrar {
                                 } catch (Exception e) {
                                     LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed right-click handler for " + builder.getId() + ": " + e.getMessage());
                                 }
-                                return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
                             }
-                            return super.use(level, player, hand);
+                            if (builder.getFoodHunger() > 0) {
+                                player.startUsingItem(hand);
+                                return InteractionResultHolder.consume(player.getItemInHand(hand));
+                            }
+                            return builder.getRightClickHandler() != null
+                                    ? InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide())
+                                    : super.use(level, player, hand);
                         }
 
                         @Override public ItemStack finishUsingItem(ItemStack stack, Level level, LivingEntity entity) {

@@ -1,5 +1,9 @@
 ────────────────────────────────────────────────────────────────────────
-  LuaTweaker Log — 2026-07-31 16:55:22
+  LuaTweaker Log — 2026-07-31 22:57:10
 ────────────────────────────────────────────────────────────────────────
-16:55:22 [TEST        ] [INFO] Successfully executed script: test_player4560825921940271911.lua
-16:55:22 [TEST        ] [INFO] Successfully executed script: test_entity_methods6164784481993094578.lua
+22:57:11 [PRINT       ] ([string "/lua/luatweak..."]:384) [INFO] [LuaTweaker] System Bootstrap Library loaded successfully!
+22:57:11 [SYSTEM      ] Successfully executed bootstrap resource: /lua/luatweaker_bootstrap.lua
+22:57:11 [TEST        ] [INFO] Successfully executed script: test_player6935628824787634852.lua
+22:57:11 [PRINT       ] ([string "/lua/luatweak..."]:384) [INFO] [LuaTweaker] System Bootstrap Library loaded successfully!
+22:57:11 [SYSTEM      ] Successfully executed bootstrap resource: /lua/luatweaker_bootstrap.lua
+22:57:11 [TEST        ] [INFO] Successfully executed script: test_entity_methods6204554354138435944.lua

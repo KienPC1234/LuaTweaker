@@ -1,11 +1,13 @@
 package com.luatweaker.recipes;
 
 import com.luatweaker.api.recipe.IRecipeManagerService;
+import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.wrapper.IngredientWrapper;
 import com.luatweaker.api.wrapper.ItemCount;
 import com.luatweaker.core.engine.LuaEngine;
 import com.luatweaker.core.logger.AsyncFileLogger;
 import com.luatweaker.core.service.LuaServiceRegistry;
+import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -191,7 +193,7 @@ public class EngineTest {
     @Test
     public void testLspStubGeneration() throws IOException {
         File tempDir = new File("build/tmp/testStubs");
-        File stubDir = new File(tempDir, "lua/.luatweaker/stubs");
+        File stubDir = new File(tempDir, "luamods/.luatweaker/stubs");
         File stubFile = new File(stubDir, "luatweaker-api.lua");
         if (stubFile.exists()) {
             stubFile.delete();
@@ -212,6 +214,47 @@ public class EngineTest {
         assertTrue(stubContent.contains("Recipes:addShaped"));
         assertTrue(stubContent.contains("--- Removes a specific recipe by its registry ID."));
         assertTrue(stubContent.contains("---@param id: string"));
+    }
+
+    @Test
+    public void testLuaModManagerModsManagerJsonAndPerModLogging() throws IOException {
+        File testDir = new File("build/tmp/testLuaMods");
+        File luamodsDir = new File(testDir, "luamods");
+        File modDir = new File(luamodsDir, "test_mod");
+        modDir.mkdirs();
+
+        File manifestFile = new File(modDir, "manifest.json");
+        Files.writeString(manifestFile.toPath(), """
+        {
+          "id": "test_mod",
+          "name": "Test Mod",
+          "author": "Tester",
+          "version": "1.0.0",
+          "main": "main.lua"
+        }
+        """);
+
+        File mainFile = new File(modDir, "main.lua");
+        Files.writeString(mainFile.toPath(), """
+        print("Hello from Test Mod dedicated log!")
+        log.info("Test Mod structured log line")
+        """);
+
+        ILuaEngine engine = new CobaltLuaEngine(true);
+        com.luatweaker.core.mod.LuaModManager.loadLuaMods(luamodsDir, engine);
+
+        File modsManagerFile = new File(luamodsDir, "mods_manager.json");
+        assertTrue(modsManagerFile.exists(), "mods_manager.json should be auto-generated");
+
+        String managerContent = Files.readString(modsManagerFile.toPath());
+        assertTrue(managerContent.contains("\"test_mod\": true"), "test_mod should be registered as true");
+
+        File modLogFile = new File("logs/luatweaker/mods/test_mod.log");
+        assertTrue(modLogFile.exists(), "Per-mod log file test_mod.log should exist");
+
+        String logContent = Files.readString(modLogFile.toPath());
+        assertTrue(logContent.contains("Hello from Test Mod dedicated log!"));
+        assertTrue(logContent.contains("Test Mod structured log line"));
     }
 
     private File findScriptFile(String path) {

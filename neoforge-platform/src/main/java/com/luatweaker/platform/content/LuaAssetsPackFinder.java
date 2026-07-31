@@ -196,9 +196,8 @@ public class LuaAssetsPackFinder {
             String ns = parts[0], id = parts[1];
             String virtualKey = "assets/" + ns + "/models/item/" + id + ".json";
 
-            // If user provided physical file on disk under lua/assets/, don't override it
-            File physicalModelFile = new File(luaDir, virtualKey);
-            if (physicalModelFile.exists()) {
+            // If user provided physical file on disk under lua/assets/ or luamods/<mod_id>/assets/, don't override it
+            if (isPhysicalAssetPresent(virtualKey)) {
                 continue;
             }
 
@@ -225,6 +224,7 @@ public class LuaAssetsPackFinder {
             String ns = parts[0], id = parts[1];
             if (e.hasSpawnEgg()) {
                 String virtualKey = "assets/" + ns + "/models/item/" + id + "_spawn_egg.json";
+                if (isPhysicalAssetPresent(virtualKey)) continue;
                 String eggJson;
                 if (e.getSpawnEggTexture() != null && !e.getSpawnEggTexture().isBlank()) {
                     eggJson = "{\n  \"parent\": \"minecraft:item/generated\",\n  \"textures\": {\n    \"layer0\": \"" + e.getSpawnEggTexture() + "\"\n  }\n}";
@@ -249,14 +249,15 @@ public class LuaAssetsPackFinder {
             } else {
                 // Regular block state
                 String bsKey = "assets/" + ns + "/blockstates/" + id + ".json";
-                String targetModel = b.getModel() != null ? b.getModel() : (ns + ":block/" + id);
-                String bsJson = "{\n  \"variants\": {\n    \"\": { \"model\": \"" + targetModel + "\" }\n  }\n}";
-                datapackService.addData(bsKey, bsJson);
+                if (!isPhysicalAssetPresent(bsKey)) {
+                    String targetModel = b.getModel() != null ? b.getModel() : (ns + ":block/" + id);
+                    String bsJson = "{\n  \"variants\": {\n    \"\": { \"model\": \"" + targetModel + "\" }\n  }\n}";
+                    datapackService.addData(bsKey, bsJson);
+                }
 
                 if (b.getModel() == null) {
                     String bmKey = "assets/" + ns + "/models/block/" + id + ".json";
-                    File physicalModelFile = new File(luaDir, bmKey);
-                    if (!physicalModelFile.exists()) {
+                    if (!isPhysicalAssetPresent(bmKey)) {
                         String tex = b.getTexture() != null ? b.getTexture() : (ns + ":block/" + id);
                         String bmJson = "{\n  \"parent\": \"minecraft:block/cube_all\",\n  \"textures\": {\n    \"all\": \"" + tex + "\"\n  }\n}";
                         datapackService.addData(bmKey, bmJson);
@@ -264,8 +265,11 @@ public class LuaAssetsPackFinder {
                 }
 
                 String imKey = "assets/" + ns + "/models/item/" + id + ".json";
-                String imJson = "{\n  \"parent\": \"" + targetModel + "\"\n}";
-                datapackService.addData(imKey, imJson);
+                if (!isPhysicalAssetPresent(imKey)) {
+                    String targetModel = b.getModel() != null ? b.getModel() : (ns + ":block/" + id);
+                    String imJson = "{\n  \"parent\": \"" + targetModel + "\"\n}";
+                    datapackService.addData(imKey, imJson);
+                }
             }
         }
 
@@ -573,5 +577,22 @@ public class LuaAssetsPackFinder {
     private String[] parseId(String id) {
         if (id != null && id.contains(":")) return id.split(":", 2);
         return new String[]{"luatweaker", id != null ? id : "unknown"};
+    }
+
+    private boolean isPhysicalAssetPresent(String virtualKey) {
+        File direct = new File(luaDir, virtualKey);
+        if (direct.exists()) return true;
+
+        File luamodsDir = "luamods".equalsIgnoreCase(luaDir.getName()) ? luaDir : new File(luaDir, "luamods");
+        if (luamodsDir.exists() && luamodsDir.isDirectory()) {
+            File[] mods = luamodsDir.listFiles(File::isDirectory);
+            if (mods != null) {
+                for (File modFolder : mods) {
+                    File modAssetFile = new File(modFolder, virtualKey);
+                    if (modAssetFile.exists()) return true;
+                }
+            }
+        }
+        return false;
     }
 }

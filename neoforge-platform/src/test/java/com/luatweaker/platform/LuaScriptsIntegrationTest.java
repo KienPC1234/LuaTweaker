@@ -7,6 +7,7 @@ import com.luatweaker.content.ContentServiceImpl;
 import com.luatweaker.content.DatapackServiceImpl;
 import com.luatweaker.content.StorageServiceImpl;
 import com.luatweaker.core.logger.AsyncFileLogger;
+import com.luatweaker.core.mod.LuaModManager;
 import com.luatweaker.core.service.LuaServiceRegistry;
 import com.luatweaker.core.vm.CobaltLuaEngine;
 import com.luatweaker.platform.bootstrap.LuaServiceBootstrap;
@@ -16,7 +17,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
-import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -62,11 +62,12 @@ public class LuaScriptsIntegrationTest {
     }
 
     @Test
-    public void testAllNeoForgePlatformLuaScripts() {
-        File baseDir = findLuaDir();
-        assertTrue(baseDir.exists(), "Lua directory should exist at " + baseDir.getAbsolutePath());
+    public void testAllAutonomousLuaMods() {
+        File baseDir = findLuamodsDir();
+        assertTrue(baseDir.exists(), "luamods directory should exist at " + baseDir.getAbsolutePath());
 
         ILuaEngine engine = new CobaltLuaEngine(true);
+        engine.setLuaDirectory(baseDir);
 
         ContentServiceImpl contentService = new ContentServiceImpl();
         StorageServiceImpl storageService = new StorageServiceImpl(new File(baseDir, "storage.json"));
@@ -75,52 +76,26 @@ public class LuaScriptsIntegrationTest {
         // Register all services using LuaServiceBootstrap
         LuaServiceBootstrap.registerAllServices(engine, contentService, storageService, datapackService, recipeManager);
 
-        // 1. Startup scripts
-        File startupDir = new File(baseDir, "startup");
-        if (startupDir.exists()) {
-            File[] files = startupDir.listFiles((dir, name) -> name.endsWith(".lua"));
-            if (files != null) {
-                Arrays.sort(files, (a, b) -> a.getName().compareTo(b.getName()));
-                for (File script : files) {
-                    assertDoesNotThrow(() -> engine.executeScript(script, "TEST-STARTUP"),
-                            "Failed executing startup script: " + script.getName());
-                }
-            }
-        }
+        assertDoesNotThrow(() -> LuaModManager.loadLuaMods(baseDir, engine),
+                "Failed executing autonomous LuaMods in " + baseDir.getAbsolutePath());
 
-        // 2. Server scripts
-        File serverDir = new File(baseDir, "server");
-        if (serverDir.exists()) {
-            File[] files = serverDir.listFiles((dir, name) -> name.endsWith(".lua"));
-            if (files != null) {
-                Arrays.sort(files, (a, b) -> a.getName().compareTo(b.getName()));
-                for (File script : files) {
-                    assertDoesNotThrow(() -> engine.executeScript(script, "TEST-SERVER"),
-                            "Failed executing server script: " + script.getName());
-                }
-            }
-        }
+        // Verify Network RemoteEvent Firing & Execution
+        Object netService = LuaServiceRegistry.get("NetworkServiceImpl");
+        assertTrue(netService instanceof com.luatweaker.network.NetworkServiceImpl, "NetworkServiceImpl should be registered");
 
-        // 3. Client scripts
-        File clientDir = new File(baseDir, "client");
-        if (clientDir.exists()) {
-            File[] files = clientDir.listFiles((dir, name) -> name.endsWith(".lua"));
-            if (files != null) {
-                Arrays.sort(files, (a, b) -> a.getName().compareTo(b.getName()));
-                for (File script : files) {
-                    assertDoesNotThrow(() -> engine.executeScript(script, "TEST-CLIENT"),
-                            "Failed executing client script: " + script.getName());
-                }
-            }
-        }
+        com.luatweaker.network.NetworkServiceImpl ns = (com.luatweaker.network.NetworkServiceImpl) netService;
+        assertDoesNotThrow(() -> ns.OnClientFired("StaffSwapSkill", "dummy-uuid", new com.luatweaker.api.vm.ILuaValue[0]),
+                "StaffSwapSkill packet firing failed");
+        assertDoesNotThrow(() -> ns.OnClientFired("StaffCastSkill", "dummy-uuid", new com.luatweaker.api.vm.ILuaValue[0]),
+                "StaffCastSkill packet firing failed");
     }
 
-    private File findLuaDir() {
+    private File findLuamodsDir() {
         File[] candidates = new File[] {
-                new File("neoforge-platform/lua"),
-                new File("lua"),
-                new File("../../neoforge-platform/lua"),
-                new File("../../lua")
+                new File("neoforge-platform/luamods"),
+                new File("luamods"),
+                new File("../../neoforge-platform/luamods"),
+                new File("../../luamods")
         };
         for (File candidate : candidates) {
             if (candidate.exists() && candidate.isDirectory()) {

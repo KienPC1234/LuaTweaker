@@ -41,6 +41,36 @@ public class StorageLuaBinding {
             return wrapDataStore(engine, storageService.GetPlayerStorage(playerUuid));
         });
 
+        ILuaTable storageTable = engine.createTable();
+        storageTable.rawset("GetPlayerStorage", playerStorageLookup.rawget("GetPlayerStorage"));
+        storageTable.rawset("GetWorldStorage", args -> worldStorage);
+        storageTable.rawset("GetSessionStorage", args -> sessionStorage);
+        storageTable.rawset("get", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off < 1) return engine.nilValue();
+            String key = args[off].asString();
+            ILuaValue def = (args.length - off >= 2) ? args[off + 1] : engine.nilValue();
+            Object res = storageService.GetSessionStorage().GetAsync(key);
+            if (res == null) res = storageService.GetWorldStorage().GetAsync(key);
+            if (res == null) return def;
+            if (res instanceof ILuaValue lv) return lv;
+            if (res instanceof String s) return engine.wrapString(s);
+            if (res instanceof Number n) return engine.wrapNumber(n.doubleValue());
+            if (res instanceof Boolean b) return engine.wrapBoolean(b);
+            return engine.wrapUserdata(res);
+        });
+        storageTable.rawset("set", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off < 2) return null;
+            String key = args[off].asString();
+            ILuaValue val = args[off + 1];
+            storageService.GetSessionStorage().SetAsync(key, val);
+            return null;
+        });
+
+        engine.registerService("Storage", storageTable);
+        engine.registerGlobal("Storage", storageTable);
+
         engine.registerService("WorldStorage", worldStorage);
         engine.registerService("PlayerStorage", playerStorageLookup);
         engine.registerService("SessionStorage", sessionStorage);

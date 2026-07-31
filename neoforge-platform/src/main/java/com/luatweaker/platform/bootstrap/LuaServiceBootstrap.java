@@ -44,6 +44,7 @@ public final class LuaServiceBootstrap {
         ContentLuaBinding.registerBindings(engine, contentService, storageService, datapackService);
 
         // 2. Entities & AI Goals
+        com.luatweaker.entities.EntitiesLuaBinding.registerBindings(engine);
         AIGoalLuaBinding.registerBindings(engine);
         WorldActionLuaBinding.registerBindings(engine);
 
@@ -62,6 +63,11 @@ public final class LuaServiceBootstrap {
 
         // 7. Network Service (Rocket RemoteEvents & RemoteFunctions)
         NetworkServiceImpl networkService = new NetworkServiceImpl(engine);
+        try {
+            com.luatweaker.platform.LuaTweakerMod.setServerNetworkService(networkService);
+        } catch (Throwable ignored) {
+            // Unit test environment without NeoForge FML
+        }
         NetworkLuaBinding.registerBindings(engine, networkService);
 
         // 8. Task Service (Roblox task.spawn, task.delay, task.wait)

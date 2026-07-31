@@ -1,50 +1,12 @@
 ────────────────────────────────────────────────────────────────────────
-  LuaTweaker Log — 2026-07-31 17:03:21
+  LuaTweaker Log — 2026-07-31 23:01:28
 ────────────────────────────────────────────────────────────────────────
-17:03:21 [TEST-STARTUP] [INFO] Successfully executed script: ruby_content.lua
-17:03:21 [PRINT       ] ([string "AdvancedBossA..."]:15) [INFO] Initializing AdvancedBossAndClientEffectsTest.lua...
-17:03:21 [PRINT       ] ([string "AdvancedBossA..."]:27) [INFO] [Content] Registered Custom Projectile: luatweaker:ruby_orb
-17:03:21 [PRINT       ] ([string "AdvancedBossA..."]:47) [INFO] AdvancedBossAndClientEffectsTest.lua initialized successfully!
-17:03:21 [TEST-SERVER ] [INFO] Successfully executed script: AdvancedBossAndClientEffectsTest.lua
-17:03:21 [PRINT       ] ([string "InterceptionT..."]:6) [INFO] Initializing InterceptionTest.lua...
-17:03:21 [PRINT       ] ([string "InterceptionT..."]:35) [INFO] InterceptionTest.lua initialized successfully!
-17:03:21 [TEST-SERVER ] [INFO] Successfully executed script: InterceptionTest.lua
-17:03:21 [PRINT       ] ([string "MagicStaffSki..."]:11) [INFO] [MagicStaffSkills] Initializing Magic Staff System with Storage Persistence...
-17:03:23 [FUNCTION_CALL] ([string "MagicStaffSki..."]:182) [ERROR] Lua error executing callback: null
-17:03:23 [TEST-SERVER ] ([string "MagicStaffSki..."]:182) [ERROR] Unexpected error running script MagicStaffSkills.lua: null
-17:03:23 [PRINT       ] ([string "NbtAttributeT..."]:9) [INFO] Initializing NbtAttributeTest.lua...
-17:03:23 [PRINT       ] ([string "NbtAttributeT..."]:37) [INFO] NbtAttributeTest.lua initialized successfully!
-17:03:23 [TEST-SERVER ] ([string "MagicStaffSki..."]:182) [ERROR] Unexpected error running script NbtAttributeTest.lua: null
-17:03:23 [PRINT       ] ([string "PropertyExpan..."]:9) [INFO] Initializing PropertyExpansionTest.lua...
-17:03:23 [PRINT       ] ([string "PropertyExpan..."]:40) [INFO] PropertyExpansionTest.lua initialized successfully!
-17:03:23 [TEST-SERVER ] ([string "MagicStaffSki..."]:182) [ERROR] Unexpected error running script PropertyExpansionTest.lua: null
-17:03:23 [PRINT       ] ([string "RobloxAttribu..."]:7) [INFO] Initializing RobloxAttributeAndMathTest.lua...
-17:03:23 [PRINT       ] ([string "RobloxAttribu..."]:11) [INFO] [MathTest] math.clamp(150, 0, 100) = 100 (Expected: 100)
-17:03:23 [PRINT       ] ([string "RobloxAttribu..."]:14) [INFO] [MathTest] math.lerp(10, 20, 0.5) = 15 (Expected: 15)
-17:03:23 [PRINT       ] ([string "RobloxAttribu..."]:17) [INFO] [MathTest] math.round(4.6) = 5 (Expected: 5)
-17:03:23 [PRINT       ] ([string "RobloxAttribu..."]:20) [INFO] [StringTest] string.split count = 3 (Expected: 3)
-17:03:23 [PRINT       ] ([string "RobloxAttribu..."]:23) [INFO] [StringTest] string.trim = 'Hello LuaTweaker!' (Expected: 'Hello LuaTweaker!')
-17:03:23 [PRINT       ] ([string "RobloxAttribu..."]:39) [INFO] RobloxAttributeAndMathTest.lua initialized successfully!
-17:03:23 [TEST-SERVER ] ([string "MagicStaffSki..."]:182) [ERROR] Unexpected error running script RobloxAttributeAndMathTest.lua: null
-17:03:23 [PRINT       ] ([string "RubyBossTest...."]:10) [INFO] Initializing RubyBossTest.lua...
-17:03:23 [PRINT       ] ([string "RubyBossTest...."]:69) [INFO] RubyBossTest.lua initialized successfully with Pure Custom AI & Animation Suite!
-17:03:23 [TEST-SERVER ] ([string "MagicStaffSki..."]:182) [ERROR] Unexpected error running script RubyBossTest.lua: null
-17:03:23 [PRINT       ] ([string "interaction_t..."]:8) [INFO] Loading world interaction script...
-17:03:23 [PRINT       ] ([string "interaction_t..."]:32) [INFO] Interaction script loaded successfully!
-17:03:23 [TEST-SERVER ] ([string "MagicStaffSki..."]:182) [ERROR] Unexpected error running script interaction_test.lua: null
-17:03:23 [PRINT       ] ([string "recipe_tests...."]:7) [INFO] Initializing comprehensive server recipe test suite...
-17:03:23 [PRINT       ] ([string "recipe_tests...."]:49) [INFO] Comprehensive server recipe test suite executed successfully!
-17:03:23 [TEST-SERVER ] ([string "MagicStaffSki..."]:182) [ERROR] Unexpected error running script recipe_tests.lua: null
-17:03:23 [PRINT       ] ([string "roblox_style_..."]:11) [INFO] Starting Server Controller script...
-17:03:23 [PRINT       ] ([string "roblox_style_..."]:38) [INFO] [Server] Database play_count updated to: 4
-17:03:23 [PRINT       ] ([string "roblox_style_..."]:59) [INFO] Server Controller script loaded successfully!
-17:03:23 [TEST-SERVER ] ([string "MagicStaffSki..."]:182) [ERROR] Unexpected error running script roblox_style_test.lua: null
-17:03:23 [TEST-SERVER ] ([string "MagicStaffSki..."]:182) [ERROR] Unexpected error running script ruby_recipes.lua: null
-17:03:23 [PRINT       ] ([string "ClientControl..."]:7) [INFO] Initializing ClientController.lua...
-17:03:23 [PRINT       ] ([string "ClientControl..."]:49) [INFO] [Client] Subscribing to RunService.RenderStepped signal...
-17:03:23 [PRINT       ] ([string "ClientControl..."]:57) [INFO] ClientController.lua initialized successfully!
-17:03:23 [TEST-CLIENT ] ([string "MagicStaffSki..."]:182) [ERROR] Unexpected error running script ClientController.lua: null
-17:03:23 [PRINT       ] ([string "TweenEffectsC..."]:6) [INFO] Initializing TweenEffectsController.lua...
-17:03:23 [PRINT       ] ([string "TweenEffectsC..."]:42) [INFO] [Client] Computed camera CFrame lookVector: 0.0, 1.0, 0.0
-17:03:23 [PRINT       ] ([string "TweenEffectsC..."]:51) [INFO] TweenEffectsController.lua initialized successfully!
-17:03:23 [TEST-CLIENT ] ([string "MagicStaffSki..."]:182) [ERROR] Unexpected error running script TweenEffectsController.lua: null
+23:01:28 [PRINT       ] ([string "/lua/luatweak..."]:384) [INFO] [LuaTweaker] System Bootstrap Library loaded successfully!
+23:01:28 [SYSTEM      ] Successfully executed bootstrap resource: /lua/luatweaker_bootstrap.lua
+23:01:28 [PRINT       ] ([string "boss_ai.lua"]:4) [INFO] [BossAI] Initialized Boss AI module for MyCustomMod!
+23:01:28 [PRINT       ] ([string "my_custom_mod..."]:41) [INFO] [MyCustomMod] Successfully loaded! Debug Mode: true
+23:01:28 [PRINT       ] ([string "ruby_boss.lua"]:10) [INFO] Initializing RubyBossTest.lua...
+23:01:28 [PRINT       ] ([string "ruby_boss.lua"]:72) [INFO] RubyBossTest.lua initialized successfully with Pure Custom AI & Animation Suite!
+23:01:28 [PRINT       ] ([string "magic_staff.l..."]:11) [INFO] [MagicStaffSkills] Initializing Magic Staff System with Storage Persistence...
+23:01:28 [PRINT       ] ([string "magic_staff_c..."]:5) [INFO] [Client] Initializing Magic Staff Client Visual Effects Listener...
+23:01:28 [PRINT       ] ([string "ruby_mod/main..."]:21) [INFO] [RubyMod] Ruby Gear Set, Boss AI & Magic Staff loaded successfully! Debug: true

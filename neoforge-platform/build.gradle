@@ -83,6 +83,7 @@ configurations {
 }
 
 dependencies {
+    compileOnly "mezz.jei:jei-1.21.1-neoforge:19.32.0.359"
     developmentMods "mezz.jei:jei-1.21.1-neoforge:19.32.0.359"
 
     // Embed all submodules into the single output jar via NeoForge Jar-in-Jar
@@ -136,12 +137,17 @@ var copyDevelopmentMods = tasks.register('copyDevelopmentMods', Copy) {
     into file("run/mods")
 }
 
-var syncLua = tasks.register('syncLua', Sync) {
-    from file("lua")
-    into file("../run/lua")
+var syncLuaMods = tasks.register('syncLuaMods', Sync) {
+    from file("luamods")
+    into file("../run/luamods")
     preserve {
         include ".luatweaker/**"
     }
+}
+
+var syncLuaConfig = tasks.register('syncLuaConfig', Sync) {
+    from file("luaconfig")
+    into file("../run/luaconfig")
 }
 
 tasks.named('processResources') {
@@ -149,11 +155,15 @@ tasks.named('processResources') {
 }
 
 tasks.named('runClient') {
-    dependsOn syncLua
+    dependsOn rootProject.getTasksByName('classes', true)
+    dependsOn syncLuaMods
+    dependsOn syncLuaConfig
 }
 
 tasks.named('runServer') {
-    dependsOn syncLua
+    dependsOn rootProject.getTasksByName('classes', true)
+    dependsOn syncLuaMods
+    dependsOn syncLuaConfig
 }
 
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
@@ -175,5 +185,6 @@ var generateModMetadata = tasks.register("generateModMetadata", ProcessResources
 sourceSets.main.resources.srcDir generateModMetadata
 neoForge.ideSyncTask generateModMetadata
 neoForge.ideSyncTask copyDevelopmentMods
-neoForge.ideSyncTask syncLua
+neoForge.ideSyncTask syncLuaMods
+neoForge.ideSyncTask syncLuaConfig
 

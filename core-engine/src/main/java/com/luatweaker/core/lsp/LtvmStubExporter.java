@@ -7,29 +7,32 @@ import java.nio.file.Path;
 public class LtvmStubExporter {
     public static void exportToWorkspace(Path runDir, LtvmStubGenerator generator) {
         try {
-            Path luaDir = runDir.resolve("lua");
-            
-            // Fallback for development if run/ folder exists but lua folder is at the workspace root
-            if (!Files.exists(luaDir)) {
+            Path luamodsDir = runDir.resolve("luamods");
+
+            if (!Files.exists(luamodsDir)) {
                 Path parent = runDir.toAbsolutePath().getParent();
                 if (parent != null) {
-                    Path siblingLua = parent.resolve("lua");
-                    if (Files.exists(siblingLua)) {
-                        luaDir = siblingLua;
+                    Path siblingLuamods = parent.resolve("luamods");
+                    if (Files.exists(siblingLuamods)) {
+                        luamodsDir = siblingLuamods;
                     }
                 }
             }
-            
-            Path stubDir = luaDir.resolve(".luatweaker/stubs");
+
+            if (!Files.exists(luamodsDir)) {
+                Files.createDirectories(luamodsDir);
+            }
+
+            Path stubDir = luamodsDir.resolve(".luatweaker/stubs");
             Files.createDirectories(stubDir);
-            
+
             Path stubFile = stubDir.resolve("luatweaker-api.lua");
             Files.writeString(stubFile, generator.getResult());
-            
+
             System.out.println("[LTVM] Successfully exported LSP stubs to: " + stubFile.toAbsolutePath());
 
             // Auto-generate .luarc.json for seamless VS Code Lua Language Server integration
-            Path luaRcFile = luaDir.resolve(".luarc.json");
+            Path luaRcFile = luamodsDir.resolve(".luarc.json");
             if (!Files.exists(luaRcFile)) {
                 String luaRcContent = """
                     {
@@ -39,6 +42,7 @@ public class LtvmStubExporter {
                       ],
                       "Lua.diagnostics.globals": [
                         "Mod",
+                        "mod",
                         "game",
                         "item",
                         "ingredient"

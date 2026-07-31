@@ -1,0 +1,9 @@
+{
+  "id": "ruby_mod",
+  "name": "Ruby Gear & Boss Mod",
+  "author": "KienDev",
+  "version": "1.0.0",
+  "main": "main.lua",
+  "dependencies": [],
+  "permissions": ["runtime.bytecode_hook"]
+}

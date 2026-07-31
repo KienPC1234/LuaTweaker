@@ -6,7 +6,176 @@ Minecraft 1.21.1 NeoForge mod — Lua scripting engine with runtime recipe/conte
 
 ---
 
-# ⚠️ CRITICAL SECTION 0 — LuaTweaker Style & Quy Trình Tạo Module Mới
+# ⚠️ CRITICAL SECTION 0 — Code Honesty & Delivery Integrity (Strictest — Zero Tolerance)
+
+❌ **No hidden code. No sloppy code. No broken code. No silent stubs. No hallucinations. No fake tests. No leaked secrets. No inaccurate docs. No hardcoded values. Every delivered change MUST be complete, correct, and verified before submission. ANY violation below = instant rejection.**
+
+---
+
+## 0.1 — NO Hidden Code (Giấu Code) — Absolute Ban
+
+| ❌ Forbidden | ✅ Required |
+|---|---|
+| Silently omitting logic while pretending the task is finished | Deliver the full, real implementation |
+| Writing empty or no-op method bodies presented as "working" | Every method contains its actual business logic |
+| Empty `catch` blocks that swallow exceptions silently | Catch → log + handle the error; NEVER hide failures |
+| Hiding broken/failing code behind `@Deprecated`, `// TODO`, or "unused" flags | Fully implement it, or explicitly report it as incomplete |
+| Commenting out logic so the code "compiles" or "passes" | Real logic that compiles and actually works |
+| Reusing old results/cache as a fake success while new code is missing | Fresh, real execution path that produces real output |
+
+## 0.2 — NO Sloppy / Careless Code (Code Cẩu Thả) — Absolute Ban
+
+- **No dead code**: unused imports, unused fields, unused methods, unused local variables, unused parameters.
+- **No placeholder values**: returning `0`, `null`, `""`, `false`, or hardcoded constants as if they were real results.
+- **No copy-paste duplication**: duplicate logic must be extracted or the change is rejected.
+- **No leftover markers**: `// TODO`, `// FIXME`, `// HACK`, `// WIP`, `// XXX` left in delivered code. Finish the work or state it is unfinished.
+- **No fake signals**: every log line, `print()`, and return value must reflect the real behavior — never fabricate success messages.
+- **No lazy shortcuts**: no hardcoded paths, no magic string switching instead of real dispatch, no bypassing the module/builder architecture in Section 1.
+
+## 0.3 — NO Non-Functional / Broken Code (Code Không Dùng Được) — Absolute Ban
+
+- **Every change MUST compile.** Run the build before submitting — never hand over code you did not compile.
+- **Every change MUST pass tests.** Add tests for all new behavior; never ship untested logic.
+- **Every exposed API must work end-to-end**: Java interface → implementation → Lua binding → runtime effect. Test the full path, not just the signature.
+- **No runtime crashes** in default-reachable paths: no NPEs, no `ClassCastException`, no illegal state reached by normal usage.
+- **No code that merely "type-checks"** but throws on first invocation.
+- **Never merge code you have not actually run and verified** (build + tests + relevant runtime path).
+
+## 0.4 — NO Silent Stubs (Code Stub Giấu Diếm) — Absolute Ban
+
+> **A "stub" is any code that is NOT the real implementation.** Using a stub is **STRICTLY FORBIDDEN** unless ALL of the following hold:
+
+1. **The stub is explicitly disclosed** to the user in the response, with the exact file and line.
+2. **The stub is loudly marked in code**, e.g. `throw new UnsupportedOperationException("STUB <reason>")`, `assert false : "STUB ..."`, or an explicit `log.warn("STUB ...")` before returning.
+3. **A follow-up task is recorded** to replace the stub, and the user is told it remains unfinished.
+
+| ❌ Forbidden | ✅ Required |
+|---|---|
+| Returning a stub silently as if the feature were done | Disclose it clearly + mark it + log the follow-up |
+| Empty interfaces / empty method bodies handed off as "done" | Real implementations only |
+| `Mock*` classes used in production code paths | Mocks exist only in tests — never in runtime |
+| `return null` / `return 0` / blank `{}` as a "complete" feature | Complete, working behavior or explicit disclosure |
+| Deleting code to make a stub "invisible" | Keep it visible, loud, and reported |
+
+## 0.5 — NO Hallucinations / Fabricated Code — Absolute Ban
+
+> **Never invent APIs, methods, classes, or libraries that do not exist.** Hallucinated code compiles in the author's head, not in the project.
+
+- **Verify every symbol exists**: before calling any internal API or third-party method, confirm it exists in the exact version of the library/project in use. No guessing from memory.
+- **No invented signatures**: never write calls to methods you have not seen. Read the real source or docs first.
+- **No phantom return types**: never return a made-up type to "make it work".
+- **No imagined registry entries**: never claim a recipe/block/item/event exists unless it is actually registered and verifiable in code.
+- **State uncertainty, do not guess**: if you are not 100% sure a symbol/behavior exists, SAY SO instead of fabricating code around it. Never code around an assumption without verifying it.
+
+## 0.6 — NO Fake Tests / Fake Coverage — Absolute Ban
+
+| ❌ Forbidden | ✅ Required |
+|---|---|
+| Tests that assert nothing (`@Test void test() {}`), always pass, or never run | Every new behavior has real, runnable tests that exercise the actual logic |
+| Testing only the happy path and ignoring failure modes | Cover success path **and** error/failure paths |
+| Mocking everything so nothing real runs | Mocks only for cross-platform seams; the real engine/binding path must be exercised |
+| Deleting/renaming tests to make a red suite green | Fix the code; never fix the test report |
+| Skipping edge cases: `null`, empty, max/min values, malformed input | Boundary and edge-case tests for every new function |
+
+- Every delivered function MUST have at least one unit test covering the primary success path and its failure modes.
+- Run `./gradlew test` — all relevant tests MUST be green. A test suite you cannot run does not count.
+- Never claim coverage you cannot prove. Report actual pass/fail output.
+
+## 0.7 — NO Hidden Secrets / Credentials — Absolute Ban
+
+- **Never commit or embed** API keys, tokens, passwords, database URLs, or any credential — even "placeholder" ones like `sk-test-...`.
+- **Never hardcode credentials** in code, config, or default files. Use environment variables or a properly git-ignored local config.
+- Scan every delivered diff for secrets before submission.
+
+## 0.8 — NO Inaccurate Comments / Documentation — Absolute Ban
+
+- **No stale or invented comments**: comments must describe what the code ACTUALLY does. Delete outdated comments; never keep them to "look documented".
+- **No docstring lies**: `@LuaDoc`, `@param`, `@return`, JavaDoc must match the real signature and behavior.
+- **No fake success narratives**: comments/log messages must never claim behavior the code does not have.
+
+## 0.9 — Complete Codebase Awareness (Mandatory Before Any Change)
+
+- **Analyze before modifying**: read the surrounding code, dependencies, imports, and existing implementations. Never edit in a vacuum.
+- **Respect existing patterns**: new code must follow the module/builder architecture and Roblox-style Lua conventions already in the project.
+- **Check environment parity**: confirm runtime versions (Java 21, NeoForge, Cobalt, Luau) before writing code that depends on them.
+
+## 0.10 — NO Silent Errors — Loud, Honest Failure Reporting (Absolute Requirement)
+
+> **If anything fails — a compile error, a failing test, a runtime error, an unverifiable step, an incomplete feature — you MUST say so loudly and immediately. Silence about a failure is treated as a lie.**
+
+- **Report every error, warning, and limitation at the exact moment it happens** — never hide it, never save it for later, never mention it only after claiming success.
+- **Every error report MUST include**: WHAT failed, WHERE (file:line), WHY it failed, and WHAT was done about it.
+- **No "everything works" summary when anything failed.** One failing test or one unverified path invalidates a "done" claim.
+- **Unverified ≠ verified.** If a step could not be compiled, run, or tested, label it **UNVERIFIED** — never quietly upgrade it to "done".
+- **When uncertain, say "I don't know"** — guessing or staying silent is forbidden.
+
+## 0.11 — NO Rule Evasion / Loopholing (Anti-Loophole Clause) — Absolute Ban
+
+> **Rules cannot be technically or literally bypassed. The SPIRIT of each rule is as binding as its LETTER. Any attempt to exploit wording, skip a step, or disguise non-compliance is itself a violation.**
+
+| ❌ Forbidden evasion | ✅ Required honest compliance |
+|---|---|
+| Following a rule "technically" while ignoring its intent | Comply with both the letter **and** the spirit |
+| Telling only part of the truth to avoid admitting failure | Full disclosure of everything, including failures |
+| Saying "it might work" / "should be fine" without verifying | Verify, or explicitly label the step UNVERIFIED |
+| Doing the minimum literal step and stopping | Complete the task to its full, real requirement |
+| Reinterpreting rules to justify skipping work | Ask for clarification if a rule seems ambiguous |
+| Blaming tools/environment to excuse missing verification | Report the blocker, then re-verify once resolved |
+| Reusing old tests/output as "current results" | Fresh run output only, labeled with the actual command |
+| Claiming a build/test "passed" without running it | Only claim what you actually ran and saw pass |
+| Quietly changing scope to avoid hard parts | Keep the original scope; say what you could not do |
+| Reporting success on a partial implementation | Report the exact percentage done and what remains |
+| Generic claims ("the fix is applied") with no specifics | Name the file, the change, and the proof (build/test output) |
+
+## 0.12 — Error Handling in Delivered Code — Loud, Never Silent
+
+- **No empty `catch` blocks. Ever.** Every `catch` MUST log the error with context (what failed, where) and take a visible corrective action or rethrow.
+- **No swallowed exceptions**: no `catch (Exception e) {}`, no `catch` + `// ignored` comment, no silently returning a default on failure.
+- **Errors must surface**: log with message/stack trace, and fail loudly when the operation cannot continue.
+- **Failed Lua/Java calls must be reported** through the engine logger — never silently dropped.
+- **The error path must be tested**: write at least one test asserting the failure path throws/logs correctly rather than silently returning.
+
+## 0.13 — Self-Review Checklist — Catch Your Own Violations
+
+Before declaring anything done, run ALL of the following and report each result:
+
+1. Did I compile? What was the exact output?
+2. Did I run the tests? How many passed / failed / skipped?
+3. Did I loudly report every error, warning, and UNVERIFIED step?
+4. Did I follow the letter **and** the spirit of every rule — no loopholes?
+5. Did I name every file changed and every behavior added?
+6. Am I claiming anything I cannot prove? If yes → label it UNVERIFIED instead.
+
+## 0.14 — NO Hardcoding — Absolute Ban
+
+> **Hardcoded values are STRICTLY forbidden. Every value that can be configured, derived, resolved, or passed as a parameter MUST be — never baked into code as a literal.**
+
+| ❌ Forbidden | ✅ Required |
+|---|---|
+| Absolute file/dir paths (`C:\...`, `/home/...`) | Project-relative paths, `Path` resolution, or config entries |
+| Item/recipe/block IDs and namespaces as scattered literals | Centralized constants or the registry |
+| Magic numbers (`delay(5000)`, `limit * 3.1415`) | Named `static final` constants (`TICK_INTERVAL`, `MAX_STACK`) |
+| Tunable values baked in (durations, counts, thresholds, multipliers) | Read from `default_config.json` / config files |
+| Version/platform literals (`1.21.1`, mod versions) | `gradle.properties` / build config expansion |
+| Credentials, tokens, database URLs (see 0.7) | Environment variables or git-ignored config |
+| Hardcoded coordinates/offsets/spawn positions in Lua scripts | Config-driven values |
+| OS-specific literals (`\` path separators, line endings, encodings) | Portable APIs (`Path`, `System.lineSeparator()`) |
+
+- **Every hardcoded value is a defect.** If a literal is truly unavoidable, it MUST be a named constant with a comment explaining why it is not configurable — and the exception MUST be reported to the user.
+- **Lua scripts too**: coordinates, spawn positions, item counts, and event timings must come from config, never hardcoded.
+- **Tests MAY hardcode expected values** in assertions — production code never does.
+
+## 0.15 — Verification Gate (Mandatory Before "Done")
+
+1. **Plan → Code → Test → Verify → Report.** Do not skip steps.
+2. **Compile**: `./gradlew build` (or at minimum the affected modules) — MUST pass.
+3. **Test**: `./gradlew test` — all relevant tests MUST be green.
+4. **Self-review your diff**: no hidden files, no leftover stubs, no commented-out code, no dead code, no fabricated symbols, no secrets.
+5. **Report honestly**: state exactly what works, what is untested, and any known limitations. Never claim success without proof. If unsure, reply "I don't know" rather than guessing.
+
+---
+
+# ⚠️ CRITICAL SECTION 1 — LuaTweaker Style & Quy Trình Tạo Module Mới
 
 > **🚨 BẢN SẮC THIẾT KẾ: TƯ DUY LẮP RÁP (MODULE & BUILDER) + NGỮ PHÁP TỰ NHIÊN CỦA LUA**
 
@@ -93,7 +262,7 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 
 ---
 
-# ⚠️ CRITICAL SECTION 1 — SOLID Principles (Absolute Compliance Required)
+# ⚠️ CRITICAL SECTION 2 — SOLID Principles (Absolute Compliance Required)
 
 ❌ **Every violation below = rejection. These are non-negotiable.**
 
@@ -174,7 +343,7 @@ neoforge-platform            ← ONLY module that imports NeoForge
 
 ---
 
-# ⚠️ CRITICAL SECTION 2 — Java Coding Conventions (Every Line Matters)
+# ⚠️ CRITICAL SECTION 3 — Java Coding Conventions (Every Line Matters)
 
 ❌ **Code style violations cause CI failures. Review each line.**
 
@@ -277,7 +446,7 @@ public class RecipeId {
 
 ---
 
-# ⚠️ CRITICAL SECTION 3 — Cross-Platform Architecture (PAL)
+# ⚠️ CRITICAL SECTION 4 — Cross-Platform Architecture (PAL)
 
 ❌ **Any direct platform dependency outside `neoforge-platform` = instant rejection.**
 
@@ -370,23 +539,23 @@ Java 21 (temurin), Gradle via wrapper. CI runs `./gradlew build` on push/PR (`.g
 
 ---
 
-### Lua Directory (`lua/`)
+### Autonomous LuaMod Directory (`luamods/`)
 
-- `startup/` — item/block/fluid registration (mod loading phase)
-- `server/` — recipes, events, worldgen, commands (server init)
-- `client/` — GUI, keybinds, shaders
-- `luamods/` — autonomous Lua mods (folders or `.zip`)
-- `assets/` + `data/` — virtual resource/datapack roots
-- `.luatweaker/stubs/` — auto-generated EmmyLua stubs (regenerated on reload)
-- `logs/luatweaker.log` — engine output
+- `luamods/<mod_id>/manifest.json` — Mod identity & metadata declaration
+- `luamods/<mod_id>/default_config.json` — Default configuration copied to `luaconfig/<mod_id>.json`
+- `luamods/<mod_id>/main.lua` — Single autonomous entrypoint
+- `luamods/<mod_id>/src/` — Modular business logic (server, client, startup) loaded strictly via `require()`
+- `luamods/<mod_id>/assets/` + `data/` — Auto-mounted virtual resourcepack & datapack roots
+- `.luatweaker/stubs/` — Auto-generated EmmyLua stubs
+- `logs/luatweaker/mods/<mod_id>.log` — Dedicated per-mod engine output
 
-Game directory: `run/`. The `syncLua` Gradle task copies `neoforge-platform/lua/` → `run/lua/` before each run.
+Game directory: `run/`. The `syncLuaMods` Gradle task copies `neoforge-platform/luamods/` → `run/luamods/` before each run.
 
 ---
 
 ### Lua Script Style — Roblox (Luau) Convention (Maximize Fidelity)
 
-Lua scripts MUST replicate Roblox Studio's official Lua/Luau style as closely as possible. The auto-generated EmmyLua stubs (`luatweaker-api.lua`) mirror a `--!strict` Roblox API, so every script should read like a Roblox ModuleScript. Copy the look and feel of the existing `neoforge-platform/lua/` scripts.
+Lua scripts MUST replicate Roblox Studio's official Lua/Luau style as closely as possible. The auto-generated EmmyLua stubs (`luatweaker-api.lua`) mirror a `--!strict` Roblox API, so every script should read like a Roblox ModuleScript. Copy the look and feel of `neoforge-platform/luamods/` scripts.
 
 #### Naming
 

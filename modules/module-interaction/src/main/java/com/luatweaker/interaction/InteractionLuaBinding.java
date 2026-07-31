@@ -64,6 +64,18 @@ public class InteractionLuaBinding {
             ILuaValue entitySpawnedSignal = engine.callFunction(sigNew, sigClass);
             entityServiceTable.rawset("EntitySpawned", entitySpawnedSignal);
         }
+        entityServiceTable.rawset("spawnEntity", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off < 4) return engine.nilValue();
+            String type = args[off].asString();
+            double x = args[off + 1].asDouble();
+            double y = args[off + 2].asDouble();
+            double z = args[off + 3].asDouble();
+            Object spawned = com.luatweaker.api.pal.Platform.get().spawnEntity(type, x, y, z);
+            return spawned != null ? getWrappedEntity(engine, spawned) : engine.nilValue();
+        });
+        entityServiceTable.rawset("GetEntity", workspaceTable.rawget("GetEntity"));
+        entityServiceTable.rawset("getEntity", workspaceTable.rawget("GetEntity"));
 
         // Register services & globals
         engine.registerService("Workspace", workspaceTable);

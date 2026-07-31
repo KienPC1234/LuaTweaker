@@ -20,6 +20,8 @@ public final class MobGoalHelper {
             } else {
                 mob.goalSelector.addGoal(priority, goal);
             }
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Cannot add custom AI goal: Entity " + entity + " is not a Mob!");
         }
     }
 
@@ -64,12 +66,16 @@ public final class MobGoalHelper {
     public static void addMeleeAttackGoal(@NotNull IEntity entity, int priority, double speed, boolean pauseWhenMobIdle) {
         if (entity.getRawEntity() instanceof net.minecraft.world.entity.PathfinderMob mob) {
             mob.goalSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.MeleeAttackGoal(mob, speed, pauseWhenMobIdle));
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Cannot add MeleeAttackGoal: Entity " + entity + " is not a PathfinderMob!");
         }
     }
 
     public static void addHurtByTargetGoal(@NotNull IEntity entity, int priority) {
         if (entity.getRawEntity() instanceof net.minecraft.world.entity.PathfinderMob mob) {
             mob.targetSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal(mob));
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Cannot add HurtByTargetGoal: Entity " + entity + " is not a PathfinderMob!");
         }
     }
 
@@ -84,6 +90,8 @@ public final class MobGoalHelper {
                 targetClass = net.minecraft.world.entity.LivingEntity.class;
             }
             mob.targetSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal<>(mob, targetClass, true));
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Cannot add NearestAttackableTargetGoal: Entity " + entity + " is not a Mob!");
         }
     }
 }

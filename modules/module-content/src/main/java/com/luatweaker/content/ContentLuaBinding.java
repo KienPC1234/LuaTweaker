@@ -308,6 +308,24 @@ public class ContentLuaBinding {
             return engine.toLuaValue(new com.luatweaker.api.wrapper.ItemCount(id, count));
         });
 
+        // Content.Ingredient("desc")
+        startupTable.rawset("Ingredient", args -> {
+            int off = getOffset(args);
+            String desc = args[off].asString();
+            return engine.toLuaValue(new com.luatweaker.api.wrapper.IngredientWrapper(desc));
+        });
+
+        // Content.Tag("name")
+        startupTable.rawset("Tag", args -> {
+            int off = getOffset(args);
+            String desc = args[off].asString();
+            if (!desc.startsWith("#")) desc = "#" + desc;
+            return engine.toLuaValue(new com.luatweaker.api.wrapper.IngredientWrapper(desc));
+        });
+
+        // Content.OreDict("name")
+        startupTable.rawset("OreDict", startupTable.rawget("Tag"));
+
         // Content.NewKeyMapping("staff_swap_skill"):DisplayName("Staff Skill Swap"):Category("luatweaker"):DefaultKey(90):OnPress("StaffSwapSkill"):Register()
         ILuaFunction newKeyMappingFn = args -> {
             int off = getOffset(args);

@@ -133,11 +133,26 @@ public class LuaTweakerVirtualPackResources extends AbstractPackResources {
             }
         }
 
-        // Collect from physical files under lua/<packTypeDir>/<namespace>/<prefix>/
+        // From physical directories under lua/<packTypeDir>/<namespace>/<prefix>/
         File physRoot = new File(luaDir, type.getDirectory() + "/" + namespace);
         File prefixDir = prefix.isEmpty() ? physRoot : new File(physRoot, prefix);
         if (prefixDir.exists() && prefixDir.isDirectory()) {
             collectPhysicalResources(prefixDir, physRoot.toPath(), namespace, resourceOutput, datapackService, type);
+        }
+
+        // From luamods/<mod_id>/<packTypeDir>/<namespace>/<prefix>/
+        File luamodsDir = getLuamodsDir();
+        if (luamodsDir.exists() && luamodsDir.isDirectory()) {
+            File[] mods = luamodsDir.listFiles(File::isDirectory);
+            if (mods != null) {
+                for (File modFolder : mods) {
+                    File modNsRoot = new File(modFolder, type.getDirectory() + "/" + namespace);
+                    File modPrefixDir = prefix.isEmpty() ? modNsRoot : new File(modNsRoot, prefix);
+                    if (modPrefixDir.exists() && modPrefixDir.isDirectory()) {
+                        collectPhysicalResources(modPrefixDir, modNsRoot.toPath(), namespace, resourceOutput, datapackService, type);
+                    }
+                }
+            }
         }
     }
 
@@ -176,6 +191,25 @@ public class LuaTweakerVirtualPackResources extends AbstractPackResources {
             }
         }
 
+        // From luamods directories
+        File luamodsDir = getLuamodsDir();
+        if (luamodsDir.exists() && luamodsDir.isDirectory()) {
+            File[] mods = luamodsDir.listFiles(File::isDirectory);
+            if (mods != null) {
+                for (File modFolder : mods) {
+                    File packDir = new File(modFolder, type.getDirectory());
+                    if (packDir.exists() && packDir.isDirectory()) {
+                        File[] nsDirs = packDir.listFiles(File::isDirectory);
+                        if (nsDirs != null) {
+                            for (File nsDir : nsDirs) {
+                                namespaces.add(nsDir.getName());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         return namespaces;
     }
 
@@ -188,12 +222,31 @@ public class LuaTweakerVirtualPackResources extends AbstractPackResources {
     // Helpers
     // -------------------------------------------------------------------------
 
+    private File getLuamodsDir() {
+        if ("luamods".equalsIgnoreCase(luaDir.getName())) return luaDir;
+        File sub = new File(luaDir, "luamods");
+        return sub.exists() ? sub : luaDir;
+    }
+
     private File resolvePhysicalFile(PackType type, ResourceLocation location) {
-        // e.g. lua/data/luatweaker/loot_table/blocks/ruby_ore.json
         String relativePath = type.getDirectory()
                 + "/" + location.getNamespace()
                 + "/" + location.getPath();
-        return new File(luaDir, relativePath);
+        File direct = new File(luaDir, relativePath);
+        if (direct.exists()) return direct;
+
+        File luamodsDir = getLuamodsDir();
+        if (luamodsDir.exists() && luamodsDir.isDirectory()) {
+            File[] mods = luamodsDir.listFiles(File::isDirectory);
+            if (mods != null) {
+                for (File modFolder : mods) {
+                    File modFile = new File(modFolder, relativePath);
+                    if (modFile.exists()) return modFile;
+                }
+            }
+        }
+
+        return direct;
     }
 
     private static void collectPhysicalResources(File dir, Path nsRoot, String namespace,

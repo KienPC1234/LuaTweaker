@@ -12,24 +12,71 @@ import java.util.concurrent.ConcurrentHashMap;
 public class NetworkServiceImpl implements IRocketNetworkService {
     private final ILuaEngine engine;
     private final Map<String, ILuaTable> remoteEvents = new ConcurrentHashMap<>();
+    private final Map<String, ILuaTable> remoteFunctions = new ConcurrentHashMap<>();
 
     public NetworkServiceImpl(ILuaEngine engine) {
         this.engine = engine;
     }
 
-    private final Map<String, ILuaTable> remoteFunctions = new ConcurrentHashMap<>();
+    private ILuaTable createServiceTable() {
+        ILuaTable table = engine.createTable();
+        table.rawset("FireServer", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off >= 2) {
+                String name = args[off].asString();
+                ILuaValue[] passArgs = args[off + 1].isTable() ? unpackTable(args[off + 1].asTable()) : new ILuaValue[0];
+                this.FireServer(name, passArgs);
+            }
+            return null;
+        });
+        table.rawset("FireClient", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off >= 3) {
+                String name = args[off].asString();
+                String uuid = args[off + 1].asString();
+                ILuaValue[] passArgs = args[off + 2].isTable() ? unpackTable(args[off + 2].asTable()) : new ILuaValue[0];
+                this.FireClient(name, uuid, passArgs);
+            }
+            return null;
+        });
+        table.rawset("FireAllClients", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off >= 2) {
+                String name = args[off].asString();
+                ILuaValue[] passArgs = args[off + 1].isTable() ? unpackTable(args[off + 1].asTable()) : new ILuaValue[0];
+                this.FireAllClients(name, passArgs);
+            }
+            return null;
+        });
+        return table;
+    }
+
+    private ILuaValue[] unpackTable(ILuaTable tbl) {
+        Map<ILuaValue, ILuaValue> map = tbl.asMap();
+        ILuaValue[] arr = new ILuaValue[map.size()];
+        int idx = 0;
+        for (ILuaValue val : map.values()) {
+            arr[idx++] = val;
+        }
+        return arr;
+    }
 
     @Override
     public ILuaTable GetOrCreateRemoteEvent(String channelName) {
-        return remoteEvents.computeIfAbsent(channelName, name -> {
+        ILuaTable resTable = remoteEvents.computeIfAbsent(channelName, name -> {
             ILuaValue remoteEventClass = engine.getGlobalEnvironment().rawget("RemoteEvent");
             if (remoteEventClass == null || remoteEventClass.isNil()) {
                 throw new IllegalStateException("RemoteEvent Lua class not initialized. Did bootstrap run?");
             }
             ILuaValue newFn = remoteEventClass.asTable().rawget("new");
-            ILuaValue res = engine.callFunction(newFn, remoteEventClass, engine.wrapString(name), engine.wrapUserdata(this));
+            ILuaValue res = engine.callFunction(newFn, remoteEventClass, engine.wrapString(name), createServiceTable());
             return res.asTable();
         });
+        com.luatweaker.api.log.LuaTweakerLog.get().info(
+            com.luatweaker.api.log.LogStage.SYSTEM,
+            "[Network Registry] [NetService@" + System.identityHashCode(this) + " / Engine@" + System.identityHashCode(engine) + "] Registered RemoteEvent '" + channelName + "'. All channels in this instance: " + remoteEvents.keySet()
+        );
+        return resTable;
     }
 
     @Override
@@ -40,7 +87,7 @@ public class NetworkServiceImpl implements IRocketNetworkService {
                 throw new IllegalStateException("RemoteFunction Lua class not initialized. Did bootstrap run?");
             }
             ILuaValue newFn = remoteFnClass.asTable().rawget("new");
-            ILuaValue res = engine.callFunction(newFn, remoteFnClass, engine.wrapString(name), engine.wrapUserdata(this));
+            ILuaValue res = engine.callFunction(newFn, remoteFnClass, engine.wrapString(name), createServiceTable());
             return res.asTable();
         });
     }
@@ -89,6 +136,10 @@ public class NetworkServiceImpl implements IRocketNetworkService {
 
     @Override
     public void OnClientFired(String channelName, String playerUuid, ILuaValue[] args) {
+        com.luatweaker.api.log.LuaTweakerLog.get().info(
+            com.luatweaker.api.log.LogStage.SYSTEM,
+            "[Network OnClientFired] [NetService@" + System.identityHashCode(this) + " / Engine@" + System.identityHashCode(engine) + "] Looking up channel '" + channelName + "'. Available channels: " + remoteEvents.keySet()
+        );
         ILuaTable remoteEvent = remoteEvents.get(channelName);
         if (remoteEvent != null) {
             ILuaValue onServerEvent = remoteEvent.rawget("OnServerEvent");
@@ -98,17 +149,24 @@ public class NetworkServiceImpl implements IRocketNetworkService {
                     ILuaValue fireFn = signalClass.asTable().rawget("Fire");
                     if (fireFn != null && !fireFn.isNil()) {
                         ILuaValue player = engine.nilValue();
+                        com.luatweaker.api.entity.IPlayer p = null;
                         if (Platform.isInitialized()) {
-                            com.luatweaker.api.entity.IPlayer p = Platform.get().getPlayer(playerUuid);
-                            if (p != null) {
-                                player = com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p);
-                            } else {
-                                Object rawPlayer = Platform.get().getInteractableEntity(playerUuid);
-                                if (rawPlayer != null) {
-                                    player = engine.wrapUserdata(rawPlayer);
+                            p = Platform.get().getPlayer(playerUuid);
+                            if (p == null) {
+                                java.util.List<com.luatweaker.api.entity.IPlayer> all = Platform.get().getAllPlayers();
+                                if (!all.isEmpty()) {
+                                    p = all.get(0);
                                 }
                             }
+                            if (p != null) {
+                                player = com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p);
+                            }
                         }
+
+                        com.luatweaker.api.log.LuaTweakerLog.get().info(
+                            com.luatweaker.api.log.LogStage.SYSTEM,
+                            "[Network] OnClientFired firing RemoteEvent '" + channelName + "' for player: " + (p != null ? p.getName() : "Unknown")
+                        );
 
                         ILuaValue[] fireArgs = new ILuaValue[args.length + 1];
                         fireArgs[0] = player;
@@ -116,7 +174,17 @@ public class NetworkServiceImpl implements IRocketNetworkService {
                         engine.callFunction(fireFn, appendThis(onServerEvent, fireArgs));
                     }
                 }
+            } else {
+                com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "[Network Error] RemoteEvent '" + channelName + "' exists but OnServerEvent is NIL!"
+                );
             }
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                com.luatweaker.api.log.LogStage.SYSTEM,
+                "[Network Error] RemoteEvent '" + channelName + "' was NOT registered in remoteEvents map! Registered channels: " + remoteEvents.keySet()
+            );
         }
     }
 

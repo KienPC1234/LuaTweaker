@@ -27,6 +27,7 @@ public class CobaltLuaEngine implements ILuaEngine {
     private final LuaEngine rawEngine;
     private boolean debugMode = false;
     private final java.util.Map<String, LuaValue> moduleCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final ThreadLocal<java.util.Deque<String>> activeModuleStack = ThreadLocal.withInitial(java.util.ArrayDeque::new);
 
     public CobaltLuaEngine() {
         this(false);
@@ -50,11 +51,12 @@ public class CobaltLuaEngine implements ILuaEngine {
 
     private void setupGlobalBindings() {
         LuaTable globals = state.globals();
+        globals.rawset("_G", globals);
 
         // 1. Expose DEBUG global boolean
         globals.rawset("DEBUG", ValueFactory.valueOf(debugMode));
 
-        // 2. Redirect standard Lua print(...) to AsyncFileLogger
+        // 2. Redirect standard Lua print(...) to AsyncFileLogger & per-mod log
         globals.rawset("print", new VarArgFunction() {
             @Override
             public Varargs invoke(LuaState state, Varargs args) throws LuaError {
@@ -64,7 +66,10 @@ public class CobaltLuaEngine implements ILuaEngine {
                     sb.append(args.arg(i).toString());
                     if (i < count) sb.append("\t");
                 }
-                AsyncFileLogger.get().info("PRINT", sb.toString(), state);
+                String msg = sb.toString();
+                AsyncFileLogger.get().info("PRINT", msg, state);
+                String modId = getActiveModId();
+                if (modId != null) AsyncFileLogger.get().logMod(modId, "INFO", msg);
                 return Constants.NIL;
             }
         });
@@ -74,21 +79,30 @@ public class CobaltLuaEngine implements ILuaEngine {
         logTable.rawset("info", new VarArgFunction() {
             @Override
             public Varargs invoke(LuaState state, Varargs args) throws LuaError {
-                AsyncFileLogger.get().info("SCRIPT", args.arg(1).toString(), state);
+                String msg = args.arg(1).toString();
+                AsyncFileLogger.get().info("SCRIPT", msg, state);
+                String modId = getActiveModId();
+                if (modId != null) AsyncFileLogger.get().logMod(modId, "INFO", msg);
                 return Constants.NIL;
             }
         });
         logTable.rawset("warn", new VarArgFunction() {
             @Override
             public Varargs invoke(LuaState state, Varargs args) throws LuaError {
-                AsyncFileLogger.get().warn("SCRIPT", args.arg(1).toString(), state);
+                String msg = args.arg(1).toString();
+                AsyncFileLogger.get().warn("SCRIPT", msg, state);
+                String modId = getActiveModId();
+                if (modId != null) AsyncFileLogger.get().logMod(modId, "WARN", msg);
                 return Constants.NIL;
             }
         });
         logTable.rawset("error", new VarArgFunction() {
             @Override
             public Varargs invoke(LuaState state, Varargs args) throws LuaError {
-                AsyncFileLogger.get().error("SCRIPT", args.arg(1).toString(), state);
+                String msg = args.arg(1).toString();
+                AsyncFileLogger.get().error("SCRIPT", msg, state);
+                String modId = getActiveModId();
+                if (modId != null) AsyncFileLogger.get().logMod(modId, "ERROR", msg);
                 return Constants.NIL;
             }
         });
@@ -96,12 +110,31 @@ public class CobaltLuaEngine implements ILuaEngine {
             @Override
             public Varargs invoke(LuaState state, Varargs args) throws LuaError {
                 if (debugMode) {
-                    AsyncFileLogger.get().info("DEBUG", args.arg(1).toString(), state);
+                    String msg = args.arg(1).toString();
+                    AsyncFileLogger.get().info("DEBUG", msg, state);
+                    String modId = getActiveModId();
+                    if (modId != null) AsyncFileLogger.get().logMod(modId, "DEBUG", msg);
                 }
                 return Constants.NIL;
             }
         });
         globals.rawset("log", logTable);
+
+        // 3b. Standard OS Library (os.clock, os.time)
+        LuaTable osTable = new LuaTable();
+        osTable.rawset("clock", new VarArgFunction() {
+            @Override
+            public Varargs invoke(LuaState state, Varargs args) {
+                return ValueFactory.valueOf(System.currentTimeMillis() / 1000.0);
+            }
+        });
+        osTable.rawset("time", new VarArgFunction() {
+            @Override
+            public Varargs invoke(LuaState state, Varargs args) {
+                return ValueFactory.valueOf(System.currentTimeMillis() / 1000);
+            }
+        });
+        globals.rawset("os", osTable);
 
         // 4. Mod / game GetService service bindings
         LuaTable modTable = new LuaTable();
@@ -192,270 +225,33 @@ public class CobaltLuaEngine implements ILuaEngine {
         globals.rawset("tag", tagFunc);
         globals.rawset("oredict", tagFunc);
 
-        // 7. Bootstrap Roblox task and Signal libraries
-        // 7. Bootstrap Roblox task and Signal libraries
-        executeString(
-            "local task = {}\n" +
-            "local deferred = {}\n" +
-            "local delays = {}\n" +
-            "function task.spawn(fn, ...)\n" +
-            "    local thread = coroutine.create(fn)\n" +
-            "    local ok, err = coroutine.resume(thread, ...)\n" +
-            "    if not ok then\n" +
-            "        print(\"[ERROR][task.spawn] Coroutine error: \" .. tostring(err))\n" +
-            "    end\n" +
-            "    return thread\n" +
-            "end\n" +
-            "function task.defer(fn, ...)\n" +
-            "    local args = {...}\n" +
-            "    table.insert(deferred, { fn = fn, args = args })\n" +
-            "end\n" +
-            "function task.delay(sec, fn, ...)\n" +
-            "    local args = {...}\n" +
-            "    table.insert(delays, { time = os.clock() + sec, fn = fn, args = args })\n" +
-            "end\n" +
-            "function task.wait(sec)\n" +
-            "    sec = sec or 0\n" +
-            "    local thread = coroutine.running()\n" +
-            "    task.delay(sec, function()\n" +
-            "        coroutine.resume(thread)\n" +
-            "    end)\n" +
-            "    return coroutine.yield()\n" +
-            "end\n" +
-            "function task._tick()\n" +
-            "    local def = deferred\n" +
-            "    deferred = {}\n" +
-            "    for _, item in ipairs(def) do\n" +
-            "        task.spawn(item.fn, table.unpack(item.args))\n" +
-            "    end\n" +
-            "    local now = os.clock()\n" +
-            "    local remaining = {}\n" +
-            "    for _, item in ipairs(delays) do\n" +
-            "        if now >= item.time then\n" +
-            "            task.spawn(item.fn, table.unpack(item.args))\n" +
-            "        else\n" +
-            "            table.insert(remaining, item)\n" +
-            "        end\n" +
-            "    end\n" +
-            "    delays = remaining\n" +
-            "end\n" +
-            "_G.task = task\n" +
-            "\n" +
-            "local Signal = {}\n" +
-            "Signal.__index = Signal\n" +
-            "function Signal.new()\n" +
-            "    local self = setmetatable({}, Signal)\n" +
-            "    self._listeners = {}\n" +
-            "    return self\n" +
-            "end\n" +
-            "function Signal:Connect(fn)\n" +
-            "    local listener = { fn = fn, connected = true }\n" +
-            "    table.insert(self._listeners, listener)\n" +
-            "    local conn = {\n" +
-            "        Disconnect = function()\n" +
-            "            listener.connected = false\n" +
-            "            for i, l in ipairs(self._listeners) do\n" +
-            "                if l == listener then\n" +
-            "                    table.remove(self._listeners, i)\n" +
-            "                    break\n" +
-            "                end\n" +
-            "            end\n" +
-            "        end\n" +
-            "    }\n" +
-            "    conn.disconnect = conn.Disconnect\n" +
-            "    return conn\n" +
-            "end\n" +
-            "Signal.connect = Signal.Connect\n" +
-            "function Signal:Once(fn)\n" +
-            "    local connection\n" +
-            "    connection = self:Connect(function(...)\n" +
-            "        connection:Disconnect()\n" +
-            "        fn(...)\n" +
-            "    end)\n" +
-            "    return connection\n" +
-            "end\n" +
-            "Signal.once = Signal.Once\n" +
-            "function Signal:Fire(...)\n" +
-            "    local args = {...}\n" +
-            "    for _, listener in ipairs(self._listeners) do\n" +
-            "        if listener.connected then\n" +
-            "            task.spawn(listener.fn, table.unpack(args))\n" +
-            "        end\n" +
-            "    end\n" +
-            "end\n" +
-            "Signal.fire = Signal.Fire\n" +
-            "function Signal:Wait()\n" +
-            "    local thread = coroutine.running()\n" +
-            "    local connection\n" +
-            "    connection = self:Connect(function(...)\n" +
-            "        connection:Disconnect()\n" +
-            "        coroutine.resume(thread, ...)\n" +
-            "    end)\n" +
-            "    return coroutine.yield()\n" +
-            "end\n" +
-            "Signal.wait = Signal.Wait\n" +
-            "_G.Signal = Signal\n",
-            "setup_bootstrap"
-        );
-
-        executeString(
-            "local RemoteEvent = {}\n" +
-            "RemoteEvent.__index = RemoteEvent\n" +
-            "function RemoteEvent:new(name, javaNetworkService)\n" +
-            "    local self = setmetatable({}, RemoteEvent)\n" +
-            "    self.Name = name\n" +
-            "    self.OnServerEvent = Signal.new()\n" +
-            "    self.OnClientEvent = Signal.new()\n" +
-            "    self._javaService = javaNetworkService\n" +
-            "    return self\n" +
-            "end\n" +
-            "function RemoteEvent:FireClient(player, ...)\n" +
-            "    local args = {...}\n" +
-            "    local uuid = \"\"\n" +
-            "    if type(player) == \"string\" then\n" +
-            "        uuid = player\n" +
-            "    elseif type(player) == \"userdata\" or type(player) == \"table\" then\n" +
-            "        local raw = player.__instance or player\n" +
-            "        if type(raw) == \"userdata\" then\n" +
-            "            local ok, res = pcall(function() return tostring(raw:getUUID()) end)\n" +
-            "            if ok then uuid = res else\n" +
-            "                local ok2, res2 = pcall(function() return tostring(raw:getUUIDString()) end)\n" +
-            "                if ok2 then uuid = res2 end\n" +
-            "            end\n" +
-            "        end\n" +
-            "    end\n" +
-            "    self._javaService:FireClient(self.Name, uuid, args)\n" +
-            "end\n" +
-            "function RemoteEvent:FireAllClients(...)\n" +
-            "    local args = {...}\n" +
-            "    self._javaService:FireAllClients(self.Name, args)\n" +
-            "end\n" +
-            "function RemoteEvent:FireServer(...)\n" +
-            "    local args = {...}\n" +
-            "    self._javaService:FireServer(self.Name, args)\n" +
-            "end\n" +
-            "_G.RemoteEvent = RemoteEvent\n" +
-            "\n" +
-            "local RemoteFunction = {}\n" +
-            "RemoteFunction.__index = RemoteFunction\n" +
-            "function RemoteFunction:new(name, javaNetworkService)\n" +
-            "    local self = setmetatable({}, RemoteFunction)\n" +
-            "    self.Name = name\n" +
-            "    self.OnServerInvoke = nil\n" +
-            "    self.OnClientInvoke = nil\n" +
-            "    self._javaService = javaNetworkService\n" +
-            "    return self\n" +
-            "end\n" +
-            "function RemoteFunction:InvokeServer(...)\n" +
-            "    local args = {...}\n" +
-            "    return self._javaService:InvokeServer(self.Name, args)\n" +
-            "end\n" +
-            "function RemoteFunction:InvokeClient(player, ...)\n" +
-            "    local args = {...}\n" +
-            "    local uuid = \"\"\n" +
-            "    if type(player) == \"string\" then uuid = player end\n" +
-            "    return self._javaService:InvokeClient(self.Name, uuid, args)\n" +
-            "end\n" +
-            "_G.RemoteFunction = RemoteFunction\n" +
-            "\n" +
-            "local UserInputService = {\n" +
-            "    InputBegan = Signal.new(),\n" +
-            "    InputEnded = Signal.new()\n" +
-            "}\n" +
-            "function UserInputService:IsKeyDown(keyCode)\n" +
-            "    return false -- Handled client-side via PAL\n" +
-            "end\n" +
-            "_G.UserInputService = UserInputService\n" +
-            "\n" +
-            "local RunService = {\n" +
-            "    Heartbeat = Signal.new(),\n" +
-            "    RenderStepped = Signal.new(),\n" +
-            "    Stepped = Signal.new()\n" +
-            "}\n" +
-            "function RunService:IsServer()\n" +
-            "    return true\n" +
-            "end\n" +
-            "function RunService:IsClient()\n" +
-            "    return false\n" +
-            "end\n" +
-            "_G.RunService = RunService\n" +
-            "\n" +
-            "local CFrame = {}\n" +
-            "CFrame.__index = CFrame\n" +
-            "function CFrame.new(x, y, z)\n" +
-            "    local self = setmetatable({}, CFrame)\n" +
-            "    if type(x) == \"table\" and x.X then\n" +
-            "        self.Position = x\n" +
-            "    else\n" +
-            "        self.Position = Vector3.new(x or 0, y or 0, z or 0)\n" +
-            "    end\n" +
-            "    self.LookVector = Vector3.new(0, 0, -1)\n" +
-            "    self.UpVector = Vector3.new(0, 1, 0)\n" +
-            "    return self\n" +
-            "end\n" +
-            "function CFrame.lookAt(eye, target)\n" +
-            "    local cf = CFrame.new(eye)\n" +
-            "    if eye and target then\n" +
-            "        local dir = (target - eye).Unit\n" +
-            "        cf.LookVector = dir\n" +
-            "    end\n" +
-            "    return cf\n" +
-            "end\n" +
-            "_G.CFrame = CFrame\n" +
-            "\n" +
-            "local TweenInfo = {}\n" +
-            "TweenInfo.__index = TweenInfo\n" +
-            "function TweenInfo.new(time, easingStyle, easingDirection, repeatCount, reverses, delayTime)\n" +
-            "    local self = setmetatable({}, TweenInfo)\n" +
-            "    self.Time = time or 1.0\n" +
-            "    self.EasingStyle = easingStyle or \"Linear\"\n" +
-            "    self.EasingDirection = easingDirection or \"Out\"\n" +
-            "    self.RepeatCount = repeatCount or 0\n" +
-            "    self.Reverses = reverses or false\n" +
-            "    self.DelayTime = delayTime or 0\n" +
-            "    return self\n" +
-            "end\n" +
-            "_G.TweenInfo = TweenInfo\n" +
-            "\n" +
-            "local TweenService = {}\n" +
-            "function TweenService:Create(instance, tweenInfo, propertyTable)\n" +
-            "    local tween = {}\n" +
-            "    tween.Completed = Signal.new()\n" +
-            "    function tween:Play()\n" +
-            "        task.spawn(function()\n" +
-            "            if tweenInfo and tweenInfo.DelayTime and tweenInfo.DelayTime > 0 then\n" +
-            "                task.wait(tweenInfo.DelayTime)\n" +
-            "            end\n" +
-            "            if propertyTable then\n" +
-            "                for prop, val in pairs(propertyTable) do\n" +
-            "                    pcall(function() instance[prop] = val end)\n" +
-            "                end\n" +
-            "            end\n" +
-            "            tween.Completed:Fire()\n" +
-            "        end)\n" +
-            "    end\n" +
-            "    function tween:Stop() end\n" +
-            "    function tween:Pause() end\n" +
-            "    return tween\n" +
-            "end\n" +
-            "_G.TweenService = TweenService\n" +
-            "\n" +
-            "local RaycastParams = {}\n" +
-            "RaycastParams.__index = RaycastParams\n" +
-            "function RaycastParams.new()\n" +
-            "    local self = setmetatable({}, RaycastParams)\n" +
-            "    self.FilterDescendantsInstances = {}\n" +
-            "    self.FilterType = \"Exclude\"\n" +
-            "    return self\n" +
-            "end\n" +
-            "_G.RaycastParams = RaycastParams\n" +
-            "\n" +
-            "local Players = { LocalPlayer = nil }\n" +
-            "_G.Players = Players\n",
-            "ROBLOX_BOOTSTRAP"
-        );
+        // 7. Bootstrap Roblox task and Signal libraries from Resource File
+        loadBootstrapResource("/lua/luatweaker_bootstrap.lua");
 
         setupNativeRequire(globals);
+    }
+
+    private void loadBootstrapResource(String resourcePath) {
+        try (InputStream stream = CobaltLuaEngine.class.getResourceAsStream(resourcePath)) {
+            if (stream != null) {
+                LuaClosure closure = LoadState.load(state, stream, resourcePath, state.globals());
+                org.squiddev.cobalt.function.Dispatch.call(state, closure);
+                AsyncFileLogger.get().info(com.luatweaker.api.log.LogStage.SYSTEM, "Successfully executed bootstrap resource: " + resourcePath);
+            } else {
+                AsyncFileLogger.get().error(com.luatweaker.api.log.LogStage.SYSTEM, "Bootstrap resource file not found: " + resourcePath, state);
+            }
+        } catch (Throwable e) {
+            AsyncFileLogger.get().error(com.luatweaker.api.log.LogStage.SYSTEM, "Failed to load system bootstrap script '" + resourcePath + "': " + e.getMessage(), state);
+        }
+    }
+
+    private String getActiveModId() {
+        String currentModule = activeModuleStack.get().peek();
+        if (currentModule == null || currentModule.isBlank()) return null;
+        int slash = currentModule.indexOf('/');
+        if (slash > 0) return currentModule.substring(0, slash);
+        int dot = currentModule.indexOf('.');
+        return dot > 0 ? currentModule.substring(0, dot) : currentModule;
     }
 
     private File luaDirectory;
@@ -475,6 +271,30 @@ public class CobaltLuaEngine implements ILuaEngine {
             public Varargs invoke(LuaState state, Varargs args) throws LuaError, org.squiddev.cobalt.UnwindThrowable {
                 if (args.count() < 1) throw new LuaError("require requires 1 argument (moduleName)");
                 String modName = args.arg(1).toString();
+
+                if (modName.startsWith(".")) {
+                    if (modName.startsWith("..")) {
+                        throw new LuaError("Parent directory traversal ('..') is forbidden for Sibling Require security.");
+                    }
+                    java.util.Deque<String> stack = activeModuleStack.get();
+                    String currentModule = stack.peek();
+                    if (currentModule != null && !currentModule.isBlank()) {
+                        if (currentModule.endsWith(".lua")) {
+                            currentModule = currentModule.substring(0, currentModule.length() - 4);
+                        }
+                        currentModule = currentModule.replace('/', '.');
+                        int lastDot = currentModule.lastIndexOf('.');
+                        if (lastDot > 0) {
+                            String parentPackage = currentModule.substring(0, lastDot);
+                            modName = parentPackage + "." + modName.substring(1);
+                        } else {
+                            modName = currentModule + "." + modName.substring(1);
+                        }
+                    } else {
+                        modName = modName.substring(1);
+                    }
+                }
+
                 LuaValue result = moduleCache.get(modName);
                 if (result == null) {
                     result = resolveNativeModule(globals, modName);
@@ -500,38 +320,71 @@ public class CobaltLuaEngine implements ILuaEngine {
     private LuaValue resolveFileModule(String modName) {
         File dir = luaDirectory;
         if (dir == null || !dir.exists()) {
+            dir = new File("luamods");
+        }
+        if (!dir.exists()) {
             dir = new File("lua");
         }
-        if (dir == null || !dir.exists()) return Constants.NIL;
+        if (!dir.exists()) return Constants.NIL;
 
         String relPath = modName.replace('.', '/');
         List<String> candidates = List.of(
                 relPath + ".lua",
                 relPath + "/init.lua",
                 "lib/" + relPath + ".lua",
-                "lib/" + relPath + "/init.lua",
-                "startup/" + relPath + ".lua",
-                "startup/" + relPath + "/init.lua",
-                "server/" + relPath + ".lua",
-                "server/" + relPath + "/init.lua",
-                "client/" + relPath + ".lua",
-                "client/" + relPath + "/init.lua"
+                "lib/" + relPath + "/init.lua"
         );
 
         for (String cand : candidates) {
             File file = new File(dir, cand);
             if (file.exists() && file.isFile()) {
+                activeModuleStack.get().push(modName);
                 try (InputStream stream = Files.newInputStream(file.toPath())) {
                     LuaClosure closure = LoadState.load(state, stream, file.getName(), state.globals());
                     Varargs res = org.squiddev.cobalt.function.Dispatch.call(state, closure);
                     LuaValue ret = res.arg(1);
                     return (ret != null && !ret.isNil()) ? ret : ValueFactory.valueOf(true);
                 } catch (Throwable e) {
-                    AsyncFileLogger.get().error("REQUIRE", "Failed to load Lua module file '" + cand + "': " + e.getMessage(), state);
+                    if (e.getClass().getName().contains("UnwindThrowable")) {
+                        return ValueFactory.valueOf(true);
+                    }
+                    String msg = e.getMessage() != null && !e.getMessage().isBlank() ? e.getMessage() : e.toString();
+                    AsyncFileLogger.get().error("REQUIRE", "Failed to load Lua module file '" + cand + "': " + msg, state);
                     return Constants.NIL;
+                } finally {
+                    activeModuleStack.get().pop();
                 }
             }
         }
+
+        // Search sub-directories of luamods/ (e.g. luamods/my_custom_mod/src/server/boss_ai.lua)
+        File[] subMods = dir.listFiles();
+        if (subMods != null) {
+            for (File modFolder : subMods) {
+                if (modFolder.isDirectory()) {
+                    File targetFile = new File(modFolder, relPath + ".lua");
+                    if (!targetFile.exists()) targetFile = new File(modFolder, relPath + "/init.lua");
+                    if (targetFile.exists() && targetFile.isFile()) {
+                        activeModuleStack.get().push(modName);
+                        try (InputStream stream = Files.newInputStream(targetFile.toPath())) {
+                            LuaClosure closure = LoadState.load(state, stream, targetFile.getName(), state.globals());
+                            Varargs res = org.squiddev.cobalt.function.Dispatch.call(state, closure);
+                            LuaValue ret = res.arg(1);
+                            return (ret != null && !ret.isNil()) ? ret : ValueFactory.valueOf(true);
+                        } catch (Throwable e) {
+                            if (e.getClass().getName().contains("UnwindThrowable")) {
+                                return ValueFactory.valueOf(true);
+                            }
+                            String msg = e.getMessage() != null && !e.getMessage().isBlank() ? e.getMessage() : e.toString();
+                            AsyncFileLogger.get().error("REQUIRE", "Failed to load Lua module file '" + targetFile.getPath() + "': " + msg, state);
+                        } finally {
+                            activeModuleStack.get().pop();
+                        }
+                    }
+                }
+            }
+        }
+
         return Constants.NIL;
     }
 
@@ -561,6 +414,7 @@ public class CobaltLuaEngine implements ILuaEngine {
                 LuaValue val = globals.rawget("Entities");
                 yield (val != null && !val.isNil()) ? val : globals.rawget("EntityService");
             }
+            case "LuaTweaker.Players", "Players" -> globals.rawget("Players");
             case "LuaTweaker.AIGoals", "AIGoals" -> globals.rawget("AIGoals");
             case "LuaTweaker.Loot", "Loot" -> globals.rawget("Loot");
             case "LuaTweaker.Storage", "Storage", "storage" -> {
@@ -580,6 +434,10 @@ public class CobaltLuaEngine implements ILuaEngine {
                 yield (val != null && !val.isNil()) ? val : globals.rawget("InterceptionService");
             }
             case "LuaTweaker.Camera", "Camera" -> globals.rawget("Camera");
+            case "LuaTweaker.Client", "LuaTweaker.ClientService", "Client", "ClientService" -> {
+                LuaValue val = globals.rawget("Client");
+                yield (val != null && !val.isNil()) ? val : globals.rawget("ClientService");
+            }
             case "LuaTweaker.ClientEffects", "ClientEffects" -> globals.rawget("ClientEffects");
             case "LuaTweaker.Signal", "Signal" -> globals.rawget("Signal");
             case "LuaTweaker.Utils", "Utils" -> globals.rawget("Utils");
@@ -593,11 +451,16 @@ public class CobaltLuaEngine implements ILuaEngine {
 
     @Override
     public void executeString(String code, String name) {
+        activeModuleStack.get().push(name);
         try (InputStream stream = new java.io.ByteArrayInputStream(code.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
             LuaClosure closure = LoadState.load(state, stream, name, state.globals());
             org.squiddev.cobalt.function.Dispatch.call(state, closure);
         } catch (Throwable e) {
-            AsyncFileLogger.get().error("BOOTSTRAP", "Error running bootstrap script " + name + ": " + e.getMessage(), state);
+            if (!e.getClass().getName().contains("UnwindThrowable")) {
+                AsyncFileLogger.get().error("BOOTSTRAP", "Error running bootstrap script " + name + ": " + e.getMessage(), state);
+            }
+        } finally {
+            activeModuleStack.get().pop();
         }
     }
 
@@ -748,6 +611,24 @@ public class CobaltLuaEngine implements ILuaEngine {
         if (obj instanceof Number n) return wrapNumber(n.doubleValue());
         if (obj instanceof Boolean b) return wrapBoolean(b);
         if (obj instanceof ILuaTable t) return t;
+
+        if (obj instanceof java.util.Map<?, ?> map) {
+            ILuaTable table = createTable();
+            for (java.util.Map.Entry<?, ?> entry : map.entrySet()) {
+                table.rawset(String.valueOf(entry.getKey()), toLuaValue(entry.getValue()));
+            }
+            return table;
+        }
+
+        if (obj instanceof java.util.List<?> list) {
+            ILuaTable table = createTable();
+            int i = 1;
+            for (Object item : list) {
+                table.rawset(i++, toLuaValue(item));
+            }
+            return table;
+        }
+
         return wrapUserdata(obj);
     }
 
