@@ -1,7 +1,0 @@
-────────────────────────────────────────────────────────────────────────
-  LuaTweaker Log — 2026-07-31 22:57:11
-────────────────────────────────────────────────────────────────────────
-22:57:11 [PRINT       ] ([string "/lua/luatweak..."]:384) [INFO] [LuaTweaker] System Bootstrap Library loaded successfully!
-22:57:11 [SYSTEM      ] Successfully executed bootstrap resource: /lua/luatweaker_bootstrap.lua
-22:57:11 [PRINT       ] ([string "/lua/luatweak..."]:384) [INFO] [LuaTweaker] System Bootstrap Library loaded successfully!
-22:57:11 [SYSTEM      ] Successfully executed bootstrap resource: /lua/luatweaker_bootstrap.lua
