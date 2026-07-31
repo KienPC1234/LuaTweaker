@@ -43,6 +43,16 @@ import java.util.*;
 
 public class NeoForgePlatformHelper implements IPlatformHelper {
     @Override
+    public boolean isClient() {
+        return net.neoforged.fml.loading.FMLEnvironment.dist == net.neoforged.api.distmarker.Dist.CLIENT;
+    }
+
+    @Override
+    public boolean isDedicatedServer() {
+        return net.neoforged.fml.loading.FMLEnvironment.dist == net.neoforged.api.distmarker.Dist.DEDICATED_SERVER;
+    }
+
+    @Override
     public IItem createItem(String itemId, int count) {
         ResourceLocation rl = ResourceLocation.parse(itemId);
         Item item = BuiltInRegistries.ITEM.get(rl);
@@ -254,7 +264,24 @@ public class NeoForgePlatformHelper implements IPlatformHelper {
             java.io.File worldDir = server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toFile();
             return new java.io.File(worldDir, "luatweaker/storage");
         }
-        return new java.io.File("run/luatweaker/storage");
+        java.io.File gameDir = net.neoforged.fml.loading.FMLPaths.GAMEDIR.get().toFile();
+        return new java.io.File(gameDir, "luatweaker/storage");
+    }
+
+    @Override
+    @Nullable
+    public com.luatweaker.api.entity.IPlayer getPlayer(@NotNull String uuid) {
+        MinecraftServer server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (server != null) {
+            try {
+                java.util.UUID id = java.util.UUID.fromString(uuid);
+                net.minecraft.server.level.ServerPlayer player = server.getPlayerList().getPlayer(id);
+                if (player != null) {
+                    return new com.luatweaker.platform.entity.NeoForgePlayerWrapper(player);
+                }
+            } catch (Exception ignored) {}
+        }
+        return null;
     }
 
     @Override

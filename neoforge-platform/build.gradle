@@ -121,6 +121,14 @@ dependencies {
     // FML runtime classpath overrides for dev environment
     additionalRuntimeClasspath "cc.tweaked:cobalt:0.9.9"
     additionalRuntimeClasspath "org.mongodb:bson:5.1.0"
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
 }
 
 var copyDevelopmentMods = tasks.register('copyDevelopmentMods', Copy) {

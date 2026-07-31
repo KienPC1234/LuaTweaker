@@ -49,12 +49,24 @@ public class TaskLuaBinding {
             return engine.nilValue();
         });
 
+        taskTable.rawset("wait", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            double sec = (args.length > off) ? args[off].asDouble() : 0.05;
+            try {
+                Thread.sleep((long) (sec * 1000.0));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return engine.wrapNumber(sec);
+        });
+
         taskTable.rawset("_tick", args -> {
             taskService.tick(engine);
             return engine.nilValue();
         });
 
         globals.rawset("task", taskTable);
-        engine.registerService("TaskService", taskService);
+        engine.registerService("TaskService", taskTable);
+        engine.registerService("Task", taskTable);
     }
 }

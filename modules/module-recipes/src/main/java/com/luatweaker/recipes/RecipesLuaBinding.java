@@ -92,6 +92,9 @@ public class RecipesLuaBinding {
         if (obj instanceof IngredientWrapper ing) {
             return ing;
         }
+        if (obj instanceof ItemCount ic) {
+            return new IngredientWrapper(ic.itemId());
+        }
         if (obj instanceof IItem item) {
             return new IngredientWrapper(item.getId());
         }
@@ -104,6 +107,10 @@ public class RecipesLuaBinding {
     }
 
     public static void bind(ILuaTable table, IRecipeManagerService service) {
+        bind(null, table, service);
+    }
+
+    public static void bind(ILuaEngine engine, ILuaTable table, IRecipeManagerService service) {
         // recipes:removeByOutput("minecraft:diamond_sword")
         table.rawset("removeByOutput", args -> {
             if (args.length < 2) throw new IllegalArgumentException("Missing argument 'output'");
@@ -126,16 +133,16 @@ public class RecipesLuaBinding {
         table.rawset("removeById", args -> {
             if (args.length < 2) throw new IllegalArgumentException("Missing argument 'id'");
             String id = args[1].asString();
-            LuaTweakerLog.get().recipe(LogStage.RECIPE_REMOVE, id, null, "Removing recipe by ID");
+            LuaTweakerLog.get().recipe(LogStage.RECIPE_REMOVE, id, null, "Removing recipe by ID: " + id);
             service.removeById(id);
             return null;
         });
 
-        // recipes:removeByMod("minecraft")
+        // recipes:removeByMod("some_mod")
         table.rawset("removeByMod", args -> {
             if (args.length < 2) throw new IllegalArgumentException("Missing argument 'modId'");
             String modId = args[1].asString();
-            LuaTweakerLog.get().recipe(LogStage.RECIPE_REMOVE, null, null, "Removing recipes by mod: " + modId);
+            LuaTweakerLog.get().recipe(LogStage.RECIPE_REMOVE, null, null, "Removing all recipes from mod: " + modId);
             service.removeByMod(modId);
             return null;
         });
@@ -144,57 +151,33 @@ public class RecipesLuaBinding {
         table.rawset("removeByTag", args -> {
             if (args.length < 2) throw new IllegalArgumentException("Missing argument 'tag'");
             String tag = args[1].asString();
-            LuaTweakerLog.get().recipe(LogStage.RECIPE_REMOVE, null, null, "Removing recipes by tag: " + tag);
+            LuaTweakerLog.get().recipe(LogStage.RECIPE_REMOVE, null, null, "Removing recipes using tag: " + tag);
             service.removeByTag(tag);
             return null;
         });
 
         // recipes:removeAll()
         table.rawset("removeAll", args -> {
-            LuaTweakerLog.get().recipe(LogStage.RECIPE_REMOVE, "*", null, "Removing ALL recipes");
+            LuaTweakerLog.get().recipe(LogStage.RECIPE_REMOVE, null, null, "Clearing ALL recipes!");
             service.removeAll();
             return null;
         });
 
-        // recipes:addShapeless("my_mod:instant_bread", item("minecraft:bread", 4), { "minecraft:wheat", "minecraft:sugar" })
-        table.rawset("addShapeless", args -> {
-            if (args.length < 4) throw new IllegalArgumentException("Missing arguments for addShapeless");
-            String recipeId = args[1].asString();
-            ItemCount output = parseItemCount(args[2], "output");
-
-            ILuaTable ingredientsTable = args[3].asTable();
-            List<IngredientWrapper> ingredients = new ArrayList<>();
-            int len = ingredientsTable.length();
-            StringBuilder ingListStr = new StringBuilder("[");
-            for (int i = 1; i <= len; i++) {
-                IngredientWrapper ing = parseIngredient(ingredientsTable.rawget(i), "ingredients[" + i + "]");
-                ingredients.add(ing);
-                if (i > 1) ingListStr.append(", ");
-                ingListStr.append(ing.descriptor());
-            }
-            ingListStr.append("]");
-
-            LuaTweakerLog.get().recipe(LogStage.RECIPE_ADD, recipeId, output.count() + "x " + output.itemId(), "Shapeless recipe, ingredients: " + ingListStr);
-            service.addShapeless(recipeId, output, ingredients);
-            return null;
-        });
-
-        // recipes:addShaped("my_mod:ruby_sword", item("luatweaker:custom_ruby_sword", 1), { " R ", " R ", " S " }, { R = "luatweaker:custom_ruby", S = "minecraft:stick" })
+        // recipes:addShaped("ruby_sword", item("minecraft:diamond_sword"), {" R ", " R ", " S "}, { R = ingredient("luatweaker:custom_ruby"), S = ingredient("minecraft:stick") })
         table.rawset("addShaped", args -> {
             if (args.length < 5) throw new IllegalArgumentException("Missing arguments for addShaped");
             String recipeId = args[1].asString();
             ItemCount output = parseItemCount(args[2], "output");
 
-            ILuaTable patternTable = args[3].asTable();
             List<String> pattern = new ArrayList<>();
-            int patternLen = patternTable.length();
-            for (int i = 1; i <= patternLen; i++) {
-                pattern.add(patternTable.rawget(i).asString());
+            ILuaTable patTable = args[3].asTable();
+            int patLen = patTable.length();
+            for (int i = 1; i <= patLen; i++) {
+                pattern.add(patTable.rawget(i).asString());
             }
 
-            ILuaTable keysTable = args[4].asTable();
             Map<String, IngredientWrapper> keys = new HashMap<>();
-
+            ILuaTable keysTable = args[4].asTable();
             for (Map.Entry<ILuaValue, ILuaValue> entry : keysTable.asMap().entrySet()) {
                 String keyChar = entry.getKey().asString();
                 IngredientWrapper ing = parseIngredient(entry.getValue(), "key '" + keyChar + "'");
@@ -252,7 +235,7 @@ public class RecipesLuaBinding {
             return null;
         });
 
-        // recipes:addSmoking("cooked_meat", item("minecraft:cooked_beef"), "minecraft:beef", 0.35, 100)
+        // recipes:addSmoking("ruby_smoke", item("luatweaker:custom_ruby"), "luatweaker:ruby_ore", 0.35, 100)
         table.rawset("addSmoking", args -> {
             if (args.length < 6) throw new IllegalArgumentException("Missing arguments for addSmoking");
             String id = args[1].asString();
@@ -265,7 +248,7 @@ public class RecipesLuaBinding {
             return null;
         });
 
-        // recipes:addCampfire("campfire_meat", item("minecraft:cooked_beef"), "minecraft:beef", 0.35, 600)
+        // recipes:addCampfire("ruby_campfire", item("luatweaker:custom_ruby"), "luatweaker:ruby_ore", 0.35, 600)
         table.rawset("addCampfire", args -> {
             if (args.length < 6) throw new IllegalArgumentException("Missing arguments for addCampfire");
             String id = args[1].asString();
@@ -278,18 +261,36 @@ public class RecipesLuaBinding {
             return null;
         });
 
-        // recipes:addStonecutting("ruby_unpack", item("luatweaker:custom_ruby", 9), "luatweaker:custom_ruby_block")
+        // recipes:addShapeless("instant_bread", item("minecraft:bread", 4), {"minecraft:wheat", "minecraft:sugar"})
+        table.rawset("addShapeless", args -> {
+            if (args.length < 4) throw new IllegalArgumentException("Missing arguments for addShapeless");
+            String id = args[1].asString();
+            ItemCount output = parseItemCount(args[2], "output");
+
+            List<IngredientWrapper> ingredients = new ArrayList<>();
+            ILuaTable ingTable = args[3].asTable();
+            int ingLen = ingTable.length();
+            for (int i = 1; i <= ingLen; i++) {
+                ingredients.add(parseIngredient(ingTable.rawget(i), "ingredient #" + i));
+            }
+
+            LuaTweakerLog.get().recipe(LogStage.RECIPE_ADD, id, output.count() + "x " + output.itemId(), "Shapeless recipe (" + ingredients.size() + " inputs)");
+            service.addShapeless(id, output, ingredients);
+            return null;
+        });
+
+        // recipes:addStonecutting("cut_copper", item("minecraft:cut_copper"), "minecraft:copper_block")
         table.rawset("addStonecutting", args -> {
             if (args.length < 4) throw new IllegalArgumentException("Missing arguments for addStonecutting");
             String id = args[1].asString();
             ItemCount output = parseItemCount(args[2], "output");
-            IngredientWrapper inIng = parseIngredient(args[3], "input");
+            IngredientWrapper input = parseIngredient(args[3], "input");
             LuaTweakerLog.get().recipe(LogStage.RECIPE_ADD, id, output.count() + "x " + output.itemId(), "Stonecutting recipe");
-            service.addStonecutting(id, output, inIng);
+            service.addStonecutting(id, output, input);
             return null;
         });
 
-        // recipes:addSmithing("ruby_pickaxe_upgrade", item("luatweaker:ruby_pickaxe", 1), template, base, addition)
+        // recipes:addSmithing("ruby_upgrade", output, template, base, addition)
         table.rawset("addSmithing", args -> {
             if (args.length < 6) throw new IllegalArgumentException("Missing arguments for addSmithing");
             String id = args[1].asString();
@@ -344,6 +345,280 @@ public class RecipesLuaBinding {
             service.addTrade(prof, level, buy1, buy2, sell, maxUses, xp);
             return null;
         });
+
+        // -------------------------------------------------------------
+        // Recipe Builder API: Recipe.Shaped("id"):Pattern(...):Key(...):Output(...):Register()
+        // -------------------------------------------------------------
+        if (engine != null) {
+            ILuaTable recipeTable = engine.createTable();
+            recipeTable.rawset("Shaped", args -> {
+                int off = getOffset(args);
+                String id = args[off].asString();
+                ILuaTable builder = engine.createTable();
+                final List<String> pattern = new ArrayList<>();
+                final Map<String, IngredientWrapper> keys = new HashMap<>();
+                final ItemCount[] output = new ItemCount[1];
+
+                builder.rawset("Pattern", a -> {
+                    int aOff = getOffset(a);
+                    if (a.length - aOff >= 1 && a[aOff].isTable()) {
+                        ILuaTable patTbl = a[aOff].asTable();
+                        for (int i = 1; ; i++) {
+                            ILuaValue line = patTbl.rawget(i);
+                            if (line == null || line.isNil()) break;
+                            pattern.add(line.asString());
+                        }
+                    }
+                    return builder;
+                });
+
+                builder.rawset("Key", a -> {
+                    int aOff = getOffset(a);
+                    if (a.length - aOff >= 2) {
+                        String keyChar = a[aOff].asString();
+                        IngredientWrapper ing = parseIngredient(a[aOff + 1], "key");
+                        keys.put(keyChar, ing);
+                    }
+                    return builder;
+                });
+
+                builder.rawset("Output", a -> {
+                    int aOff = getOffset(a);
+                    if (a.length - aOff >= 1) {
+                        ItemCount out = parseItemCount(a[aOff], "output");
+                        if (a.length - aOff >= 2 && !a[aOff + 1].isNil()) {
+                            out = new ItemCount(out.itemId(), a[aOff + 1].asInt());
+                        }
+                        output[0] = out;
+                    }
+                    return builder;
+                });
+
+                builder.rawset("Register", a -> {
+                    if (output[0] != null && !pattern.isEmpty()) {
+                        service.addShaped(id, output[0], pattern, keys);
+                    }
+                    return builder;
+                });
+
+                return builder;
+            });
+
+            recipeTable.rawset("Shapeless", args -> {
+                int off = getOffset(args);
+                String id = args[off].asString();
+                ILuaTable builder = engine.createTable();
+                final List<IngredientWrapper> inputs = new ArrayList<>();
+                final ItemCount[] output = new ItemCount[1];
+
+                builder.rawset("Inputs", a -> {
+                    int aOff = getOffset(a);
+                    if (a.length - aOff >= 1 && a[aOff].isTable()) {
+                        ILuaTable inTbl = a[aOff].asTable();
+                        for (int i = 1; ; i++) {
+                            ILuaValue entry = inTbl.rawget(i);
+                            if (entry == null || entry.isNil()) break;
+                            inputs.add(parseIngredient(entry, "input"));
+                        }
+                    }
+                    return builder;
+                });
+
+                builder.rawset("Output", a -> {
+                    int aOff = getOffset(a);
+                    if (a.length - aOff >= 1) {
+                        ItemCount out = parseItemCount(a[aOff], "output");
+                        if (a.length - aOff >= 2 && !a[aOff + 1].isNil()) {
+                            out = new ItemCount(out.itemId(), a[aOff + 1].asInt());
+                        }
+                        output[0] = out;
+                    }
+                    return builder;
+                });
+
+                builder.rawset("Register", a -> {
+                    if (output[0] != null) {
+                        service.addShapeless(id, output[0], inputs);
+                    }
+                    return builder;
+                });
+
+                return builder;
+            });
+
+            recipeTable.rawset("Smelting", args -> {
+                int off = getOffset(args);
+                String id = args[off].asString();
+                ILuaTable builder = engine.createTable();
+                final IngredientWrapper[] input = new IngredientWrapper[1];
+                final ItemCount[] output = new ItemCount[1];
+                final float[] xp = new float[]{ 1.0f };
+                final int[] time = new int[]{ 200 };
+
+                builder.rawset("Input", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) input[0] = parseIngredient(a[aOff], "input"); return builder; });
+                builder.rawset("Output", a -> {
+                    int aOff = getOffset(a);
+                    if (a.length - aOff >= 1) {
+                        ItemCount out = parseItemCount(a[aOff], "output");
+                        if (a.length - aOff >= 2 && !a[aOff + 1].isNil()) out = new ItemCount(out.itemId(), a[aOff + 1].asInt());
+                        output[0] = out;
+                    }
+                    return builder;
+                });
+                builder.rawset("Xp", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) xp[0] = (float) a[aOff].asDouble(); return builder; });
+                builder.rawset("CookingTime", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) time[0] = a[aOff].asInt(); return builder; });
+                builder.rawset("Register", a -> {
+                    if (output[0] != null && input[0] != null) service.addSmelting(id, output[0], input[0], xp[0], time[0]);
+                    return builder;
+                });
+                return builder;
+            });
+
+            recipeTable.rawset("Blasting", args -> {
+                int off = getOffset(args);
+                String id = args[off].asString();
+                ILuaTable builder = engine.createTable();
+                final IngredientWrapper[] input = new IngredientWrapper[1];
+                final ItemCount[] output = new ItemCount[1];
+                final float[] xp = new float[]{ 2.0f };
+                final int[] time = new int[]{ 100 };
+
+                builder.rawset("Input", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) input[0] = parseIngredient(a[aOff], "input"); return builder; });
+                builder.rawset("Output", a -> {
+                    int aOff = getOffset(a);
+                    if (a.length - aOff >= 1) {
+                        ItemCount out = parseItemCount(a[aOff], "output");
+                        if (a.length - aOff >= 2 && !a[aOff + 1].isNil()) out = new ItemCount(out.itemId(), a[aOff + 1].asInt());
+                        output[0] = out;
+                    }
+                    return builder;
+                });
+                builder.rawset("Xp", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) xp[0] = (float) a[aOff].asDouble(); return builder; });
+                builder.rawset("CookingTime", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) time[0] = a[aOff].asInt(); return builder; });
+                builder.rawset("Register", a -> {
+                    if (output[0] != null && input[0] != null) service.addBlasting(id, output[0], input[0], xp[0], time[0]);
+                    return builder;
+                });
+                return builder;
+            });
+
+            recipeTable.rawset("Smoking", args -> {
+                int off = getOffset(args);
+                String id = args[off].asString();
+                ILuaTable builder = engine.createTable();
+                final IngredientWrapper[] input = new IngredientWrapper[1];
+                final ItemCount[] output = new ItemCount[1];
+                final float[] xp = new float[]{ 0.35f };
+                final int[] time = new int[]{ 100 };
+
+                builder.rawset("Input", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) input[0] = parseIngredient(a[aOff], "input"); return builder; });
+                builder.rawset("Output", a -> {
+                    int aOff = getOffset(a);
+                    if (a.length - aOff >= 1) {
+                        ItemCount out = parseItemCount(a[aOff], "output");
+                        if (a.length - aOff >= 2 && !a[aOff + 1].isNil()) out = new ItemCount(out.itemId(), a[aOff + 1].asInt());
+                        output[0] = out;
+                    }
+                    return builder;
+                });
+                builder.rawset("Xp", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) xp[0] = (float) a[aOff].asDouble(); return builder; });
+                builder.rawset("CookingTime", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) time[0] = a[aOff].asInt(); return builder; });
+                builder.rawset("Register", a -> {
+                    if (output[0] != null && input[0] != null) service.addSmoking(id, output[0], input[0], xp[0], time[0]);
+                    return builder;
+                });
+                return builder;
+            });
+
+            recipeTable.rawset("Campfire", args -> {
+                int off = getOffset(args);
+                String id = args[off].asString();
+                ILuaTable builder = engine.createTable();
+                final IngredientWrapper[] input = new IngredientWrapper[1];
+                final ItemCount[] output = new ItemCount[1];
+                final float[] xp = new float[]{ 0.35f };
+                final int[] time = new int[]{ 600 };
+
+                builder.rawset("Input", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) input[0] = parseIngredient(a[aOff], "input"); return builder; });
+                builder.rawset("Output", a -> {
+                    int aOff = getOffset(a);
+                    if (a.length - aOff >= 1) {
+                        ItemCount out = parseItemCount(a[aOff], "output");
+                        if (a.length - aOff >= 2 && !a[aOff + 1].isNil()) out = new ItemCount(out.itemId(), a[aOff + 1].asInt());
+                        output[0] = out;
+                    }
+                    return builder;
+                });
+                builder.rawset("Xp", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) xp[0] = (float) a[aOff].asDouble(); return builder; });
+                builder.rawset("CookingTime", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) time[0] = a[aOff].asInt(); return builder; });
+                builder.rawset("Register", a -> {
+                    if (output[0] != null && input[0] != null) service.addCampfire(id, output[0], input[0], xp[0], time[0]);
+                    return builder;
+                });
+                return builder;
+            });
+
+            recipeTable.rawset("Smithing", args -> {
+                int off = getOffset(args);
+                String id = args[off].asString();
+                ILuaTable builder = engine.createTable();
+                final IngredientWrapper[] tmpl = new IngredientWrapper[1];
+                final IngredientWrapper[] base = new IngredientWrapper[1];
+                final IngredientWrapper[] add = new IngredientWrapper[1];
+                final ItemCount[] output = new ItemCount[1];
+
+                builder.rawset("Template", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) tmpl[0] = parseIngredient(a[aOff], "template"); return builder; });
+                builder.rawset("Base", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) base[0] = parseIngredient(a[aOff], "base"); return builder; });
+                builder.rawset("Addition", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) add[0] = parseIngredient(a[aOff], "addition"); return builder; });
+                builder.rawset("Output", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) output[0] = parseItemCount(a[aOff], "output"); return builder; });
+                builder.rawset("Register", a -> {
+                    if (output[0] != null && tmpl[0] != null && base[0] != null && add[0] != null) {
+                        service.addSmithing(id, output[0], tmpl[0], base[0], add[0]);
+                    }
+                    return builder;
+                });
+                return builder;
+            });
+
+            recipeTable.rawset("ReplaceInput", args -> {
+                int off = getOffset(args);
+                if (args.length - off >= 2) service.replaceInput(args[off].asString(), args[off + 1].asString());
+                return null;
+            });
+            recipeTable.rawset("ReplaceOutput", args -> {
+                int off = getOffset(args);
+                if (args.length - off >= 2) service.replaceOutput(args[off].asString(), args[off + 1].asString());
+                return null;
+            });
+            recipeTable.rawset("RemoveByOutput", args -> {
+                int off = getOffset(args);
+                if (args.length - off >= 1) service.removeByOutput(args[off].asString());
+                return null;
+            });
+            recipeTable.rawset("RemoveById", args -> {
+                int off = getOffset(args);
+                if (args.length - off >= 1) service.removeById(args[off].asString());
+                return null;
+            });
+            recipeTable.rawset("RemoveByMod", args -> {
+                int off = getOffset(args);
+                if (args.length - off >= 1) service.removeByMod(args[off].asString());
+                return null;
+            });
+
+            ILuaTable env = engine.getGlobalEnvironment();
+            env.rawset("recipes", recipeTable);
+            env.rawset("Recipe", recipeTable);
+
+            engine.registerService("Recipes", recipeTable);
+            engine.registerService("Recipe", recipeTable);
+        }
+    }
+
+    private static int getOffset(ILuaValue[] args) {
+        if (args != null && args.length > 0 && args[0] != null && args[0].isTable()) {
+            return 1;
+        }
+        return 0;
     }
 }
-

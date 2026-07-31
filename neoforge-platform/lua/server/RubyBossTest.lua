@@ -1,17 +1,17 @@
 -- ===================================================================
 -- Roblox Custom Boss AI & Skill System Test Script
--- Recolor Zombie Boss with Dash Skill, Fireball Skill, Phase Transitions, and Minion Summoning
+-- Recolor Zombie Boss with Dash Skill, Fireball Skill, Phase Transitions
 -- ===================================================================
+local Entities = require("LuaTweaker.Entities")
+local AIGoals  = require("LuaTweaker.AIGoals")
+local Task     = require("LuaTweaker.Task")
+local Vector3  = require("LuaTweaker.Math.Vector3")
 
 print("Initializing RubyBossTest.lua...")
 
-local EntityService = Mod:GetService("EntityService")
-local AIGoals = Mod:GetService("AIGoals")
-local Task = Mod:GetService("Task")
-
-EntityService.EntitySpawned:Connect(function(entity)
+Entities.EntitySpawned:Connect(function(entity)
     if entity.Type == "luatweaker:ruby_boss" then
-        print("[Boss System] Initializing Pure Custom AI for " .. entity.Type .. " (Clearing Vanilla AI)...")
+        print("[Boss System] Initializing Pure Custom AI for " .. entity.Type .. "...")
 
         -- 1. CLEAR ALL DEFAULT VANILLA AI GOALS (100% Pure Custom Lua AI)
         AIGoals:clearGoals(entity)
@@ -35,11 +35,7 @@ EntityService.EntitySpawned:Connect(function(entity)
         AIGoals:addSkillGoal(entity, 1, "RubyFireball", 8.0, 15.0, function(target)
             print("[Ruby Boss Skill] Playing 'spell_cast' animation & firing projectiles!")
             entity:SendMessage("§cThe Ruby Overseer plays 'spell_cast' animation and launches projectiles!")
-
-            -- Play keyframe spell_cast animation
             entity:PlayAnimation("spell_cast", 1.5, 0.2)
-
-            -- Shoot Dragon Fireball and Wither Skull
             entity:ShootProjectile("minecraft:dragon_fireball", 1.8, 0.0)
             if target then
                 entity:ShootProjectileAt("minecraft:wither_skull", target, 2.0)
@@ -61,11 +57,9 @@ EntityService.EntitySpawned:Connect(function(entity)
             if entity.IsAlive and entity.Health < 250 and entity:GetAttribute("Phase") == "1" then
                 entity:SetAttribute("Phase", "2")
                 entity.CustomName = "§4[ENRAGED] Ruby Overseer Boss"
-
-                -- Play custom 'roar_skill' keyframe animation!
                 print("[Phase 2] Playing 'roar_skill' animation!")
                 entity:PlayAnimation("roar_skill", 1.2, 0.2)
-                entity.Velocity = Vector3.new(0, 1.2, 0) -- Explosive jump!
+                entity.Velocity = Vector3.new(0, 1.2, 0)
                 entity:SendMessage("§4[ENRAGED] The Ruby Overseer plays 'roar_skill' animation and enters Phase 2!")
             end
         end)

@@ -1,14 +1,22 @@
 -- ===================================================================
--- Roblox Advanced Boss & Client Visual Effects Test Script
--- Demonstrates custom projectile registration, Camera Shake, Screen Flash, Particle Emitters, and Sound Playback
+-- Advanced Boss & Client Visual Effects Test Script
+-- Demonstrates custom projectile registration, Camera Shake, Screen Flash, Particle Emitters
 -- ===================================================================
+local function safeRequire(modName)
+    local success, result = pcall(require, modName)
+    if success then return result else return nil end
+end
+
+local Content       = safeRequire("LuaTweaker.Content")
+local Camera        = safeRequire("LuaTweaker.Camera")
+local ClientEffects = safeRequire("LuaTweaker.ClientEffects")
+local Entities      = safeRequire("LuaTweaker.Entities")
 
 print("Initializing AdvancedBossAndClientEffectsTest.lua...")
 
--- 1. REGISTER CUSTOM PROJECTILE (Ruby Orb with Explosion Power & Flame Particles)
-local startup = Mod:GetService("Content") or Mod:GetService("startup")
-if startup and startup.registerProjectile then
-    startup:registerProjectile("luatweaker:ruby_orb", {
+-- 1. REGISTER CUSTOM PROJECTILE
+if Content and Content.registerProjectile then
+    Content:registerProjectile("luatweaker:ruby_orb", {
         damage = 30,
         explosionPower = 2,
         trailParticle = "minecraft:flame",
@@ -19,21 +27,15 @@ if startup and startup.registerProjectile then
     print("[Content] Registered Custom Projectile: luatweaker:ruby_orb")
 end
 
--- 2. ADVANCED CLIENT VISUAL & AUDIO EFFECTS
-local Camera = Mod:GetService("Camera") or _G.Camera
-local ClientEffects = Mod:GetService("ClientEffects")
-local EntityService = Mod:GetService("EntityService")
-
-EntityService.EntitySpawned:Connect(function(entity)
+-- 2. CLIENT VISUAL & AUDIO EFFECTS
+Entities.EntitySpawned:Connect(function(entity)
     if entity.Type == "minecraft:zombie" then
         print("[ClientTest] Zombie spawned, triggering screen shake & boss entrance flash!")
 
-        -- Camera Shake (Intensity: 2.5, Duration: 1.2 seconds)
         if Camera and Camera.Shake then
             Camera:Shake(2.5, 1.2)
         end
 
-        -- Screen Flash Red Overlay (Duration: 0.5s)
         if ClientEffects and ClientEffects.FlashScreen then
             ClientEffects:FlashScreen("#FF0000", 0.5)
             ClientEffects:PlaySound("minecraft:entity.wither.spawn", 1.0, 0.8)

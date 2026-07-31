@@ -18,9 +18,21 @@ public class FluidBuilderImpl implements IFluidBuilder {
     private String rarity = "COMMON";
     private java.util.function.Consumer<com.luatweaker.api.entity.IPlayer> touchHandler;
     private String creativeTab;
+    private String displayName;
 
     public FluidBuilderImpl(String id) {
         this.id = id;
+    }
+
+    @Override
+    public IFluidBuilder displayName(String name) {
+        this.displayName = name;
+        return this;
+    }
+
+    @Override
+    public String getDisplayName() {
+        return displayName != null ? displayName : id;
     }
 
     @Override

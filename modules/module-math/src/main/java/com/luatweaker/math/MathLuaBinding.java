@@ -98,25 +98,29 @@ public class MathLuaBinding {
         if (globalMath != null && globalMath.isTable()) {
             ILuaTable mathTbl = globalMath.asTable();
             mathTbl.rawset("clamp", args -> {
-                if (args.length < 3) return engine.wrapNumber(0);
-                double val = args[1].asDouble();
-                double min = args[2].asDouble();
-                double max = args[3].asDouble();
+                int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+                if (args.length - off < 3) return engine.wrapNumber(0);
+                double val = args[off].asDouble();
+                double min = args[off + 1].asDouble();
+                double max = args[off + 2].asDouble();
                 return engine.wrapNumber(Math.clamp(val, min, max));
             });
             mathTbl.rawset("sign", args -> {
-                if (args.length < 1) return engine.wrapNumber(0);
-                return engine.wrapNumber(Math.signum(args[1].asDouble()));
+                int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+                if (args.length - off < 1) return engine.wrapNumber(0);
+                return engine.wrapNumber(Math.signum(args[off].asDouble()));
             });
             mathTbl.rawset("round", args -> {
-                if (args.length < 1) return engine.wrapNumber(0);
-                return engine.wrapNumber((double) Math.round(args[1].asDouble()));
+                int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+                if (args.length - off < 1) return engine.wrapNumber(0);
+                return engine.wrapNumber((double) Math.round(args[off].asDouble()));
             });
             mathTbl.rawset("lerp", args -> {
-                if (args.length < 3) return engine.wrapNumber(0);
-                double a = args[1].asDouble();
-                double b = args[2].asDouble();
-                double t = args[3].asDouble();
+                int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+                if (args.length - off < 3) return engine.wrapNumber(0);
+                double a = args[off].asDouble();
+                double b = args[off + 1].asDouble();
+                double t = args[off + 2].asDouble();
                 return engine.wrapNumber(a + (b - a) * t);
             });
         }
@@ -126,9 +130,10 @@ public class MathLuaBinding {
         if (globalString != null && globalString.isTable()) {
             ILuaTable strTbl = globalString.asTable();
             strTbl.rawset("split", args -> {
-                if (args.length < 1) return engine.createTable();
-                String input = args[1].asString();
-                String sep = args.length >= 2 ? args[2].asString() : ",";
+                int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+                if (args.length - off < 1) return engine.createTable();
+                String input = args[off].asString();
+                String sep = args.length - off >= 2 ? args[off + 1].asString() : ",";
                 String[] parts = input.split(java.util.regex.Pattern.quote(sep));
                 ILuaTable result = engine.createTable();
                 for (int i = 0; i < parts.length; i++) {
@@ -137,8 +142,9 @@ public class MathLuaBinding {
                 return result;
             });
             strTbl.rawset("trim", args -> {
-                if (args.length < 1) return engine.wrapString("");
-                return engine.wrapString(args[1].asString().trim());
+                int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+                if (args.length - off < 1) return engine.wrapString("");
+                return engine.wrapString(args[off].asString().trim());
             });
         }
     }
@@ -441,7 +447,7 @@ public class MathLuaBinding {
 
         ILuaTable meta = engine.createTable();
         meta.rawset("__index", args -> {
-            String key = args[2].asString();
+            String key = args[1].asString();
 
             if (key.equals("Name") || key.equals("name")) {
                 return engine.wrapString(instance.getName());
@@ -490,8 +496,8 @@ public class MathLuaBinding {
         });
 
         meta.rawset("__newindex", args -> {
-            String key = args[2].asString();
-            ILuaValue val = args[3];
+            String key = args[1].asString();
+            ILuaValue val = args[2];
 
             if (key.equals("Name") || key.equals("name")) {
                 instance.setName(val.asString());

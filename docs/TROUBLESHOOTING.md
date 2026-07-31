@@ -17,14 +17,14 @@ File operations and script loaders enforce path normalization checks (`resolvedP
 - Connections to loopback or private IP addresses (`localhost`, `127.0.0.1`, `192.168.x.x`, `10.x.x.x`) are blocked by default to prevent Server-Side Request Forgery (SSRF).
 - To allow localhost connection for local development, set `"allowLocalhostHttp": true` in `config/luatweaker.json`.
 
-### C. `Unsafe` API Configurable Security Guard
-The JVM memory hacking API (`unsafe`) can be toggled via `config/luatweaker.json`:
+### C. `Runtime` API Configurable Security Guard
+JVM manipulation through `LuaTweaker.Runtime` is guarded by the `config/luatweaker.json` setting:
 ```json
 {
   "enableUnsafeAPI": true
 }
 ```
-When set to `false`, script calls to `unsafe:allocateInstance()` or `setPrivateStatic()` are safely intercepted and blocked.
+When set to `false`, `Runtime.Class` / `Runtime.Hook` operations are safely intercepted and blocked. Note that mods must also declare the `runtime.reflection` and `runtime.bytecode_hook` permissions in their `manifest.json` before the `LuaTweaker.Runtime` module will even load.
 
 ---
 

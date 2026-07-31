@@ -9,121 +9,136 @@ public class EntitiesLuaBinding {
     public static ILuaTable createPlayerLuaTable(ILuaEngine engine, IPlayer player) {
         ILuaTable table = createEntityLuaTable(engine, player);
 
-        table.rawset("sendMessage", args -> {
-            if (args.length >= 2) {
-                player.sendMessage(args[1].asString());
+        bindMethod(table, "sendMessage", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                player.sendMessage(args[off].asString());
             }
             return null;
         });
 
-        table.rawset("sendActionBar", args -> {
-            if (args.length >= 2) {
-                player.sendActionBar(args[1].asString());
+        bindMethod(table, "sendActionBar", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                player.sendActionBar(args[off].asString());
             }
             return null;
         });
 
-        table.rawset("getName", args -> engine.wrapString(player.getName()));
-        table.rawset("getUuid", args -> engine.wrapString(player.getUuid()));
-        table.rawset("isSneaking", args -> engine.wrapBoolean(player.isSneaking()));
-        table.rawset("isCreative", args -> engine.wrapBoolean(player.isCreative()));
-        table.rawset("getHealth", args -> engine.wrapNumber(player.getHealth()));
-        table.rawset("setHealth", args -> {
-            if (args.length >= 2) player.setHealth((float) args[1].asDouble());
+        bindMethod(table, "getName", args -> engine.wrapString(player.getName()));
+        bindMethod(table, "getUuid", args -> engine.wrapString(player.getUuid()));
+        bindMethod(table, "getUUID", args -> engine.wrapString(player.getUuid()));
+        bindMethod(table, "isSneaking", args -> engine.wrapBoolean(player.isSneaking()));
+        bindMethod(table, "isCreative", args -> engine.wrapBoolean(player.isCreative()));
+        bindMethod(table, "getHealth", args -> engine.wrapNumber(player.getHealth()));
+        bindMethod(table, "setHealth", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) player.setHealth((float) args[off].asDouble());
             return null;
         });
 
-        table.rawset("giveItem", args -> {
-            if (args.length >= 2) {
-                String id = args[1].asString();
-                int count = args.length >= 3 ? args[2].asInt() : 1;
+        bindMethod(table, "giveItem", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                String id = args[off].asString();
+                int count = args.length - off >= 2 ? args[off + 1].asInt() : 1;
                 player.giveItem(id, count);
             }
             return null;
         });
 
-        table.rawset("giveExperience", args -> {
-            if (args.length >= 2) player.giveExperience(args[1].asInt());
+        bindMethod(table, "giveExperience", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) player.giveExperience(args[off].asInt());
             return null;
         });
 
-        table.rawset("addEffect", args -> {
-            if (args.length >= 2) {
-                String effect = args[1].asString();
-                int duration = args.length >= 3 ? args[2].asInt() : 200;
-                int amp = args.length >= 4 ? args[3].asInt() : 0;
+        bindMethod(table, "addEffect", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                String effect = args[off].asString();
+                int duration = args.length - off >= 2 ? args[off + 1].asInt() : 200;
+                int amp = args.length - off >= 3 ? args[off + 2].asInt() : 0;
                 player.addEffect(effect, duration, amp);
             }
             return null;
         });
 
-        table.rawset("playSound", args -> {
-            if (args.length >= 2) {
-                String soundId = args[1].asString();
-                float volume = args.length >= 3 ? (float) args[2].asDouble() : 1.0f;
-                float pitch  = args.length >= 4 ? (float) args[3].asDouble() : 1.0f;
+        bindMethod(table, "playSound", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                String soundId = args[off].asString();
+                float volume = args.length - off >= 2 ? (float) args[off + 1].asDouble() : 1.0f;
+                float pitch  = args.length - off >= 3 ? (float) args[off + 2].asDouble() : 1.0f;
                 player.playSound(soundId, volume, pitch);
             }
             return null;
         });
 
-        table.rawset("getMainHandItem", args -> engine.wrapString(player.getMainHandItem()));
-        table.rawset("getOffHandItem", args -> engine.wrapString(player.getOffHandItem()));
-        table.rawset("setMainHandItem", args -> {
-            if (args.length >= 2) {
-                String itemId = args[1].asString();
-                int count = args.length >= 3 ? args[2].asInt() : 1;
+        bindMethod(table, "getMainHandItem", args -> engine.wrapString(player.getMainHandItem()));
+        bindMethod(table, "getOffHandItem", args -> engine.wrapString(player.getOffHandItem()));
+        bindMethod(table, "setMainHandItem", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                String itemId = args[off].asString();
+                int count = args.length - off >= 2 ? args[off + 1].asInt() : 1;
                 player.setMainHandItem(itemId, count);
             }
             return null;
         });
-        table.rawset("clearInventory", args -> { player.clearInventory(); return null; });
-        table.rawset("dropItem", args -> {
-            if (args.length >= 2) {
-                String itemId = args[1].asString();
-                int count = args.length >= 3 ? args[2].asInt() : 1;
+        bindMethod(table, "clearInventory", args -> { player.clearInventory(); return null; });
+        bindMethod(table, "dropItem", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                String itemId = args[off].asString();
+                int count = args.length - off >= 2 ? args[off + 1].asInt() : 1;
                 player.dropItem(itemId, count);
             }
             return null;
         });
-        table.rawset("actionText", args -> {
-            if (args.length >= 2) {
-                player.sendActionBar(args[1].asString());
+        bindMethod(table, "actionText", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                player.sendActionBar(args[off].asString());
             }
             return null;
         });
 
-        table.rawset("sendTitle", args -> {
-            if (args.length >= 2) {
-                String title = args[1].asString();
-                String subtitle = args.length >= 3 ? args[2].asString() : "";
-                int fadeIn = args.length >= 4 ? args[3].asInt() : 10;
-                int stay = args.length >= 5 ? args[4].asInt() : 70;
-                int fadeOut = args.length >= 6 ? args[5].asInt() : 20;
+        bindMethod(table, "sendTitle", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                String title = args[off].asString();
+                String subtitle = args.length - off >= 2 ? args[off + 1].asString() : "";
+                int fadeIn = args.length - off >= 3 ? args[off + 2].asInt() : 10;
+                int stay = args.length - off >= 4 ? args[off + 3].asInt() : 70;
+                int fadeOut = args.length - off >= 5 ? args[off + 4].asInt() : 20;
                 player.sendTitle(title, subtitle, fadeIn, stay, fadeOut);
             }
             return null;
         });
 
-        table.rawset("heal", args -> {
-            if (args.length >= 2) player.heal((float) args[1].asDouble());
+        bindMethod(table, "heal", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) player.heal((float) args[off].asDouble());
             return null;
         });
 
-        table.rawset("feed", args -> {
-            if (args.length >= 2) {
-                int food = args[1].asInt();
-                float sat = args.length >= 3 ? (float) args[2].asDouble() : 1.0f;
+        bindMethod(table, "feed", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                int food = args[off].asInt();
+                float sat = args.length - off >= 2 ? (float) args[off + 1].asDouble() : 1.0f;
                 player.feed(food, sat);
             }
             return null;
         });
 
-        table.rawset("teleport", args -> {
-            if (args.length >= 4) {
-                double x = args[1].asDouble();
-                double y = args[2].asDouble();
-                double z = args[3].asDouble();
+        bindMethod(table, "teleport", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 3) {
+                double x = args[off].asDouble();
+                double y = args[off + 1].asDouble();
+                double z = args[off + 2].asDouble();
                 player.teleport(x, y, z);
             }
             return null;
@@ -204,37 +219,96 @@ public class EntitiesLuaBinding {
             return null;
         });
 
-        table.rawset("shootProjectile", args -> {
+        table.rawset("spawnEntity", args -> {
             if (args.length >= 2) {
-                String projectileType = args[1].asString();
-                double speed = args.length >= 3 ? args[2].asDouble() : 1.5;
-                double inaccuracy = args.length >= 4 ? args[3].asDouble() : 0.0;
+                String entityId = args[1].asString();
+                double dx = args.length >= 3 ? args[2].asDouble() : 0.0;
+                double dy = args.length >= 4 ? args[3].asDouble() : 0.0;
+                double dz = args.length >= 5 ? args[4].asDouble() : 0.0;
+                com.luatweaker.api.entity.IEntity spawned = entity.spawnEntity(entityId, dx, dy, dz);
+                if (spawned != null) {
+                    return createEntityLuaTable(engine, spawned);
+                }
+            }
+            return engine.nilValue();
+        });
+
+        ILuaTable attributes = engine.createTable();
+        table.rawset("__attributes", attributes);
+
+        ILuaFunction setAttr = args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off >= 2) {
+                attributes.rawset(args[off].asString(), args[off + 1]);
+            }
+            return null;
+        };
+        table.rawset("SetAttribute", setAttr);
+        table.rawset("setAttribute", setAttr);
+
+        ILuaFunction getAttr = args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off >= 1) {
+                ILuaValue val = attributes.rawget(args[off].asString());
+                return val != null ? val : engine.nilValue();
+            }
+            return engine.nilValue();
+        };
+        table.rawset("GetAttribute", getAttr);
+        table.rawset("getAttribute", getAttr);
+
+        ILuaFunction sendMsg = args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off >= 1) {
+                if (entity instanceof IPlayer p) {
+                    p.sendMessage(args[off].asString());
+                }
+            }
+            return null;
+        };
+        table.rawset("SendMessage", sendMsg);
+        table.rawset("sendMessage", sendMsg);
+
+        ILuaFunction shootProj = args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off >= 1) {
+                String projectileType = args[off].asString();
+                double speed = args.length - off >= 2 ? args[off + 1].asDouble() : 1.5;
+                double inaccuracy = args.length - off >= 3 ? args[off + 2].asDouble() : 0.0;
                 com.luatweaker.api.pal.Platform.get().shootProjectile(entity, projectileType, speed, inaccuracy);
             }
             return null;
-        });
+        };
+        table.rawset("shootProjectile", shootProj);
+        table.rawset("ShootProjectile", shootProj);
 
-        table.rawset("shootProjectileAt", args -> {
-            if (args.length >= 3) {
-                String projectileType = args[1].asString();
-                com.luatweaker.api.entity.IEntity target = getEntityFromTable(args[2]);
-                double speed = args.length >= 4 ? args[3].asDouble() : 1.5;
+        ILuaFunction shootProjAt = args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off >= 2) {
+                String projectileType = args[off].asString();
+                com.luatweaker.api.entity.IEntity target = getEntityFromTable(args[off + 1]);
+                double speed = args.length - off >= 3 ? args[off + 2].asDouble() : 1.5;
                 if (target != null) {
                     com.luatweaker.api.pal.Platform.get().shootProjectileAt(entity, projectileType, target, speed);
                 }
             }
             return null;
-        });
+        };
+        table.rawset("shootProjectileAt", shootProjAt);
+        table.rawset("ShootProjectileAt", shootProjAt);
 
-        table.rawset("playAnimation", args -> {
-            if (args.length >= 2) {
-                String animName = args[1].asString();
-                double speed = args.length >= 3 ? args[2].asDouble() : 1.0;
-                double transition = args.length >= 4 ? args[3].asDouble() : 0.1;
+        ILuaFunction playAnim = args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off >= 1) {
+                String animName = args[off].asString();
+                double speed = args.length - off >= 2 ? args[off + 1].asDouble() : 1.0;
+                double transition = args.length - off >= 3 ? args[off + 2].asDouble() : 0.1;
                 com.luatweaker.api.pal.Platform.get().playAnimation(entity, animName, speed, transition);
             }
             return null;
-        });
+        };
+        table.rawset("playAnimation", playAnim);
+        table.rawset("PlayAnimation", playAnim);
 
         table.rawset("teleport", args -> {
             if (args.length >= 4) entity.teleport(args[1].asDouble(), args[2].asDouble(), args[3].asDouble());
@@ -311,5 +385,20 @@ public class EntitiesLuaBinding {
             }
         }
         return null;
+    }
+
+    private static void bindMethod(ILuaTable table, String name, ILuaFunction func) {
+        table.rawset(name, func);
+        if (name != null && !name.isEmpty() && Character.isLowerCase(name.charAt(0))) {
+            String pascal = Character.toUpperCase(name.charAt(0)) + name.substring(1);
+            table.rawset(pascal, func);
+        }
+    }
+
+    private static int getOffset(ILuaValue[] args) {
+        if (args != null && args.length > 0 && args[0] != null && args[0].isTable()) {
+            return 1;
+        }
+        return 0;
     }
 }

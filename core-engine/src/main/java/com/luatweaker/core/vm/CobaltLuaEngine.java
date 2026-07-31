@@ -26,6 +26,7 @@ public class CobaltLuaEngine implements ILuaEngine {
     private final LuaState state;
     private final LuaEngine rawEngine;
     private boolean debugMode = false;
+    private final java.util.Map<String, LuaValue> moduleCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     public CobaltLuaEngine() {
         this(false);
@@ -192,6 +193,7 @@ public class CobaltLuaEngine implements ILuaEngine {
         globals.rawset("oredict", tagFunc);
 
         // 7. Bootstrap Roblox task and Signal libraries
+        // 7. Bootstrap Roblox task and Signal libraries
         executeString(
             "local task = {}\n" +
             "local deferred = {}\n" +
@@ -200,7 +202,7 @@ public class CobaltLuaEngine implements ILuaEngine {
             "    local thread = coroutine.create(fn)\n" +
             "    local ok, err = coroutine.resume(thread, ...)\n" +
             "    if not ok then\n" +
-            "        error(err)\n" +
+            "        print(\"[ERROR][task.spawn] Coroutine error: \" .. tostring(err))\n" +
             "    end\n" +
             "    return thread\n" +
             "end\n" +
@@ -249,7 +251,7 @@ public class CobaltLuaEngine implements ILuaEngine {
             "function Signal:Connect(fn)\n" +
             "    local listener = { fn = fn, connected = true }\n" +
             "    table.insert(self._listeners, listener)\n" +
-            "    return {\n" +
+            "    local conn = {\n" +
             "        Disconnect = function()\n" +
             "            listener.connected = false\n" +
             "            for i, l in ipairs(self._listeners) do\n" +
@@ -260,7 +262,10 @@ public class CobaltLuaEngine implements ILuaEngine {
             "            end\n" +
             "        end\n" +
             "    }\n" +
+            "    conn.disconnect = conn.Disconnect\n" +
+            "    return conn\n" +
             "end\n" +
+            "Signal.connect = Signal.Connect\n" +
             "function Signal:Once(fn)\n" +
             "    local connection\n" +
             "    connection = self:Connect(function(...)\n" +
@@ -269,6 +274,7 @@ public class CobaltLuaEngine implements ILuaEngine {
             "    end)\n" +
             "    return connection\n" +
             "end\n" +
+            "Signal.once = Signal.Once\n" +
             "function Signal:Fire(...)\n" +
             "    local args = {...}\n" +
             "    for _, listener in ipairs(self._listeners) do\n" +
@@ -277,6 +283,7 @@ public class CobaltLuaEngine implements ILuaEngine {
             "        end\n" +
             "    end\n" +
             "end\n" +
+            "Signal.fire = Signal.Fire\n" +
             "function Signal:Wait()\n" +
             "    local thread = coroutine.running()\n" +
             "    local connection\n" +
@@ -286,8 +293,12 @@ public class CobaltLuaEngine implements ILuaEngine {
             "    end)\n" +
             "    return coroutine.yield()\n" +
             "end\n" +
-            "_G.Signal = Signal\n" +
-            "\n" +
+            "Signal.wait = Signal.Wait\n" +
+            "_G.Signal = Signal\n",
+            "setup_bootstrap"
+        );
+
+        executeString(
             "local RemoteEvent = {}\n" +
             "RemoteEvent.__index = RemoteEvent\n" +
             "function RemoteEvent:new(name, javaNetworkService)\n" +
@@ -443,6 +454,141 @@ public class CobaltLuaEngine implements ILuaEngine {
             "_G.Players = Players\n",
             "ROBLOX_BOOTSTRAP"
         );
+
+        setupNativeRequire(globals);
+    }
+
+    private File luaDirectory;
+
+    @Override
+    public void setLuaDirectory(File luaDirectory) {
+        this.luaDirectory = luaDirectory;
+    }
+
+    private void setupNativeRequire(LuaTable globals) {
+        LuaValue oldRequire = globals.rawget("require");
+        if (oldRequire != null && !oldRequire.isNil()) {
+            globals.rawset("_oldRequire", oldRequire);
+        }
+        globals.rawset("require", new VarArgFunction() {
+            @Override
+            public Varargs invoke(LuaState state, Varargs args) throws LuaError, org.squiddev.cobalt.UnwindThrowable {
+                if (args.count() < 1) throw new LuaError("require requires 1 argument (moduleName)");
+                String modName = args.arg(1).toString();
+                LuaValue result = moduleCache.get(modName);
+                if (result == null) {
+                    result = resolveNativeModule(globals, modName);
+                    if (result == null || result.isNil()) {
+                        result = resolveFileModule(modName);
+                    }
+                    if (result != null && !result.isNil()) {
+                        moduleCache.put(modName, result);
+                    }
+                }
+                if (result != null && !result.isNil()) {
+                    return result;
+                }
+                LuaValue oldReq = globals.rawget("_oldRequire");
+                if (oldReq instanceof org.squiddev.cobalt.function.LuaFunction) {
+                    return org.squiddev.cobalt.function.Dispatch.invoke(state, oldReq, args);
+                }
+                throw new LuaError("Module not found: " + modName);
+            }
+        });
+    }
+
+    private LuaValue resolveFileModule(String modName) {
+        File dir = luaDirectory;
+        if (dir == null || !dir.exists()) {
+            dir = new File("lua");
+        }
+        if (dir == null || !dir.exists()) return Constants.NIL;
+
+        String relPath = modName.replace('.', '/');
+        List<String> candidates = List.of(
+                relPath + ".lua",
+                relPath + "/init.lua",
+                "lib/" + relPath + ".lua",
+                "lib/" + relPath + "/init.lua",
+                "startup/" + relPath + ".lua",
+                "startup/" + relPath + "/init.lua",
+                "server/" + relPath + ".lua",
+                "server/" + relPath + "/init.lua",
+                "client/" + relPath + ".lua",
+                "client/" + relPath + "/init.lua"
+        );
+
+        for (String cand : candidates) {
+            File file = new File(dir, cand);
+            if (file.exists() && file.isFile()) {
+                try (InputStream stream = Files.newInputStream(file.toPath())) {
+                    LuaClosure closure = LoadState.load(state, stream, file.getName(), state.globals());
+                    Varargs res = org.squiddev.cobalt.function.Dispatch.call(state, closure);
+                    LuaValue ret = res.arg(1);
+                    return (ret != null && !ret.isNil()) ? ret : ValueFactory.valueOf(true);
+                } catch (Throwable e) {
+                    AsyncFileLogger.get().error("REQUIRE", "Failed to load Lua module file '" + cand + "': " + e.getMessage(), state);
+                    return Constants.NIL;
+                }
+            }
+        }
+        return Constants.NIL;
+    }
+
+    private LuaValue resolveNativeModule(LuaTable globals, String modName) {
+        return switch (modName) {
+            case "LuaTweaker.Content", "Content", "startup" -> {
+                LuaValue val = globals.rawget("Content");
+                yield (val != null && !val.isNil()) ? val : globals.rawget("startup");
+            }
+            case "LuaTweaker.Recipe", "Recipe", "Recipes", "recipes" -> {
+                LuaValue val = globals.rawget("Recipe");
+                yield (val != null && !val.isNil()) ? val : globals.rawget("recipes");
+            }
+            case "LuaTweaker.Events", "Events", "events" -> {
+                LuaValue val = globals.rawget("Events");
+                yield (val != null && !val.isNil()) ? val : globals.rawget("events");
+            }
+            case "LuaTweaker.World", "World", "Workspace", "workspace" -> {
+                LuaValue val = globals.rawget("World");
+                yield (val != null && !val.isNil()) ? val : globals.rawget("Workspace");
+            }
+            case "LuaTweaker.Task", "Task", "task" -> {
+                LuaValue val = globals.rawget("Task");
+                yield (val != null && !val.isNil()) ? val : globals.rawget("task");
+            }
+            case "LuaTweaker.Entities", "Entities", "EntityService" -> {
+                LuaValue val = globals.rawget("Entities");
+                yield (val != null && !val.isNil()) ? val : globals.rawget("EntityService");
+            }
+            case "LuaTweaker.AIGoals", "AIGoals" -> globals.rawget("AIGoals");
+            case "LuaTweaker.Loot", "Loot" -> globals.rawget("Loot");
+            case "LuaTweaker.Storage", "Storage", "storage" -> {
+                LuaValue val = globals.rawget("Storage");
+                if (val == null || val.isNil()) {
+                    val = globals.rawget("storage");
+                }
+                yield val;
+            }
+            case "LuaTweaker.WorldStorage", "WorldStorage" -> globals.rawget("WorldStorage");
+            case "LuaTweaker.PlayerStorage" -> globals.rawget("PlayerStorage");
+            case "LuaTweaker.SessionStorage" -> globals.rawget("SessionStorage");
+            case "LuaTweaker.Datapack", "Datapack", "datapack" -> globals.rawget("Datapack");
+            case "LuaTweaker.Network", "Network", "NetworkService" -> globals.rawget("NetworkService");
+            case "LuaTweaker.Interception", "Interception", "InterceptionService" -> {
+                LuaValue val = globals.rawget("Interception");
+                yield (val != null && !val.isNil()) ? val : globals.rawget("InterceptionService");
+            }
+            case "LuaTweaker.Camera", "Camera" -> globals.rawget("Camera");
+            case "LuaTweaker.ClientEffects", "ClientEffects" -> globals.rawget("ClientEffects");
+            case "LuaTweaker.Signal", "Signal" -> globals.rawget("Signal");
+            case "LuaTweaker.Utils", "Utils" -> globals.rawget("Utils");
+            case "LuaTweaker.TweenService", "TweenService" -> globals.rawget("TweenService");
+            case "LuaTweaker.Math.Vector3", "Vector3" -> globals.rawget("Vector3");
+            case "LuaTweaker.Math.Vector2", "Vector2" -> globals.rawget("Vector2");
+            case "LuaTweaker.Math.Color3", "Color3" -> globals.rawget("Color3");
+            default -> Constants.NIL;
+        };
     }
 
     @Override
@@ -605,14 +751,24 @@ public class CobaltLuaEngine implements ILuaEngine {
         return wrapUserdata(obj);
     }
 
+    private LuaValue toCobaltValue(ILuaValue val) {
+        if (val == null || val.isNil()) return Constants.NIL;
+        if (val instanceof CobaltLuaValue clv) return clv.getCobaltValue();
+        Object raw = val.toJavaObject();
+        if (raw instanceof String s) return ValueFactory.valueOf(s);
+        if (raw instanceof Number n) return ValueFactory.valueOf(n.doubleValue());
+        if (raw instanceof Boolean b) return ValueFactory.valueOf(b);
+        return ValueFactory.userdataOf(raw);
+    }
+
     @Override
     public ILuaValue callFunction(ILuaValue function, ILuaValue... args) {
-        if (function instanceof CobaltLuaValue clv) {
+        if (function != null && !function.isNil()) {
             try {
-                LuaValue cobaltFunc = clv.getCobaltValue();
+                LuaValue cobaltFunc = toCobaltValue(function);
                 LuaValue[] cobaltArgs = new LuaValue[args.length];
                 for (int i = 0; i < args.length; i++) {
-                    cobaltArgs[i] = ((CobaltLuaValue) args[i]).getCobaltValue();
+                    cobaltArgs[i] = toCobaltValue(args[i]);
                 }
                 Varargs result = org.squiddev.cobalt.function.Dispatch.invoke(state, cobaltFunc, ValueFactory.varargsOf(cobaltArgs));
                 return new CobaltLuaValue(result.arg(1));
@@ -625,7 +781,7 @@ public class CobaltLuaEngine implements ILuaEngine {
 
     @Override
     public void registerGlobal(String name, ILuaValue value) {
-        state.globals().rawset(name, ((CobaltLuaValue) value).getCobaltValue());
+        state.globals().rawset(name, toCobaltValue(value));
     }
 
     @Override
@@ -640,7 +796,7 @@ public class CobaltLuaEngine implements ILuaEngine {
                 }
                 try {
                     ILuaValue result = function.invoke(wrappedArgs);
-                    return result == null ? Constants.NIL : ((CobaltLuaValue) result).getCobaltValue();
+                    return result == null ? Constants.NIL : toCobaltValue(result);
                 } catch (LuaError e) {
                     throw e;
                 } catch (Exception e) {

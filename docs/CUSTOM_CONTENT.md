@@ -1,71 +1,64 @@
-# 🎨 Exhaustive Custom Content & Resource Management Guide (`startup`, `assets`, `data`, `datapack`, `storage`)
+# Custom Content & Resource Management
 
-> **Stage:** `startup_scripts/` (`lua/startup_scripts/*.lua`)  
-> **Global Variables:** `startup`, `datapack`, `storage` | **Service Lookup:** `local startup = game:GetService("Startup")`, `local storage = game:GetService("Storage")`
-
-LuaTweaker allows registering brand-new **Custom Items**, **Custom Blocks**, **Custom Fluids**, **Material Tier Sets**, auto-mounting resourcepacks/datapacks, saving persistent modpack variables, and attaching Lua right-click action handlers.
-
-> 💡 **Service Registry Paradigm**: Access startup registry via `startup` or `game:GetService("Startup")` / `Mod:GetService("Startup")`, and persistent storage via `storage` or `game:GetService("Storage")` / `game:GetService("DataStoreService")`.
+LuaTweaker provides a chainable Builder DSL for static content registration (items, blocks, fluids), virtual datapack injection, and persistent storage.
 
 ---
 
-## ⚡ 1. Custom Item Builder (`startup:createItem`) with Action Handlers
+## 1. Content Registration (`Content`)
+
+All custom items, blocks, and fluids are registered using explicit `require("LuaTweaker.Content")` imports and chainable Builder patterns ending with `:Register()`.
 
 ```lua
-startup:createItem("custom_ruby", function(item)
-    item:maxStackSize(16)
-        :rarity("EPIC")
-        :burnTime(400)
-        :displayName("Enchanted Ruby Gem")
-        :onRightClick(function(player, itemStack)
-            player:sendMessage("✨ Enchanted Ruby Gem activated!")
-        end)
-end)
+local Content = require("LuaTweaker.Content")
+
+-- Custom Item Builder
+local RubyGem = Content.NewItem("luatweaker:custom_ruby")
+    :DisplayName("§6Enchanted Ruby Gem")
+    :MaxStackSize(16)
+    :Rarity("EPIC")
+    :BurnTime(400)
+    :OnUse(function(player, itemStack)
+        player:SendMessage("✨ Enchanted Ruby Gem activated!")
+    end)
+    :Register()
+
+-- Custom Block Builder
+local RubyBlock = Content.NewBlock("luatweaker:custom_ruby_block")
+    :DisplayName("§cRuby Block")
+    :Hardness(3.0)
+    :Resistance(12.0)
+    :LightLevel(10)
+    :SoundType("STONE")
+    :OnInteract(function(player, blockState)
+        player:SendMessage("🔮 Custom Ruby Altar interacted!")
+    end)
+    :Register()
+
+-- Custom Fluid Builder
+local LiquidRuby = Content.NewFluid("luatweaker:liquid_ruby")
+    :Color(0xFF0033)
+    :StillTexture("luatweaker:block/liquid_ruby_still")
+    :FlowingTexture("luatweaker:block/liquid_ruby_flow")
+    :Temperature(1200)
+    :Viscosity(2000)
+    :Register()
 ```
 
 ---
 
-## 🧱 2. Custom Block Builder (`startup:createBlock`) with Action Handlers
+## 2. Persistent Storage API (`Storage`)
+
+Save quest states, player data, and world variables across server restarts:
 
 ```lua
-startup:createBlock("custom_ruby_block", function(block)
-    block:hardness(3.0)
-         :resistance(12.0)
-         :lightLevel(10)
-         :soundType("STONE")
-         :onRightClick(function(player, blockState)
-             player:sendMessage("🔮 Custom Ruby Altar interacted!")
-         end)
-end)
-```
+local Storage = require("LuaTweaker.Storage")
 
----
+-- Set persistent data
+Storage.Set("first_join_reward_given", true)
+Storage.Set("player_level_multiplier", 1.5)
 
-## 💧 3. Custom Fluid Builder (`startup:createFluid`)
-
-```lua
-startup:createFluid("liquid_ruby", function(fluid)
-    fluid:color(0xFF0033)
-         :stillTexture("luatweaker:block/liquid_ruby_still")
-         :flowingTexture("luatweaker:block/liquid_ruby_flow")
-         :temperature(1200)
-         :viscosity(2000)
-end)
-```
-
----
-
-## 💾 4. Persistent Modpack Storage API (`storage`)
-
-Save quest states, player data, and world variables to disk (`lua/storage.json`) across server restarts:
-
-```lua
--- Save boolean, string, number, or table values
-storage:set("first_join_reward_given", true)
-storage:set("player_level_multiplier", 1.5)
-
--- Retrieve saved data with default fallbacks
-local rewardGiven = storage:get("first_join_reward_given", false)
+-- Retrieve saved data with fallback
+local rewardGiven = Storage.Get("first_join_reward_given", false)
 if not rewardGiven then
     print("Granting first join reward!")
 end
@@ -73,22 +66,24 @@ end
 
 ---
 
-## 📦 5. In-Memory Virtual Datapack Helpers (`datapack`)
+## 3. In-Memory Virtual Datapack Engine (`Datapack`)
 
-Inject dynamic JSON recipes, tags, loot tables, advancements, and mcfunctions into memory without physical files:
+Inject dynamic JSON recipes, tags, loot tables, advancements, and mcfunctions into memory without creating physical files on disk:
 
 ```lua
-datapack:addJsonRecipe("custom_crafting", '{"type":"minecraft:crafting_shapeless","result":{"id":"minecraft:diamond"}}')
-datapack:addLootTable("blocks/custom_ruby_ore", '{"type":"minecraft:block","pools":[]}')
-datapack:addAdvancement("story/ruby_master", '{"display":{"title":"Ruby Master"}}')
-datapack:addFunction("utility/heal_all", "effect give @a minecraft:regeneration 10 2")
+local Datapack = require("LuaTweaker.Datapack")
+
+Datapack.AddJsonRecipe("custom_crafting", '{"type":"minecraft:crafting_shapeless","result":{"id":"minecraft:diamond"}}')
+Datapack.AddLootTable("blocks/custom_ruby_ore", '{"type":"minecraft:block","pools":[]}')
+Datapack.AddAdvancement("story/ruby_master", '{"display":{"title":"Ruby Master"}}')
+Datapack.AddFunction("utility/heal_all", "effect give @a minecraft:regeneration 10 2")
 ```
 
 ---
 
-## 🖼️ 6. Physical ResourcePack Mounting (`lua/assets/`)
+## 4. Physical ResourcePack Mounting (`lua/assets/`)
 
-Files placed inside `lua/assets/` are **automatically mounted into Minecraft's client Resource Pack repository**:
+Files placed inside `lua/assets/` are automatically mounted into Minecraft's client Resource Pack repository:
 
 - **Item Texture:** `lua/assets/luatweaker/textures/item/custom_ruby.png`
 - **Block Texture:** `lua/assets/luatweaker/textures/block/custom_ruby_block.png`

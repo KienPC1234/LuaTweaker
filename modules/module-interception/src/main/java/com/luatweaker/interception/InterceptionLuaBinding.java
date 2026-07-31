@@ -55,6 +55,6 @@ public class InterceptionLuaBinding {
         });
 
         globals.rawset("Interception", table);
-        engine.registerService("InterceptionService", interceptionService);
+        engine.registerService("InterceptionService", table);
     }
 }

@@ -2,33 +2,51 @@ package com.luatweaker.core.lsp;
 
 import com.luatweaker.api.annotation.LuaDoc;
 import com.luatweaker.api.objects.IItem;
+import com.luatweaker.api.objects.ILocatedItem;
+import com.luatweaker.api.objects.IWorldBlock;
 import com.luatweaker.api.wrapper.IngredientWrapper;
+import com.luatweaker.api.wrapper.ItemCount;
 
 import java.lang.reflect.Method;
 import java.util.*;
-import java.util.stream.Collectors;
 
+/**
+ * Dynamic EmmyLua Stub Generator for LuaTweaker (LTVM Engine).
+ * 
+ * Uses Java reflection on @LuaDoc annotations across registered API interfaces
+ * to dynamically produce type-safe EmmyLua (.luatweaker/stubs/luatweaker-api.lua) stubs.
+ */
 public class LtvmStubGenerator {
-    private final Map<String, Class<?>> registeredServices = new LinkedHashMap<>();
+    private final Map<String, Class<?>> registeredModules = new LinkedHashMap<>();
     private final Set<Class<?>> processedClasses = new HashSet<>();
     private final StringBuilder classStubs = new StringBuilder();
 
     public LtvmStubGenerator() {
-        // Automatically generate stubs for core API objects
-        generateClassStub(IItem.class, "IItem");
-        generateClassStub(IngredientWrapper.class, "IngredientWrapper");
+        // Automatically register standard core API object wrappers
+        registerClassStub(IItem.class, "IItem");
+        registerClassStub(ILocatedItem.class, "ILocatedItem");
+        registerClassStub(IWorldBlock.class, "IWorldBlock");
+        registerClassStub(IngredientWrapper.class, "IngredientWrapper");
+        registerClassStub(ItemCount.class, "ItemCount");
     }
 
     /**
-     * Registers a script service and dynamically generates its LSP stub.
+     * Registers a module or service interface for dynamic stub generation.
      *
-     * @param serviceName      The name used in Mod:GetService(serviceName)
-     * @param serviceInterface The Java interface or class representing the service
+     * @param moduleName       The module name used in require("LuaTweaker.ModuleName")
+     * @param serviceInterface The Java interface or class annotated with @LuaDoc
      * @return This generator instance for chaining
      */
-    public LtvmStubGenerator registerService(String serviceName, Class<?> serviceInterface) {
-        registeredServices.put(serviceName, serviceInterface);
-        generateClassStub(serviceInterface, serviceName);
+    public LtvmStubGenerator registerService(String moduleName, Class<?> serviceInterface) {
+        if (moduleName != null && serviceInterface != null) {
+            registeredModules.put(moduleName, serviceInterface);
+            generateClassStub(serviceInterface, moduleName);
+        }
+        return this;
+    }
+
+    public LtvmStubGenerator registerClassStub(Class<?> clazz, String luaClassName) {
+        generateClassStub(clazz, luaClassName);
         return this;
     }
 
@@ -58,6 +76,7 @@ public class LtvmStubGenerator {
                     classStubs.append("---@return ").append(doc.returnType()).append("\n");
                 }
 
+                // Colon call signature (e.g. function Module:method(a, b) end)
                 classStubs.append("function ").append(luaClassName).append(":")
                     .append(method.getName()).append("(");
 
@@ -71,16 +90,29 @@ public class LtvmStubGenerator {
                         classStubs.append(", ");
                     }
                 }
+                classStubs.append(") end\n\n");
 
+                // Dot call signature (e.g. function Module.method(a, b) end) for Static Namespace style
+                classStubs.append("function ").append(luaClassName).append(".")
+                    .append(method.getName()).append("(");
+                for (int i = 0; i < params.length; i++) {
+                    String p = params[i];
+                    int colonIndex = p.indexOf(':');
+                    String pName = colonIndex != -1 ? p.substring(0, colonIndex).trim() : p.trim();
+                    classStubs.append(pName);
+                    if (i < params.length - 1) {
+                        classStubs.append(", ");
+                    }
+                }
                 classStubs.append(") end\n\n");
             }
 
-            // Transitive scanning: check if return type has @LuaDoc
+            // Transitive scanning: check return type for @LuaDoc
             Class<?> returnType = method.getReturnType();
             if (returnType.isAnnotationPresent(LuaDoc.class) && !processedClasses.contains(returnType)) {
                 generateClassStub(returnType, returnType.getSimpleName());
             }
-            // Transitive scanning: check if parameter types have @LuaDoc
+            // Transitive scanning: check parameter types for @LuaDoc
             for (Class<?> paramType : method.getParameterTypes()) {
                 if (paramType.isAnnotationPresent(LuaDoc.class) && !processedClasses.contains(paramType)) {
                     generateClassStub(paramType, paramType.getSimpleName());
@@ -90,46 +122,25 @@ public class LtvmStubGenerator {
     }
 
     public String getResult() {
-        StringBuilder stub = new StringBuilder("---@meta\n-- Auto-generated by LTVM Engine\n\n");
+        StringBuilder stub = new StringBuilder("---@meta\n-- Auto-generated by LTVM LuaTweaker Engine v1.0 (Dynamic Reflection Generator)\n\n");
 
-        // Dynamic Service Resolution Union Types
+        // 1. Dynamic require() Overloads for ALL Registered Modules
+        stub.append("--- Native Module Loader for LuaTweaker Static Namespaces\n");
+        for (String modName : registeredModules.keySet()) {
+            stub.append("---@overload fun(modName: 'LuaTweaker.").append(modName).append("'): ").append(modName).append("\n");
+            stub.append("---@overload fun(modName: '").append(modName).append("'): ").append(modName).append("\n");
+        }
+        stub.append("---@param modName string\n");
+        stub.append("---@return any\n");
+        stub.append("function require(modName) end\n\n");
+
+        // 2. Legacy Mod Service Compatibility
         stub.append("--- Global Mod service manager\n");
         stub.append("---@class Mod\n");
-        stub.append("Mod = {}\n\n");
+        stub.append("Mod = {}\n");
+        stub.append("---@param name string\n---@return any\nfunction Mod:GetService(name) end\n\n");
 
-        if (registeredServices.isEmpty()) {
-            stub.append("--- Resolves a registered service.\n");
-            stub.append("---@param name string\n");
-            stub.append("---@return any\n");
-            stub.append("function Mod:GetService(name) end\n\n");
-        } else {
-            String paramUnion = registeredServices.keySet().stream()
-                .map(s -> "'" + s + "'")
-                .collect(Collectors.joining(" | "));
-            String returnUnion = String.join(" | ", registeredServices.keySet());
-
-            stub.append("--- Resolves a registered service.\n");
-            stub.append("---@param name ").append(paramUnion).append("\n");
-            stub.append("---@return ").append(returnUnion).append("\n");
-            stub.append("function Mod:GetService(name) end\n\n");
-        }
-
-        stub.append("--- Global game service manager (alias for Mod)\n");
-        stub.append("---@class game : Mod\n");
-        stub.append("game = {}\n\n");
-
-        stub.append("--- Creates an abstract item wrapper.\n");
-        stub.append("---@param itemId string The Registry ID of the item.\n");
-        stub.append("---@param count number? The count of the item stack (defaults to 1).\n");
-        stub.append("---@return IItem\n");
-        stub.append("function item(itemId, count) end\n\n");
-
-        stub.append("--- Creates an ingredient wrapper.\n");
-        stub.append("---@param descriptor string The registry ID or tag (prefixed with #).\n");
-        stub.append("---@return IngredientWrapper\n");
-        stub.append("function ingredient(descriptor) end\n\n");
-
-        // Append all collected class stubs
+        // 3. Append all collected class stubs generated dynamically from @LuaDoc reflection
         stub.append(classStubs);
 
         return stub.toString();

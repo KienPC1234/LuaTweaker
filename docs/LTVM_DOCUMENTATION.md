@@ -147,7 +147,24 @@ public class BlockManagerService implements IBlockManagerService {
 }
 ```
 
-### Step 3: Define the Abstract Lua Binding
+### Step 3: Register the Module Interface in `LuaTweakerMod`
+Register your interface with `LtvmStubGenerator` and `LuaServiceBootstrap`:
+```java
+// Automatic LSP EmmyLua stub generation via Java reflection:
+stubGen.registerService("BlockManager", IBlockManagerService.class);
+```
+`LtvmStubGenerator` uses pure reflection to read `@LuaDoc` annotations and dynamically outputs:
+- EmmyLua class annotations (`---@class BlockManager`)
+- Module loader overloads (`---@overload fun(modName: 'LuaTweaker.BlockManager'): BlockManager`)
+- Function signatures for both `:` and `.` call syntax automatically with **zero hardcoded strings**.
+
+### Step 4: Access in Lua via Static Namespace or `require`
+```lua
+local BlockManager = require("LuaTweaker.BlockManager")
+BlockManager:setBlock(100, 64, 200, "minecraft:diamond_block")
+```
+
+### Step 5: Define the Abstract Lua Binding
 In your features module, write a binder class that takes `ILuaTable` and maps the functions:
 ```java
 public class BlocksLuaBinding {

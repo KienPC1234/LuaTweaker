@@ -59,6 +59,30 @@ public class ContentBuilderTest {
     }
 
     @Test
+    public void testPascalCaseItemBuilderFromLua() throws IOException {
+        String script = """
+            local Content = require("LuaTweaker.Content")
+            local ruby = Content.NewItem("pascal_ruby")
+                :MaxStackSize(64)
+                :Rarity("EPIC")
+                :BurnTime(400)
+                :DisplayName("Pascal Ruby Gem")
+                :CreativeTab("ruby_tab")
+                :Register()
+        """;
+        File file = createTempScript(script);
+        engine.executeScript(file, "TEST");
+
+        assertEquals(1, contentService.getRegisteredItems().size());
+        IItemBuilder builder = contentService.getRegisteredItems().iterator().next();
+        assertEquals("pascal_ruby", builder.getId());
+        assertEquals(64, builder.getMaxStackSize());
+        assertEquals("EPIC", builder.getRarity());
+        assertEquals(400, builder.getBurnTime());
+        assertEquals("Pascal Ruby Gem", builder.getDisplayName());
+    }
+
+    @Test
     public void testCreateBlockFromLua() throws IOException {
         String script = """
             startup:createBlock("custom_ruby_block", function(block)

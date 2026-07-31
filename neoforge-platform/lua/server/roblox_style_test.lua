@@ -1,27 +1,25 @@
 -- ===================================================================
--- Comprehensive Roblox-style Server Script (Actions, Storage, Networking)
--- Performs player title announcements, chat messages, item rewards, and database persistence
+-- Comprehensive Server Script (Actions, Storage, Networking)
+-- Performs player title announcements, chat messages, item rewards
 -- ===================================================================
+local World    = require("LuaTweaker.World")
+local Entities = require("LuaTweaker.Entities")
+local Storage  = require("LuaTweaker.Storage")
+local Network  = require("LuaTweaker.Network")
+local Vector3  = require("LuaTweaker.Math.Vector3")
 
-print("Starting Roblox Server Controller script...")
+print("Starting Server Controller script...")
 
--- 1. Services
-local Workspace = Mod:GetService("Workspace")
-local EntityService = Mod:GetService("EntityService")
-local WorldStorage = Mod:GetService("WorldStorage")
-local PlayerStorage = Mod:GetService("PlayerStorage")
-local NetworkService = Mod:GetService("NetworkService")
-
--- 2. Workspace & Vector3 Block Manipulation
-local targetBlock = Workspace:GetBlock(Vector3.new(100, 64, 200))
+-- 1. World & Vector3 Block Manipulation
+local targetBlock = World:GetBlock(Vector3.new(100, 64, 200))
 if targetBlock then
     print("[Server] Found block ID: " .. targetBlock.Id .. " at pos " .. tostring(targetBlock.Position))
     targetBlock.Id = "minecraft:gold_block"
     print("[Server] Updated block ID to gold_block")
 end
 
--- 3. Reactive EntitySpawned Signal Connection & Player Actions
-EntityService.EntitySpawned:Connect(function(entity)
+-- 2. Reactive EntitySpawned Signal Connection & Player Actions
+Entities.EntitySpawned:Connect(function(entity)
     print("[Server] Entity spawned: Name=" .. entity.Name .. ", Type=" .. entity.Type)
 
     -- If the entity is a player, perform direct player HUD actions
@@ -34,13 +32,13 @@ EntityService.EntitySpawned:Connect(function(entity)
     end
 end)
 
--- 4. BSON Document Database Persistence (World & Player DataStore)
-local playCount = WorldStorage:GetAsync("play_count") or 0
-WorldStorage:SetAsync("play_count", playCount + 1)
-print("[Server] BSON Database World play_count updated to: " .. tostring(WorldStorage:GetAsync("play_count")))
+-- 3. Database Persistence
+local playCount = Storage:get("play_count", 0)
+Storage:set("play_count", playCount + 1)
+print("[Server] Database play_count updated to: " .. tostring(Storage:get("play_count", 0)))
 
--- 5. Rocket Network RemoteEvent & RemoteFunction Server Handlers
-local actionEvent = NetworkService:GetOrCreateRemoteEvent("PlayerActionEvent")
+-- 4. RemoteEvent & RemoteFunction Server Handlers
+local actionEvent = Network.GetOrCreateRemoteEvent("PlayerActionEvent")
 actionEvent.OnServerEvent:Connect(function(player, actionType, keyName)
     local playerName = player and player.Name or "Unknown Player"
     print("[Server] Received PlayerActionEvent from " .. playerName .. ": action=" .. tostring(actionType) .. " key=" .. tostring(keyName))
@@ -52,10 +50,10 @@ actionEvent.OnServerEvent:Connect(function(player, actionType, keyName)
     end
 end)
 
-local requestHealthFunc = NetworkService:GetOrCreateRemoteFunction("RequestPlayerHealth")
+local requestHealthFunc = Network.GetOrCreateRemoteFunction("RequestPlayerHealth")
 requestHealthFunc.OnServerInvoke = function(player)
     print("[Server] RemoteFunction RequestPlayerHealth invoked by " .. (player and player.Name or "Client"))
     return 100.0
 end
 
-print("Roblox Server Controller script loaded successfully!")
+print("Server Controller script loaded successfully!")

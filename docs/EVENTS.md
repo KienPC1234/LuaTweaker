@@ -1,144 +1,112 @@
-# Signal-Based Event System (`Signal`, `EntityService`, `RemoteEvent`)
+# Signal-Based Event System (`LuaTweaker.Events`)
 
-> **Stage:** `server/` or `client/` scripts
-> **Global Variables:** `Signal` | **Service Lookup:** `Mod:GetService("EntityService")`, `Mod:GetService("NetworkService")`
-
-LuaTweaker uses a Roblox-style reactive event system. All built-in game events are exposed as **Signal** objects that you subscribe to with `Signal:Connect(...)`, and you can create your own signals with `Signal.new()`.
+LuaTweaker provides a reactive event system modeled after Roblox Studio's Luau engine (`RBXScriptSignal` / `RBXScriptConnection`). All game events pass structured, typed event objects to listeners.
 
 ---
 
-## 1. Signal API (`Signal`)
+## 1. Module Import & Signal API
+
+```lua
+local Events  = require("LuaTweaker.Events")
+local Signal  = require("LuaTweaker.Signal")
+```
+
+### Signal Method Reference
+
+| Method Signature | `camelCase` Alias | Description |
+| :--- | :--- | :--- |
+| `Signal:Connect(fn)` | `Signal:connect(fn)` | Subscribes a callback listener. Returns a Connection object. |
+| `Signal:Once(fn)` | `Signal:once(fn)` | Subscribes a one-time listener (auto-disconnects after first fire). |
+| `Signal:Fire(...)` | `Signal:fire(...)` | Fires the signal asynchronously with arbitrary arguments. |
+| `Signal:Wait()` | `Signal:wait()` | Yields execution until the signal is next fired, returning arguments. |
+| `Connection:Disconnect()` | `Connection:disconnect()` | Unsubscribes the listener from future signal fires. |
+
+### Custom Signal Example
 
 ```lua
 local onBossDefeated = Signal.new()
 
--- Subscribe to the signal
 local connection = onBossDefeated:Connect(function(bossName, rewardXp)
     print(string.format("Boss defeated: %s (+%d XP)", bossName, rewardXp))
 end)
 
--- Fire the signal
 onBossDefeated:Fire("Wither", 5000)
-
--- Unsubscribe
 connection:Disconnect()
-
--- One-time listener (auto-disconnects after first fire)
-onBossDefeated:Once(function()
-    print("Triggers only once!")
-end)
-
--- Wait for the next fire (yields the coroutine)
--- local bossName, xp = onBossDefeated:Wait()
 ```
 
 ---
 
-## 2. Built-In Game Signals
+## 2. Built-In Game Event Signals (`Events`)
 
-### Entity & Player Signals
-
-Subscribe to entity spawns and react to players via the `EntityService`:
+### Entity Damaged Event (`Events.OnEntityDamaged`)
 
 ```lua
-local EntityService = Mod:GetService("EntityService")
+local Events = require("LuaTweaker.Events")
+local World  = require("LuaTweaker.World")
 
-EntityService.EntitySpawned:Connect(function(entity)
-    -- Roblox-style properties: Name, Type, Health, Position
-    print("[Events] Entity spawned: " .. entity.Name .. " (" .. entity.Type .. ")")
+Events.OnEntityDamaged:Connect(function(event)
+    local attacker = event.Attacker
+    local target   = event.Target
 
-    -- Direct HUD actions on players
-    if entity.Type == "minecraft:player" then
+    if attacker:IsPlayer() and target:IsAlive() then
+        print(string.format("%s attacked %s", attacker.Name, target.Name))
+    end
+end)
+```
+
+### Entity Spawned Event (`Events.OnEntitySpawned`)
+
+```lua
+Events.OnEntitySpawned:Connect(function(event)
+    local entity = event.Entity
+    if entity:IsPlayer() then
         entity:SendMessage("§aWelcome to the server, " .. entity.Name .. "!")
-        entity:SendTitle("§6WELCOME!", "§eLuaTweaker Engine v1.0 Active")
-        entity:SendOverlayMessage("§b+100 Bonus Coins Granted!")
-        entity:GiveItem("minecraft:diamond", 3)
+        entity:SendTitle("§6WELCOME!", "§eLuaTweaker Engine Active")
     end
 end)
 ```
 
-### Network Signals (`RemoteEvent`)
-
-Roblox-style server/client event channels via `NetworkService`:
+### Block Break Event (`Events.OnBlockBreak`)
 
 ```lua
-local NetworkService = Mod:GetService("NetworkService")
+local Vector3 = require("LuaTweaker.Math.Vector3")
 
-local actionEvent = NetworkService:GetOrCreateRemoteEvent("PlayerActionEvent")
+Events.OnBlockBreak:Connect(function(event)
+    local block = event.Block
+    local pos   = block.Position -- Vector3(X, Y, Z)
 
-actionEvent.OnServerEvent:Connect(function(player, actionType, keyName)
-    local playerName = player and player.Name or "Unknown Player"
-    print("[Network] Received action: " .. tostring(actionType) .. " key=" .. tostring(keyName))
-
-    if player then
-        player:SendMessage("§e[Keybind] Server processed action key '" .. tostring(keyName) .. "'")
-        player:GiveItem("minecraft:emerald", 1)
+    if block.Id == "minecraft:diamond_ore" then
+        World:SpawnParticle("minecraft:happy_villager", pos + Vector3.new(0.5, 0.5, 0.5))
     end
-end)
-```
-
-RemoteFunction server invoke handlers:
-
-```lua
-local requestHealth = NetworkService:GetOrCreateRemoteFunction("RequestPlayerHealth")
-requestHealth.OnServerInvoke = function(player)
-    return 100.0
-end
-```
-
-### Client Input Signals
-
-```lua
-UserInputService.InputBegan:Connect(function(keyCode, isTyping)
-    print("[Client] Key pressed: " .. tostring(keyCode))
-end)
-```
-
-### Attribute Change Signals
-
-Blocks, Items, and Entities expose an `AttributeChanged` signal fired when attributes are set:
-
-```lua
-entity:SetAttribute("Phase", "2") -- fires entity.AttributeChanged("Phase", "2")
-
-entity.AttributeChanged:Connect(function(name, value)
-    print("[Events] Attribute " .. name .. " set to " .. value)
 end)
 ```
 
 ---
 
-## 3. String Event Channels (`events:listen` / `events:post`)
+## 3. Network Signals (`Network.GetOrCreateRemoteEvent`)
 
-For lightweight pub/sub between scripts and Java addons, the string-based channel API is also available:
+Inter-process server/client network channels:
 
 ```lua
-local events = Mod:GetService("Events")
+local Network = require("LuaTweaker.Network")
 
--- Post a custom event payload
-events:post("myaddon.custom_event", {
-    author = "Kien",
-    score = 100,
-    timestamp = os.time()
-})
+local swapSkillEvent = Network.GetOrCreateRemoteEvent("StaffSwapSkill")
 
--- Listen for custom events
-events:listen("myaddon.custom_event", function(event)
-    print("Received custom event from author: " .. event.author)
+swapSkillEvent.OnServerEvent:Connect(function(player, skillIndex)
+    if player then
+        player:SendMessage("§e[Skill Swapped] Selected skill #" .. tostring(skillIndex))
+    end
 end)
 ```
 
-### Built-In String Event Payloads
+---
 
-| Event Name | Payload Fields |
-| :--- | :--- |
-| `player.join` / `player.login` | `username`, `uuid`, `x`, `y`, `z` |
-| `player.leave` / `player.logout` | `username`, `uuid` |
-| `player.chat` | `sender`, `message`, `rawText` |
-| `player.death` / `player.died` | `victim`, `source`, `killer` |
-| `block.break` | `player`, `block`, `x`, `y`, `z`, `exp` |
-| `block.place` | `block`, `x`, `y`, `z`, `entity` |
-| `entity.spawn` | `entityId`, `x`, `y`, `z` |
-| `server.tick` | `tick` |
+## 4. Headless Server Execution Rules (`Dist.DEDICATED_SERVER`)
 
-> For most game events, prefer the Signal-based API (Section 2) — it passes live wrapped objects instead of flat payload tables.
+LuaTweaker automatically detects whether the runtime is executing on a **Dedicated Headless Server** or a **Singleplayer / Client** instance:
+
+* **On Dedicated Headless Servers (`Dist.DEDICATED_SERVER`):**
+  - Visual APIs (`Camera:Shake`, `ClientEffects:FlashScreen`, `Shaders`) log diagnostic info and operate as safe no-ops without throwing `ClassNotFound` or render crash errors.
+  - Client keybind inputs (`UserInputService:IsKeyDown`) cleanly return `false`.
+* **On Client Instances (`Dist.CLIENT`):**
+  - Visual shaders, screen flashes, camera shakes, and keybind listeners render directly to OpenGL / Minecraft pose stack.

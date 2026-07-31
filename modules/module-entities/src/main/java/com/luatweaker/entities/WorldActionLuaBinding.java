@@ -147,6 +147,7 @@ public class WorldActionLuaBinding {
         });
 
         engine.registerService("WorldAction", table);
+        engine.registerGlobal("WorldAction", table);
     }
 
     @NotNull

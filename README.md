@@ -21,7 +21,7 @@
 
 The engine is **loader-agnostic**. All platform access goes through the **PAL (Platform Abstraction Layer)**, so the core engine and feature modules never touch any mod loader API directly. The current reference implementation targets NeoForge, and additional loaders (Fabric, Forge, ...) can be added by implementing the PAL interface without changing any core code.
 
-The engine runs on **Lua 5.2 / Cobalt** and features per-addon memory sandboxing, automatic LSP / EmmyLua autocomplete stub generation, and deep Minecraft bytecode interception — all without compiling Java code or restarting your client.
+The engine runs on **Lua 5.2 / Cobalt** and features per-addon memory sandboxing, automatic LSP / EmmyLua autocomplete stub generation, and deep Minecraft bytecode interception all without compiling Java code or restarting your client.
 
 ---
 
@@ -50,8 +50,10 @@ The engine runs on **Lua 5.2 / Cobalt** and features per-addon memory sandboxing
   - Advanced 2D GUI rendering via `GuiGraphics` (PoseStack matrix operations, gradient fills, 2D textures, item icons, and tooltips).
 
 - **Dynamic Java Patching & Mixins**:
-  - Flexible bytecode interception with `patcher:hookMethod` and `@Inject` Mixin hooks (`mixin`).
-  - Low-level Java class loading (`Java.loadClass`) and interface proxies (`java:proxy`).
+  - Unified `LuaTweaker.Runtime` namespace for JVM access (explicit `require`, no floating globals).
+  - Bytecode interception with `Runtime.Hook(...):InjectHead` / `:InjectReturn` / `:Overwrite`.
+  - Java class loading (`Runtime.Class`) and interface proxies (`Runtime.Proxy`).
+  - Permission-gated via `manifest.json` (`runtime.reflection`, `runtime.bytecode_hook`).
 
 - **Service-Oriented Reactive Architecture (Roblox-like APIs)**:
   - Object-oriented Service Registry (`game:GetService("TweenService")`, `DataStoreService`, `Signal`).
@@ -75,7 +77,7 @@ Luatweaker-root/
 └── neoforge-platform/  # Reference PAL implementation (NeoForge Launcher & Reload Listeners)
 ```
 
-The core-engine and `modules/*` depend only on the PAL interfaces defined in `common-api`. New loaders are supported by adding a new platform module that implements PAL — no changes to the core or modules.
+The core-engine and `modules/*` depend only on the PAL interfaces defined in `common-api`. New loaders are supported by adding a new platform module that implements PAL => no changes to the core or modules.
 
 ---
 
@@ -218,7 +220,7 @@ Explore the comprehensive topic guides in the [`docs/`](docs/README.md) director
 - [**RECIPES.md**](docs/RECIPES.md) - Full recipe manipulation reference.
 - [**CUSTOM_CONTENT.md**](docs/CUSTOM_CONTENT.md) - Registering items, blocks, fluids & datapacks.
 - [**LUA_MOD_SYSTEM.md**](docs/LUA_MOD_SYSTEM.md) - Building and packaging autonomous Lua Mods (.ZIP).
-- [**JAVA_PATCHER.md**](docs/JAVA_PATCHER.md) & [**LOW_LEVEL_JAVA_AND_MIXIN.md**](docs/LOW_LEVEL_JAVA_AND_MIXIN.md) - Dynamic Bytecode Patching.
+- [**JAVA_PATCHER.md**](docs/JAVA_PATCHER.md) - Low-Level Java Runtime (`LuaTweaker.Runtime`) & Dynamic Bytecode Patching.
 - [**EVENTS.md**](docs/EVENTS.md) - Built-in game event hook catalog.
 - [**GUI_GRAPHICS.md**](docs/GUI_GRAPHICS.md) & [**SHADER_API.md**](docs/SHADER_API.md) - Custom UI rendering & screen shaders.
 - [**SERVICE_AND_SPATIAL_MATH_API.md**](docs/SERVICE_AND_SPATIAL_MATH_API.md) - Roblox-like APIs (`TweenService`, `Vector3`, `DataStore`).

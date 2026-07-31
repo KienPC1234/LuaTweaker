@@ -162,10 +162,7 @@ public class EngineTest {
     public void testSyntaxErrorTraceback() throws IOException, InterruptedException {
         com.luatweaker.api.vm.ILuaEngine engine = new com.luatweaker.core.vm.CobaltLuaEngine();
         
-        File logFile = new File("run/logs/luatweaker/latest.log");
-        if (!logFile.exists() && !logFile.getParentFile().exists()) {
-            logFile = new File("logs/luatweaker/latest.log");
-        }
+        File logFile = new File("logs/luatweaker/latest.log");
         if (logFile.exists()) {
             logFile.delete();
         }

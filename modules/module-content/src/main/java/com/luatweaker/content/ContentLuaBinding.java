@@ -28,21 +28,22 @@ public class ContentLuaBinding {
 
         // startup:registerProjectile("luatweaker:ruby_orb", { damage = 25, explosionPower = 2, trailParticle = "minecraft:flame" })
         startupTable.rawset("registerProjectile", args -> {
-            if (args.length < 2) throw new IllegalArgumentException("startup:registerProjectile requires (id, [configTable])");
-            String id = args[1].asString();
+            int off = getOffset(args);
+            if (args.length - off < 1) throw new IllegalArgumentException("startup:registerProjectile requires (id, [configTable])");
+            String id = args[off].asString();
             LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom Projectile definition: " + id);
             return null;
         });
 
-
         // startup:createBlock("custom_ruby_block", function(block) ... end)
         startupTable.rawset("createBlock", args -> {
-            if (args.length < 2) throw new IllegalArgumentException("startup:createBlock requires (id, builderFunc)");
-            String id = args[1].asString();
-            ILuaValue callbackVal = args[2];
+            int off = getOffset(args);
+            if (args.length - off < 2) throw new IllegalArgumentException("startup:createBlock requires (id, builderFunc)");
+            String id = args[off].asString();
+            ILuaValue callbackVal = args[off + 1];
 
             contentService.createBlock(id, builder -> {
-                if (callbackVal.isFunction()) {
+                if (callbackVal != null && callbackVal.isFunction()) {
                     ILuaTable blockTable = engine.createTable();
                     bindBlockBuilderMethods(engine, blockTable, builder, datapackService);
                     try {
@@ -59,12 +60,13 @@ public class ContentLuaBinding {
 
         // startup:createFluid("liquid_ruby", function(fluid) ... end)
         startupTable.rawset("createFluid", args -> {
-            if (args.length < 2) throw new IllegalArgumentException("startup:createFluid requires (id, builderFunc)");
-            String id = args[1].asString();
-            ILuaValue callbackVal = args[2];
+            int off = getOffset(args);
+            if (args.length - off < 2) throw new IllegalArgumentException("startup:createFluid requires (id, builderFunc)");
+            String id = args[off].asString();
+            ILuaValue callbackVal = args[off + 1];
 
             contentService.createFluid(id, builder -> {
-                if (callbackVal.isFunction()) {
+                if (callbackVal != null && callbackVal.isFunction()) {
                     ILuaTable fluidTable = engine.createTable();
                     bindFluidBuilderMethods(engine, fluidTable, builder);
                     try {
@@ -80,12 +82,13 @@ public class ContentLuaBinding {
 
         // startup:createRangedItem("magic_staff", function(item) ... end)
         startupTable.rawset("createRangedItem", args -> {
-            if (args.length < 2) throw new IllegalArgumentException("startup:createRangedItem requires (id, builderFunc)");
-            String id = args[1].asString();
-            ILuaValue callbackVal = args[2];
+            int off = getOffset(args);
+            if (args.length - off < 2) throw new IllegalArgumentException("startup:createRangedItem requires (id, builderFunc)");
+            String id = args[off].asString();
+            ILuaValue callbackVal = args[off + 1];
 
             contentService.createRangedItem(id, builder -> {
-                if (callbackVal.isFunction()) {
+                if (callbackVal != null && callbackVal.isFunction()) {
                     ILuaTable itemTable = engine.createTable();
                     bindItemBuilderMethods(engine, itemTable, builder, datapackService);
                     try {
@@ -101,12 +104,13 @@ public class ContentLuaBinding {
 
         // startup:createEntity("ruby_boss", function(entity) ... end)
         startupTable.rawset("createEntity", args -> {
-            if (args.length < 2) throw new IllegalArgumentException("startup:createEntity requires (id, builderFunc)");
-            String id = args[1].asString();
-            ILuaValue callbackVal = args[2];
+            int off = getOffset(args);
+            if (args.length - off < 2) throw new IllegalArgumentException("startup:createEntity requires (id, builderFunc)");
+            String id = args[off].asString();
+            ILuaValue callbackVal = args[off + 1];
 
             contentService.createEntity(id, builder -> {
-                if (callbackVal.isFunction()) {
+                if (callbackVal != null && callbackVal.isFunction()) {
                     ILuaTable entityTable = engine.createTable();
                     bindEntityBuilderMethods(engine, entityTable, builder, datapackService);
                     try {
@@ -123,10 +127,11 @@ public class ContentLuaBinding {
 
         // startup:createStairs("ruby_stairs", "luatweaker:ruby_block", function(block) ... end)
         startupTable.rawset("createStairs", args -> {
-            if (args.length < 2) throw new IllegalArgumentException("startup:createStairs requires (id, baseBlockId)");
-            String id = args[1].asString();
-            String baseId = args.length >= 3 ? args[2].asString() : id;
-            ILuaValue callbackVal = args.length >= 4 && args[3].isFunction() ? args[3] : null;
+            int off = getOffset(args);
+            if (args.length - off < 1) throw new IllegalArgumentException("startup:createStairs requires (id, [baseBlockId])");
+            String id = args[off].asString();
+            String baseId = (args.length - off >= 2) ? args[off + 1].asString() : id;
+            ILuaValue callbackVal = (args.length - off >= 3 && args[off + 2].isFunction()) ? args[off + 2] : null;
             final ILuaValue finalCb = callbackVal;
             contentService.createBlock(id, builder -> {
                 builder.model("minecraft:block/stairs");
@@ -147,10 +152,11 @@ public class ContentLuaBinding {
 
         // startup:createSlab("ruby_slab", "luatweaker:ruby_block", function(block) ... end)
         startupTable.rawset("createSlab", args -> {
-            if (args.length < 2) throw new IllegalArgumentException("startup:createSlab requires (id, baseBlockId)");
-            String id = args[1].asString();
-            String baseId = args.length >= 3 ? args[2].asString() : id;
-            ILuaValue callbackVal = args.length >= 4 && args[3].isFunction() ? args[3] : null;
+            int off = getOffset(args);
+            if (args.length - off < 1) throw new IllegalArgumentException("startup:createSlab requires (id, [baseBlockId])");
+            String id = args[off].asString();
+            String baseId = (args.length - off >= 2) ? args[off + 1].asString() : id;
+            ILuaValue callbackVal = (args.length - off >= 3 && args[off + 2].isFunction()) ? args[off + 2] : null;
             final ILuaValue finalCb = callbackVal;
             contentService.createBlock(id, builder -> {
                 builder.model("minecraft:block/slab");
@@ -171,10 +177,11 @@ public class ContentLuaBinding {
 
         // startup:createWall("ruby_wall", "luatweaker:ruby_block", function(block) ... end)
         startupTable.rawset("createWall", args -> {
-            if (args.length < 2) throw new IllegalArgumentException("startup:createWall requires (id, baseBlockId)");
-            String id = args[1].asString();
-            String baseId = args.length >= 3 ? args[2].asString() : id;
-            ILuaValue callbackVal = args.length >= 4 && args[3].isFunction() ? args[3] : null;
+            int off = getOffset(args);
+            if (args.length - off < 1) throw new IllegalArgumentException("startup:createWall requires (id, [baseBlockId])");
+            String id = args[off].asString();
+            String baseId = (args.length - off >= 2) ? args[off + 1].asString() : id;
+            ILuaValue callbackVal = (args.length - off >= 3 && args[off + 2].isFunction()) ? args[off + 2] : null;
             final ILuaValue finalCb = callbackVal;
             contentService.createBlock(id, builder -> {
                 builder.model("minecraft:block/wall");
@@ -193,22 +200,26 @@ public class ContentLuaBinding {
             return null;
         });
 
-
-
-
         // startup:createTab("magic_tab", function(tab) ... end)
-
-
         startupTable.rawset("createTab", args -> {
-            if (args.length < 2) throw new IllegalArgumentException("startup:createTab requires (id, builderFunc)");
-            String id = args[1].asString();
-            ILuaValue callbackVal = args[2];
+            int off = getOffset(args);
+            if (args.length - off < 2) throw new IllegalArgumentException("startup:createTab requires (id, builderFunc)");
+            String id = args[off].asString();
+            ILuaValue callbackVal = args[off + 1];
 
             contentService.createTab(id, builder -> {
-                if (callbackVal.isFunction()) {
+                if (callbackVal != null && callbackVal.isFunction()) {
                     ILuaTable tabTable = engine.createTable();
-                    tabTable.rawset("title", a -> { builder.title(a[1].asString()); return tabTable; });
-                    tabTable.rawset("icon", a -> { builder.icon(a[1].asString()); return tabTable; });
+                    tabTable.rawset("title", a -> {
+                        int aOff = getOffset(a);
+                        if (a.length - aOff >= 1) builder.title(a[aOff].asString());
+                        return tabTable;
+                    });
+                    tabTable.rawset("icon", a -> {
+                        int aOff = getOffset(a);
+                        if (a.length - aOff >= 1) builder.icon(a[aOff].asString());
+                        return tabTable;
+                    });
                     try {
                         engine.callFunction(callbackVal, tabTable);
                     } catch (Exception e) {
@@ -222,21 +233,23 @@ public class ContentLuaBinding {
 
         // startup:createArmorMaterial("ruby", function(mat) ... end)
         startupTable.rawset("createArmorMaterial", args -> {
-            if (args.length < 2) throw new IllegalArgumentException("startup:createArmorMaterial requires (id, builderFunc)");
-            String id = args[1].asString();
-            ILuaValue callbackVal = args[2];
+            int off = getOffset(args);
+            if (args.length - off < 2) throw new IllegalArgumentException("startup:createArmorMaterial requires (id, builderFunc)");
+            String id = args[off].asString();
+            ILuaValue callbackVal = args[off + 1];
 
             contentService.createArmorMaterial(id, builder -> {
-                if (callbackVal.isFunction()) {
+                if (callbackVal != null && callbackVal.isFunction()) {
                     ILuaTable matTable = engine.createTable();
-                    matTable.rawset("layer", a -> { builder.layer(a[1].asString()); return matTable; });
-                    matTable.rawset("equipSound", a -> { builder.equipSound(a[1].asString()); return matTable; });
-                    matTable.rawset("toughness", a -> { builder.toughness((float) a[1].asDouble()); return matTable; });
-                    matTable.rawset("knockbackResistance", a -> { builder.knockbackResistance((float) a[1].asDouble()); return matTable; });
-                    matTable.rawset("enchantability", a -> { builder.enchantability(a[1].asInt()); return matTable; });
+                    matTable.rawset("layer", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) builder.layer(a[aOff].asString()); return matTable; });
+                    matTable.rawset("equipSound", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) builder.equipSound(a[aOff].asString()); return matTable; });
+                    matTable.rawset("toughness", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) builder.toughness((float) a[aOff].asDouble()); return matTable; });
+                    matTable.rawset("knockbackResistance", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) builder.knockbackResistance((float) a[aOff].asDouble()); return matTable; });
+                    matTable.rawset("enchantability", a -> { int aOff = getOffset(a); if (a.length - aOff >= 1) builder.enchantability(a[aOff].asInt()); return matTable; });
                     matTable.rawset("defense", a -> {
-                        if (a.length >= 3) {
-                            builder.defense(a[1].asString(), a[2].asInt());
+                        int aOff = getOffset(a);
+                        if (a.length - aOff >= 2) {
+                            builder.defense(a[aOff].asString(), a[aOff + 1].asInt());
                         }
                         return matTable;
                     });
@@ -251,31 +264,85 @@ public class ContentLuaBinding {
             return null;
         });
 
-        // startup:createEntity("custom_zombie", function(entity) ... end)
-        startupTable.rawset("createEntity", args -> {
-            if (args.length < 2) throw new IllegalArgumentException("startup:createEntity requires (id, builderFunc)");
-            String id = args[1].asString();
-            ILuaValue callbackVal = args[2];
-
-            contentService.createEntity(id, builder -> {
-                if (callbackVal != null && callbackVal.isFunction()) {
-                    ILuaTable entityTable = engine.createTable();
-                    bindEntityBuilderMethods(engine, entityTable, builder, datapackService);
-                    try {
-                        engine.callFunction(callbackVal, entityTable);
-                    } catch (Exception e) {
-                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error in entity builder callback for '" + id + "': " + e.getMessage());
-                    }
-                }
-            });
-            LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom Entity Type builder: " + id);
-            return null;
+        // Content.NewItem("id"):DisplayName(...):MaxStackSize(...):Register()
+        startupTable.rawset("NewItem", args -> {
+            int off = getOffset(args);
+            String id = args[off].asString();
+            ILuaTable builderTable = engine.createTable();
+            final IItemBuilder[] itemBuilder = new IItemBuilder[1];
+            contentService.createItem(id, b -> itemBuilder[0] = b);
+            bindItemBuilderMethods(engine, builderTable, itemBuilder[0], datapackService);
+            builderTable.rawset("Register", a -> builderTable);
+            return builderTable;
         });
 
+        // Content.NewBlock("id"):DisplayName(...):Hardness(...):Register()
+        startupTable.rawset("NewBlock", args -> {
+            int off = getOffset(args);
+            String id = args[off].asString();
+            ILuaTable builderTable = engine.createTable();
+            final IBlockBuilder[] blockBuilder = new IBlockBuilder[1];
+            contentService.createBlock(id, b -> blockBuilder[0] = b);
+            bindBlockBuilderMethods(engine, builderTable, blockBuilder[0], datapackService);
+            builderTable.rawset("Register", a -> builderTable);
+            return builderTable;
+        });
+
+        // Content.NewFluid("id"):Color(...):Register()
+        startupTable.rawset("NewFluid", args -> {
+            int off = getOffset(args);
+            String id = args[off].asString();
+            ILuaTable builderTable = engine.createTable();
+            final IFluidBuilder[] fluidBuilder = new IFluidBuilder[1];
+            contentService.createFluid(id, b -> fluidBuilder[0] = b);
+            bindFluidBuilderMethods(engine, builderTable, fluidBuilder[0]);
+            builderTable.rawset("Register", a -> builderTable);
+            return builderTable;
+        });
+
+        // Content.Item("id", count)
+        startupTable.rawset("Item", args -> {
+            int off = getOffset(args);
+            String id = args[off].asString();
+            int count = args.length - off >= 2 ? args[off + 1].asInt() : 1;
+            return engine.toLuaValue(new com.luatweaker.api.wrapper.ItemCount(id, count));
+        });
+
+        // Content.NewKeyMapping("staff_swap_skill"):DisplayName("Staff Skill Swap"):Category("luatweaker"):DefaultKey(90):OnPress("StaffSwapSkill"):Register()
+        ILuaFunction newKeyMappingFn = args -> {
+            int off = getOffset(args);
+            if (args.length - off < 1) throw new IllegalArgumentException("Content.NewKeyMapping requires (id)");
+            String id = args[off].asString();
+            ILuaTable table = engine.createTable();
+            final String[] displayName = new String[] { id };
+            final String[] category = new String[] { "luatweaker" };
+            final int[] defaultKey = new int[] { 90 };
+            final String[] payload = new String[] { "" };
+
+            bindMethod(table, "displayName", a -> { int o = getOffset(a); if (a.length - o >= 1) displayName[0] = a[o].asString(); return table; });
+            bindMethod(table, "name", a -> { int o = getOffset(a); if (a.length - o >= 1) displayName[0] = a[o].asString(); return table; });
+            bindMethod(table, "description", a -> { int o = getOffset(a); if (a.length - o >= 1) displayName[0] = a[o].asString(); return table; });
+            bindMethod(table, "category", a -> { int o = getOffset(a); if (a.length - o >= 1) category[0] = a[o].asString(); return table; });
+            bindMethod(table, "defaultKey", a -> { int o = getOffset(a); if (a.length - o >= 1) defaultKey[0] = a[o].asInt(); return table; });
+            bindMethod(table, "onPress", a -> { int o = getOffset(a); if (a.length - o >= 1) payload[0] = a[o].asString(); return table; });
+            bindMethod(table, "onPressPayload", a -> { int o = getOffset(a); if (a.length - o >= 1) payload[0] = a[o].asString(); return table; });
+            bindMethod(table, "register", a -> {
+                Object keyBindService = com.luatweaker.core.service.LuaServiceRegistry.get("KeyBindService");
+                if (keyBindService instanceof com.luatweaker.api.client.IKeyBindService kbs) {
+                    kbs.registerKeyBind(id, displayName[0], category[0], defaultKey[0], payload[0]);
+                }
+                return table;
+            });
+            return table;
+        };
+        startupTable.rawset("NewKeyMapping", newKeyMappingFn);
+        startupTable.rawset("newKeyMapping", newKeyMappingFn);
 
         env.rawset("startup", startupTable);
+        env.rawset("Content", startupTable);
 
-        engine.registerService("Startup", contentService);
+        engine.registerService("Startup", startupTable);
+        engine.registerService("Content", startupTable);
 
         // 2. Register "storage" Service
         ILuaTable storageTable = engine.createTable();
@@ -453,44 +520,45 @@ public class ContentLuaBinding {
     }
 
     private static void bindItemBuilderMethods(ILuaEngine engine, ILuaTable table, IItemBuilder builder, IDatapackService datapackService) {
-
-        table.rawset("type", args -> { builder.type(args[1].asString()); return table; });
-        table.rawset("maxStackSize", args -> { builder.maxStackSize(args[1].asInt()); return table; });
-        table.rawset("rarity", args -> { builder.rarity(args[1].asString()); return table; });
-        table.rawset("durability", args -> { builder.durability(args[1].asInt()); return table; });
-        table.rawset("maxDamage", args -> { builder.durability(args[1].asInt()); return table; });
-        table.rawset("miningLevel", args -> {
-            Object obj = args[1].toJavaObject();
+        bindMethod(table, "type", args -> { int off = getOffset(args); builder.type(args[off].asString()); return table; });
+        bindMethod(table, "maxStackSize", args -> { int off = getOffset(args); builder.maxStackSize(args[off].asInt()); return table; });
+        bindMethod(table, "rarity", args -> { int off = getOffset(args); builder.rarity(args[off].asString()); return table; });
+        bindMethod(table, "durability", args -> { int off = getOffset(args); builder.durability(args[off].asInt()); return table; });
+        bindMethod(table, "maxDamage", args -> { int off = getOffset(args); builder.durability(args[off].asInt()); return table; });
+        bindMethod(table, "miningLevel", args -> {
+            int off = getOffset(args);
+            Object obj = args[off].toJavaObject();
             if (obj instanceof Number num) builder.miningLevel(num.intValue());
-            else builder.miningLevel(args[1].asString());
+            else builder.miningLevel(args[off].asString());
             return table;
         });
-        table.rawset("tier", args -> {
-            Object obj = args[1].toJavaObject();
+        bindMethod(table, "tier", args -> {
+            int off = getOffset(args);
+            Object obj = args[off].toJavaObject();
             if (obj instanceof Number num) builder.miningLevel(num.intValue());
-            else builder.miningLevel(args[1].asString());
+            else builder.miningLevel(args[off].asString());
             return table;
         });
-        table.rawset("miningSpeed", args -> { builder.miningSpeed((float) args[1].asDouble()); return table; });
-        table.rawset("efficiency", args -> { builder.miningSpeed((float) args[1].asDouble()); return table; });
-        table.rawset("attackDamage", args -> { builder.attackDamage((float) args[1].asDouble()); return table; });
-        table.rawset("attackSpeed", args -> { builder.attackSpeed((float) args[1].asDouble()); return table; });
-        table.rawset("defense", args -> { builder.defense(args[1].asInt()); return table; });
-        table.rawset("toughness", args -> { builder.toughness((float) args[1].asDouble()); return table; });
-        table.rawset("knockbackResistance", args -> { builder.knockbackResistance((float) args[1].asDouble()); return table; });
-        table.rawset("enchantability", args -> { builder.enchantability(args[1].asInt()); return table; });
-        table.rawset("burnTime", args -> { builder.burnTime(args[1].asInt()); return table; });
-        table.rawset("displayName", args -> { builder.displayName(args[1].asString()); return table; });
-        table.rawset("model", args -> { builder.model(args[1].asString()); return table; });
-        table.rawset("texture", args -> { builder.texture(args[1].asString()); return table; });
-        table.rawset("armorMaterial", args -> { builder.armorMaterial(args[1].asString()); return table; });
-        table.rawset("armorTexture", args -> { builder.armorTexture(args[1].asString()); return table; });
-        table.rawset("creativeTab", args -> { builder.creativeTab(args[1].asString()); return table; });
-
-        table.rawset("tabGroup", args -> { builder.creativeTab(args[1].asString()); return table; });
-        table.rawset("tag", args -> {
-            if (args.length >= 2) {
-                String tagId = args[1].asString();
+        bindMethod(table, "miningSpeed", args -> { int off = getOffset(args); builder.miningSpeed((float) args[off].asDouble()); return table; });
+        bindMethod(table, "efficiency", args -> { int off = getOffset(args); builder.miningSpeed((float) args[off].asDouble()); return table; });
+        bindMethod(table, "attackDamage", args -> { int off = getOffset(args); builder.attackDamage((float) args[off].asDouble()); return table; });
+        bindMethod(table, "attackSpeed", args -> { int off = getOffset(args); builder.attackSpeed((float) args[off].asDouble()); return table; });
+        bindMethod(table, "defense", args -> { int off = getOffset(args); builder.defense(args[off].asInt()); return table; });
+        bindMethod(table, "toughness", args -> { int off = getOffset(args); builder.toughness((float) args[off].asDouble()); return table; });
+        bindMethod(table, "knockbackResistance", args -> { int off = getOffset(args); builder.knockbackResistance((float) args[off].asDouble()); return table; });
+        bindMethod(table, "enchantability", args -> { int off = getOffset(args); builder.enchantability(args[off].asInt()); return table; });
+        bindMethod(table, "burnTime", args -> { int off = getOffset(args); builder.burnTime(args[off].asInt()); return table; });
+        bindMethod(table, "displayName", args -> { int off = getOffset(args); builder.displayName(args[off].asString()); return table; });
+        bindMethod(table, "model", args -> { int off = getOffset(args); builder.model(args[off].asString()); return table; });
+        bindMethod(table, "texture", args -> { int off = getOffset(args); builder.texture(args[off].asString()); return table; });
+        bindMethod(table, "armorMaterial", args -> { int off = getOffset(args); builder.armorMaterial(args[off].asString()); return table; });
+        bindMethod(table, "armorTexture", args -> { int off = getOffset(args); builder.armorTexture(args[off].asString()); return table; });
+        bindMethod(table, "creativeTab", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
+        bindMethod(table, "tabGroup", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
+        bindMethod(table, "tag", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                String tagId = args[off].asString();
                 builder.tag(tagId);
                 if (datapackService != null) {
                     String fullId = builder.getId().contains(":") ? builder.getId() : "luatweaker:" + builder.getId();
@@ -500,9 +568,10 @@ public class ContentLuaBinding {
             return table;
         });
 
-        table.rawset("onRightClick", args -> {
-            ILuaValue func = args[1];
-            if (func.isFunction()) {
+        bindMethod(table, "onRightClick", args -> {
+            int off = getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
                 builder.onRightClick((player, itemStack) -> {
                     try {
                         ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
@@ -517,9 +586,10 @@ public class ContentLuaBinding {
             return table;
         });
 
-        table.rawset("onHitEntity", args -> {
-            ILuaValue func = args[1];
-            if (func.isFunction()) {
+        bindMethod(table, "onHitEntity", args -> {
+            int off = getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
                 builder.onHitEntity((targetEntity, shooterPlayer) -> {
                     try {
                         ILuaValue targetVal = (targetEntity instanceof com.luatweaker.api.entity.IEntity e)
@@ -537,18 +607,20 @@ public class ContentLuaBinding {
             return table;
         });
 
-        table.rawset("food", args -> {
-            if (args.length >= 3) {
-                builder.food(args[1].asInt(), (float) args[2].asDouble());
+        bindMethod(table, "food", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 2) {
+                builder.food(args[off].asInt(), (float) args[off + 1].asDouble());
             }
             return table;
         });
 
-        table.rawset("alwaysEdible", args -> { builder.alwaysEdible(); return table; });
+        bindMethod(table, "alwaysEdible", args -> { builder.alwaysEdible(); return table; });
 
-        table.rawset("onConsume", args -> {
-            ILuaValue func = args[1];
-            if (func.isFunction()) {
+        bindMethod(table, "onConsume", args -> {
+            int off = getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
                 builder.onConsume((player, itemStack) -> {
                     try {
                         ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
@@ -563,33 +635,36 @@ public class ContentLuaBinding {
             return table;
         });
 
-        table.rawset("glow", args -> {
-            boolean enable = args.length < 2 || args[1].asBoolean();
+        bindMethod(table, "glow", args -> {
+            int off = getOffset(args);
+            boolean enable = args.length - off < 1 || args[off].asBoolean();
             builder.glow(enable);
             return table;
         });
 
-        table.rawset("tooltip", args -> {
-            if (args.length >= 2) builder.tooltip(args[1].asString());
+        bindMethod(table, "tooltip", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) builder.tooltip(args[off].asString());
             return table;
         });
 
     }
 
     private static void bindBlockBuilderMethods(ILuaEngine engine, ILuaTable table, IBlockBuilder builder, IDatapackService datapackService) {
-        table.rawset("hardness", args -> { builder.hardness((float) args[1].asDouble()); return table; });
-        table.rawset("resistance", args -> { builder.resistance((float) args[1].asDouble()); return table; });
-        table.rawset("lightLevel", args -> { builder.lightLevel(args[1].asInt()); return table; });
-        table.rawset("light", args -> { builder.lightLevel(args[1].asInt()); return table; });
-        table.rawset("emissive", args -> {
-            if (args.length >= 2) {
-                Object val = args[1].toJavaObject();
+        bindMethod(table, "hardness", args -> { int off = getOffset(args); builder.hardness((float) args[off].asDouble()); return table; });
+        bindMethod(table, "resistance", args -> { int off = getOffset(args); builder.resistance((float) args[off].asDouble()); return table; });
+        bindMethod(table, "lightLevel", args -> { int off = getOffset(args); builder.lightLevel(args[off].asInt()); return table; });
+        bindMethod(table, "light", args -> { int off = getOffset(args); builder.lightLevel(args[off].asInt()); return table; });
+        bindMethod(table, "emissive", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                Object val = args[off].toJavaObject();
                 if (val instanceof Number num) {
                     builder.lightLevel(Math.min(15, Math.max(0, num.intValue())));
                 } else if (val instanceof Boolean b) {
                     builder.lightLevel(b ? 15 : 0);
                 } else {
-                    builder.lightLevel(args[1].asInt());
+                    builder.lightLevel(args[off].asInt());
                 }
             } else {
                 builder.lightLevel(15);
@@ -598,43 +673,47 @@ public class ContentLuaBinding {
         });
 
 
-        table.rawset("soundType", args -> { builder.soundType(args[1].asString()); return table; });
-        table.rawset("requiresTool", args -> { builder.requiresTool(args[1].asBoolean()); return table; });
-        table.rawset("mineableWith", args -> { builder.mineableWith(args[1].asString()); return table; });
-        table.rawset("miningLevel", args -> {
-            Object obj = args[1].toJavaObject();
+        bindMethod(table, "soundType", args -> { int off = getOffset(args); builder.soundType(args[off].asString()); return table; });
+        bindMethod(table, "requiresTool", args -> { int off = getOffset(args); builder.requiresTool(args[off].asBoolean()); return table; });
+        bindMethod(table, "mineableWith", args -> { int off = getOffset(args); builder.mineableWith(args[off].asString()); return table; });
+        bindMethod(table, "miningLevel", args -> {
+            int off = getOffset(args);
+            Object obj = args[off].toJavaObject();
             if (obj instanceof Number num) builder.miningLevel(num.intValue());
-            else builder.miningLevel(args[1].asString());
+            else builder.miningLevel(args[off].asString());
             return table;
         });
-        table.rawset("friction", args -> { builder.friction((float) args[1].asDouble()); return table; });
-        table.rawset("model", args -> { builder.model(args[1].asString()); return table; });
+        bindMethod(table, "friction", args -> { int off = getOffset(args); builder.friction((float) args[off].asDouble()); return table; });
+        bindMethod(table, "model", args -> { int off = getOffset(args); builder.model(args[off].asString()); return table; });
 
-        table.rawset("drop", args -> {
-            if (args.length >= 2) {
-                String itemId = args[1].asString();
-                int minCount = args.length >= 3 ? args[2].asInt() : 1;
-                int maxCount = args.length >= 4 ? args[3].asInt() : minCount;
+        bindMethod(table, "drop", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                String itemId = args[off].asString();
+                int minCount = args.length - off >= 2 ? args[off + 1].asInt() : 1;
+                int maxCount = args.length - off >= 3 ? args[off + 2].asInt() : minCount;
                 builder.drop(itemId, minCount, maxCount);
             }
             return table;
         });
 
-        table.rawset("dropExperience", args -> {
-            if (args.length >= 2) {
-                int minExp = args[1].asInt();
-                int maxExp = args.length >= 3 ? args[2].asInt() : minExp;
+        bindMethod(table, "dropExperience", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                int minExp = args[off].asInt();
+                int maxExp = args.length - off >= 2 ? args[off + 1].asInt() : minExp;
                 builder.dropExperience(minExp, maxExp);
             }
             return table;
         });
 
-        table.rawset("texture", args -> { builder.texture(args[1].asString()); return table; });
-        table.rawset("creativeTab", args -> { builder.creativeTab(args[1].asString()); return table; });
-        table.rawset("tabGroup", args -> { builder.creativeTab(args[1].asString()); return table; });
-        table.rawset("tag", args -> {
-            if (args.length >= 2) {
-                String tagId = args[1].asString();
+        bindMethod(table, "texture", args -> { int off = getOffset(args); builder.texture(args[off].asString()); return table; });
+        bindMethod(table, "creativeTab", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
+        bindMethod(table, "tabGroup", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
+        bindMethod(table, "tag", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                String tagId = args[off].asString();
                 builder.tag(tagId);
                 if (datapackService != null) {
                     String fullId = builder.getId().contains(":") ? builder.getId() : "luatweaker:" + builder.getId();
@@ -644,9 +723,10 @@ public class ContentLuaBinding {
             return table;
         });
 
-        table.rawset("onRightClick", args -> {
-            ILuaValue func = args[1];
-            if (func.isFunction()) {
+        bindMethod(table, "onRightClick", args -> {
+            int off = getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
                 builder.onRightClick((player, blockState) -> {
                     try {
                         ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
@@ -664,24 +744,31 @@ public class ContentLuaBinding {
 
 
     private static void bindFluidBuilderMethods(ILuaEngine engine, ILuaTable table, IFluidBuilder builder) {
-        table.rawset("color", args -> { builder.color(args[1].asInt()); return table; });
-        table.rawset("stillTexture", args -> { builder.stillTexture(args[1].asString()); return table; });
-        table.rawset("flowingTexture", args -> { builder.flowingTexture(args[1].asString()); return table; });
-        table.rawset("temperature", args -> { builder.temperature(args[1].asInt()); return table; });
-        table.rawset("viscosity", args -> { builder.viscosity(args[1].asInt()); return table; });
-        table.rawset("density", args -> { builder.density(args[1].asInt()); return table; });
-        table.rawset("lightLevel", args -> { builder.lightLevel(args[1].asInt()); return table; });
-        table.rawset("light", args -> { builder.lightLevel(args[1].asInt()); return table; });
-        table.rawset("slopeFindDistance", args -> { builder.slopeFindDistance(args[1].asInt()); return table; });
-        table.rawset("levelDecreasePerBlock", args -> { builder.levelDecreasePerBlock(args[1].asInt()); return table; });
-        table.rawset("tickRate", args -> { builder.tickRate(args[1].asInt()); return table; });
-        table.rawset("explosionResistance", args -> { builder.explosionResistance((float) args[1].asDouble()); return table; });
-        table.rawset("rarity", args -> { builder.rarity(args[1].asString()); return table; });
-        table.rawset("creativeTab", args -> { builder.creativeTab(args[1].asString()); return table; });
-        table.rawset("tabGroup", args -> { builder.creativeTab(args[1].asString()); return table; });
-        table.rawset("onTouch", args -> {
-            ILuaValue func = args[1];
-            if (func.isFunction()) {
+        bindMethod(table, "displayName", args -> { int off = getOffset(args); builder.displayName(args[off].asString()); return table; });
+        bindMethod(table, "name", args -> { int off = getOffset(args); builder.displayName(args[off].asString()); return table; });
+        bindMethod(table, "color", args -> { int off = getOffset(args); builder.color(args[off].asInt()); return table; });
+        bindMethod(table, "stillTexture", args -> { int off = getOffset(args); builder.stillTexture(args[off].asString()); return table; });
+        bindMethod(table, "still", args -> { int off = getOffset(args); builder.stillTexture(args[off].asString()); return table; });
+        bindMethod(table, "flowingTexture", args -> { int off = getOffset(args); builder.flowingTexture(args[off].asString()); return table; });
+        bindMethod(table, "flowing", args -> { int off = getOffset(args); builder.flowingTexture(args[off].asString()); return table; });
+        bindMethod(table, "flow", args -> { int off = getOffset(args); builder.flowingTexture(args[off].asString()); return table; });
+        bindMethod(table, "temperature", args -> { int off = getOffset(args); builder.temperature(args[off].asInt()); return table; });
+        bindMethod(table, "viscosity", args -> { int off = getOffset(args); builder.viscosity(args[off].asInt()); return table; });
+        bindMethod(table, "density", args -> { int off = getOffset(args); builder.density(args[off].asInt()); return table; });
+        bindMethod(table, "lightLevel", args -> { int off = getOffset(args); builder.lightLevel(args[off].asInt()); return table; });
+        bindMethod(table, "light", args -> { int off = getOffset(args); builder.lightLevel(args[off].asInt()); return table; });
+        bindMethod(table, "luminance", args -> { int off = getOffset(args); builder.lightLevel(args[off].asInt()); return table; });
+        bindMethod(table, "slopeFindDistance", args -> { int off = getOffset(args); builder.slopeFindDistance(args[off].asInt()); return table; });
+        bindMethod(table, "levelDecreasePerBlock", args -> { int off = getOffset(args); builder.levelDecreasePerBlock(args[off].asInt()); return table; });
+        bindMethod(table, "tickRate", args -> { int off = getOffset(args); builder.tickRate(args[off].asInt()); return table; });
+        bindMethod(table, "explosionResistance", args -> { int off = getOffset(args); builder.explosionResistance((float) args[off].asDouble()); return table; });
+        bindMethod(table, "rarity", args -> { int off = getOffset(args); builder.rarity(args[off].asString()); return table; });
+        bindMethod(table, "creativeTab", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
+        bindMethod(table, "tabGroup", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
+        bindMethod(table, "onTouch", args -> {
+            int off = getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
                 builder.onTouch(player -> {
                     try {
                         ILuaValue playerVal = com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, player);
@@ -696,50 +783,71 @@ public class ContentLuaBinding {
     }
 
     private static void bindEntityBuilderMethods(ILuaEngine engine, ILuaTable table, IEntityBuilder builder, IDatapackService datapackService) {
-        table.rawset("category", args -> { builder.category(args[1].asString()); return table; });
-        table.rawset("dimensions", args -> {
-            if (args.length >= 3) builder.dimensions((float) args[1].asDouble(), (float) args[2].asDouble());
+        bindMethod(table, "category", args -> { int off = getOffset(args); builder.category(args[off].asString()); return table; });
+        bindMethod(table, "dimensions", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 2) builder.dimensions((float) args[off].asDouble(), (float) args[off + 1].asDouble());
             return table;
         });
-        table.rawset("maxHealth", args -> { builder.maxHealth(args[1].asDouble()); return table; });
-        table.rawset("movementSpeed", args -> { builder.movementSpeed(args[1].asDouble()); return table; });
-        table.rawset("speed", args -> { builder.movementSpeed(args[1].asDouble()); return table; });
-        table.rawset("attackDamage", args -> { builder.attackDamage(args[1].asDouble()); return table; });
-        table.rawset("followRange", args -> { builder.followRange(args[1].asDouble()); return table; });
-        table.rawset("armor", args -> { builder.armor(args[1].asDouble()); return table; });
-        table.rawset("knockbackResistance", args -> { builder.knockbackResistance(args[1].asDouble()); return table; });
-        table.rawset("spawnEgg", args -> {
-            if (args.length >= 3) builder.spawnEgg(args[1].asInt(), args[2].asInt());
+        bindMethod(table, "maxHealth", args -> { int off = getOffset(args); builder.maxHealth(args[off].asDouble()); return table; });
+        bindMethod(table, "movementSpeed", args -> { int off = getOffset(args); builder.movementSpeed(args[off].asDouble()); return table; });
+        bindMethod(table, "speed", args -> { int off = getOffset(args); builder.movementSpeed(args[off].asDouble()); return table; });
+        bindMethod(table, "attackDamage", args -> { int off = getOffset(args); builder.attackDamage(args[off].asDouble()); return table; });
+        bindMethod(table, "followRange", args -> { int off = getOffset(args); builder.followRange(args[off].asDouble()); return table; });
+        bindMethod(table, "armor", args -> { int off = getOffset(args); builder.armor(args[off].asDouble()); return table; });
+        bindMethod(table, "knockbackResistance", args -> { int off = getOffset(args); builder.knockbackResistance(args[off].asDouble()); return table; });
+        bindMethod(table, "spawnEgg", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 2) builder.spawnEgg(args[off].asInt(), args[off + 1].asInt());
             return table;
         });
-        table.rawset("model", args -> { builder.model(args[1].asString()); return table; });
-        table.rawset("texture", args -> { builder.texture(args[1].asString()); return table; });
-        table.rawset("bbmodel", args -> { builder.bbmodel(args[1].asString()); return table; });
-        table.rawset("ambientSound", args -> { builder.ambientSound(args[1].asString()); return table; });
-        table.rawset("hurtSound", args -> { builder.hurtSound(args[1].asString()); return table; });
-        table.rawset("deathSound", args -> { builder.deathSound(args[1].asString()); return table; });
-        table.rawset("drop", args -> {
-            if (args.length >= 2) {
-                String itemId = args[1].asString();
-                int minCount = args.length >= 3 ? args[2].asInt() : 1;
-                int maxCount = args.length >= 4 ? args[3].asInt() : minCount;
+        bindMethod(table, "model", args -> { int off = getOffset(args); builder.model(args[off].asString()); return table; });
+        bindMethod(table, "texture", args -> { int off = getOffset(args); builder.texture(args[off].asString()); return table; });
+        bindMethod(table, "bbmodel", args -> { int off = getOffset(args); builder.bbmodel(args[off].asString()); return table; });
+        bindMethod(table, "ambientSound", args -> { int off = getOffset(args); builder.ambientSound(args[off].asString()); return table; });
+        bindMethod(table, "hurtSound", args -> { int off = getOffset(args); builder.hurtSound(args[off].asString()); return table; });
+        bindMethod(table, "deathSound", args -> { int off = getOffset(args); builder.deathSound(args[off].asString()); return table; });
+        bindMethod(table, "drop", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                String itemId = args[off].asString();
+                int minCount = args.length - off >= 2 ? args[off + 1].asInt() : 1;
+                int maxCount = args.length - off >= 3 ? args[off + 2].asInt() : minCount;
                 builder.drop(itemId, minCount, maxCount);
             }
             return table;
         });
-        table.rawset("experience", args -> { builder.experience(args[1].asInt()); return table; });
-        table.rawset("creativeTab", args -> { builder.creativeTab(args[1].asString()); return table; });
-        table.rawset("spawnEggTexture", args -> { builder.spawnEggTexture(args[1].asString()); return table; });
-        table.rawset("eggTexture", args -> { builder.spawnEggTexture(args[1].asString()); return table; });
-        table.rawset("parent", args -> { builder.parent(args[1].asString()); return table; });
-        table.rawset("parentMob", args -> { builder.parentMob(args[1].asString()); return table; });
-        table.rawset("bossBar", args -> {
-            String title = args[1].asString();
-            String color = args.length >= 3 ? args[2].asString() : "RED";
-            String overlay = args.length >= 4 ? args[3].asString() : "PROGRESS";
-            builder.bossBar(title, color, overlay);
+        bindMethod(table, "experience", args -> { int off = getOffset(args); builder.experience(args[off].asInt()); return table; });
+        bindMethod(table, "creativeTab", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
+        bindMethod(table, "spawnEggTexture", args -> { int off = getOffset(args); builder.spawnEggTexture(args[off].asString()); return table; });
+        bindMethod(table, "eggTexture", args -> { int off = getOffset(args); builder.spawnEggTexture(args[off].asString()); return table; });
+        bindMethod(table, "parent", args -> { int off = getOffset(args); builder.parent(args[off].asString()); return table; });
+        bindMethod(table, "parentMob", args -> { int off = getOffset(args); builder.parentMob(args[off].asString()); return table; });
+        bindMethod(table, "bossBar", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                String title = args[off].asString();
+                String color = args.length - off >= 2 ? args[off + 1].asString() : "RED";
+                String overlay = args.length - off >= 3 ? args[off + 2].asString() : "PROGRESS";
+                builder.bossBar(title, color, overlay);
+            }
             return table;
         });
+    }
+
+    private static void bindMethod(ILuaTable table, String name, ILuaFunction func) {
+        table.rawset(name, func);
+        if (name != null && !name.isEmpty() && Character.isLowerCase(name.charAt(0))) {
+            String pascal = Character.toUpperCase(name.charAt(0)) + name.substring(1);
+            table.rawset(pascal, func);
+        }
+    }
+
+    private static int getOffset(ILuaValue[] args) {
+        if (args != null && args.length > 0 && args[0] != null && args[0].isTable()) {
+            return 1;
+        }
+        return 0;
     }
 
 }

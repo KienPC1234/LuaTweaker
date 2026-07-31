@@ -33,8 +33,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.List;
 
 @Mod(LuaTweakerMod.MODID)
 public class LuaTweakerMod {
@@ -52,7 +54,10 @@ public class LuaTweakerMod {
         return activeEngine;
     }
 
-    /** The command registry; held as a field so external modules can register commands before build(). */
+    /**
+     * The command registry; held as a field so external modules can register
+     * commands before build().
+     */
     private final LuaTweakerCommandRegistry commandRegistry;
 
     private final com.luatweaker.content.ContentServiceImpl contentService;
@@ -97,13 +102,21 @@ public class LuaTweakerMod {
 
         // Register Mod Event Bus listeners for Content Registry and Asset Pack Finder
         modEventBus.register(new com.luatweaker.platform.content.NeoForgeContentRegistry(contentService));
-        modEventBus.register(new com.luatweaker.platform.content.LuaAssetsPackFinder(luaDir, datapackService, contentService));
+        modEventBus.register(
+                new com.luatweaker.platform.content.LuaAssetsPackFinder(luaDir, datapackService, contentService));
         modEventBus.addListener(LuaTweakerMod::registerPayloads);
         modEventBus.addListener(this::onClientSetup);
 
         // Register Game Event Bus listeners (gameplay events)
-        NeoForge.EVENT_BUS.register(new com.luatweaker.platform.content.NeoForgeContentRegistry.BossBarTickHandler(contentService));
+        NeoForge.EVENT_BUS.register(this);
+        NeoForge.EVENT_BUS.register(
+                new com.luatweaker.platform.content.NeoForgeContentRegistry.BossBarTickHandler(contentService));
         NeoForge.EVENT_BUS.register(new com.luatweaker.platform.event.NeoForgeGameEventListener());
+
+        if (Platform.get().isClient()) {
+            modEventBus.addListener(com.luatweaker.platform.client.DynamicKeyMappingHandler::onRegisterKeyMappings);
+            NeoForge.EVENT_BUS.addListener(com.luatweaker.platform.client.DynamicKeyMappingHandler::onClientTick);
+        }
 
         // Build the command registry (core commands auto-registered inside)
         commandRegistry = new LuaTweakerCommandRegistry(luaDir);
@@ -111,30 +124,34 @@ public class LuaTweakerMod {
 
     private void runStartupScripts(File luaDir) {
         File startupDir = new File(luaDir, "startup");
-        if (!startupDir.exists() || !startupDir.isDirectory()) return;
+        if (!startupDir.exists() || !startupDir.isDirectory())
+            return;
 
         ILuaEngine startupEngine = new CobaltLuaEngine(isDebugEnabled());
-        com.luatweaker.content.ContentLuaBinding.registerBindings(startupEngine, contentService, storageService, datapackService);
+        startupEngine.setLuaDirectory(luaDir);
+        com.luatweaker.platform.bootstrap.LuaServiceBootstrap.registerAllServices(
+                startupEngine, contentService, storageService, datapackService, new NeoForgeRecipeManager()
+        );
 
-        File[] files = startupDir.listFiles((dir, name) -> name.endsWith(".lua"));
-        if (files != null) {
-            Arrays.sort(files, Comparator.comparing(File::getName));
-            for (File f : files) {
-                com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SCRIPT_LOAD, "Executing startup script: " + f.getName());
-                try {
-                    startupEngine.executeScript(f, "STARTUP");
-                } catch (Exception e) {
-                    LOGGER.error("Failed to execute startup script: " + f.getName(), e);
-                }
+        List<File> files = collectLuaFilesRecursively(startupDir);
+        for (File f : files) {
+            com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SCRIPT_LOAD,
+                    "Executing startup script: " + f.getName());
+            try {
+                startupEngine.executeScript(f, "STARTUP");
+            } catch (Exception e) {
+                LOGGER.error("Failed to execute startup script: " + f.getName(), e);
             }
         }
     }
 
     public void runClientScripts(File luaDir) {
         File clientDir = new File(luaDir, "client");
-        if (!clientDir.exists() || !clientDir.isDirectory()) return;
+        if (!clientDir.exists() || !clientDir.isDirectory())
+            return;
 
         ILuaEngine engine = activeEngine != null ? activeEngine : new CobaltLuaEngine(isDebugEnabled());
+        engine.setLuaDirectory(luaDir);
         activeEngine = engine;
 
         com.luatweaker.client.ClientServiceImpl clientService = new com.luatweaker.client.ClientServiceImpl();
@@ -147,21 +164,20 @@ public class LuaTweakerMod {
         com.luatweaker.interception.InterceptionLuaBinding.registerBindings(engine, interceptionService);
 
         com.luatweaker.math.MathLuaBinding.registerBindings(engine);
-        com.luatweaker.network.NetworkServiceImpl clientNetworkService = new com.luatweaker.network.NetworkServiceImpl(engine);
+        com.luatweaker.network.NetworkServiceImpl clientNetworkService = new com.luatweaker.network.NetworkServiceImpl(
+                engine);
         com.luatweaker.network.NetworkLuaBinding.registerBindings(engine, clientNetworkService);
         com.luatweaker.events.EventLuaBinding.registerBindings(engine);
         com.luatweaker.interaction.InteractionLuaBinding.registerBindings(engine);
 
-        File[] files = clientDir.listFiles((dir, name) -> name.endsWith(".lua"));
-        if (files != null) {
-            Arrays.sort(files, Comparator.comparing(File::getName));
-            for (File f : files) {
-                com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SCRIPT_LOAD, "Executing client script: " + f.getName());
-                try {
-                    engine.executeScript(f, "CLIENT");
-                } catch (Exception e) {
-                    LOGGER.error("Failed to execute client script: " + f.getName(), e);
-                }
+        List<File> files = collectLuaFilesRecursively(clientDir);
+        for (File f : files) {
+            com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SCRIPT_LOAD,
+                    "Executing client script: " + f.getName());
+            try {
+                engine.executeScript(f, "CLIENT");
+            } catch (Exception e) {
+                LOGGER.error("Failed to execute client script: " + f.getName(), e);
             }
         }
     }
@@ -170,7 +186,10 @@ public class LuaTweakerMod {
         runClientScripts(getLuaDirectory());
     }
 
-    /** Expose the registry so addon modules can call commandRegistry.register(myCmd) during setup. */
+    /**
+     * Expose the registry so addon modules can call commandRegistry.register(myCmd)
+     * during setup.
+     */
     public LuaTweakerCommandRegistry getCommandRegistry() {
         return commandRegistry;
     }
@@ -180,60 +199,48 @@ public class LuaTweakerMod {
         if (!luaDir.exists()) {
             luaDir.mkdirs();
             com.luatweaker.api.log.LuaTweakerLog.get().info(
-                com.luatweaker.api.log.LogStage.SYSTEM,
-                "Created main Lua directory at: " + luaDir.getAbsolutePath()
-            );
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "Created main Lua directory at: " + luaDir.getAbsolutePath());
         }
 
-        String[] requiredSubDirs = new String[] { "startup", "server", "client", "lib", ".luatweaker/stubs", "logs/luatweaker" };
+        String[] requiredSubDirs = new String[] { "startup", "server", "client", "lib", ".luatweaker/stubs",
+                "logs/luatweaker" };
         for (String sub : requiredSubDirs) {
             File subDir = new File(luaDir, sub);
             if (!subDir.exists()) {
                 boolean created = subDir.mkdirs();
                 if (created || subDir.exists()) {
                     com.luatweaker.api.log.LuaTweakerLog.get().info(
-                        com.luatweaker.api.log.LogStage.SYSTEM,
-                        "Created missing Lua sub-directory: " + subDir.getAbsolutePath()
-                    );
+                            com.luatweaker.api.log.LogStage.SYSTEM,
+                            "Created missing Lua sub-directory: " + subDir.getAbsolutePath());
                 }
             }
         }
     }
 
     private File getLuaDirectory() {
-        File[] candidates = new File[] {
-            new File("lua"),
-            new File("../lua"),
-            new File("../../lua"),
-            new File("../../run/lua"),
-            new File("run/lua")
-        };
-
-        // 1. Return first candidate that contains .lua scripts
-        for (File candidate : candidates) {
-            if (hasLuaScripts(candidate)) {
-                return candidate;
-            }
+        File gameDir = net.neoforged.fml.loading.FMLPaths.GAMEDIR.get().toFile();
+        File defaultLuaDir = new File(gameDir, "lua");
+        if (hasLuaScripts(defaultLuaDir)) {
+            return defaultLuaDir;
         }
 
-        // 2. Return first candidate that exists as a directory
-        for (File candidate : candidates) {
-            if (candidate.exists() && candidate.isDirectory()) {
-                return candidate;
-            }
+        File relativeLuaDir = new File("lua");
+        if (hasLuaScripts(relativeLuaDir)) {
+            return relativeLuaDir;
         }
 
-        // 3. Fallback
-        return candidates[0];
+        return defaultLuaDir;
     }
 
     private boolean hasLuaScripts(File dir) {
-        if (!dir.exists() || !dir.isDirectory()) return false;
+        if (!dir.exists() || !dir.isDirectory())
+            return false;
         File[] subDirs = new File[] {
-            new File(dir, "server"),
-            new File(dir, "startup"),
-            new File(dir, "client"),
-            dir
+                new File(dir, "server"),
+                new File(dir, "startup"),
+                new File(dir, "client"),
+                dir
         };
         for (File subDir : subDirs) {
             if (subDir.exists() && subDir.isDirectory()) {
@@ -304,7 +311,8 @@ public class LuaTweakerMod {
                 if (server != null) {
                     reloadServerRecipes(server);
                 } else if (isAutoStubsEnabled()) {
-                    com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.STUB_GEN, "Generating autocomplete stubs...");
+                    com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.STUB_GEN,
+                            "Generating autocomplete stubs...");
                     LtvmStubGenerator stubGen = new LtvmStubGenerator();
                     stubGen.registerService("Recipes", com.luatweaker.api.recipe.IRecipeManagerService.class);
                     stubGen.registerService("AIGoals", com.luatweaker.api.entity.ai.IAIGoalService.class);
@@ -323,22 +331,32 @@ public class LuaTweakerMod {
 
         AsyncFileLogger.get().setDebugEnabled(debugMode);
         com.luatweaker.api.log.LuaTweakerLog.get().stageBegin(com.luatweaker.api.log.LogStage.RELOAD);
-        com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.RELOAD, "Reloading Lua server scripts... (Debug: " + debugMode + ")");
+        com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.RELOAD,
+                "Reloading Lua server scripts... (Debug: " + debugMode + ")");
 
         // Clear pending Anvil/Brewing/Trade from previous reload cycle
         InterceptionHelper.clearPending();
 
         if (isAutoStubsEnabled()) {
-            com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.STUB_GEN, "Generating autocomplete stubs...");
+            com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.STUB_GEN,
+                    "Generating autocomplete stubs...");
             LtvmStubGenerator stubGen = new LtvmStubGenerator();
-            stubGen.registerService("Recipes", com.luatweaker.api.recipe.IRecipeManagerService.class);
-            stubGen.registerService("Startup", com.luatweaker.api.content.IContentService.class);
+            // Static Module Namespaces (require("LuaTweaker.ModuleName"))
+            stubGen.registerService("Content", com.luatweaker.api.content.IContentService.class);
+            stubGen.registerService("Recipe", com.luatweaker.api.recipe.IRecipeManagerService.class);
+            stubGen.registerService("Events", com.luatweaker.api.event.IEventService.class);
+            stubGen.registerService("World", com.luatweaker.api.interaction.IInteractionService.class);
+            stubGen.registerService("Entities", com.luatweaker.api.interaction.IInteractionService.class);
             stubGen.registerService("Storage", com.luatweaker.api.content.IStorageService.class);
             stubGen.registerService("Datapack", com.luatweaker.api.content.IDatapackService.class);
+            stubGen.registerService("Network", com.luatweaker.api.network.IRocketNetworkService.class);
             stubGen.registerService("AIGoals", com.luatweaker.api.entity.ai.IAIGoalService.class);
             stubGen.registerService("WorldAction", com.luatweaker.api.entity.ai.IWorldActionService.class);
             stubGen.registerService("Interaction", com.luatweaker.api.interaction.IInteractionService.class);
-            stubGen.registerService("Events", com.luatweaker.api.event.IEventService.class);
+
+            // Legacy Mod Service Names (Compatibility)
+            stubGen.registerService("Recipes", com.luatweaker.api.recipe.IRecipeManagerService.class);
+            stubGen.registerService("Startup", com.luatweaker.api.content.IContentService.class);
             stubGen.registerService("WorldStorage", com.luatweaker.api.storage.IRobloxStorageService.IDataStore.class);
             stubGen.registerService("PlayerStorage", com.luatweaker.api.storage.IRobloxStorageService.class);
             stubGen.registerService("SessionStorage", com.luatweaker.api.storage.IRobloxStorageService.IDataStore.class);
@@ -350,39 +368,28 @@ public class LuaTweakerMod {
 
         NeoForgeRecipeManager recipeManager = new NeoForgeRecipeManager();
         ILuaEngine engine = new CobaltLuaEngine(debugMode);
-        activeEngine = engine;
+        engine.setLuaDirectory(getLuaDirectory());
 
-        com.luatweaker.storage.StorageServiceImpl robloxStorage = new com.luatweaker.storage.StorageServiceImpl(engine);
-        com.luatweaker.network.NetworkServiceImpl networkService = new com.luatweaker.network.NetworkServiceImpl(engine);
-
-        com.luatweaker.content.ContentLuaBinding.registerBindings(engine, contentService, storageService, datapackService);
-        com.luatweaker.entities.AIGoalLuaBinding.registerBindings(engine);
-        com.luatweaker.entities.WorldActionLuaBinding.registerBindings(engine);
-        com.luatweaker.interaction.InteractionLuaBinding.registerBindings(engine);
-        com.luatweaker.events.EventLuaBinding.registerBindings(engine);
-        com.luatweaker.math.MathLuaBinding.registerBindings(engine);
-        com.luatweaker.storage.StorageLuaBinding.registerBindings(engine, robloxStorage);
-        com.luatweaker.network.NetworkLuaBinding.registerBindings(engine, networkService);
-
-        ILuaTable recipesTable = engine.createTable();
-        RecipesLuaBinding.bind(recipesTable, recipeManager);
-        engine.registerService("Recipes", recipesTable);
+        com.luatweaker.platform.bootstrap.LuaServiceBootstrap.registerAllServices(engine, contentService,
+                storageService, datapackService, recipeManager);
 
         File serverDir = new File(getLuaDirectory(), "server");
         LOGGER.info("Lua server dir: {} (exists: {})", serverDir.getAbsolutePath(), serverDir.exists());
 
         if (serverDir.exists() && serverDir.isDirectory()) {
-            File[] files = serverDir.listFiles((dir, name) -> name.endsWith(".lua"));
-            if (files != null) {
-                Arrays.sort(files, Comparator.comparing(File::getName));
-                LOGGER.info("Found {} Lua scripts to execute", files.length);
-                for (File f : files) {
-                    com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SCRIPT_LOAD, "Executing script: " + f.getName());
-                    try {
-                        engine.executeScript(f, "SERVER");
-                    } catch (Exception e) {
-                        LOGGER.error("Failed to execute script: " + f.getName(), e);
-                    }
+            List<File> files = collectLuaFilesRecursively(serverDir);
+            LOGGER.info("Found {} Lua scripts to execute in server directory tree", files.size());
+            for (File f : files) {
+                com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SCRIPT_LOAD,
+                        "Executing script: " + f.getName());
+                try {
+                    engine.executeScript(f, "SERVER");
+                    com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SCRIPT_LOAD,
+                            "Successfully executed script: " + f.getName());
+                } catch (Exception e) {
+                    com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.SCRIPT_LOAD,
+                            "Failed executing script " + f.getName() + ": " + e.getMessage());
+                    LOGGER.error("Failed to execute script: " + f.getName(), e);
                 }
             }
         }
@@ -393,36 +400,40 @@ public class LuaTweakerMod {
             com.luatweaker.api.log.LuaTweakerLog.get().stageBegin(com.luatweaker.api.log.LogStage.RECIPE_APPLY);
             RecipeManager mcRecipeManager = server.getRecipeManager();
             InterceptionHelper.applyModifications(mcRecipeManager, recipeManager.getModifications());
-            com.luatweaker.api.log.LuaTweakerLog.get().stageEnd(com.luatweaker.api.log.LogStage.RECIPE_APPLY, System.currentTimeMillis() - startTime);
+            com.luatweaker.api.log.LuaTweakerLog.get().stageEnd(com.luatweaker.api.log.LogStage.RECIPE_APPLY,
+                    System.currentTimeMillis() - startTime);
         }
-        com.luatweaker.api.log.LuaTweakerLog.get().stageEnd(com.luatweaker.api.log.LogStage.RELOAD, System.currentTimeMillis() - startTime);
+        com.luatweaker.api.log.LuaTweakerLog.get().stageEnd(com.luatweaker.api.log.LogStage.RELOAD,
+                System.currentTimeMillis() - startTime);
+        activeEngine = engine;
         LOGGER.info("reloadServerRecipes completed in {}ms", System.currentTimeMillis() - startTime);
     }
 
     public static void registerPayloads(final net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent event) {
-        final net.neoforged.neoforge.network.registration.PayloadRegistrar registrar = event.registrar(MODID).versioned("1.0.0");
+        final net.neoforged.neoforge.network.registration.PayloadRegistrar registrar = event.registrar(MODID)
+                .versioned("1.0.0");
         registrar.playBidirectional(
-            com.luatweaker.platform.network.LuaTweakerPayload.TYPE,
-            com.luatweaker.platform.network.LuaTweakerPayload.STREAM_CODEC,
-            (payload, context) -> {
-                context.enqueueWork(() -> {
-                    if (context.flow().isServerbound()) {
-                        net.minecraft.world.entity.player.Player player = context.player();
-                        if (player != null) {
-                            String playerUuid = player.getUUID().toString();
-                            ILuaEngine engine = activeEngine;
-                            if (engine != null) {
-                                Object netService = com.luatweaker.core.service.LuaServiceRegistry.get("NetworkService");
-                                if (netService instanceof com.luatweaker.network.NetworkServiceImpl ns) {
-                                    ILuaValue[] args = parseJsonToLua(engine, payload.dataJson());
-                                    ns.OnClientFired(payload.channelName(), playerUuid, args);
+                com.luatweaker.platform.network.LuaTweakerPayload.TYPE,
+                com.luatweaker.platform.network.LuaTweakerPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    context.enqueueWork(() -> {
+                        if (context.flow().isServerbound()) {
+                            net.minecraft.world.entity.player.Player player = context.player();
+                            if (player != null) {
+                                String playerUuid = player.getUUID().toString();
+                                ILuaEngine engine = activeEngine;
+                                if (engine != null) {
+                                    Object netService = com.luatweaker.core.service.LuaServiceRegistry
+                                            .get("NetworkService");
+                                    if (netService instanceof com.luatweaker.network.NetworkServiceImpl ns) {
+                                        ILuaValue[] args = parseJsonToLua(engine, payload.dataJson());
+                                        ns.OnClientFired(payload.channelName(), playerUuid, args);
+                                    }
                                 }
                             }
                         }
-                    }
+                    });
                 });
-            }
-        );
     }
 
     private static ILuaValue[] parseJsonToLua(ILuaEngine engine, String json) {
@@ -439,11 +450,14 @@ public class LuaTweakerMod {
     }
 
     private static ILuaValue parseElement(ILuaEngine engine, com.google.gson.JsonElement el) {
-        if (el == null || el.isJsonNull()) return engine.nilValue();
+        if (el == null || el.isJsonNull())
+            return engine.nilValue();
         if (el.isJsonPrimitive()) {
             com.google.gson.JsonPrimitive p = el.getAsJsonPrimitive();
-            if (p.isBoolean()) return engine.wrapBoolean(p.getAsBoolean());
-            if (p.isNumber()) return engine.wrapNumber(p.getAsDouble());
+            if (p.isBoolean())
+                return engine.wrapBoolean(p.getAsBoolean());
+            if (p.isNumber())
+                return engine.wrapNumber(p.getAsDouble());
             return engine.wrapString(p.getAsString());
         }
         if (el.isJsonObject()) {
@@ -455,5 +469,22 @@ public class LuaTweakerMod {
             return table;
         }
         return engine.nilValue();
+    }
+
+    private List<File> collectLuaFilesRecursively(File directory) {
+        List<File> result = new ArrayList<>();
+        if (directory == null || !directory.exists() || !directory.isDirectory()) {
+            return result;
+        }
+        try (var stream = java.nio.file.Files.walk(directory.toPath())) {
+            stream.filter(java.nio.file.Files::isRegularFile)
+                  .filter(p -> p.toString().endsWith(".lua"))
+                  .map(java.nio.file.Path::toFile)
+                  .sorted(Comparator.comparing(File::getAbsolutePath))
+                  .forEach(result::add);
+        } catch (Exception e) {
+            LOGGER.error("Failed to scan directory recursively: " + directory.getAbsolutePath(), e);
+        }
+        return result;
     }
 }

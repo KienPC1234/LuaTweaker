@@ -255,9 +255,12 @@ public class LuaAssetsPackFinder {
 
                 if (b.getModel() == null) {
                     String bmKey = "assets/" + ns + "/models/block/" + id + ".json";
-                    String tex = b.getTexture() != null ? b.getTexture() : (ns + ":block/" + id);
-                    String bmJson = "{\n  \"parent\": \"minecraft:block/cube_all\",\n  \"textures\": {\n    \"all\": \"" + tex + "\"\n  }\n}";
-                    datapackService.addData(bmKey, bmJson);
+                    File physicalModelFile = new File(luaDir, bmKey);
+                    if (!physicalModelFile.exists()) {
+                        String tex = b.getTexture() != null ? b.getTexture() : (ns + ":block/" + id);
+                        String bmJson = "{\n  \"parent\": \"minecraft:block/cube_all\",\n  \"textures\": {\n    \"all\": \"" + tex + "\"\n  }\n}";
+                        datapackService.addData(bmKey, bmJson);
+                    }
                 }
 
                 String imKey = "assets/" + ns + "/models/item/" + id + ".json";
@@ -520,10 +523,12 @@ public class LuaAssetsPackFinder {
         for (IFluidBuilder b : contentService.getRegisteredFluids()) {
             String[] parts = parseId(b.getId());
             String ns = parts[0], id = parts[1];
-            String name = capitalize(id.replace("_fluid", "")) + " Liquid";
+            String name = b.getDisplayName() != null ? stripEmojis(b.getDisplayName()) : capitalize(id.replace("_fluid", "")) + " Liquid";
+            String bucketName = name.toLowerCase().contains("bucket") ? name : name + " Bucket";
             langJson.addProperty("fluid." + ns + "." + id, name);
-            langJson.addProperty("item." + ns + "." + id + "_bucket", name + " Bucket");
-            langJson.addProperty("item." + ns + "." + id.replace("_fluid", "") + "_bucket", name + " Bucket");
+            langJson.addProperty("fluid_type." + ns + "." + id, name);
+            langJson.addProperty("item." + ns + "." + id + "_bucket", bucketName);
+            langJson.addProperty("item." + ns + "." + id.replace("_fluid", "") + "_bucket", bucketName);
             langJson.addProperty("block." + ns + "." + id + "_block", name + " Block");
         }
 

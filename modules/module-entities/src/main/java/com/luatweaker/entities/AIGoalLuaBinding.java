@@ -11,12 +11,13 @@ public class AIGoalLuaBinding {
         ILuaTable table = engine.createTable();
 
         table.rawset("addGoal", args -> {
-            if (args.length < 4) {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off < 3) {
                 throw new IllegalArgumentException("AIGoals:addGoal requires (entity, priority, goalTable)");
             }
-            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[1]);
-            int priority = args[2].asInt();
-            ILuaTable goalTable = args[3].asTable();
+            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[off]);
+            int priority = args[off + 1].asInt();
+            ILuaTable goalTable = args[off + 2].asTable();
             if (entity != null) {
                 service.addGoal(entity, priority, goalTable);
             }
@@ -24,12 +25,13 @@ public class AIGoalLuaBinding {
         });
 
         table.rawset("addTargetGoal", args -> {
-            if (args.length < 4) {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off < 3) {
                 throw new IllegalArgumentException("AIGoals:addTargetGoal requires (entity, priority, goalTable)");
             }
-            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[1]);
-            int priority = args[2].asInt();
-            ILuaTable goalTable = args[3].asTable();
+            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[off]);
+            int priority = args[off + 1].asInt();
+            ILuaTable goalTable = args[off + 2].asTable();
             if (entity != null) {
                 service.addTargetGoal(entity, priority, goalTable);
             }
@@ -37,11 +39,12 @@ public class AIGoalLuaBinding {
         });
 
         table.rawset("removeGoal", args -> {
-            if (args.length < 3) {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off < 2) {
                 throw new IllegalArgumentException("AIGoals:removeGoal requires (entity, goalTable)");
             }
-            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[1]);
-            ILuaTable goalTable = args[2].asTable();
+            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[off]);
+            ILuaTable goalTable = args[off + 1].asTable();
             if (entity != null) {
                 service.removeGoal(entity, goalTable);
             }
@@ -49,10 +52,11 @@ public class AIGoalLuaBinding {
         });
 
         table.rawset("clearGoals", args -> {
-            if (args.length < 2) {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off < 1) {
                 throw new IllegalArgumentException("AIGoals:clearGoals requires (entity)");
             }
-            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[1]);
+            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[off]);
             if (entity != null) {
                 service.clearGoals(entity);
             }
@@ -60,15 +64,16 @@ public class AIGoalLuaBinding {
         });
 
         table.rawset("addSkillGoal", args -> {
-            if (args.length < 6) {
-                throw new IllegalArgumentException("AIGoals:addSkillGoal requires (entity, priority, skillName, cooldown, range, castCallback)");
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off < 5) {
+                throw new IllegalArgumentException("AIGoals:addSkillGoal requires (entity, priority, skillName, cooldown, range, [castCallback])");
             }
-            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[1]);
-            int priority = args[2].asInt();
-            String skillName = args[3].asString();
-            double cooldown = args[4].asDouble();
-            double range = args[5].asDouble();
-            Object callback = args.length >= 7 ? args[6] : null;
+            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[off]);
+            int priority = args[off + 1].asInt();
+            String skillName = args[off + 2].asString();
+            double cooldown = args[off + 3].asDouble();
+            double range = args[off + 4].asDouble();
+            Object callback = args.length - off >= 6 ? args[off + 5] : null;
             if (entity != null) {
                 service.addSkillGoal(entity, priority, skillName, cooldown, range, callback);
             }
@@ -76,13 +81,14 @@ public class AIGoalLuaBinding {
         });
 
         table.rawset("addDashGoal", args -> {
-            if (args.length < 5) {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off < 4) {
                 throw new IllegalArgumentException("AIGoals:addDashGoal requires (entity, priority, cooldown, speed)");
             }
-            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[1]);
-            int priority = args[2].asInt();
-            double cooldown = args[3].asDouble();
-            double speed = args[4].asDouble();
+            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[off]);
+            int priority = args[off + 1].asInt();
+            double cooldown = args[off + 2].asDouble();
+            double speed = args[off + 3].asDouble();
             if (entity != null) {
                 service.addDashGoal(entity, priority, cooldown, speed);
             }
@@ -90,12 +96,13 @@ public class AIGoalLuaBinding {
         });
 
         table.rawset("addNearestAttackableTargetGoal", args -> {
-            if (args.length < 4) {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off < 3) {
                 throw new IllegalArgumentException("AIGoals:addNearestAttackableTargetGoal requires (entity, priority, targetType)");
             }
-            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[1]);
-            int priority = args[2].asInt();
-            String targetType = args[3].asString();
+            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[off]);
+            int priority = args[off + 1].asInt();
+            String targetType = args[off + 2].asString();
             if (entity != null) {
                 service.addNearestAttackableTargetGoal(entity, priority, targetType);
             }
@@ -103,11 +110,12 @@ public class AIGoalLuaBinding {
         });
 
         table.rawset("addHurtByTargetGoal", args -> {
-            if (args.length < 3) {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off < 2) {
                 throw new IllegalArgumentException("AIGoals:addHurtByTargetGoal requires (entity, priority)");
             }
-            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[1]);
-            int priority = args[2].asInt();
+            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[off]);
+            int priority = args[off + 1].asInt();
             if (entity != null) {
                 service.addHurtByTargetGoal(entity, priority);
             }
@@ -115,13 +123,14 @@ public class AIGoalLuaBinding {
         });
 
         table.rawset("addMeleeAttackGoal", args -> {
-            if (args.length < 3) {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off < 2) {
                 throw new IllegalArgumentException("AIGoals:addMeleeAttackGoal requires (entity, priority, [speed], [pauseWhenIdle])");
             }
-            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[1]);
-            int priority = args[2].asInt();
-            double speed = args.length >= 4 ? args[3].asDouble() : 1.2;
-            boolean pauseWhenIdle = args.length >= 5 && args[4].asBoolean();
+            IEntity entity = EntitiesLuaBinding.getEntityFromTable(args[off]);
+            int priority = args[off + 1].asInt();
+            double speed = args.length - off >= 3 ? args[off + 2].asDouble() : 1.2;
+            boolean pauseWhenIdle = args.length - off >= 4 && args[off + 3].asBoolean();
             if (entity != null) {
                 service.addMeleeAttackGoal(entity, priority, speed, pauseWhenIdle);
             }
@@ -129,5 +138,6 @@ public class AIGoalLuaBinding {
         });
 
         engine.registerService("AIGoals", table);
+        engine.registerGlobal("AIGoals", table);
     }
 }

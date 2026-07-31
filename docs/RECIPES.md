@@ -1,259 +1,121 @@
-# 🔨 Comprehensive Recipe & Item Management Reference (`recipes`)
+# Recipe Management Reference (`LuaTweaker.Recipe`)
 
-> **Stage:** Server Scripts (`lua/server/*.lua`)  
-> **Global Service:** `recipes` | `Mod:GetService("Recipes")` | `game:GetService("Recipes")`
-
-LuaTweaker provides a high-performance, dynamic recipe management engine for Minecraft 1.21.1 NeoForge. It supports all vanilla and modded crafting/cooking workstations, anvil combinations, brewing stand recipes, villager trades, and global ingredient replacements.
+LuaTweaker provides a chainable Builder DSL for dynamic recipe management, support for vanilla and modded crafting, smithing, anvil, brewing, smelting, and global replacements.
 
 ---
 
-## 🎨 1. KubeJS-Style Rich Item Definitions (`item`)
+## 1. Module Imports
 
-The `item(...)` function creates item stack definitions with full support for counts, damage, custom names with color formatting, lore lines, enchantments, and custom NBT data.
+All static recipe definitions require explicit module imports:
 
-### Option A: Method Chaining (Fluent Syntax)
 ```lua
-local excalibur = item("minecraft:diamond_sword", 1)
-    :withName("&6Excalibur")                                    -- Gold custom name (& or § codes supported)
-    :withLore({ "&7Legendary Blade of Flame", "&8LuaTweaker" }) -- Colored lore lines
-    :withDamage(10)                                              -- Item damage / durability lost
-    :withEnchantment("minecraft:sharpness", 5)                  -- Sharpness V
-    :withEnchantment("minecraft:fire_aspect", 2)                 -- Fire Aspect II
-    :withNbt("{CustomModelData:100, Unbreakable:1b}")           -- NBT JSON string
-```
-
-### Option B: Table Syntax
-```lua
-local superApple = item({
-    id = "minecraft:golden_apple",
-    count = 2,
-    name = "&dEnchanted Super Apple",
-    lore = { "&7Restores full health" },
-    nbt = "{CustomModelData:50}"
-})
-```
-
-### Option C: Short Item & Tag Syntax
-```lua
-local wheatItem = item("minecraft:wheat")        -- 1x wheat
-local countItem = item("minecraft:bread", 4)      -- 4x bread
-local tagAsItem = item("#minecraft:logs")         -- Tag accepted directly as item/ingredient
+local Recipe  = require("LuaTweaker.Recipe")
+local Content = require("LuaTweaker.Content")
 ```
 
 ---
 
-## 🏷️ 2. Ingredient Definitions (`ingredient`, `tag`, `oredict`)
+## 2. Shaped Crafting Grid (`Recipe.Shaped`)
 
-Input slots expect an ingredient, which can be an item ID, a tag `#namespace:tag`, an oredict tag, or alternative ingredients.
+Chainable Builder pattern with visual pattern arrays and input key mappings ending with `:Register()`:
 
 ```lua
--- Single Item Ingredient
-local iron = ingredient("minecraft:iron_ingot")
+local Excalibur = Content.Item("luatweaker:excalibur")
 
--- Tag & OreDict Ingredients (all equivalent)
-local wood1 = tag("#minecraft:logs")
-local wood2 = oredict("c:ingots/iron")           -- Auto-prefixed as #c:ingots/iron
-local wood3 = ingredient("#minecraft:logs")
-
--- Composite / Alternative Ingredients (:orIngredient, :alt, :otherwise)
--- Note: Use :orIngredient() or :alt() to avoid collision with Lua's reserved 'or' keyword
-local ironOrCopper = ingredient("minecraft:iron_ingot"):orIngredient("minecraft:copper_ingot")
-local anyPlank = tag("#minecraft:planks"):alt("minecraft:bamboo_planks")
+Recipe.Shaped("luatweaker:excalibur_craft")
+    :Pattern({
+        "  D  ",
+        "  D  ",
+        "  S  "
+    })
+    :Key("D", Content.Item("minecraft:diamond_block"))
+    :Key("S", Content.Item("minecraft:blaze_rod"))
+    :Output(Excalibur, 1)
+    :Register()
 ```
 
 ---
 
-## 🎨 3. Color Codes Reference
+## 3. Shapeless Crafting (`Recipe.Shapeless`)
 
-You can use standard Minecraft color codes with either `&` or `§`:
-
-| Code | Color | Code | Color |
-|---|---|---|---|
-| `&0` | Black | `&8` | Dark Gray |
-| `&1` | Dark Blue | `&9` | Blue |
-| `&2` | Dark Green | `&a` | Green |
-| `&3` | Dark Aqua | `&b` | Aqua |
-| `&4` | Dark Red | `&c` | Red |
-| `&5` | Dark Purple | `&d` | Light Purple |
-| `&6` | Gold | `&e` | Yellow |
-| `&7` | Gray | `&f` | White |
-| `&l` | **Bold** | `&o` | *Italic* |
-
----
-
-## 📐 4. Shaped Crafting Grid (`recipes:addShaped`)
-
-### Signature
 ```lua
-recipes:addShaped(recipeId: string, output: ItemCount, pattern: table<integer, string>, keys: table<string, IngredientWrapper>)
-```
-
-### Example
-```lua
-recipes:addShaped("luatweaker:custom_iron_sword", item("minecraft:iron_sword", 1), {
-    " I ",
-    " I ",
-    " S "
-}, {
-    I = ingredient("minecraft:iron_ingot"),
-    S = ingredient("minecraft:stick")
-})
+Recipe.Shapeless("luatweaker:instant_bread")
+    :Inputs({
+        Content.Item("minecraft:wheat"),
+        Content.Item("minecraft:sugar")
+    })
+    :Output(Content.Item("minecraft:bread"), 4)
+    :Register()
 ```
 
 ---
 
-## 🌀 5. Shapeless Crafting (`recipes:addShapeless`)
-
-### Signature
-```lua
-recipes:addShapeless(recipeId: string, output: ItemCount, ingredients: table<integer, IngredientWrapper>)
-```
-
-### Example
-```lua
-recipes:addShapeless("luatweaker:instant_bread", item("minecraft:bread", 4), {
-    ingredient("minecraft:wheat"),
-    ingredient("minecraft:sugar")
-})
-```
-
----
-
-## 🔥 6. Cooking & Workstation Recipes
+## 4. Smelting, Blasting & Cooking (`Recipe.Smelting`)
 
 ```lua
--- Smelting (Furnace): addSmelting(id, output, input, xp: number, cookTimeTicks: integer)
-recipes:addSmelting("luatweaker:smelt_iron", item("minecraft:iron_ingot", 2), ingredient("minecraft:raw_iron"), 1.5, 200)
+-- Smelting (Furnace)
+Recipe.Smelting("luatweaker:ruby_smelting")
+    :Input(Content.Item("luatweaker:ruby_ore"))
+    :Output(Content.Item("luatweaker:custom_ruby"), 1)
+    :Xp(1.5)
+    :CookingTime(200)
+    :Register()
 
--- Blasting (Blast Furnace): addBlasting(id, output, input, xp: number, cookTimeTicks: integer)
-recipes:addBlasting("luatweaker:blast_gold", item("minecraft:gold_ingot", 2), ingredient("minecraft:raw_gold"), 2.0, 100)
-
--- Smoking (Smoker): addSmoking(id, output, input, xp: number, cookTimeTicks: integer)
-recipes:addSmoking("luatweaker:quick_beef", item("minecraft:cooked_beef", 1), ingredient("minecraft:beef"), 0.35, 100)
-
--- Campfire Cooking: addCampfire(id, output, input, xp: number, cookTimeTicks: integer)
-recipes:addCampfire("luatweaker:campfire_cod", item("minecraft:cooked_cod", 1), ingredient("minecraft:cod"), 0.35, 600)
+-- Blasting (Blast Furnace)
+Recipe.Blasting("luatweaker:ruby_blasting")
+    :Input(Content.Item("luatweaker:ruby_ore"))
+    :Output(Content.Item("luatweaker:custom_ruby"), 1)
+    :Xp(2.0)
+    :CookingTime(100)
+    :Register()
 ```
 
 ---
 
-## 🪨 7. Stonecutter (`recipes:addStonecutting`)
+## 5. Smithing Table Upgrades (`Recipe.Smithing`)
 
 ```lua
-recipes:addStonecutting("luatweaker:stonecut_copper", item("minecraft:copper_block", 1), ingredient("minecraft:cut_copper"))
+Recipe.Smithing("luatweaker:ruby_pickaxe_upgrade")
+    :Template(Content.Item("minecraft:netherite_upgrade_smithing_template"))
+    :Base(Content.Item("minecraft:diamond_pickaxe"))
+    :Addition(Content.Item("luatweaker:custom_ruby"))
+    :Output(Content.Item("luatweaker:ruby_pickaxe"), 1)
+    :Register()
 ```
 
 ---
 
-## 🔨 8. Smithing Table Upgrades (`recipes:addSmithing`)
+## 6. Anvil & Brewing Recipes (`Recipe.Anvil` / `Recipe.Brewing`)
 
 ```lua
-recipes:addSmithing(
-    "luatweaker:custom_netherite_upgrade",
-    item("minecraft:netherite_pickaxe", 1),
-    ingredient("minecraft:netherite_upgrade_smithing_template"), -- Template
-    ingredient("minecraft:diamond_pickaxe"),                      -- Base
-    ingredient("minecraft:netherite_ingot")                       -- Addition
-)
+-- Anvil Recipe
+Recipe.Anvil("luatweaker:ruby_enchant")
+    :LeftInput(Content.Item("minecraft:diamond_sword"))
+    :RightInput(Content.Item("luatweaker:custom_ruby"))
+    :Output(Content.Item("minecraft:diamond_sword"))
+    :ExpCost(5)
+    :Register()
+
+-- Brewing Recipe
+Recipe.Brewing("luatweaker:ruby_potion")
+    :InputPotion("minecraft:water")
+    :Ingredient(Content.Item("luatweaker:custom_ruby"))
+    :OutputPotion("minecraft:healing")
+    :Register()
 ```
 
 ---
 
-## ⚒️ 9. Anvil Combinations (`recipes:addAnvil`)
-
-Anvil recipes are evaluated dynamically via `AnvilUpdateEvent` and registered in JEI under the **Anvil** category.
-
-### Signature
-```lua
-recipes:addAnvil(recipeId: string, output: ItemCount, leftInput: IngredientWrapper, rightInput: IngredientWrapper, expCost: integer)
-```
-
-### Example
-```lua
-local excalibur = item("minecraft:diamond_sword", 1)
-    :withName("&6Excalibur")
-    :withLore({ "&7Legendary Blade of Flame" })
-    :withEnchantment("minecraft:sharpness", 5)
-
--- Wooden Sword + Emerald -> Excalibur Diamond Sword (1 XP Level)
-recipes:addAnvil(
-    "luatweaker:empower_sword_anvil",
-    excalibur,
-    ingredient("minecraft:wooden_sword"),
-    ingredient("minecraft:emerald"),
-    1
-)
-```
-
----
-
-## 🧪 10. Brewing Stand Potions (`recipes:addBrewing`)
-
-Brewing recipes are registered into NeoForge's `PotionBrewing.Builder` during startup and displayed in JEI's **Brewing** category.
-
-### Signature
-```lua
-recipes:addBrewing(recipeId: string, outputPotionId: string, inputPotionId: string, ingredient: IngredientWrapper)
-```
-
-### Example
-```lua
--- Water Bottle + Diamond -> Potion of Night Vision
-recipes:addBrewing(
-    "luatweaker:diamond_night_vision_brew",
-    "minecraft:night_vision",
-    "minecraft:water",
-    ingredient("minecraft:diamond")
-)
-```
-
----
-
-## 🧑‍🌾 11. Villager Trades (`recipes:addTrade`)
-
-### Signature
-```lua
-recipes:addTrade(profession: string, level: integer, buy1: ItemCount, buy2: ItemCount?, sell: ItemCount, maxUses: integer, xp: integer)
-```
-
-### Example
-```lua
--- Cleric (level 3) sells 16 redstone for 5 emeralds
-recipes:addTrade("cleric", 3, item("minecraft:emerald", 5), nil, item("minecraft:redstone", 16), 12, 10)
-```
-
----
-
-## 🔄 12. Global Ingredient & Output Replacements
+## 7. Global Replacements & Removals
 
 ```lua
--- Replace coal with charcoal across all loaded recipes
-recipes:replaceInput("minecraft:coal", "minecraft:charcoal")
+-- Global Ingredient / Output Replacements
+Recipe.ReplaceInput("minecraft:coal", "minecraft:charcoal")
+Recipe.ReplaceOutput("minecraft:dirt", "minecraft:cobblestone")
 
--- Replace dirt output with cobblestone across all loaded recipes
-recipes:replaceOutput("minecraft:dirt", "minecraft:cobblestone")
+-- Recipe Removals
+Recipe.RemoveByOutput("minecraft:diamond_sword")
+Recipe.RemoveByInput("minecraft:netherite_scrap")
+Recipe.RemoveById("minecraft:cake")
+Recipe.RemoveByMod("some_mod_id")
 ```
-
----
-
-## ❌ 13. Recipe Removals
-
-```lua
-recipes:removeByOutput("minecraft:diamond_sword")  -- Remove all recipes outputting a diamond sword
-recipes:removeByInput("minecraft:netherite_scrap") -- Remove all recipes using netherite scrap
-recipes:removeById("minecraft:cake")               -- Remove recipe by full ID
-recipes:removeByMod("some_mod_id")                -- Remove all recipes from a mod
-recipes:removeByTag("#minecraft:logs")             -- Remove recipes using items in tag
-recipes:removeAll()                                -- Clear all recipes
-```
-
----
-
-## 🛠️ 14. Useful In-Game Commands
-
-| Command | Description |
-|---|---|
-| `/lt hand` | Inspect held item or targeted block. Click any line in chat to copy Lua `item(...)`, `ingredient(...)`, `tag(...)`, or `:withNbt(...)` code! |
-| `/lt reload` | Hot-reload all Lua scripts, regenerate LSP autocomplete stubs, and re-apply recipes instantly without restarting Minecraft! |
-| `/lt doctor` | Run health diagnostics on loaded Lua scripts. |
-| `/lt dump` | Dump item, block, and potion registries to logs. |

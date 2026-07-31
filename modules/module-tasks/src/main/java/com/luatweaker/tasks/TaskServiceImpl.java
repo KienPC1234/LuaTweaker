@@ -19,7 +19,11 @@ public class TaskServiceImpl implements ITaskService {
     @Override
     public void spawn(@NotNull ILuaEngine engine, @NotNull ILuaValue task, ILuaValue[] args) {
         if (task.isFunction()) {
-            engine.callFunction(task, args != null ? args : new ILuaValue[0]);
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                try {
+                    engine.callFunction(task, args != null ? args : new ILuaValue[0]);
+                } catch (Exception ignored) {}
+            });
         }
     }
 

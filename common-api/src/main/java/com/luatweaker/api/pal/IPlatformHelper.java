@@ -19,6 +19,8 @@ public interface IPlatformHelper {
     default boolean fluidExists(String fluidId) { return false; }
     default boolean tagExists(String tagId) { return false; }
     default boolean isModLoaded(String modId) { return false; }
+    default boolean isClient() { return true; }
+    default boolean isDedicatedServer() { return false; }
     default String getPlatformName() { return "Unknown"; }
     default Set<String> getSupportedMobParents() { return Set.of(); }
     default List<IRecipe> getAllRecipes() { return java.util.Collections.emptyList(); }
@@ -54,6 +56,9 @@ public interface IPlatformHelper {
     default com.luatweaker.api.interaction.IInteractableEntity getInteractableEntity(@NotNull String uuid) { return null; }
     @Nullable
     default com.luatweaker.api.interaction.IInteractableEntity getInteractableEntity(@NotNull Object rawEntity) { return null; }
+
+    @Nullable
+    default com.luatweaker.api.entity.IPlayer getPlayer(@NotNull String uuid) { return null; }
 
     default java.io.File getStorageDirectory() { return new java.io.File("luatweaker/storage"); }
     default void sendPayloadPacket(String playerUuid, String channelName, String dataJson) {}

@@ -11,16 +11,26 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class EventServiceImpl implements IEventService {
+    public record ListenerEntry(ILuaEngine engine, ILuaValue function) {}
+
+    private static final Map<String, List<ListenerEntry>> LISTENERS = new ConcurrentHashMap<>();
+
     private final ILuaEngine engine;
-    private final Map<String, List<Object>> listeners = new ConcurrentHashMap<>();
 
     public EventServiceImpl(@NotNull ILuaEngine engine) {
         this.engine = engine;
     }
 
+    public static void clear() {
+        LISTENERS.clear();
+    }
+
     @Override
     public void listen(@NotNull String eventName, @NotNull Object callback) {
-        listeners.computeIfAbsent(eventName, k -> new CopyOnWriteArrayList<>()).add(callback);
+        if (callback instanceof ILuaValue lv && lv.isFunction()) {
+            LISTENERS.computeIfAbsent(eventName, k -> new CopyOnWriteArrayList<>())
+                    .add(new ListenerEntry(this.engine, lv));
+        }
     }
 
     @Override
@@ -30,12 +40,12 @@ public class EventServiceImpl implements IEventService {
 
     @Override
     public void fireEvent(@NotNull String eventName, @NotNull ILuaTable payload) {
-        List<Object> callbacks = listeners.get(eventName);
-        if (callbacks != null) {
-            for (Object cb : callbacks) {
-                if (cb instanceof ILuaValue lv) {
+        List<ListenerEntry> list = LISTENERS.get(eventName);
+        if (list != null) {
+            for (ListenerEntry entry : list) {
+                if (entry.function() != null && entry.function().isFunction()) {
                     try {
-                        engine.callFunction(lv, payload);
+                        entry.engine().callFunction(entry.function(), payload);
                     } catch (Exception e) {
                         com.luatweaker.api.log.LuaTweakerLog.get().error(
                             com.luatweaker.api.log.LogStage.SCRIPT_LOAD,

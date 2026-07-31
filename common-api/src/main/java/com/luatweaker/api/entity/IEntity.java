@@ -60,6 +60,9 @@ public interface IEntity {
     @LuaDoc(description = "Spawns particle effect at entity location.", params = {"particleId: string", "count: integer", "speed: number"})
     default void spawnParticle(String particleId, int count, double speed) {}
 
+    @LuaDoc(description = "Spawns an entity relative to this entity's position.", params = {"entityId: string", "offsetX: number", "offsetY: number", "offsetZ: number"}, returnType = "table")
+    default IEntity spawnEntity(String entityId, double offsetX, double offsetY, double offsetZ) { return null; }
+
     @LuaDoc(description = "Teleports the entity to coordinates.", params = {"x: number", "y: number", "z: number"})
     default void teleport(double x, double y, double z) {}
 

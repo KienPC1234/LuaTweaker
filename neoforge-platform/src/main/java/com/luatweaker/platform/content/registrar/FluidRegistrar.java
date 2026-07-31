@@ -199,15 +199,6 @@ public final class FluidRegistrar {
                 event.register(Registries.ITEM, bucketRl, () -> bucketItem);
                 createdItems.put(bucketRl, bucketItem);
 
-                if (!bucketRl.equals(altBucketRl)) {
-                    BucketItem altBucketItem = new BucketItem(
-                            stillFluid != null ? stillFluid : net.minecraft.world.level.material.Fluids.WATER,
-                            new Item.Properties().craftRemainder(Items.BUCKET).stacksTo(1)
-                    );
-                    event.register(Registries.ITEM, altBucketRl, () -> altBucketItem);
-                    createdItems.put(altBucketRl, altBucketItem);
-                }
-
                 LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom BucketItem: " + bucketRl);
             } catch (Exception e) {
                 LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed to register fluid bucket " + builder.getId() + ": " + e.getMessage());

@@ -1,111 +1,94 @@
-# 🧟 Mobs, Equipment, Loot Tables, Spawn Rules & Random Utilities
+# Mobs, Equipment, Loot Tables & Spawn Logic
 
-> **Global Variables:** `entities`, `loot`, `utils`  
-> **Service Lookup:** `game:GetService("Entities")`, `game:GetService("Loot")`, `game:GetService("Utils")`
+LuaTweaker provides a structured, module-based API for mob spawning, loot table management, equipment customization, and random utilities.
 
-LuaTweaker provides full mob spawning, equipment customization, custom loot table rules, and random utilities.
+---
 
-> 💡 **Service Registry Paradigm**: Access entities API via `entities` or `game:GetService("Entities")`, and loot API via `loot` or `game:GetService("Loot")`.
+## 1. Module Imports
 
-### Basic Custom Mob Spawn
+All runtime entities, loot modifications, and event listeners require explicit module imports:
+
 ```lua
-entities:spawnMob("minecraft:zombie", 100, 65, 200, function(mob)
-    -- Custom Name & Visibility
-    mob:setCustomName("§c🔥 Ruby Realm Boss 🔥")
-    mob:setCustomNameVisible(true)
+local Entities = require("LuaTweaker.Entities")
+local Loot     = require("LuaTweaker.Loot")
+local Events   = require("LuaTweaker.Events")
+local Utils    = require("LuaTweaker.Utils")
+local Vector3  = require("LuaTweaker.Math.Vector3")
+```
 
-    -- Equipment (Weapons & Armor)
-    mob:setMainHand("luatweaker:custom_ruby_sword")
-    mob:setOffHand("minecraft:shield")
-    mob:setHelmet("minecraft:diamond_helmet")
-    mob:setChestplate("minecraft:netherite_chestplate")
-    mob:setLeggings("minecraft:netherite_leggings")
-    mob:setBoots("minecraft:diamond_boots")
+---
+
+## 2. Custom Mob Spawning (`Entities`)
+
+Spawn mobs with explicit positions (`Vector3`), equipment, attributes, and status effects:
+
+```lua
+Entities.SpawnMob("minecraft:zombie", Vector3.new(100, 65, 200), function(mob)
+    -- Custom Name & Visibility
+    mob:SetCustomName("§cRuby Realm Boss")
+    mob:SetCustomNameVisible(true)
+
+    -- Equipment
+    mob:SetMainHand("luatweaker:custom_ruby_sword")
+    mob:SetOffHand("minecraft:shield")
+    mob:SetHelmet("minecraft:diamond_helmet")
+    mob:SetChestplate("minecraft:netherite_chestplate")
+    mob:SetLeggings("minecraft:netherite_leggings")
+    mob:SetBoots("minecraft:diamond_boots")
 
     -- Attributes
-    mob:setMaxHealth(100.0)
-    mob:setSpeed(0.35)
-    mob:setAttackDamage(8.0)
-    mob:setArmor(10.0)
-    mob:setKnockbackResistance(0.5)
+    mob:SetMaxHealth(100.0)
+    mob:SetSpeed(0.35)
+    mob:SetAttackDamage(8.0)
+    mob:SetArmor(10.0)
+    mob:SetKnockbackResistance(0.5)
 
-    -- States
-    mob:setBaby(false)
-    mob:setGlowing(true)
-    mob:setSilent(false)
-
-    -- Status Effects
-    mob:addEffect("minecraft:speed", 6000, 2)
-    mob:addEffect("minecraft:regeneration", 6000, 1)
+    -- States & Effects
+    mob:SetBaby(false)
+    mob:SetGlowing(true)
+    mob:AddEffect("minecraft:speed", 6000, 2)
+    mob:AddEffect("minecraft:regeneration", 6000, 1)
 end)
 ```
 
-### Zombie Quick Spawn Shortcut
-```lua
-entities:spawnZombie(x, y, z, "luatweaker:custom_ruby_sword", "minecraft:iron_helmet", "minecraft:iron_chestplate")
-```
-
 ---
 
-## 2. 🍖 Mob & Block Loot Table Configuration (`loot`)
+## 3. Loot Table Configuration (`Loot`)
 
-Modify mob and block drops directly with min/max count ranges and chance percentages.
+Modify mob and block drops directly with min/max count ranges and chance percentages:
 
 ```lua
 -- Add 1-3 Rubies to Zombie drops with 35% chance
-loot:addEntityDrop("minecraft:zombie", "luatweaker:custom_ruby", 1, 3, 0.35)
+Loot.AddEntityDrop("minecraft:zombie", "luatweaker:custom_ruby", 1, 3, 0.35)
 
 -- Remove Gunpowder from Creeper drops
-loot:removeEntityDrop("minecraft:creeper", "minecraft:gunpowder")
+Loot.RemoveEntityDrop("minecraft:creeper", "minecraft:gunpowder")
 
--- Clear ALL default drops for Skeleton
-loot:clearEntityDrops("minecraft:skeleton")
+-- Clear default drops for Skeleton
+Loot.ClearEntityDrops("minecraft:skeleton")
 
 -- Block drops: 5% chance Stone drops a Ruby
-loot:addBlockDrop("minecraft:stone", "luatweaker:custom_ruby", 1, 1, 0.05)
-loot:removeBlockDrop("minecraft:dirt", "minecraft:dirt")
-loot:clearBlockDrops("minecraft:gravel")
+Loot.AddBlockDrop("minecraft:stone", "luatweaker:custom_ruby", 1, 1, 0.05)
+Loot.RemoveBlockDrop("minecraft:dirt", "minecraft:dirt")
+Loot.ClearBlockDrops("minecraft:gravel")
 ```
 
 ---
 
-## 3. 🌍 World Mob Spawn Rules & Deny Filters (`worldgen`)
+## 4. Dynamic Spawn Event Hooks (`Events.OnEntitySpawned`)
 
-Configure natural mob spawning weights, group sizes, and block undesired mobs or entire mods from spawning in biomes.
-
-```lua
--- Add natural spawn rule: Zombies in Overworld
--- worldgen:addSpawnRule(entityType, category, minGroup, maxGroup, weight, biomeFilter)
-worldgen:addSpawnRule("minecraft:zombie", "MONSTER", 1, 4, 120, "#minecraft:is_overworld")
-
--- Deny specific mob spawns in Plains biome
-worldgen:denySpawn("minecraft:phantom", "minecraft:plains")
-worldgen:denySpawn("minecraft:creeper", "minecraft:desert")
-
--- Deny ALL mob spawns from a specific mod in Nether Wastes
-worldgen:denyModSpawns("annoying_mod_id", "minecraft:nether_wastes")
-```
-
----
-
-## 4. 🛑 Dynamic Spawn Event Hooks (`EntityService.EntitySpawned`)
-
-Intercept entity spawn events at runtime and react to mobs dynamically based on type, position, or custom logic:
+Intercept entity spawn events at runtime and react to mobs dynamically based on position or type:
 
 ```lua
-local EntityService = Mod:GetService("EntityService")
+Events.OnEntitySpawned:Connect(function(event)
+    local entity = event.Entity
+    local pos = entity.Position -- Vector3(X, Y, Z)
 
-EntityService.EntitySpawned:Connect(function(entity)
-    local entityType = entity.Type
-    local x, y, z = entity.Position.X, entity.Position.Y, entity.Position.Z
-
-    -- Example 1: Log every Creeper spawn
-    if entityType == "minecraft:creeper" then
-        print("[LuaTweaker] Creeper spawned at (" .. x .. ", " .. y .. ", " .. z .. ")")
+    if entity.Type == "minecraft:creeper" then
+        print(string.format("Creeper spawned at Vector3(%.1f, %.1f, %.1f)", pos.X, pos.Y, pos.Z))
     end
 
-    -- Example 2: Tag all monsters above Y=120
-    if y > 120 then
+    if pos.Y > 120 then
         entity:SetAttribute("IsHighAltitude", "true")
     end
 end)
@@ -113,48 +96,30 @@ end)
 
 ---
 
-## 5. ⚡ Entity Attribute Effect Shortcuts (`entities`)
+## 5. Random Utility Helper (`Utils`)
 
-Global attribute modifiers applied across entity types.
-
-```lua
-entities:setSpeed("minecraft:zombie", 0.30)
-entities:setMaxHealth("minecraft:zombie", 40.0)
-entities:setAttackDamage("minecraft:zombie", 7.0)
-entities:setArmor("minecraft:zombie", 6.0)
-entities:setKnockbackResistance("minecraft:zombie", 0.25)
-entities:setFollowRange("minecraft:zombie", 48.0)
-```
-
----
-
-## 6. 🎲 High-Quality Random Utility Library (`utils`)
-
-Powerful random generation helpers for drops, events, worldgen, and loot.
+Random generation helpers for drops, events, worldgen, and loot calculations:
 
 ```lua
--- Percentage Chance (Accepts decimal fraction 0.25 OR percent 25)
-if utils.chance(0.25) then
+-- Percentage Chance (0.25 = 25%)
+if Utils.Chance(0.25) then
     print("25% chance succeeded!")
 end
 
 -- Weighted Random Selection
-local drop = utils.weightedRandom({
+local drop = Utils.WeightedRandom({
     ["minecraft:diamond"] = 5,
     ["minecraft:gold_ingot"] = 25,
     ["minecraft:iron_ingot"] = 70
 })
 
 -- Random Choice from Array Table
-local fruit = utils.randomChoice({"Apple", "Banana", "Cherry"})
+local itemChoice = Utils.RandomChoice({"Apple", "Banana", "Cherry"})
 
 -- Shuffle Array Table in Place
-local myDeck = {"CardA", "CardB", "CardC", "CardD"}
-utils.shuffle(myDeck)
+local deck = {"CardA", "CardB", "CardC", "CardD"}
+Utils.Shuffle(deck)
 
 -- Random Range (Float)
-local speed = utils.randomRange(0.2, 0.4)
-
--- 2D Perlin Noise (-1.0 to 1.0)
-local heightNoise = utils.perlinNoise(x * 0.05, z * 0.05)
+local speed = Utils.RandomRange(0.2, 0.4)
 ```

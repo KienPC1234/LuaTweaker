@@ -67,10 +67,14 @@ public class InteractionLuaBinding {
 
         // Register services & globals
         engine.registerService("Workspace", workspaceTable);
+        engine.registerService("World", workspaceTable);
         engine.registerService("EntityService", entityServiceTable);
+        engine.registerService("Entities", entityServiceTable);
 
         engine.registerGlobal("Workspace", workspaceTable);
+        engine.registerGlobal("World", workspaceTable);
         engine.registerGlobal("EntityService", entityServiceTable);
+        engine.registerGlobal("Entities", entityServiceTable);
     }
 
     public static ILuaValue getWrappedEntity(@NotNull ILuaEngine engine, @NotNull Object rawEntity) {
@@ -137,7 +141,7 @@ public class InteractionLuaBinding {
         });
 
         meta.rawset("__index", args -> {
-            String key = args[2].asString();
+            String key = args[1].asString();
             switch (key) {
                 case "Id":
                 case "id":
@@ -185,11 +189,11 @@ public class InteractionLuaBinding {
         });
 
         meta.rawset("__newindex", args -> {
-            String key = args[2].asString();
+            String key = args[1].asString();
             if ("Id".equals(key) || "id".equals(key)) {
-                block.setId(args[3].asString());
+                block.setId(args[2].asString());
             } else if ("Nbt".equals(key) || "nbt".equals(key)) {
-                block.setNbt(args[3].asString());
+                block.setNbt(args[2].asString());
             }
             return engine.nilValue();
         });
@@ -271,7 +275,7 @@ public class InteractionLuaBinding {
         });
 
         meta.rawset("__index", args -> {
-            String key = args[2].asString();
+            String key = args[1].asString();
             switch (key) {
                 case "Id":
                 case "id":
@@ -313,17 +317,17 @@ public class InteractionLuaBinding {
         });
 
         meta.rawset("__newindex", args -> {
-            String key = args[2].asString();
+            String key = args[1].asString();
             if ("Count".equals(key) || "count".equals(key)) {
-                item.setCount(args[3].asInt());
+                item.setCount(args[2].asInt());
             } else if ("Slot".equals(key) || "slot".equals(key)) {
-                item.setSlot(args[3].asInt());
+                item.setSlot(args[2].asInt());
             } else if ("Damage".equals(key) || "damage".equals(key)) {
-                item.setDamage(args[3].asInt());
+                item.setDamage(args[2].asInt());
             } else if ("CustomName".equals(key) || "customName".equals(key)) {
-                item.setCustomName(args[3].asString());
+                item.setCustomName(args[2].asString());
             } else if ("Nbt".equals(key) || "nbt".equals(key)) {
-                item.setNbt(args[3].asString());
+                item.setNbt(args[2].asString());
             }
             return engine.nilValue();
         });
@@ -498,7 +502,7 @@ public class InteractionLuaBinding {
         });
 
         meta.rawset("__index", args -> {
-            String key = args[2].asString();
+            String key = args[1].asString();
             switch (key) {
                 case "Id":
                 case "id":
@@ -567,24 +571,24 @@ public class InteractionLuaBinding {
         });
 
         meta.rawset("__newindex", args -> {
-            String key = args[2].asString();
+            String key = args[1].asString();
             if ("Health".equals(key) || "health".equals(key)) {
-                entity.setHealth((float) args[3].asDouble());
+                entity.setHealth((float) args[2].asDouble());
             } else if ("MaxHealth".equals(key) || "maxHealth".equals(key)) {
-                entity.setMaxHealth((float) args[3].asDouble());
+                entity.setMaxHealth((float) args[2].asDouble());
             } else if ("IsOnFire".equals(key) || "isOnFire".equals(key)) {
-                entity.setOnFire(args[3].asBoolean());
+                entity.setOnFire(args[2].asBoolean());
             } else if ("IsSneaking".equals(key) || "isSneaking".equals(key)) {
-                entity.setSneaking(args[3].asBoolean());
+                entity.setSneaking(args[2].asBoolean());
             } else if ("IsSprinting".equals(key) || "isSprinting".equals(key)) {
-                entity.setSprinting(args[3].asBoolean());
+                entity.setSprinting(args[2].asBoolean());
             } else if ("CustomName".equals(key) || "customName".equals(key)) {
-                entity.setCustomName(args[3].asString());
+                entity.setCustomName(args[2].asString());
             } else if ("Nbt".equals(key) || "nbt".equals(key)) {
-                entity.setNbt(args[3].asString());
+                entity.setNbt(args[2].asString());
             } else if ("Velocity".equals(key) || "velocity".equals(key)) {
-                if (args[3].isTable()) {
-                    ILuaTable vel = args[3].asTable();
+                if (args[2].isTable()) {
+                    ILuaTable vel = args[2].asTable();
                     entity.setVelocity(
                         vel.rawget("X").asDouble(),
                         vel.rawget("Y").asDouble(),
@@ -592,8 +596,8 @@ public class InteractionLuaBinding {
                     );
                 }
             } else if ("Position".equals(key) || "position".equals(key)) {
-                if (args[3].isTable()) {
-                    ILuaTable pos = args[3].asTable();
+                if (args[2].isTable()) {
+                    ILuaTable pos = args[2].asTable();
                     entity.setPosition(
                         pos.rawget("X").asDouble(),
                         pos.rawget("Y").asDouble(),

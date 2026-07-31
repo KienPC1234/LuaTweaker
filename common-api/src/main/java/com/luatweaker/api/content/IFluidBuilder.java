@@ -4,6 +4,9 @@ import com.luatweaker.api.annotation.LuaDoc;
 
 @LuaDoc(description = "Builder interface for defining custom Fluid properties.")
 public interface IFluidBuilder {
+    @LuaDoc(description = "Sets human-readable display name for the fluid.", params = {"name: string"}, returnType = "IFluidBuilder")
+    IFluidBuilder displayName(String name);
+
     @LuaDoc(description = "Sets the ARGB hex color of the fluid.", params = {"colorHex: integer"}, returnType = "IFluidBuilder")
     IFluidBuilder color(int colorHex);
 
@@ -47,6 +50,7 @@ public interface IFluidBuilder {
     IFluidBuilder creativeTab(String tabId);
 
     String getId();
+    String getDisplayName();
     int getColor();
     String getStillTexture();
     String getFlowingTexture();

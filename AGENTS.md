@@ -6,6 +6,93 @@ Minecraft 1.21.1 NeoForge mod — Lua scripting engine with runtime recipe/conte
 
 ---
 
+# ⚠️ CRITICAL SECTION 0 — LuaTweaker Style & Quy Trình Tạo Module Mới
+
+> **🚨 BẢN SẮC THIẾT KẾ: TƯ DUY LẮP RÁP (MODULE & BUILDER) + NGỮ PHÁP TỰ NHIÊN CỦA LUA**
+
+## 1. Bản Sắc Thiết Kế LuaTweaker Style (Bắt Buộc Cum Compliance)
+
+1. **Content & Recipe Definitions (Đăng ký tĩnh):**
+   - Sử dụng **Chainable Builder Pattern** phân nhóm rõ ràng theo Namespace (`Content.NewItem("id")`, `Content.NewBlock("id")`, `Recipe.Shaped("id")`), kết thúc bằng `:Register()`.
+   - **CẤM** sử dụng các hàm global trôi nổi như `item()`, `ingredient()`, `recipes:addShaped()`.
+
+2. **Runtime Services & AI Logic (Vận hành Game):**
+   - Quản lý bởi các Service & Signal chuẩn PascalCase (`Events.OnEntityDamaged:Connect(...)`, `Task.Delay(...)`, `World:StrikeLightning(...)`).
+   - Sử dụng kiểu dữ liệu `Vector3.new(x, y, z)` cho tọa độ không gian.
+
+3. **Nạp Thư Viện Tường Minh:**
+   - Mọi script phải nạp thư viện tường minh bằng `require("LuaTweaker.ModuleName")`.
+   - **CẤM** phụ thuộc vào biến toàn cục ma thuật trôi nổi (magic globals).
+
+---
+
+## 2. Quy Trình 5 Bước Tạo 1 Module Mới Chuẩn OOP
+
+Khi thêm bất kỳ tính năng hoặc mô-đun mới nào vào dự án, **BẮT BUỘC** phải tuân thủ 5 bước chuẩn hóa sau:
+
+### Bước 1: Khai báo Java Interface trong `common-api` với `@LuaDoc`
+Tạo interface mô tả dịch vụ trong `common-api/src/main/java/com/luatweaker/api/<feature>/` và đánh dấu `@LuaDoc`:
+```java
+package com.luatweaker.api.example;
+
+import com.luatweaker.api.annotation.LuaDoc;
+
+@LuaDoc(description = "Dịch vụ quản lý mô-đun ví dụ.")
+public interface IExampleModuleService {
+    @LuaDoc(
+        description = "Thực hiện chức năng ví dụ.",
+        params = {"id: string", "power: number"},
+        returnType = "void"
+    )
+    void executeFeature(String id, double power);
+}
+```
+
+### Bước 2: Viết Implementation độc lập trong `modules/module-<feature>`
+Triển khai interface trong mô-đun tương ứng (không phụ thuộc platform NeoForge/Minecraft):
+```java
+public class ExampleModuleServiceImpl implements IExampleModuleService {
+    @Override
+    public void executeFeature(String id, double power) {
+        // Business logic
+    }
+}
+```
+
+### Bước 3: Tạo Lua Binding Binder
+Viết binder ánh xạ phương thức Java sang `ILuaTable` trong `modules/module-<feature>`:
+```java
+public class ExampleLuaBinding {
+    public static void registerBindings(ILuaEngine engine, IExampleModuleService service) {
+        ILuaTable tbl = engine.createTable();
+        tbl.set("ExecuteFeature", (state, args) -> {
+            String id = args.arg(1).toString();
+            double p = args.arg(2).toDouble();
+            service.executeFeature(id, p);
+            return engine.nilValue();
+        });
+        engine.getGlobalEnvironment().set("ExampleModule", tbl);
+    }
+}
+```
+
+### Bước 4: Đăng ký trong `LuaServiceBootstrap` & `LtvmStubGenerator`
+Trong `neoforge-platform/src/main/java/.../LuaServiceBootstrap.java` và `LuaTweakerMod.java`:
+```java
+// Native Java Binding & OOP Reflection Stub Registration:
+ExampleLuaBinding.registerBindings(engine, exampleService);
+stubGen.registerService("ExampleModule", IExampleModuleService.class);
+```
+> 💡 `LtvmStubGenerator` sẽ **tự động dùng Reflection** sinh ra toàn bộ stubs EmmyLua (`---@class ExampleModule`, `---@overload fun(modName: 'LuaTweaker.ExampleModule'): ExampleModule`) cho VSCode & IntelliJ mà không cần sửa code engine!
+
+### Bước 5: Sử dụng trong Lua Script chuẩn LuaTweaker Style
+```lua
+local ExampleModule = require("LuaTweaker.ExampleModule")
+ExampleModule:ExecuteFeature("custom_id", 100)
+```
+
+---
+
 # ⚠️ CRITICAL SECTION 1 — SOLID Principles (Absolute Compliance Required)
 
 ❌ **Every violation below = rejection. These are non-negotiable.**

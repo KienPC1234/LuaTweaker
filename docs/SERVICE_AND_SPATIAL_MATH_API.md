@@ -1,270 +1,106 @@
-# LuaTweaker - Service-Oriented Reactive Scripting & Spatial Math API Reference Manual
+# Runtime Services & Spatial Math Reference Manual
 
-> **Minecraft 1.21.1 (NeoForge) Advanced Scripting Engine**
-
-LuaTweaker provides a high-level, service-oriented reactive scripting model with built-in spatial math utilities (`Vector3`, `Vector2`, `Color3`), asynchronous task scheduling, persistent DataStores, smooth tweening, and hierarchical instance management for Minecraft modpack creators.
+LuaTweaker provides explicit module imports (`require("LuaTweaker.ModuleName")`), asynchronous task scheduling (`Task`), property interpolation (`TweenService`), and spatial math objects (`Vector3`, `Vector2`, `Color3`).
 
 ---
 
-## 📚 1. Service Registry Architecture Pattern
+## 1. Module Imports
 
-Access system capabilities and APIs using the unified service lookup paradigm:
+All runtime logic requires explicit module imports without unanchored global magic:
 
 ```lua
-local recipes          = game:GetService("Recipes")
-local dataStoreService = game:GetService("DataStoreService")
-local tweenService     = game:GetService("TweenService")
-local taskService      = game:GetService("Task")
-local workspace        = game:GetService("Workspace") -- Or global `workspace`
-```
-
-> 💡 `Mod:GetService("...")` and `game:GetService("...")` are interchangeable aliases.
-
----
-
-## 💡 2. Practical Applications of `Vector3`, `Vector2`, and `Color3` in Minecraft
-
-### 📐 `Vector3` Applications in Minecraft:
-1. **Particle Spawning Geometry**: Calculate 3D points for circles, spheres, spirals, or beam lines between entities/players:
-   ```lua
-   local startPos = Vector3.new(player.x, player.y, player.z)
-   local targetPos = Vector3.new(boss.x, boss.y, boss.z)
-   local direction = (targetPos - startPos).Unit
-   
-   -- Spawn particle line towards boss
-   for i = 1, 10 do
-       local point = startPos + (direction * i)
-       particles:spawn("minecraft:end_rod", point.X, point.Y, point.Z)
-   end
-   ```
-2. **Knockback & Velocity Direction**: Calculate directional vectors for custom spell knockback or explosion impulses:
-   ```lua
-   local distance = startPos:Dot(targetPos)
-   local angle = startPos:Angle(targetPos)
-   ```
-3. **Region & Bounding Box Checks**: Calculate distance thresholds and bounding box limits:
-   ```lua
-   local dist = (posA - posB).Magnitude
-   if dist <= 15 then
-       print("Player is within spell radius!")
-   end
-   ```
-
-### 🎨 `Color3` Applications in Minecraft:
-1. **Dynamic Custom Item & HUD Colors**: Tint item glint, potion effects, bossbars, or custom HUD text:
-   ```lua
-   local goldColor = Color3.fromHex("#FFD700")
-   local packedRGB = goldColor:ToRGBInt() -- Converted for Minecraft render pipeline (0xFFD700)
-   ```
-2. **Time-of-Day Ambient Sky & Lighting Lerp**: Smoothly interpolate ambient lighting/fog colors based on game time:
-   ```lua
-   local dayColor   = Color3.fromRGB(255, 240, 200)
-   local nightColor = Color3.fromRGB(20, 30, 60)
-   local currentAmbient = dayColor:Lerp(nightColor, 0.7)
-   ```
-3. **HSV Rainbow Shift**: Animate bossbar or tooltip text colors dynamically using HSV rotation:
-   ```lua
-   local rainbowColor = Color3.fromHSV((currentTick % 360) / 360, 1.0, 1.0)
-   ```
-
-### 🖼️ `Vector2` Applications in Minecraft:
-1. **Client HUD & GUI Coordinates**: Position UI elements, icons, texture UV offsets, or custom inventory widgets on 2D screens:
-   ```lua
-   local screenPos = Vector2.new(1920 / 2, 1080 / 2)
-   ```
-
----
-
-## ⏱️ 3. Asynchronous Task Scheduler (`task`)
-
-```lua
--- 1. task.spawn: Execute async callback immediately
-task.spawn(function(msg)
-    print("Async task executed:", msg)
-end, "Startup")
-
--- 2. task.delay: Delay callback execution by seconds or server ticks
-local taskId = task.delay(2.5, function()
-    print("2.5 seconds elapsed!")
-end)
-
--- 3. task.defer: Defer callback execution until end of current tick
-task.defer(function()
-    print("Deferred task executed at end of frame.")
-end)
-
--- 4. task.wait: Return execution delay time
-task.wait(1.0)
-
--- 5. task.cancel: Cancel a running task
-task.cancel(taskId)
+local Task         = require("LuaTweaker.Task")
+local TweenService = require("LuaTweaker.TweenService")
+local Vector3      = require("LuaTweaker.Math.Vector3")
+local Vector2      = require("LuaTweaker.Math.Vector2")
+local Color3       = require("LuaTweaker.Math.Color3")
 ```
 
 ---
 
-## 💾 4. Persistent Storage (`DataStoreService`)
+## 2. Asynchronous Task Scheduler (`Task`)
+
+| Method Signature | Description |
+| :--- | :--- |
+| `Task.Spawn(fn, ...args)` | Executes callback function asynchronously on a background worker thread. |
+| `Task.Delay(seconds, fn)` | Schedules callback execution after specified delay in seconds. |
+| `Task.Defer(fn, ...args)` | Defers callback execution until the end of the current tick. |
+| `Task.Wait(seconds)` | Pauses execution for specified seconds (default: 0.05s). |
+| `Task.Cancel(taskId)` | Cancels a pending delayed or deferred task. |
 
 ```lua
-local dataStoreService = game:GetService("DataStoreService")
-local coinsStore = dataStoreService:GetDataStore("PlayerCoins")
+-- 1. Task.Spawn: Run async task immediately
+Task.Spawn(function(msg)
+    print("Async task started:", msg)
+end, "Magic Staff System")
 
--- SetAsync: Save value
-coinsStore:SetAsync("KienDev", 5000)
-
--- GetAsync: Read value
-local coins = coinsStore:GetAsync("KienDev")
-
--- IncrementAsync: Atomically increment or decrement numerical values
-local newTotal = coinsStore:IncrementAsync("KienDev", 500) -- -> 5500
-
--- UpdateAsync: Transform existing value with callback
-coinsStore:UpdateAsync("KienDev", function(oldCoins)
-    return (oldCoins or 0) + 100
+-- 2. Task.Delay: Delayed execution
+Task.Delay(0.5, function()
+    print("0.5 seconds elapsed!")
 end)
 
--- RemoveAsync: Delete key
-coinsStore:RemoveAsync("KienDev")
+-- 3. Task.Wait: Yield execution in loop
+Task.Spawn(function()
+    while true do
+        Task.Wait(0.5)
+        print("Periodic task tick")
+    end
+end)
 ```
 
 ---
 
-## 🎬 5. Smooth Property Interpolation (`TweenService`)
+## 3. Property Interpolation (`TweenService`)
+
+Interpolate properties smoothly over time:
 
 ```lua
-local tweenService = game:GetService("TweenService")
+local TweenService = require("LuaTweaker.TweenService")
+local Content      = require("LuaTweaker.Content")
 
--- TweenInfo(durationSeconds, EasingStyle, EasingDirection)
--- EasingStyles: "Linear", "Sine", "Quad", "Cubic", "Bounce", "Elastic"
--- EasingDirections: "In", "Out", "InOut"
 local info = TweenInfo.new(3.0, "Sine", "Out")
+local bossbar = Content.GetBossBar("dragon_bar")
 
-local bossbar = game:GetService("BossBar"):create("dragon_bar", "Ender Dragon", "RED", "PROGRESS")
-local tween = tweenService:Create(bossbar, info, { Percent = 0.0 })
-
+local tween = TweenService:Create(bossbar, info, { Percent = 0.0 })
 tween:Play()
--- tween:Cancel()
 ```
 
 ---
 
-## ⚡ 6. Event Signal Engine (`Signal` & `RBXScriptConnection`)
+## 4. Spatial Math API (`Vector3`, `Vector2`, `Color3`)
+
+### `Vector3` Arithmetic
 
 ```lua
-local onBossDefeated = Signal.new()
+local posA = Vector3.new(10, 64, -50)
+local posB = Vector3.new(20, 64, -40)
 
--- Connect event listener
-local connection = onBossDefeated:Connect(function(bossName, rewardXp)
-    print("Boss defeated:", bossName, "XP:", rewardXp)
-end)
-
--- Fire signal event
-onBossDefeated:Fire("Wither", 5000)
-
--- Disconnect listener
-connection:Disconnect()
-
--- One-time listener
-onBossDefeated:Once(function()
-    print("Triggers only once!")
-end)
-
--- Synchronously wait for next event signal
--- local bossName, xp = onBossDefeated:Wait()
+local distance = (posB - posA).Magnitude
+local direction = (posB - posA).Unit
+local midpoint = posA + (direction * (distance / 2))
 ```
 
----
-
-## 🏗️ 7. Hierarchical Object Trees (`Instance.new`)
+### `Color3` Engine
 
 ```lua
-local folder = Instance.new("Folder")
-folder.Name = "QuestSystem"
+local gold = Color3.fromHex("#FFD700")
+local red  = Color3.fromRGB(255, 0, 0)
+local lerpedColor = gold:Lerp(red, 0.5)
+```
 
-local part = Instance.new("Part", folder)
-part.Name = "Objective1"
+### `Vector2` Screen Geometry
 
--- Query & Hierarchy traversal
-local found = folder:FindFirstChild("Objective1")
-print("Found child:", found.Name)
-
-local children = folder:GetChildren()
-print("Total children:", #children)
-
--- Clone & Destroy
-local clonedFolder = folder:Clone()
-folder:Destroy()
+```lua
+local screenCenter = Vector2.new(1920 / 2, 1080 / 2)
 ```
 
 ---
 
-## 🧮 8. Extended Standard Math Library (`math`)
-
-Built-in standard Lua `math` functions (`math.sin`, `math.cos`, `math.sqrt`, `math.pi`, `math.random`) are supplemented with extended spatial math functions:
+## 5. Extended Standard Math Functions (`math`)
 
 ```lua
 local clamped = math.clamp(150, 0, 100) -- 100
 local rounded = math.round(4.6)         -- 5
 local signed  = math.sign(-50)          -- -1
 local lerped  = math.lerp(10, 20, 0.5)   -- 15
-local noise   = math.noise(x, y, z)     -- 3D Perlin Noise (-1.0 to 1.0)
-```
-
----
-
-## 🎭 10. Advanced Client Render Shaders & Screen Shake (`shaders` / `render`)
-
-LuaTweaker provides a high-performance Client Render API that far surpasses KubeJS, allowing full post-processing shader effects, camera shaking on boss encounters, film grain, chromatic aberration, vignette color tints, blur, and custom GLSL post-shaders:
-
-```lua
-local shaders = game:GetService("Shaders") -- Or global `shaders` / `render`
-
--- 1. Camera Shake on Boss Encounter
-shaders:shakeCamera(2.0, 3.0) -- Shake with intensity 2.0 for 3 seconds
-
--- 2. Post-Processing FX
-shaders:setFilmGrain(0.4)                           -- Retro film grain noise
-shaders:setChromaticAberration(0.08)                -- Lens color fringe
-shaders:setVignette(0.7, Color3.fromRGB(255, 0, 0)) -- Red vignette tint
-shaders:setColorCorrection(1.1, 1.2, 0.9)           -- Brightness, Contrast, Saturation
-
--- 3. Render Filters
-shaders:setFilter("sepia")        -- "sepia", "monochrome", "invert", "none"
-
--- 4. Custom GLSL Shader JSON
-shaders:loadPostShader("luatweaker:shaders/post/boss_encounter.json")
-shaders:setUniform("Intensity", 0.8)
-
--- 5. Clear FX
-shaders:clearAllEffects()
-```
-
----
-
-## 🔌 11. Third-Party Plugin Addon Development (`ILuaTweakerPlugin`)
-
-Third-party Minecraft mods can bind custom services into the service registry:
-
-```java
-@LuaTweakerPlugin("mekanism")
-public class MekanismLuaAddon implements ILuaTweakerPlugin {
-
-    @Override
-    public String getPluginId() {
-        return "mekanism_addon";
-    }
-
-    @Override
-    public void onRegisterGlobals(LuaEngine engine) {}
-
-    @Override
-    public void onRegisterServices(LuaServicesLib services) {
-        LuaTable mekanismApi = new LuaTable();
-        services.registerService("Mekanism", mekanismApi);
-    }
-}
-```
-
-In Lua:
-```lua
-local mekanism = game:GetService("Mekanism")
 ```

@@ -1,84 +1,69 @@
-# 🛡️ Modern Engine Architecture, Sandbox Isolation & Service Registry
+# Engine Architecture, Isolation Security & Technical Specification
 
-LuaTweaker adopts high-performance architectural patterns inspired by professional game engine design (such as Luau Service Lookups & Protected Metatables).
+LuaTweaker is a modular, multi-tier Lua 5.1/Luau execution engine for Minecraft 1.21.1 (NeoForge).
 
 ---
 
-## 1. 🛡️ Per-Addon Isolated Sandbox Environment
+## 1. LuaTweaker Architecture Style & Design Identity
 
-To prevent script conflicts where multiple addons attempt to modify global variables or crash each other (the *"drawing on the same paper"* problem), LuaTweaker assigns an **isolated sandbox environment table** to every script file.
+The core design identity of LuaTweaker is built upon:
+> **TƯ DUY LẮP RÁP (MODULE & BUILDER) + NGỮ PHÁP TỰ NHIÊN CỦA LUA**
 
-```mermaid
-graph TD
-    SystemGlobals["🌐 Mod System Globals (Read-Only)"]
-    AddonA["📜 Addon A Sandbox Env"]
-    AddonB["📜 Addon B Sandbox Env"]
+1. **Content & Recipe Registration:** Chainable Builder DSLs ending with `:Register()`. Zero unanchored global magic.
+2. **Runtime Logic & Signals:** Event-driven architecture using `Signal` objects and explicit `require("LuaTweaker.ModuleName")` imports.
+3. **Lua-Native Types:** Clean `Vector3`, `Vector2`, `Color3`, tables, and first-class functions optimized for Cobalt VM execution.
 
-    AddonA -->|Reads System APIs| SystemGlobals
-    AddonB -->|Reads System APIs| SystemGlobals
-
-    AddonA -.->|Writes Local Globals| AddonA
-    AddonB -.->|Writes Local Globals| AddonB
 ```
-
-- **Conflict Prevention**: If Addon A declares `myGlobal = 100`, it writes ONLY to Addon A's isolated environment without polluting Addon B or the core mod.
-- **Fault Isolation**: If Addon A throws a runtime script exception, LuaTweaker safely isolates the error. Mod APIs and other Addon scripts continue running smoothly.
-
----
-
-## 2. 🏬 Service Registry Lookup Paradigm (`Mod:GetService` / `game:GetService`)
-
-Instead of dumping dozens of APIs directly into global namespace, LuaTweaker provides a clean **Service Registry lookup paradigm**:
-
-```lua
--- Access services cleanly using Mod:GetService or game:GetService
-local recipes  = Mod:GetService("Recipes")
-local events   = Mod:GetService("Events")
-local world    = game:GetService("World")
-local bossbar  = Mod:GetService("BossBar")
-local loot     = Mod:GetService("Loot")
-local entities = Mod:GetService("Entities")
-```
-
-### Supported Services List
-
-| Service Name | API Object | Purpose |
-|--------------|------------|---------|
-| `"Recipes"` | `recipes` | Item crafting, smelting, brewing & trade recipes |
-| `"Events"` | `events` | Server, client & game event hooks |
-| `"World"` | `world` | Weather, time, game days, game rules & commands |
-| `"BossBar"` | `bossbar` | Custom BossBar creation & player targeting |
-| `"Entities"` | `entities` | Mob spawning, armor gear & attribute modifiers |
-| `"Loot"` | `loot` | Mob & block drop table modifications |
-| `"Startup"` | `startup` | Custom item, block, fluid & tab creation |
-| `"WorldGen"` | `worldgen` | Dynamic ore generation & mob spawn rules |
-| `"Tags"` | `tags` | Item & block tag registration |
-| `"Commands"` | `commands` | Dynamic server commands |
-| `"Jei"` | `jei` | JEI / REI / EMI item hiding & custom categories |
-| `"Nbt"` | `nbt` | Easy SNBT & table conversion helpers |
-| `"Enums"` | `enums` | Structured constants (Colors, Rarity, Slots) |
-| `"Utils"` | `utils` | Chance, random choice & math utilities |
-
----
-
-## 3. 🔒 Read-Only Protected Metatables
-
-Core system tables (`enums`, `utils`, `nbt`, `game`, `Mod`) are locked using **protected Lua metatables (`__newindex`)**.
-
-```lua
--- If a script attempts to overwrite or delete a system API:
-enums.Rarity = nil
-
--- Lua raises an instant security error:
--- [Security/Protection] Attempt to modify read-only service table 'enums' (property 'Rarity').
+[ LUA-TWEAKER ARCHITECTURE STYLE ]
+   │
+   ├──> 1. CONTENT DEFINITION (Static Registration)
+   │      └──> Builder Pattern with explicit Namespace imports (Content.NewItem, Recipe.Shaped)
+   │
+   ├──> 2. RUNTIME SERVICES (Game Logic & AI)
+   │      └──> Managed by independent Services & Signals (Events.OnEntityDamaged, Task.Delay)
+   │
+   └──> 3. LUA-NATIVE TYPES (Performance & Geometry)
+          └──> Vector3, Vector2, Color3, and native Lua tables
 ```
 
 ---
 
-## 4. 📁 Scoped Script Directories
+## 2. Module Dependency Hierarchy
 
-Execution stages are strictly partitioned:
+LuaTweaker enforces strict Single Responsibility Principle (SRP) and Dependency Inversion Principle (DIP) across Java submodules:
 
-1. **`startup_scripts/`**: Executes once at game startup (Registers custom items, blocks, fluids, tabs).
-2. **`server_scripts/`**: Executes on world load / server start (Recipes, mob loot, world rules, bossbars).
-3. **`client_scripts/`**: Executes on client load (Tooltips, JEI category registration).
+```
+common-api (Pure Java 21 Interfaces, zero external dependencies)
+    ^
+core-engine (Cobalt 0.9.9 VM Wrapper, Logger, EmmyLua Stub Generator)
+    ^
+modules/module-* (Domain-specific bindings: recipes, entities, events, tasks, math, client, network)
+    ^
+neoforge-platform (NeoForge Bootstrap launcher, concrete PAL implementations)
+```
+
+---
+
+## 3. Sandbox Isolation & Metatable Security
+
+To prevent cross-script variable pollution and global environment corruption:
+
+1. **Isolated Table Environments:** Each script file (`.lua`) is executed within its own local environment table. Global variable definitions in one script do not pollute or mutate globals in sibling scripts.
+2. **Read-Only System Metatables (`__newindex`):** Core system objects are locked with protected metatables. Mutation attempts trigger security exceptions without crashing the VM.
+3. **Headless Dedicated Server Protection (`Dist.DEDICATED_SERVER`):** Client-only visual APIs evaluate runtime environment state via `FMLEnvironment.dist`. On dedicated servers, calls safely log diagnostic info and operate as non-blocking no-ops.
+
+---
+
+## 4. Technical Architecture Roadmap (Future Engine Specifications)
+
+### 4.1 Bytecode Hook Engine (`Runtime.Hook`)
+Allow scripts to dynamically register bytecode injection hooks (`:InjectHead`, `:InjectReturn`, `:Overwrite`) into target Minecraft/NeoForge Java methods, gated by the `runtime.bytecode_hook` manifest permission.
+
+### 4.2 Dynamic Native Interface Proxies (`Runtime.Proxy` / `Runtime.Class`)
+Enable Lua scripts to resolve classes and instantiate Java interfaces directly from Lua via `java.lang.reflect.Proxy`, gated by the `runtime.reflection` manifest permission.
+
+### 4.3 Multi-Threaded Parallel Actor Model (`Worker.new`)
+Support parallel Luau actor execution model for background spatial calculations, pathfinding, and data processing.
+
+### 4.4 Custom GLSL Shader Pipeline (`Shaders`)
+Full custom GLSL post-processing render pipeline allowing modpack authors to supply custom shader JSON files and uniform parameters.

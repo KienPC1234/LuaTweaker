@@ -1,8 +1,16 @@
 package com.luatweaker.api.vm;
 
+import com.luatweaker.api.annotation.LuaDoc;
 import java.io.File;
 
+@LuaDoc(description = "Core Lua engine interface for executing scripts and managing bindings.")
 public interface ILuaEngine {
+    @LuaDoc(
+        description = "Sets the root directory for resolving file-based Lua modules via require().",
+        params = {"luaDirectory: File"}
+    )
+    void setLuaDirectory(File luaDirectory);
+
     void registerService(String name, ILuaTable service);
     void registerService(String name, Object service);
     void registerGlobal(String name, ILuaValue value);

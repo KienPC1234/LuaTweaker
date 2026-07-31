@@ -143,6 +143,23 @@ public class NeoForgeEntityWrapper implements IEntity {
     }
 
     @Override
+    public IEntity spawnEntity(String entityId, double offsetX, double offsetY, double offsetZ) {
+        if (entity != null && entity.level() instanceof ServerLevel serverLevel && entityId != null) {
+            ResourceLocation rl = entityId.contains(":") ? ResourceLocation.parse(entityId) : ResourceLocation.fromNamespaceAndPath("minecraft", entityId);
+            net.minecraft.world.entity.EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(rl);
+            if (type != null) {
+                Entity newEntity = type.create(serverLevel);
+                if (newEntity != null) {
+                    newEntity.moveTo(entity.getX() + offsetX, entity.getY() + offsetY, entity.getZ() + offsetZ, entity.getYRot(), entity.getXRot());
+                    serverLevel.addFreshEntity(newEntity);
+                    return new NeoForgeEntityWrapper(newEntity);
+                }
+            }
+        }
+        return null;
+    }
+
+    @Override
     public void teleport(double x, double y, double z) {
         if (entity != null) {
             entity.teleportTo(x, y, z);

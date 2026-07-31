@@ -93,18 +93,28 @@ public class NetworkServiceImpl implements IRocketNetworkService {
         if (remoteEvent != null) {
             ILuaValue onServerEvent = remoteEvent.rawget("OnServerEvent");
             if (onServerEvent != null && !onServerEvent.isNil()) {
-                ILuaValue fireFn = onServerEvent.asTable().rawget("Fire");
-                if (fireFn != null && !fireFn.isNil()) {
-                    ILuaValue player = engine.nilValue();
-                    Object rawPlayer = Platform.get().getInteractableEntity(playerUuid);
-                    if (rawPlayer != null) {
-                        player = engine.wrapUserdata(rawPlayer);
-                    }
+                ILuaValue signalClass = engine.getGlobalEnvironment().rawget("Signal");
+                if (signalClass != null && signalClass.isTable()) {
+                    ILuaValue fireFn = signalClass.asTable().rawget("Fire");
+                    if (fireFn != null && !fireFn.isNil()) {
+                        ILuaValue player = engine.nilValue();
+                        if (Platform.isInitialized()) {
+                            com.luatweaker.api.entity.IPlayer p = Platform.get().getPlayer(playerUuid);
+                            if (p != null) {
+                                player = com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p);
+                            } else {
+                                Object rawPlayer = Platform.get().getInteractableEntity(playerUuid);
+                                if (rawPlayer != null) {
+                                    player = engine.wrapUserdata(rawPlayer);
+                                }
+                            }
+                        }
 
-                    ILuaValue[] fireArgs = new ILuaValue[args.length + 1];
-                    fireArgs[0] = player;
-                    System.arraycopy(args, 0, fireArgs, 1, args.length);
-                    engine.callFunction(fireFn, appendThis(onServerEvent, fireArgs));
+                        ILuaValue[] fireArgs = new ILuaValue[args.length + 1];
+                        fireArgs[0] = player;
+                        System.arraycopy(args, 0, fireArgs, 1, args.length);
+                        engine.callFunction(fireFn, appendThis(onServerEvent, fireArgs));
+                    }
                 }
             }
         }
@@ -116,9 +126,12 @@ public class NetworkServiceImpl implements IRocketNetworkService {
         if (remoteEvent != null) {
             ILuaValue onClientEvent = remoteEvent.rawget("OnClientEvent");
             if (onClientEvent != null && !onClientEvent.isNil()) {
-                ILuaValue fireFn = onClientEvent.asTable().rawget("Fire");
-                if (fireFn != null && !fireFn.isNil()) {
-                    engine.callFunction(fireFn, appendThis(onClientEvent, args));
+                ILuaValue signalClass = engine.getGlobalEnvironment().rawget("Signal");
+                if (signalClass != null && signalClass.isTable()) {
+                    ILuaValue fireFn = signalClass.asTable().rawget("Fire");
+                    if (fireFn != null && !fireFn.isNil()) {
+                        engine.callFunction(fireFn, appendThis(onClientEvent, args));
+                    }
                 }
             }
         }

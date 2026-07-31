@@ -138,17 +138,16 @@ public final class TabRegistrar {
 
             // 3. Custom Fluid Buckets into Vanilla Tabs
             for (IFluidBuilder fluid : contentService.getRegisteredFluids()) {
+                ResourceLocation bucketRl = locationParser.apply(fluid.getId() + "_bucket");
+                Item bucketObj = createdItems.get(bucketRl);
                 if (fluid.getCreativeTab() != null) {
                     ResourceLocation tabRl = locationParser.apply(fluid.getCreativeTab());
-                    if (event.getTabKey().location().equals(tabRl)) {
-                    ResourceLocation bucketRl = locationParser.apply(fluid.getId() + "_bucket");
-                    Item bucketObj = createdItems.get(bucketRl);
-                    if (bucketObj != null) event.accept(bucketObj);
-
-                    ResourceLocation altBucketRl = locationParser.apply(fluid.getId().replace("_fluid", "") + "_bucket");
-                    Item altBucketObj = createdItems.get(altBucketRl);
-                    if (altBucketObj != null && altBucketObj != bucketObj) event.accept(altBucketObj);
+                    if (event.getTabKey().location().equals(tabRl) && bucketObj != null) {
+                        event.accept(bucketObj);
                     }
+                }
+                if (event.getTabKey().equals(CreativeModeTabs.TOOLS_AND_UTILITIES) && bucketObj != null) {
+                    event.accept(bucketObj);
                 }
             }
         }
