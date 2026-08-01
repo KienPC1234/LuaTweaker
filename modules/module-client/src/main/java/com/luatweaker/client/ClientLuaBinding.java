@@ -12,6 +12,10 @@ public class ClientLuaBinding {
     }
 
     public static void registerBindings(@NotNull ILuaEngine engine, @NotNull ClientServiceImpl clientService, @NotNull IKeyBindService keyBindService) {
+        registerBindings(engine, clientService, keyBindService, null);
+    }
+
+    public static void registerBindings(@NotNull ILuaEngine engine, @NotNull ClientServiceImpl clientService, @NotNull IKeyBindService keyBindService, com.luatweaker.api.client.IGuiService guiService) {
         ILuaTable globals = engine.getGlobalEnvironment();
 
         boolean isDedicatedServer = com.luatweaker.api.pal.Platform.isInitialized() && com.luatweaker.api.pal.Platform.getContent().isDedicatedServer();
@@ -33,7 +37,7 @@ public class ClientLuaBinding {
                 String onPressPayload = args[off + 3].asString();
                 keyBindService.registerKeyBind(id, id, category, defaultKey, onPressPayload);
             }
-            return null;
+            return engine.nilValue();
         });
         clientTable.rawset("RegisterKeyBind", clientTable.rawget("registerKeyBinding"));
         clientTable.rawset("RegisterKeyBinding", clientTable.rawget("registerKeyBinding"));
@@ -151,18 +155,53 @@ public class ClientLuaBinding {
         engine.registerService("RunService", runService);
 
         // 6. Roblox GuiService
-        ILuaTable guiService = engine.createTable();
-        guiService.rawset("ShowNotification", args -> {
+        ILuaTable guiServiceTable = engine.createTable();
+        if (signalClass != null && signalClass.isTable()) {
+            ILuaValue newSignalFn = signalClass.asTable().rawget("new");
+            if (newSignalFn != null && !newSignalFn.isNil()) {
+                guiServiceTable.rawset("OnRenderHUD", engine.callFunction(newSignalFn, signalClass));
+            }
+        }
+        guiServiceTable.rawset("ShowNotification", args -> {
             int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
             if (args.length - off >= 2) {
                 String title = args[off].asString();
                 String text = args[off + 1].asString();
                 com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM, "[GUI Notification] " + title + ": " + text);
             }
-            return null;
+            return engine.nilValue();
         });
-        globals.rawset("GuiService", guiService);
-        engine.registerService("GuiService", guiService);
+
+        guiServiceTable.rawset("DrawRect", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (guiService != null && args.length - off >= 5) {
+                int x = args[off].asInt();
+                int y = args[off + 1].asInt();
+                int width = args[off + 2].asInt();
+                int height = args[off + 3].asInt();
+                int color = (int) (long) args[off + 4].asDouble();
+                guiService.drawRect(x, y, width, height, color);
+            }
+            return engine.nilValue();
+        });
+        guiServiceTable.rawset("drawRect", guiServiceTable.rawget("DrawRect"));
+
+        guiServiceTable.rawset("DrawText", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (guiService != null && args.length - off >= 4) {
+                String text = args[off].asString();
+                int x = args[off + 1].asInt();
+                int y = args[off + 2].asInt();
+                int color = (int) (long) args[off + 3].asDouble();
+                boolean dropShadow = args.length - off >= 5 ? args[off + 4].asBoolean() : true;
+                guiService.drawText(text, x, y, color, dropShadow);
+            }
+            return engine.nilValue();
+        });
+        guiServiceTable.rawset("drawText", guiServiceTable.rawget("DrawText"));
+
+        globals.rawset("GuiService", guiServiceTable);
+        engine.registerService("GuiService", guiServiceTable);
 
         engine.registerService("ClientService", clientService);
         engine.registerService("ClientEffects", clientEffects);

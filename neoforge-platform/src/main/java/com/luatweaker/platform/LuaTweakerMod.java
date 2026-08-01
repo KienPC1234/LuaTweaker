@@ -414,6 +414,7 @@ public class LuaTweakerMod {
         stubGen.registerService("AIGoals", com.luatweaker.api.entity.ai.IAIGoalService.class);
         stubGen.registerService("WorldAction", com.luatweaker.api.entity.ai.IWorldActionService.class);
         stubGen.registerService("Interaction", com.luatweaker.api.interaction.IInteractionService.class);
+        stubGen.registerService("GuiService", com.luatweaker.api.client.IGuiService.class);
 
         // Legacy Mod Service Names (Compatibility)
         stubGen.registerService("Recipes", com.luatweaker.api.recipe.IRecipeManagerService.class);

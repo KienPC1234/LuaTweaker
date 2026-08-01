@@ -92,7 +92,8 @@ function task._tick()
     deferred = {}
     for _, item in ipairs(def) do
         if type(item.fn) == 'function' then
-            local ok, err = pcall(item.fn, table.unpack(item.args or {}))
+            local thread = coroutine.create(function(...) return item.fn(...) end)
+            local ok, err = coroutine.resume(thread, table.unpack(item.args or {}))
             if not ok and err and not tostring(err):find("UnwindThrowable") then
                 print('[ERROR][task._tick] Deferred task error: ' .. tostring(err))
             end
@@ -103,7 +104,8 @@ function task._tick()
     for _, item in ipairs(delays) do
         if now >= item.time then
             if type(item.fn) == 'function' then
-                local ok, err = pcall(item.fn, table.unpack(item.args or {}))
+                local thread = coroutine.create(function(...) return item.fn(...) end)
+                local ok, err = coroutine.resume(thread, table.unpack(item.args or {}))
                 if not ok and err and not tostring(err):find("UnwindThrowable") then
                     print('[ERROR][task._tick] Delay task error: ' .. tostring(err))
                 end

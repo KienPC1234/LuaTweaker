@@ -78,10 +78,11 @@ public final class LuaServiceBootstrap {
         InterceptionServiceImpl interceptionService = new InterceptionServiceImpl();
         InterceptionLuaBinding.registerBindings(engine, interceptionService);
 
-        // 10. Client Visual & Audio Effects (Camera, Particle, Sound, Screen Flash, KeyBinds)
+        // 10. Client Visual & Audio Effects (Camera, Particle, Sound, Screen Flash, KeyBinds, GUI)
         ClientServiceImpl clientService = new ClientServiceImpl();
         com.luatweaker.client.KeyBindServiceImpl keyBindService = new com.luatweaker.client.KeyBindServiceImpl();
-        ClientLuaBinding.registerBindings(engine, clientService, keyBindService);
+        com.luatweaker.platform.client.NeoForgeGuiService guiService = new com.luatweaker.platform.client.NeoForgeGuiService();
+        ClientLuaBinding.registerBindings(engine, clientService, keyBindService, guiService);
         engine.registerService("KeyBindService", keyBindService);
 
         // 11. Recipe Manager Table

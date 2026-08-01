@@ -70,6 +70,13 @@ local function updateActionBar(player, state, customMessage)
     
     player:sendActionBar(barText)
     print("[MagicStaffHUD] ActionBar sent to " .. tostring(player:getName()) .. ": " .. tostring(barText))
+
+    if Network then
+        local syncEvent = Network:GetOrCreateRemoteEvent("StaffManaSync")
+        if syncEvent then
+            syncEvent:FireClient(player, state.mana, state.maxMana, skill.name)
+        end
+    end
 end
 
 -- DYNAMIC MANA REGENERATION & CONTINUOUS ACTION BAR HUD LOOP (+10 Mana per second)
