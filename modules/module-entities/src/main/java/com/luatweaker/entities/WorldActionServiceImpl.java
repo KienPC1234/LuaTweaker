@@ -11,53 +11,53 @@ import java.util.List;
 public class WorldActionServiceImpl implements IWorldActionService {
     @Override
     public boolean breakBlock(@NotNull IEntity actor, int x, int y, int z) {
-        return Platform.get().performBlockBreak(actor, x, y, z);
+        return Platform.getInteraction().performBlockBreak(actor, x, y, z);
     }
 
     @Override
     public boolean placeBlock(@NotNull IEntity actor, int x, int y, int z, @NotNull String blockId) {
-        return Platform.get().performBlockPlace(actor, x, y, z, blockId);
+        return Platform.getInteraction().performBlockPlace(actor, x, y, z, blockId);
     }
 
     @Override
     public boolean useBlock(@NotNull IEntity actor, int x, int y, int z) {
-        return Platform.get().performBlockUse(actor, x, y, z);
+        return Platform.getInteraction().performBlockUse(actor, x, y, z);
     }
 
     @Override
     public boolean useItem(@NotNull IEntity actor, int slot) {
-        return Platform.get().performItemUse(actor, slot);
+        return Platform.getInteraction().performItemUse(actor, slot);
     }
 
     @Override
     public void lookAt(@NotNull IEntity actor, double x, double y, double z) {
-        Platform.get().lookAt(actor, x, y, z);
+        Platform.getInteraction().lookAt(actor, x, y, z);
     }
 
     @Override
     public void lookAt(@NotNull IEntity actor, @NotNull IEntity target) {
-        Platform.get().lookAt(actor, target);
+        Platform.getInteraction().lookAt(actor, target);
     }
 
     @Override
     public boolean moveInventoryItem(@NotNull IEntity actor, int fromSlot, int toSlot) {
-        return Platform.get().moveInventoryItem(actor, fromSlot, toSlot);
+        return Platform.getInteraction().moveInventoryItem(actor, fromSlot, toSlot);
     }
 
     @Override
     public boolean dropInventoryItem(@NotNull IEntity actor, int slot, int count) {
-        return Platform.get().dropInventoryItem(actor, slot, count);
+        return Platform.getInteraction().dropInventoryItem(actor, slot, count);
     }
 
     @Override
     @NotNull
     public List<IWorldBlock> getNearbyBlocks(@NotNull IEntity entity, int radius) {
-        return Platform.get().getNearbyBlocks(entity, radius);
+        return Platform.getInteraction().getNearbyBlocks(entity, radius);
     }
 
     @Override
     @NotNull
     public List<ILocatedItem> getInventoryItems(@NotNull IEntity entity) {
-        return Platform.get().getInventoryItems(entity);
+        return Platform.getInteraction().getInventoryItems(entity);
     }
 }

@@ -1,6 +1,6 @@
 package com.luatweaker.platform;
 
-import com.luatweaker.api.pal.IPlatformHelper;
+import com.luatweaker.api.pal.IPlatformContent;
 import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.content.ContentServiceImpl;
@@ -30,7 +30,7 @@ public class LuaScriptsIntegrationTest {
         recipeManager = new NeoForgeRecipeManager();
         LuaServiceRegistry.clear();
 
-        Platform.set(new IPlatformHelper() {
+        Platform.setContent(new IPlatformContent() {
             @Override
             public com.luatweaker.api.objects.IItem createItem(String itemId, int count) {
                 return new com.luatweaker.api.objects.IItem() {
@@ -53,6 +53,60 @@ public class LuaScriptsIntegrationTest {
             public boolean fluidExists(String fluidId) { return true; }
             @Override
             public boolean tagExists(String tagId) { return true; }
+            @Override
+            public boolean isModLoaded(String modId) { return true; }
+            @Override
+            public boolean isClient() { return false; }
+            @Override
+            public boolean isDedicatedServer() { return true; }
+            @Override
+            public String getPlatformName() { return "IntegrationTest"; }
+            @Override
+            public java.util.Set<String> getSupportedMobParents() { return java.util.Set.of(); }
+            @Override
+            public java.util.List<com.luatweaker.api.objects.IRecipe> getAllRecipes() { return java.util.List.of(); }
+        });
+
+        Platform.setNetwork(new com.luatweaker.api.pal.IPlatformNetwork() {
+            public void sendPayloadPacket(String u, String c, String d) {}
+            public void broadcastPayloadPacket(String c, String d) {}
+            public void sendPayloadPacketToServer(String c, String d) {}
+        });
+
+        Platform.setStorage(new com.luatweaker.api.pal.IPlatformStorage() {
+            public java.io.File getStorageDirectory() { return new java.io.File("."); }
+        });
+
+        Platform.setInteraction(new com.luatweaker.api.pal.IPlatformInteraction() {
+            public void shootProjectile(com.luatweaker.api.entity.IEntity s, String p, double sp, double i) {}
+            public void shootProjectileAt(com.luatweaker.api.entity.IEntity s, String p, com.luatweaker.api.entity.IEntity t, double sp) {}
+            public void playAnimation(com.luatweaker.api.entity.IEntity e, String a, double sp, double tr) {}
+            public boolean performBlockBreak(com.luatweaker.api.entity.IEntity a, int x, int y, int z) { return false; }
+            public boolean performBlockPlace(com.luatweaker.api.entity.IEntity a, int x, int y, int z, String b) { return false; }
+            public boolean performBlockUse(com.luatweaker.api.entity.IEntity a, int x, int y, int z) { return false; }
+            public boolean performItemUse(com.luatweaker.api.entity.IEntity a, int s) { return false; }
+            public void lookAt(com.luatweaker.api.entity.IEntity a, double x, double y, double z) {}
+            public void lookAt(com.luatweaker.api.entity.IEntity a, com.luatweaker.api.entity.IEntity t) {}
+            public boolean moveInventoryItem(com.luatweaker.api.entity.IEntity a, int f, int t) { return false; }
+            public boolean dropInventoryItem(com.luatweaker.api.entity.IEntity a, int s, int c) { return false; }
+            public java.util.List<com.luatweaker.api.objects.IWorldBlock> getNearbyBlocks(com.luatweaker.api.entity.IEntity e, int r) { return java.util.List.of(); }
+            public java.util.List<com.luatweaker.api.objects.ILocatedItem> getInventoryItems(com.luatweaker.api.entity.IEntity e) { return java.util.List.of(); }
+            public com.luatweaker.api.interaction.IInteractableBlock getInteractableBlock(String d, int x, int y, int z) { return null; }
+            public com.luatweaker.api.interaction.IInteractableItem getInteractableItem(Object e, int s) { return null; }
+            public com.luatweaker.api.interaction.IInteractableEntity getInteractableEntity(String u) { return null; }
+            public com.luatweaker.api.interaction.IInteractableEntity getInteractableEntity(Object e) { return null; }
+        });
+
+        Platform.setEntity(new com.luatweaker.api.pal.IPlatformEntity() {
+            public void addCustomGoal(com.luatweaker.api.entity.IEntity e, int p, com.luatweaker.api.vm.ILuaTable g, com.luatweaker.api.vm.ILuaEngine en, boolean i) {}
+            public void removeCustomGoal(com.luatweaker.api.entity.IEntity e, com.luatweaker.api.vm.ILuaTable g) {}
+            public void clearCustomGoals(com.luatweaker.api.entity.IEntity e) {}
+            public void addMeleeAttackGoal(com.luatweaker.api.entity.IEntity e, int p, double s, boolean m) {}
+            public void addHurtByTargetGoal(com.luatweaker.api.entity.IEntity e, int p) {}
+            public void addNearestAttackableTargetGoal(com.luatweaker.api.entity.IEntity e, int p, String t) {}
+            public com.luatweaker.api.entity.IPlayer getPlayer(String u) { return null; }
+            public java.util.List<com.luatweaker.api.entity.IPlayer> getAllPlayers() { return java.util.List.of(); }
+            public Object spawnEntity(String e, double x, double y, double z) { return null; }
         });
     }
 

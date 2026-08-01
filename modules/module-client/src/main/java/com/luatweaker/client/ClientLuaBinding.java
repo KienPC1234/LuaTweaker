@@ -14,7 +14,7 @@ public class ClientLuaBinding {
     public static void registerBindings(@NotNull ILuaEngine engine, @NotNull ClientServiceImpl clientService, @NotNull IKeyBindService keyBindService) {
         ILuaTable globals = engine.getGlobalEnvironment();
 
-        boolean isDedicatedServer = com.luatweaker.api.pal.Platform.isInitialized() && com.luatweaker.api.pal.Platform.get().isDedicatedServer();
+        boolean isDedicatedServer = com.luatweaker.api.pal.Platform.isInitialized() && com.luatweaker.api.pal.Platform.getContent().isDedicatedServer();
 
         ILuaTable clientTable = engine.createTable();
         clientTable.rawset("registerKeyBinding", args -> {

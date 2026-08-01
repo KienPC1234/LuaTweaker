@@ -12,65 +12,17 @@ public class TaskLuaBinding {
 
     public static void registerBindings(@NotNull ILuaEngine engine, @NotNull ITaskService taskService) {
         ILuaTable globals = engine.getGlobalEnvironment();
+        ILuaTable taskTable;
 
         ILuaValue existingTask = globals.rawget("task");
         if (existingTask != null && !existingTask.isNil() && existingTask.isTable()) {
-            ILuaTable nativeTaskTable = existingTask.asTable();
-            globals.rawset("Task", nativeTaskTable);
-            engine.registerService("TaskService", nativeTaskTable);
-            engine.registerService("Task", nativeTaskTable);
-            return;
+            taskTable = existingTask.asTable();
+            taskTable.rawset("getTimeClock", args -> engine.wrapNumber(System.currentTimeMillis() / 1000.0));
+        } else {
+            taskTable = engine.createTable();
         }
 
-        ILuaTable taskTable = engine.createTable();
-
-        taskTable.rawset("spawn", args -> {
-            if (args.length >= 2) {
-                ILuaValue fn = args[1];
-                ILuaValue[] fnArgs = Arrays.copyOfRange(args, 2, args.length);
-                taskService.spawn(engine, fn, fnArgs);
-            }
-            return engine.nilValue();
-        });
-
-        taskTable.rawset("delay", args -> {
-            if (args.length >= 3) {
-                double sec = args[1].asDouble();
-                ILuaValue fn = args[2];
-                ILuaValue[] fnArgs = Arrays.copyOfRange(args, 3, args.length);
-                taskService.delay(engine, sec, fn, fnArgs);
-            }
-            return engine.nilValue();
-        });
-
-        taskTable.rawset("defer", args -> {
-            if (args.length >= 2) {
-                ILuaValue fn = args[1];
-                ILuaValue[] fnArgs = Arrays.copyOfRange(args, 2, args.length);
-                taskService.defer(engine, fn, fnArgs);
-            }
-            return engine.nilValue();
-        });
-
-        taskTable.rawset("cancel", args -> {
-            if (args.length >= 2) {
-                taskService.cancel(args[1]);
-            }
-            return engine.nilValue();
-        });
-
-        taskTable.rawset("wait", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
-            double sec = (args.length > off) ? args[off].asDouble() : 0.05;
-            try {
-                Thread.sleep((long) (sec * 1000.0));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            return engine.wrapNumber(sec);
-        });
-
-        taskTable.rawset("_tick", args -> {
+        taskTable.rawset("_java_tick", args -> {
             taskService.tick(engine);
             return engine.nilValue();
         });

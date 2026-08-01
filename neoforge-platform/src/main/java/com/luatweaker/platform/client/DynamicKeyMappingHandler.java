@@ -57,7 +57,7 @@ public class DynamicKeyMappingHandler {
 
                     // 2. If payload is present, also send payload packet to server
                     if (record.payload() != null && !record.payload().isEmpty()) {
-                        Platform.get().sendPayloadPacketToServer(record.payload(), "[]");
+                        Platform.getNetwork().sendPayloadPacketToServer(record.payload(), "[]");
                     }
                 }
             }

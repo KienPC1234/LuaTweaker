@@ -43,7 +43,6 @@ public class LuaTweakerMod {
     public static final String MODID = "luatweaker";
 
     static {
-        System.err.println("LuaTweakerMod: static init at " + new java.util.Date());
     }
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LuaTweakerMod.class);
@@ -90,16 +89,19 @@ public class LuaTweakerMod {
 
     public LuaTweakerMod(IEventBus modEventBus, ModContainer modContainer) {
         INSTANCE = this;
-        System.err.println("LuaTweakerMod: static init at " + new java.util.Date());
         LOGGER.info("LuaTweaker constructor starting");
         LOGGER.info("CWD: {}", new File(".").getAbsolutePath());
 
         // Register NeoForge configuration specification
         modContainer.registerConfig(ModConfig.Type.COMMON, LuaTweakerConfig.COMMON_SPEC);
 
-        // Initialize Platform Abstraction Layer (PAL) Helper
-        Platform.set(new NeoForgePlatformHelper());
-        LOGGER.info("Platform helper set");
+        // Initialize Platform Abstraction Layer (PAL) Helpers
+        Platform.setNetwork(new com.luatweaker.platform.network.NeoForgeNetworkPlatform());
+        Platform.setEntity(new com.luatweaker.platform.entity.NeoForgeEntityPlatform());
+        Platform.setInteraction(new com.luatweaker.platform.interaction.NeoForgeInteractionPlatform());
+        Platform.setContent(new com.luatweaker.platform.content.NeoForgeContentPlatform());
+        Platform.setStorage(new com.luatweaker.platform.storage.NeoForgeStoragePlatform());
+        LOGGER.info("Platform helpers set");
 
         // Setup the global stage-aware logger
         AsyncFileLogger fileLogger = AsyncFileLogger.get();
@@ -131,7 +133,7 @@ public class LuaTweakerMod {
                 new com.luatweaker.platform.content.NeoForgeContentRegistry.BossBarTickHandler(contentService));
         NeoForge.EVENT_BUS.register(new com.luatweaker.platform.event.NeoForgeGameEventListener());
 
-        if (Platform.get().isClient()) {
+        if (Platform.getContent().isClient()) {
             modEventBus.addListener(com.luatweaker.platform.client.DynamicKeyMappingHandler::onRegisterKeyMappings);
             NeoForge.EVENT_BUS.addListener(com.luatweaker.platform.client.DynamicKeyMappingHandler::onClientTick);
         }
@@ -265,14 +267,7 @@ public class LuaTweakerMod {
                 if (server != null) {
                     reloadServerRecipes(server);
                 } else if (isAutoStubsEnabled()) {
-                    com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.STUB_GEN,
-                            "Generating autocomplete stubs...");
-                    LtvmStubGenerator stubGen = new LtvmStubGenerator();
-                    stubGen.registerService("Recipes", com.luatweaker.api.recipe.IRecipeManagerService.class);
-                    stubGen.registerService("AIGoals", com.luatweaker.api.entity.ai.IAIGoalService.class);
-                    stubGen.registerService("WorldAction", com.luatweaker.api.entity.ai.IWorldActionService.class);
-                    stubGen.registerService("Interaction", com.luatweaker.api.interaction.IInteractionService.class);
-                    LtvmStubExporter.exportToWorkspace(new File(".").toPath(), stubGen);
+                    generateStubs();
                 }
             }
         });
@@ -301,32 +296,7 @@ public class LuaTweakerMod {
         InterceptionHelper.clearPending();
 
         if (isAutoStubsEnabled()) {
-            com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.STUB_GEN,
-                    "Generating autocomplete stubs...");
-            LtvmStubGenerator stubGen = new LtvmStubGenerator();
-            // Static Module Namespaces (require("LuaTweaker.ModuleName"))
-            stubGen.registerService("Content", com.luatweaker.api.content.IContentService.class);
-            stubGen.registerService("Recipe", com.luatweaker.api.recipe.IRecipeManagerService.class);
-            stubGen.registerService("Events", com.luatweaker.api.event.IEventService.class);
-            stubGen.registerService("World", com.luatweaker.api.interaction.IInteractionService.class);
-            stubGen.registerService("Entities", com.luatweaker.api.interaction.IInteractionService.class);
-            stubGen.registerService("Storage", com.luatweaker.api.content.IStorageService.class);
-            stubGen.registerService("Datapack", com.luatweaker.api.content.IDatapackService.class);
-            stubGen.registerService("Network", com.luatweaker.api.network.IRocketNetworkService.class);
-            stubGen.registerService("AIGoals", com.luatweaker.api.entity.ai.IAIGoalService.class);
-            stubGen.registerService("WorldAction", com.luatweaker.api.entity.ai.IWorldActionService.class);
-            stubGen.registerService("Interaction", com.luatweaker.api.interaction.IInteractionService.class);
-
-            // Legacy Mod Service Names (Compatibility)
-            stubGen.registerService("Recipes", com.luatweaker.api.recipe.IRecipeManagerService.class);
-            stubGen.registerService("Startup", com.luatweaker.api.content.IContentService.class);
-            stubGen.registerService("WorldStorage", com.luatweaker.api.storage.IRobloxStorageService.IDataStore.class);
-            stubGen.registerService("PlayerStorage", com.luatweaker.api.storage.IRobloxStorageService.class);
-            stubGen.registerService("SessionStorage", com.luatweaker.api.storage.IRobloxStorageService.IDataStore.class);
-            stubGen.registerService("NetworkService", com.luatweaker.api.network.IRocketNetworkService.class);
-            stubGen.registerService("Workspace", com.luatweaker.api.interaction.IInteractionService.class);
-            stubGen.registerService("EntityService", com.luatweaker.api.interaction.IInteractionService.class);
-            LtvmStubExporter.exportToWorkspace(new File(".").toPath(), stubGen);
+            generateStubs();
         }
 
         NeoForgeRecipeManager recipeManager = new NeoForgeRecipeManager();
@@ -426,5 +396,34 @@ public class LuaTweakerMod {
             return table;
         }
         return engine.nilValue();
+    }
+
+    private void generateStubs() {
+        com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.STUB_GEN,
+                "Generating autocomplete stubs...");
+        LtvmStubGenerator stubGen = new LtvmStubGenerator();
+        // Static Module Namespaces (require("LuaTweaker.ModuleName"))
+        stubGen.registerService("Content", com.luatweaker.api.content.IContentService.class);
+        stubGen.registerService("Recipe", com.luatweaker.api.recipe.IRecipeManagerService.class);
+        stubGen.registerService("Events", com.luatweaker.api.event.IEventService.class);
+        stubGen.registerService("World", com.luatweaker.api.interaction.IInteractionService.class);
+        stubGen.registerService("Entities", com.luatweaker.api.interaction.IInteractionService.class);
+        stubGen.registerService("Storage", com.luatweaker.api.content.IStorageService.class);
+        stubGen.registerService("Datapack", com.luatweaker.api.content.IDatapackService.class);
+        stubGen.registerService("Network", com.luatweaker.api.network.IRocketNetworkService.class);
+        stubGen.registerService("AIGoals", com.luatweaker.api.entity.ai.IAIGoalService.class);
+        stubGen.registerService("WorldAction", com.luatweaker.api.entity.ai.IWorldActionService.class);
+        stubGen.registerService("Interaction", com.luatweaker.api.interaction.IInteractionService.class);
+
+        // Legacy Mod Service Names (Compatibility)
+        stubGen.registerService("Recipes", com.luatweaker.api.recipe.IRecipeManagerService.class);
+        stubGen.registerService("Startup", com.luatweaker.api.content.IContentService.class);
+        stubGen.registerService("WorldStorage", com.luatweaker.api.storage.IRobloxStorageService.IDataStore.class);
+        stubGen.registerService("PlayerStorage", com.luatweaker.api.storage.IRobloxStorageService.class);
+        stubGen.registerService("SessionStorage", com.luatweaker.api.storage.IRobloxStorageService.IDataStore.class);
+        stubGen.registerService("NetworkService", com.luatweaker.api.network.IRocketNetworkService.class);
+        stubGen.registerService("Workspace", com.luatweaker.api.interaction.IInteractionService.class);
+        stubGen.registerService("EntityService", com.luatweaker.api.interaction.IInteractionService.class);
+        LtvmStubExporter.exportToWorkspace(new File(".").toPath(), stubGen);
     }
 }

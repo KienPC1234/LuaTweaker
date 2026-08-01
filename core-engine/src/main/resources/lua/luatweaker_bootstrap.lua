@@ -30,21 +30,8 @@ local function parseTaskArgs(...)
 end
 
 function task.spawn(...)
-    local fn, args = parseTaskArgs(...)
-    if type(fn) ~= 'function' then
-        error('[task.spawn] Expected function, got ' .. type(fn))
-    end
-    local thread = coroutine.create(fn)
-    local ok, err
-    if #args > 0 then
-        ok, err = coroutine.resume(thread, table.unpack(args))
-    else
-        ok, err = coroutine.resume(thread)
-    end
-    if not ok and err and not tostring(err):find("UnwindThrowable") then
-        print('[ERROR][task.spawn] Coroutine error: ' .. tostring(err))
-    end
-    return thread
+    -- Bypassing Cobalt stack corruption bug on synchronous coroutine.resume with yields
+    task.defer(...)
 end
 
 function task.defer(...)
@@ -56,6 +43,9 @@ function task.defer(...)
 end
 
 local function getTimeClock()
+    if task and type(task.getTimeClock) == 'function' then
+        return task.getTimeClock()
+    end
     if os and type(os) == 'table' and os.clock then
         return os.clock()
     end

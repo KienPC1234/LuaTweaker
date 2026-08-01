@@ -21,11 +21,11 @@ public class StorageLuaBinding {
             return engine.wrapUserdata(res);
         });
         table.rawset("SetAsync", args -> {
-            if (args.length < 3) return null;
+            if (args.length < 3) return engine.nilValue();
             String key = args[1].asString();
             ILuaValue val = args[2];
             store.SetAsync(key, val);
-            return null;
+            return engine.nilValue();
         });
         return table;
     }
@@ -61,11 +61,11 @@ public class StorageLuaBinding {
         });
         storageTable.rawset("set", args -> {
             int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
-            if (args.length - off < 2) return null;
+            if (args.length - off < 2) return engine.nilValue();
             String key = args[off].asString();
             ILuaValue val = args[off + 1];
             storageService.GetSessionStorage().SetAsync(key, val);
-            return null;
+            return engine.nilValue();
         });
 
         engine.registerService("Storage", storageTable);

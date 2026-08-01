@@ -14,7 +14,7 @@ public class EntitiesLuaBinding {
             if (args.length - off >= 1) {
                 player.sendMessage(args[off].asString());
             }
-            return null;
+            return engine.nilValue();
         });
 
         bindMethod(table, "sendActionBar", args -> {
@@ -22,7 +22,7 @@ public class EntitiesLuaBinding {
             if (args.length - off >= 1) {
                 player.sendActionBar(args[off].asString());
             }
-            return null;
+            return engine.nilValue();
         });
 
         bindMethod(table, "getName", args -> engine.wrapString(player.getName()));
@@ -34,7 +34,7 @@ public class EntitiesLuaBinding {
         bindMethod(table, "setHealth", args -> {
             int off = getOffset(args);
             if (args.length - off >= 1) player.setHealth((float) args[off].asDouble());
-            return null;
+            return engine.nilValue();
         });
 
         bindMethod(table, "giveItem", args -> {
@@ -44,13 +44,13 @@ public class EntitiesLuaBinding {
                 int count = args.length - off >= 2 ? args[off + 1].asInt() : 1;
                 player.giveItem(id, count);
             }
-            return null;
+            return engine.nilValue();
         });
 
         bindMethod(table, "giveExperience", args -> {
             int off = getOffset(args);
             if (args.length - off >= 1) player.giveExperience(args[off].asInt());
-            return null;
+            return engine.nilValue();
         });
 
         bindMethod(table, "addEffect", args -> {
@@ -61,7 +61,7 @@ public class EntitiesLuaBinding {
                 int amp = args.length - off >= 3 ? args[off + 2].asInt() : 0;
                 player.addEffect(effect, duration, amp);
             }
-            return null;
+            return engine.nilValue();
         });
 
         bindMethod(table, "playSound", args -> {
@@ -72,7 +72,7 @@ public class EntitiesLuaBinding {
                 float pitch  = args.length - off >= 3 ? (float) args[off + 2].asDouble() : 1.0f;
                 player.playSound(soundId, volume, pitch);
             }
-            return null;
+            return engine.nilValue();
         });
 
         bindMethod(table, "getMainHandItem", args -> engine.wrapString(player.getMainHandItem()));
@@ -84,9 +84,9 @@ public class EntitiesLuaBinding {
                 int count = args.length - off >= 2 ? args[off + 1].asInt() : 1;
                 player.setMainHandItem(itemId, count);
             }
-            return null;
+            return engine.nilValue();
         });
-        bindMethod(table, "clearInventory", args -> { player.clearInventory(); return null; });
+        bindMethod(table, "clearInventory", args -> { player.clearInventory(); return engine.nilValue(); });
         bindMethod(table, "dropItem", args -> {
             int off = getOffset(args);
             if (args.length - off >= 1) {
@@ -94,14 +94,14 @@ public class EntitiesLuaBinding {
                 int count = args.length - off >= 2 ? args[off + 1].asInt() : 1;
                 player.dropItem(itemId, count);
             }
-            return null;
+            return engine.nilValue();
         });
         bindMethod(table, "actionText", args -> {
             int off = getOffset(args);
             if (args.length - off >= 1) {
                 player.sendActionBar(args[off].asString());
             }
-            return null;
+            return engine.nilValue();
         });
 
         bindMethod(table, "sendTitle", args -> {
@@ -114,13 +114,13 @@ public class EntitiesLuaBinding {
                 int fadeOut = args.length - off >= 5 ? args[off + 4].asInt() : 20;
                 player.sendTitle(title, subtitle, fadeIn, stay, fadeOut);
             }
-            return null;
+            return engine.nilValue();
         });
 
         bindMethod(table, "heal", args -> {
             int off = getOffset(args);
             if (args.length - off >= 1) player.heal((float) args[off].asDouble());
-            return null;
+            return engine.nilValue();
         });
 
         bindMethod(table, "feed", args -> {
@@ -130,7 +130,7 @@ public class EntitiesLuaBinding {
                 float sat = args.length - off >= 2 ? (float) args[off + 1].asDouble() : 1.0f;
                 player.feed(food, sat);
             }
-            return null;
+            return engine.nilValue();
         });
 
         bindMethod(table, "teleport", args -> {
@@ -141,7 +141,7 @@ public class EntitiesLuaBinding {
                 double z = args[off + 2].asDouble();
                 player.teleport(x, y, z);
             }
-            return null;
+            return engine.nilValue();
         });
 
         return table;
@@ -159,26 +159,26 @@ public class EntitiesLuaBinding {
         bindMethod(table, "setHealth", args -> {
             int off = getOffset(args);
             if (args.length - off >= 1) entity.setHealth((float) args[off].asDouble());
-            return null;
+            return engine.nilValue();
         });
 
         bindMethod(table, "heal", args -> {
             int off = getOffset(args);
             if (args.length - off >= 1) entity.heal((float) args[off].asDouble());
-            return null;
+            return engine.nilValue();
         });
 
-        bindMethod(table, "kill", args -> { entity.kill(); return null; });
+        bindMethod(table, "kill", args -> { entity.kill(); return engine.nilValue(); });
 
         bindMethod(table, "damage", args -> {
             int off = getOffset(args);
             if (args.length - off >= 1) entity.damage((float) args[off].asDouble());
-            return null;
+            return engine.nilValue();
         });
         bindMethod(table, "hurt", args -> {
             int off = getOffset(args);
             if (args.length - off >= 1) entity.damage((float) args[off].asDouble());
-            return null;
+            return engine.nilValue();
         });
 
         bindMethod(table, "addEffect", args -> {
@@ -189,15 +189,15 @@ public class EntitiesLuaBinding {
                 int amp = args.length - off >= 3 ? args[off + 2].asInt() : 0;
                 entity.addEffect(effect, duration, amp);
             }
-            return null;
+            return engine.nilValue();
         });
 
         bindMethod(table, "removeEffect", args -> {
             int off = getOffset(args);
             if (args.length - off >= 1) entity.removeEffect(args[off].asString());
-            return null;
+            return engine.nilValue();
         });
-        bindMethod(table, "removeAllEffects", args -> { entity.removeAllEffects(); return null; });
+        bindMethod(table, "removeAllEffects", args -> { entity.removeAllEffects(); return engine.nilValue(); });
 
         bindMethod(table, "hasEffect", args -> {
             int off = getOffset(args);
@@ -208,9 +208,9 @@ public class EntitiesLuaBinding {
         bindMethod(table, "setIgniteSeconds", args -> {
             int off = getOffset(args);
             if (args.length - off >= 1) entity.setIgniteSeconds(args[off].asInt());
-            return null;
+            return engine.nilValue();
         });
-        bindMethod(table, "extinguish", args -> { entity.extinguish(); return null; });
+        bindMethod(table, "extinguish", args -> { entity.extinguish(); return engine.nilValue(); });
 
         bindMethod(table, "playSound", args -> {
             int off = getOffset(args);
@@ -220,7 +220,7 @@ public class EntitiesLuaBinding {
                 float pitch  = args.length - off >= 3 ? (float) args[off + 2].asDouble() : 1.0f;
                 entity.playSound(soundId, volume, pitch);
             }
-            return null;
+            return engine.nilValue();
         });
 
         bindMethod(table, "spawnParticle", args -> {
@@ -231,7 +231,7 @@ public class EntitiesLuaBinding {
                 double speed = args.length - off >= 3 ? args[off + 2].asDouble() : 0.0;
                 entity.spawnParticle(particleId, count, speed);
             }
-            return null;
+            return engine.nilValue();
         });
 
         bindMethod(table, "spawnEntity", args -> {
@@ -257,7 +257,7 @@ public class EntitiesLuaBinding {
             if (args.length - off >= 2) {
                 attributes.rawset(args[off].asString(), args[off + 1]);
             }
-            return null;
+            return engine.nilValue();
         };
         table.rawset("SetAttribute", setAttr);
         table.rawset("setAttribute", setAttr);
@@ -280,7 +280,7 @@ public class EntitiesLuaBinding {
                     p.sendMessage(args[off].asString());
                 }
             }
-            return null;
+            return engine.nilValue();
         };
         table.rawset("SendMessage", sendMsg);
         table.rawset("sendMessage", sendMsg);
@@ -291,9 +291,9 @@ public class EntitiesLuaBinding {
                 String projectileType = args[off].asString();
                 double speed = args.length - off >= 2 ? args[off + 1].asDouble() : 1.5;
                 double inaccuracy = args.length - off >= 3 ? args[off + 2].asDouble() : 0.0;
-                com.luatweaker.api.pal.Platform.get().shootProjectile(entity, projectileType, speed, inaccuracy);
+                com.luatweaker.api.pal.Platform.getInteraction().shootProjectile(entity, projectileType, speed, inaccuracy);
             }
-            return null;
+            return engine.nilValue();
         };
         table.rawset("shootProjectile", shootProj);
         table.rawset("ShootProjectile", shootProj);
@@ -305,10 +305,10 @@ public class EntitiesLuaBinding {
                 com.luatweaker.api.entity.IEntity target = getEntityFromTable(args[off + 1]);
                 double speed = args.length - off >= 3 ? args[off + 2].asDouble() : 1.5;
                 if (target != null) {
-                    com.luatweaker.api.pal.Platform.get().shootProjectileAt(entity, projectileType, target, speed);
+                    com.luatweaker.api.pal.Platform.getInteraction().shootProjectileAt(entity, projectileType, target, speed);
                 }
             }
-            return null;
+            return engine.nilValue();
         };
         table.rawset("shootProjectileAt", shootProjAt);
         table.rawset("ShootProjectileAt", shootProjAt);
@@ -319,20 +319,20 @@ public class EntitiesLuaBinding {
                 String animName = args[off].asString();
                 double speed = args.length - off >= 2 ? args[off + 1].asDouble() : 1.0;
                 double transition = args.length - off >= 3 ? args[off + 2].asDouble() : 0.1;
-                com.luatweaker.api.pal.Platform.get().playAnimation(entity, animName, speed, transition);
+                com.luatweaker.api.pal.Platform.getInteraction().playAnimation(entity, animName, speed, transition);
             }
-            return null;
+            return engine.nilValue();
         };
         table.rawset("playAnimation", playAnim);
         table.rawset("PlayAnimation", playAnim);
 
         table.rawset("teleport", args -> {
             if (args.length >= 4) entity.teleport(args[1].asDouble(), args[2].asDouble(), args[3].asDouble());
-            return null;
+            return engine.nilValue();
         });
         table.rawset("setPos", args -> {
             if (args.length >= 4) entity.teleport(args[1].asDouble(), args[2].asDouble(), args[3].asDouble());
-            return null;
+            return engine.nilValue();
         });
         table.rawset("getPos", args -> {
             ILuaTable pos = engine.createTable();
@@ -344,11 +344,11 @@ public class EntitiesLuaBinding {
 
         table.rawset("setMotion", args -> {
             if (args.length >= 4) entity.setMotion(args[1].asDouble(), args[2].asDouble(), args[3].asDouble());
-            return null;
+            return engine.nilValue();
         });
         table.rawset("addVelocity", args -> {
             if (args.length >= 4) entity.addVelocity(args[1].asDouble(), args[2].asDouble(), args[3].asDouble());
-            return null;
+            return engine.nilValue();
         });
 
         table.rawset("getX", args -> engine.wrapNumber(entity.getX()));
@@ -356,36 +356,36 @@ public class EntitiesLuaBinding {
         table.rawset("getZ", args -> engine.wrapNumber(entity.getZ()));
         table.rawset("getYaw", args -> engine.wrapNumber(entity.getYaw()));
         table.rawset("getPitch", args -> engine.wrapNumber(entity.getPitch()));
-        table.rawset("setYaw", args -> { if (args.length >= 2) entity.setYaw((float) args[1].asDouble()); return null; });
-        table.rawset("setPitch", args -> { if (args.length >= 2) entity.setPitch((float) args[1].asDouble()); return null; });
+        table.rawset("setYaw", args -> { if (args.length >= 2) entity.setYaw((float) args[1].asDouble()); return engine.nilValue(); });
+        table.rawset("setPitch", args -> { if (args.length >= 2) entity.setPitch((float) args[1].asDouble()); return engine.nilValue(); });
 
         table.rawset("isSneaking", args -> engine.wrapBoolean(entity.isSneaking()));
-        table.rawset("setSneaking", args -> { if (args.length >= 2) entity.setSneaking(args[1].asBoolean()); return null; });
+        table.rawset("setSneaking", args -> { if (args.length >= 2) entity.setSneaking(args[1].asBoolean()); return engine.nilValue(); });
         table.rawset("isSprinting", args -> engine.wrapBoolean(entity.isSprinting()));
-        table.rawset("setSprinting", args -> { if (args.length >= 2) entity.setSprinting(args[1].asBoolean()); return null; });
+        table.rawset("setSprinting", args -> { if (args.length >= 2) entity.setSprinting(args[1].asBoolean()); return engine.nilValue(); });
         table.rawset("isGlowing", args -> engine.wrapBoolean(entity.isGlowing()));
-        table.rawset("setGlowing", args -> { if (args.length >= 2) entity.setGlowing(args[1].asBoolean()); return null; });
+        table.rawset("setGlowing", args -> { if (args.length >= 2) entity.setGlowing(args[1].asBoolean()); return engine.nilValue(); });
         table.rawset("isInvulnerable", args -> engine.wrapBoolean(entity.isInvulnerable()));
-        table.rawset("setInvulnerable", args -> { if (args.length >= 2) entity.setInvulnerable(args[1].asBoolean()); return null; });
+        table.rawset("setInvulnerable", args -> { if (args.length >= 2) entity.setInvulnerable(args[1].asBoolean()); return engine.nilValue(); });
         table.rawset("isInWater", args -> engine.wrapBoolean(entity.isInWater()));
         table.rawset("isInLava", args -> engine.wrapBoolean(entity.isInLava()));
         table.rawset("isOnGround", args -> engine.wrapBoolean(entity.isOnGround()));
 
         table.rawset("getCustomName", args -> engine.wrapString(entity.getCustomName()));
-        table.rawset("setCustomName", args -> { if (args.length >= 2) entity.setCustomName(args[1].asString()); return null; });
+        table.rawset("setCustomName", args -> { if (args.length >= 2) entity.setCustomName(args[1].asString()); return engine.nilValue(); });
         table.rawset("isCustomNameVisible", args -> engine.wrapBoolean(entity.isCustomNameVisible()));
-        table.rawset("setCustomNameVisible", args -> { if (args.length >= 2) entity.setCustomNameVisible(args[1].asBoolean()); return null; });
+        table.rawset("setCustomNameVisible", args -> { if (args.length >= 2) entity.setCustomNameVisible(args[1].asBoolean()); return engine.nilValue(); });
 
-        table.rawset("addTag", args -> { if (args.length >= 2) entity.addTag(args[1].asString()); return null; });
-        table.rawset("removeTag", args -> { if (args.length >= 2) entity.removeTag(args[1].asString()); return null; });
+        table.rawset("addTag", args -> { if (args.length >= 2) entity.addTag(args[1].asString()); return engine.nilValue(); });
+        table.rawset("removeTag", args -> { if (args.length >= 2) entity.removeTag(args[1].asString()); return engine.nilValue(); });
         table.rawset("hasTag", args -> { if (args.length >= 2) return engine.wrapBoolean(entity.hasTag(args[1].asString())); return engine.wrapBoolean(false); });
 
-        table.rawset("swingArm", args -> { entity.swingArm(); return null; });
+        table.rawset("swingArm", args -> { entity.swingArm(); return engine.nilValue(); });
 
         table.rawset("isPlayer", args -> engine.wrapBoolean(entity.isPlayer()));
         table.rawset("isLiving", args -> engine.wrapBoolean(entity.isLiving()));
         table.rawset("isAlive", args -> engine.wrapBoolean(entity.isAlive()));
-        table.rawset("remove", args -> { entity.remove(); return null; });
+        table.rawset("remove", args -> { entity.remove(); return engine.nilValue(); });
 
         return table;
     }
@@ -406,7 +406,7 @@ public class EntitiesLuaBinding {
     public static void registerBindings(ILuaEngine engine) {
         ILuaTable playersTable = engine.createTable();
         ILuaFunction getPlayersFn = args -> {
-            java.util.List<com.luatweaker.api.entity.IPlayer> players = com.luatweaker.api.pal.Platform.get().getAllPlayers();
+            java.util.List<com.luatweaker.api.entity.IPlayer> players = com.luatweaker.api.pal.Platform.getEntity().getAllPlayers();
             ILuaTable result = engine.createTable();
             for (int i = 0; i < players.size(); i++) {
                 result.rawset(i + 1, createPlayerLuaTable(engine, players.get(i)));

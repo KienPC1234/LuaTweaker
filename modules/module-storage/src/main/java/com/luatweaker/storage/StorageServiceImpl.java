@@ -30,7 +30,7 @@ public class StorageServiceImpl implements IRobloxStorageService {
 
     public StorageServiceImpl(ILuaEngine engine) {
         this.engine = engine;
-        this.storageDir = Platform.get().getStorageDirectory();
+        this.storageDir = Platform.getStorage().getStorageDirectory();
         if (!storageDir.exists()) {
             storageDir.mkdirs();
         }

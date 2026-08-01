@@ -1,6 +1,6 @@
 package com.luatweaker.storage;
 
-import com.luatweaker.api.pal.IPlatformHelper;
+import com.luatweaker.api.pal.IPlatformStorage;
 import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.storage.IRobloxStorageService;
 import com.luatweaker.core.vm.CobaltLuaEngine;
@@ -19,7 +19,7 @@ public class StorageServiceImplTest {
 
     @BeforeAll
     static void setup() {
-        Platform.set(new IPlatformHelper() {
+        Platform.setStorage(new IPlatformStorage() {
             @Override
             public File getStorageDirectory() {
                 return tempDir;

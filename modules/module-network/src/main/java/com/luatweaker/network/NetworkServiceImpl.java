@@ -27,7 +27,7 @@ public class NetworkServiceImpl implements IRocketNetworkService {
                 ILuaValue[] passArgs = args[off + 1].isTable() ? unpackTable(args[off + 1].asTable()) : new ILuaValue[0];
                 this.FireServer(name, passArgs);
             }
-            return null;
+            return engine.nilValue();
         });
         table.rawset("FireClient", args -> {
             int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
@@ -37,7 +37,7 @@ public class NetworkServiceImpl implements IRocketNetworkService {
                 ILuaValue[] passArgs = args[off + 2].isTable() ? unpackTable(args[off + 2].asTable()) : new ILuaValue[0];
                 this.FireClient(name, uuid, passArgs);
             }
-            return null;
+            return engine.nilValue();
         });
         table.rawset("FireAllClients", args -> {
             int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
@@ -46,7 +46,7 @@ public class NetworkServiceImpl implements IRocketNetworkService {
                 ILuaValue[] passArgs = args[off + 1].isTable() ? unpackTable(args[off + 1].asTable()) : new ILuaValue[0];
                 this.FireAllClients(name, passArgs);
             }
-            return null;
+            return engine.nilValue();
         });
         return table;
     }
@@ -119,19 +119,19 @@ public class NetworkServiceImpl implements IRocketNetworkService {
     @Override
     public void FireClient(String channelName, String playerUuid, ILuaValue[] args) {
         String json = serializeArgs(args);
-        Platform.get().sendPayloadPacket(playerUuid, channelName, json);
+        Platform.getNetwork().sendPayloadPacket(playerUuid, channelName, json);
     }
 
     @Override
     public void FireAllClients(String channelName, ILuaValue[] args) {
         String json = serializeArgs(args);
-        Platform.get().broadcastPayloadPacket(channelName, json);
+        Platform.getNetwork().broadcastPayloadPacket(channelName, json);
     }
 
     @Override
     public void FireServer(String channelName, ILuaValue[] args) {
         String json = serializeArgs(args);
-        Platform.get().sendPayloadPacketToServer(channelName, json);
+        Platform.getNetwork().sendPayloadPacketToServer(channelName, json);
     }
 
     @Override
@@ -151,15 +151,15 @@ public class NetworkServiceImpl implements IRocketNetworkService {
                         ILuaValue player = engine.nilValue();
                         com.luatweaker.api.entity.IPlayer p = null;
                         if (Platform.isInitialized()) {
-                            p = Platform.get().getPlayer(playerUuid);
-                            if (p == null) {
-                                java.util.List<com.luatweaker.api.entity.IPlayer> all = Platform.get().getAllPlayers();
-                                if (!all.isEmpty()) {
-                                    p = all.get(0);
-                                }
-                            }
+                            p = Platform.getEntity().getPlayer(playerUuid);
                             if (p != null) {
                                 player = com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p);
+                            } else {
+                                com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                                    com.luatweaker.api.log.LogStage.SYSTEM,
+                                    "[Network Error] OnClientFired aborted: Player UUID '" + playerUuid + "' not found on server."
+                                );
+                                return;
                             }
                         }
 

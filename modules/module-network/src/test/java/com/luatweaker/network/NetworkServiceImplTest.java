@@ -1,6 +1,6 @@
 package com.luatweaker.network;
 
-import com.luatweaker.api.pal.IPlatformHelper;
+import com.luatweaker.api.pal.IPlatformNetwork;
 import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
@@ -14,7 +14,16 @@ public class NetworkServiceImplTest {
 
     @BeforeAll
     static void setup() {
-        Platform.set(new IPlatformHelper() {});
+        Platform.setNetwork(new IPlatformNetwork() {
+            @Override
+            public void sendPayloadPacket(String playerUuid, String channelName, String dataJson) {}
+
+            @Override
+            public void broadcastPayloadPacket(String channelName, String dataJson) {}
+
+            @Override
+            public void sendPayloadPacketToServer(String channelName, String dataJson) {}
+        });
     }
 
     @Test

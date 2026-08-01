@@ -348,6 +348,7 @@ public class CobaltLuaEngine implements ILuaEngine {
                     if (e.getClass().getName().contains("UnwindThrowable")) {
                         return ValueFactory.valueOf(true);
                     }
+                    e.printStackTrace();
                     String msg = e.getMessage() != null && !e.getMessage().isBlank() ? e.getMessage() : e.toString();
                     AsyncFileLogger.get().error("REQUIRE", "Failed to load Lua module file '" + cand + "': " + msg, state);
                     return Constants.NIL;

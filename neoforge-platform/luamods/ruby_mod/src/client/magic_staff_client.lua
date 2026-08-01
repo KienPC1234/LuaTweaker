@@ -8,13 +8,13 @@ if Client and Client.OnKeyBindPressed then
     Client.OnKeyBindPressed:Connect(function(keyBindId, payload)
         print("[Client] KeyMapping Activated on Client! ID: " .. tostring(keyBindId) .. ", Payload: " .. tostring(payload))
         if keyBindId == "magic_staff_cast" or payload == "StaffCastSkill" then
-            local castEvent = Network.GetOrCreateRemoteEvent("StaffCastSkill")
+            local castEvent = Network:GetOrCreateRemoteEvent("StaffCastSkill")
             if castEvent then
                 print("[Client] Firing StaffCastSkill RemoteEvent from Client...")
                 castEvent:FireServer()
             end
         elseif keyBindId == "magic_staff_switch" or keyBindId == "staff_swap_skill" or payload == "StaffSwapSkill" then
-            local swapEvent = Network.GetOrCreateRemoteEvent("StaffSwapSkill")
+            local swapEvent = Network:GetOrCreateRemoteEvent("StaffSwapSkill")
             if swapEvent then
                 print("[Client] Firing StaffSwapSkill RemoteEvent from Client...")
                 swapEvent:FireServer()
@@ -24,7 +24,7 @@ if Client and Client.OnKeyBindPressed then
 end
 
 if Network then
-    local skillEffectEvent = Network.GetOrCreateRemoteEvent("StaffSkillEffectClient")
+    local skillEffectEvent = Network:GetOrCreateRemoteEvent("StaffSkillEffectClient")
     if skillEffectEvent and skillEffectEvent.OnClientEvent then
         skillEffectEvent.OnClientEvent:Connect(function(effectType)
             print("[Client] Magic Staff skill effect received from server: " .. tostring(effectType))

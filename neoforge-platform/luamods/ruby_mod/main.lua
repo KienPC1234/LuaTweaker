@@ -18,5 +18,6 @@ require(".src.client.magic_staff_client")
 -- 5. VÒNG ĐỜI MOD (OnEnable)
 function mod.OnEnable()
     local cfg = mod:GetConfig()
-    print("[RubyMod] Ruby Gear Set, Boss AI & Magic Staff loaded successfully! Debug: " .. tostring(cfg and cfg.debug_mode))
+    print("[RubyMod] Ruby Gear Set, Boss AI & Magic Staff loaded successfully! Debug: " ..
+    tostring(cfg and cfg.debug_mode))
 end

@@ -47,9 +47,11 @@ public class EventServiceImpl implements IEventService {
                     try {
                         entry.engine().callFunction(entry.function(), payload);
                     } catch (Exception e) {
+                        java.io.StringWriter sw = new java.io.StringWriter();
+                        e.printStackTrace(new java.io.PrintWriter(sw));
                         com.luatweaker.api.log.LuaTweakerLog.get().error(
-                            com.luatweaker.api.log.LogStage.SCRIPT_LOAD,
-                            "Error invoking event listener for " + eventName + ": " + e.getMessage()
+                            com.luatweaker.api.log.LogStage.RUNTIME_ERROR,
+                            "Error invoking event listener for " + eventName + ": " + e.getMessage() + "\n" + sw.toString()
                         );
                     }
                 }

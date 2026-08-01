@@ -73,10 +73,12 @@ local function updateActionBar(player, state, customMessage)
 end
 
 -- DYNAMIC MANA REGENERATION & CONTINUOUS ACTION BAR HUD LOOP (+10 Mana per second)
-Task:spawn(function()
+print("[DEBUG] magic_staff.lua: Before Task.spawn")
+Task.spawn(function()
+    print("[MagicStaffHUD] Successfully started Task.spawn coroutine!")
     print("[MagicStaffHUD] Starting Mana Regeneration & HUD loop coroutine...")
     while true do
-        Task:wait(0.4)
+        Task.wait(0.4)
         local ok, err = pcall(function()
             local Players = require("LuaTweaker.Players")
             local online = Players and Players.GetPlayers and Players:GetPlayers()
@@ -98,12 +100,13 @@ Task:spawn(function()
             end
         end)
         if not ok and err then
-            print("[ERROR][MagicStaffHUD] HUD loop error: " .. tostring(err))
+            print("[ERROR] [MagicStaffHUD] Loop error: " .. tostring(err))
         end
     end
 end)
+print("[DEBUG] magic_staff.lua: After Task.spawn")
 
--- GLOBAL & LOCAL EXPOSED STAFF ACTION HANDLER
+-- HANDLE STAFF USE ACTION (Left-Click or Right-Click depending on binding)
 local function handleStaffUse(player, itemStack)
     print("[Server] [MagicStaffSkills] Executing HandleMagicStaffUse...")
     local state = getOrCreatePlayerState(player)
@@ -185,7 +188,9 @@ _G.HandleMagicStaffUse = handleStaffUse
 
 -- LISTEN TO MAGIC STAFF RIGHT-CLICK ACTION FROM STARTUP SCRIPT
 local Events = require("LuaTweaker.Events")
+print("[DEBUG] magic_staff.lua: Required Events")
 if Events then
+    print("[DEBUG] magic_staff.lua: Calling Events:Listen...")
     Events:Listen("MagicStaffUsed", function(payload)
         print("[Server] [MagicStaffSkills] MagicStaffUsed event received from client right-click!")
         if payload and payload.player then
@@ -195,18 +200,27 @@ if Events then
 end
 
 -- REMOTE EVENTS FOR KEYBIND CAST ('G') AND SKILL SWAP ('R')
+print("[DEBUG] magic_staff.lua: Checking Network...")
 if Network then
-    local castSkillEvent = Network.GetOrCreateRemoteEvent("StaffCastSkill")
-    if castSkillEvent and castSkillEvent.OnServerEvent then
-        castSkillEvent.OnServerEvent:Connect(function(player)
-            print("[MagicStaffSkills] StaffCastSkill RemoteEvent received for player: " .. tostring(player))
-            if player then
+    print("[DEBUG] magic_staff.lua: Registering StaffCastSkill...")
+    print("[DEBUG] magic_staff.lua: Registering StaffCastSkill...")
+    local castSkillEvent = Network:GetOrCreateRemoteEvent("StaffCastSkill")
+    print("[DEBUG] magic_staff.lua: Checked castSkillEvent: ", tostring(castSkillEvent))
+    if castSkillEvent then
+        print("[DEBUG] magic_staff.lua: Checking OnServerEvent: ", tostring(castSkillEvent.OnServerEvent))
+        if castSkillEvent.OnServerEvent then
+            print("[DEBUG] magic_staff.lua: Calling Connect...")
+            castSkillEvent.OnServerEvent:Connect(function(player)
+                print("[Server] [MagicStaffSkills] Received CAST SKILL input from Client (" .. tostring(player:getName()) .. ")")
+                local state = getOrCreatePlayerState(player)
                 handleStaffUse(player, nil)
-            end
-        end)
+            end)
+            print("[DEBUG] magic_staff.lua: Connect finished!")
+        end
     end
 
-    local swapSkillEvent = Network.GetOrCreateRemoteEvent("StaffSwapSkill")
+    print("[DEBUG] magic_staff.lua: Registering StaffSwapSkill...")
+    local swapSkillEvent = Network:GetOrCreateRemoteEvent("StaffSwapSkill")
     if swapSkillEvent and swapSkillEvent.OnServerEvent then
         swapSkillEvent.OnServerEvent:Connect(function(player)
             print("[MagicStaffSkills] StaffSwapSkill RemoteEvent received for player: " .. tostring(player))

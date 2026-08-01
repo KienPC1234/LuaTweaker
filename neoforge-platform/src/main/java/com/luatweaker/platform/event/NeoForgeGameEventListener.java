@@ -181,6 +181,17 @@ public class NeoForgeGameEventListener {
                     );
                 }
             }
+            ILuaValue javaTickFn = task.asTable().rawget("_java_tick");
+            if (javaTickFn != null && !javaTickFn.isNil() && javaTickFn.isFunction()) {
+                try {
+                    engine.callFunction(javaTickFn);
+                } catch (Exception e) {
+                    com.luatweaker.api.log.LuaTweakerLog.get().error(
+                        com.luatweaker.api.log.LogStage.SYSTEM,
+                        "[Task Tick Error] Exception running task._java_tick: " + e.getMessage()
+                    );
+                }
+            }
         }
     }
 }

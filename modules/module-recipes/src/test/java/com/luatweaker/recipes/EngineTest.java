@@ -105,7 +105,7 @@ public class EngineTest {
         mockService = new MockRecipeService();
         LuaServiceRegistry.clear();
         
-        com.luatweaker.api.pal.Platform.set(new com.luatweaker.api.pal.IPlatformHelper() {
+        com.luatweaker.api.pal.Platform.setContent(new com.luatweaker.api.pal.IPlatformContent() {
             @Override
             public com.luatweaker.api.objects.IItem createItem(String itemId, int count) {
                 return new com.luatweaker.api.objects.IItem() {
@@ -119,13 +119,36 @@ public class EngineTest {
                     public Object getRawItemStack() { return null; }
                 };
             }
-
             @Override
             public boolean itemExists(String itemId) { return true; }
             @Override
+            public boolean blockExists(String blockId) { return true; }
+            @Override
+            public boolean fluidExists(String fluidId) { return true; }
+            @Override
             public boolean tagExists(String tagId) { return true; }
             @Override
-            public List<com.luatweaker.api.objects.IRecipe> getAllRecipes() { return List.of(); }
+            public boolean isModLoaded(String modId) { return true; }
+            
+            @Override
+            public boolean isClient() {
+                return false;
+            }
+
+            @Override
+            public boolean isDedicatedServer() {
+                return true;
+            }
+
+            @Override
+            public String getPlatformName() {
+                return "Mock";
+            }
+            
+            @Override
+            public java.util.Set<String> getSupportedMobParents() { return java.util.Set.of(); }
+            @Override
+            public java.util.List<com.luatweaker.api.objects.IRecipe> getAllRecipes() { return java.util.Collections.emptyList(); }
         });
     }
 

@@ -17,7 +17,7 @@ public class EventLuaBinding {
             String eventName = args[off].asString();
             ILuaValue callback = args[off + 1];
             service.listen(eventName, callback);
-            return null;
+            return engine.nilValue();
         });
         table.rawset("Listen", table.rawget("listen"));
         table.rawset("Connect", table.rawget("listen"));
@@ -31,7 +31,7 @@ public class EventLuaBinding {
             String eventName = args[off].asString();
             ILuaTable payload = args[off + 1].asTable();
             service.post(eventName, payload);
-            return null;
+            return engine.nilValue();
         });
         table.rawset("Post", table.rawget("post"));
         table.rawset("Fire", table.rawget("post"));

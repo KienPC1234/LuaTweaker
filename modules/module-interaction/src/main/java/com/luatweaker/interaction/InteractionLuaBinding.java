@@ -71,7 +71,7 @@ public class InteractionLuaBinding {
             double x = args[off + 1].asDouble();
             double y = args[off + 2].asDouble();
             double z = args[off + 3].asDouble();
-            Object spawned = com.luatweaker.api.pal.Platform.get().spawnEntity(type, x, y, z);
+            Object spawned = com.luatweaker.api.pal.Platform.getEntity().spawnEntity(type, x, y, z);
             return spawned != null ? getWrappedEntity(engine, spawned) : engine.nilValue();
         });
         entityServiceTable.rawset("GetEntity", workspaceTable.rawget("GetEntity"));
