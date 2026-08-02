@@ -264,6 +264,18 @@ local RubyFluid = Content.NewFluid("ruby_fluid")
 -- 6. Magic Ranged Staff
 Content.registerProjectile("luatweaker:ruby_orb", { damage = 25, explosionPower = 2, trailParticle = "minecraft:flame" })
 
+-- 6b. Ruby Overseer Boss Entity (spawned by the Magic Staff 'Summon Ruby Guardian' skill)
+Content.createEntity("ruby_boss", function(entity)
+    entity:parentMob("zombie")
+    entity:maxHealth(300)
+    entity:dimensions(0.9, 2.5)
+    entity:movementSpeed(0.35)
+    entity:attackDamage(8.0)
+    entity:followRange(32)
+    entity:armor(6.0)
+    entity:creativeTab("ruby_tab")
+end)
+
 local MagicStaff = Content.NewItem("magic_staff")
     :Type("ranged")
     :DisplayName("§bStaff of Arcane Elements")

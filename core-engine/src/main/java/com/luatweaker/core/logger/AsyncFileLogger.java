@@ -41,7 +41,7 @@ public class AsyncFileLogger implements ILuaTweakerLog {
 
     private static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm:ss");
     private static final SimpleDateFormat HEADER_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-    private static final String SEPARATOR = "─".repeat(72);
+    private static final String SEPARATOR = "=".repeat(72);
     private static final int MAX_BATCH_SIZE = 100;
 
     private final File logFile;
@@ -51,7 +51,7 @@ public class AsyncFileLogger implements ILuaTweakerLog {
         ensureParentDir();
         try (PrintWriter writer = new PrintWriter(new FileWriter(logFile, false))) {
             writer.println(SEPARATOR);
-            writer.println("  LuaTweaker Log — " + HEADER_DATE_FORMAT.format(new Date()));
+            writer.println("  LuaTweaker Log - " + HEADER_DATE_FORMAT.format(new Date()));
             writer.println(SEPARATOR);
         } catch (Exception ignored) {}
 
@@ -78,7 +78,7 @@ public class AsyncFileLogger implements ILuaTweakerLog {
         File modLogFile = new File(modsLogDir, modId + ".log");
         try (PrintWriter writer = new PrintWriter(new FileWriter(modLogFile, false))) {
             writer.println("========================================================================");
-            writer.println("  LuaMod Dedicated Log: " + modId + " — " + HEADER_DATE_FORMAT.format(new Date()));
+            writer.println("  LuaMod Dedicated Log: " + modId + " - " + HEADER_DATE_FORMAT.format(new Date()));
             writer.println("========================================================================");
         } catch (Exception ignored) {}
     }
@@ -137,14 +137,14 @@ public class AsyncFileLogger implements ILuaTweakerLog {
     public void recipe(LogStage stage, String recipeId, String outputItem, String details) {
         StringBuilder sb = new StringBuilder();
         if (recipeId != null)   sb.append("[").append(recipeId).append("] ");
-        if (outputItem != null) sb.append("→ ").append(outputItem).append(" ");
+        if (outputItem != null) sb.append("-> ").append(outputItem).append(" ");
         if (details != null)    sb.append("| ").append(details);
         enqueue(stage, "INFO ", null, -1, sb.toString().trim());
     }
 
     @Override
     public void section(String title) {
-        String line = "┌─ " + title + " " + "─".repeat(Math.max(0, 56 - title.length()));
+        String line = "=== " + title + " " + "=".repeat(Math.max(0, 56 - title.length()));
         queue.offer(line);
         System.out.println("[LuaTweaker] " + line);
     }

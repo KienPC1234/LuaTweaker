@@ -154,7 +154,7 @@ public class LuaModManager {
             String modId = dm.manifest().id();
             if (Boolean.FALSE.equals(modsState.get(modId))) {
                 LuaTweakerLog.get().info(LogStage.SYSTEM,
-                        "[LuaModManager] Mod '" + modId + "' is DISABLED in mods_manager.json — Skipping execution.");
+                        "[LuaModManager] Mod '" + modId + "' is DISABLED in mods_manager.json - Skipping execution.");
                 continue;
             }
 

@@ -436,7 +436,7 @@ public class InterceptionHelper {
         PENDING_ANVIL.add(data);
         com.luatweaker.api.log.LuaTweakerLog.get().info(
             com.luatweaker.api.log.LogStage.RECIPE_APPLY,
-            "[Anvil] Scheduled anvil recipe: " + data.recipeId() + " → " + data.output().itemId()
+            "[Anvil] Scheduled anvil recipe: " + data.recipeId() + " -> " + data.output().itemId()
         );
     }
 
@@ -444,7 +444,7 @@ public class InterceptionHelper {
         PENDING_BREWING.add(data);
         com.luatweaker.api.log.LuaTweakerLog.get().info(
             com.luatweaker.api.log.LogStage.RECIPE_APPLY,
-            "[Brewing] Scheduled brewing recipe: " + data.recipeId() + " (" + data.inputPotion() + " → " + data.outputPotion() + ")"
+            "[Brewing] Scheduled brewing recipe: " + data.recipeId() + " (" + data.inputPotion() + " -> " + data.outputPotion() + ")"
         );
     }
 
@@ -566,7 +566,7 @@ public class InterceptionHelper {
 
                 com.luatweaker.api.log.LuaTweakerLog.get().info(
                     com.luatweaker.api.log.LogStage.RECIPE_APPLY,
-                    "[Anvil] Applied recipe '" + data.recipeId() + "' → " +
+                    "[Anvil] Applied recipe '" + data.recipeId() + "' -> " +
                         data.output().count() + "x " + data.output().itemId()
                 );
                 return; // First matching recipe wins

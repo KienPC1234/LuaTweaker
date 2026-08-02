@@ -11,6 +11,7 @@ import org.squiddev.cobalt.*;
 import org.squiddev.cobalt.compiler.CompileException;
 import org.squiddev.cobalt.compiler.LoadState;
 import org.squiddev.cobalt.function.LuaClosure;
+import org.squiddev.cobalt.function.LuaFunction;
 import org.squiddev.cobalt.function.VarArgFunction;
 
 import com.luatweaker.api.wrapper.IngredientWrapper;
@@ -228,7 +229,63 @@ public class CobaltLuaEngine implements ILuaEngine {
         // 7. Bootstrap Roblox task and Signal libraries from Resource File
         loadBootstrapResource("/lua/luatweaker_bootstrap.lua");
 
+        // 7b. Deferred task runner: executes a Lua function inside a proper Cobalt
+        // coroutine loop so yields (task.wait) and resumes work without leaking
+        // UnwindThrowable control-flow exceptions into Java callers.
+        LuaValue taskVal = globals.rawget("task");
+        if (taskVal instanceof LuaTable taskTbl) {
+            taskTbl.rawset("_run_deferred", new VarArgFunction() {
+                @Override
+                public Varargs invoke(LuaState state, Varargs args) throws LuaError {
+                    LuaValue fnVal = args.arg(1);
+                    if (!(fnVal instanceof LuaFunction fn)) {
+                        return ValueFactory.varargsOf(Constants.NIL, Constants.NIL);
+                    }
+                    List<LuaValue> callArgs = new ArrayList<>();
+                    LuaValue argsTblVal = args.arg(2);
+                    if (argsTblVal instanceof LuaTable argsTbl) {
+                        int len = argsTbl.length();
+                        for (int i = 1; i <= len; i++) {
+                            callArgs.add(argsTbl.rawget(i));
+                        }
+                    }
+                    LuaThread thread = new LuaThread(state, fn);
+                    Varargs result;
+                    try {
+                        result = LuaThread.run(thread, ValueFactory.varargsOf(callArgs.toArray(new LuaValue[0])));
+                    } finally {
+                        restoreCurrentThread(state);
+                    }
+                    return ValueFactory.varargsOf(thread, result == null ? Constants.NIL : result);
+                }
+            });
+        }
+
         setupNativeRequire(globals);
+    }
+
+    // Cobalt leaves LuaState.currentThread pointing at the last executed coroutine
+    // after LuaThread.run returns. The field is package-private, so restore it via
+    // reflection to keep subsequent interpreter calls attached to the main thread.
+    private static final java.lang.reflect.Field CURRENT_THREAD_FIELD;
+
+    static {
+        java.lang.reflect.Field field;
+        try {
+            field = LuaState.class.getDeclaredField("currentThread");
+            field.setAccessible(true);
+        } catch (ReflectiveOperationException e) {
+            throw new ExceptionInInitializerError("Cannot access LuaState.currentThread: " + e);
+        }
+        CURRENT_THREAD_FIELD = field;
+    }
+
+    private static void restoreCurrentThread(LuaState state) {
+        try {
+            CURRENT_THREAD_FIELD.set(state, state.getMainThread());
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to restore LuaState.currentThread", e);
+        }
     }
 
     private void loadBootstrapResource(String resourcePath) {
@@ -440,6 +497,9 @@ public class CobaltLuaEngine implements ILuaEngine {
                 yield (val != null && !val.isNil()) ? val : globals.rawget("ClientService");
             }
             case "LuaTweaker.ClientEffects", "ClientEffects" -> globals.rawget("ClientEffects");
+            case "LuaTweaker.GuiService", "GuiService" -> globals.rawget("GuiService");
+            case "LuaTweaker.RunService", "RunService" -> globals.rawget("RunService");
+            case "LuaTweaker.KeyBindService", "KeyBindService" -> globals.rawget("KeyBindService");
             case "LuaTweaker.Signal", "Signal" -> globals.rawget("Signal");
             case "LuaTweaker.Utils", "Utils" -> globals.rawget("Utils");
             case "LuaTweaker.TweenService", "TweenService" -> globals.rawget("TweenService");
@@ -451,7 +511,7 @@ public class CobaltLuaEngine implements ILuaEngine {
     }
 
     @Override
-    public void executeString(String code, String name) {
+    public synchronized void executeString(String code, String name) {
         activeModuleStack.get().push(name);
         try (InputStream stream = new java.io.ByteArrayInputStream(code.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
             LuaClosure closure = LoadState.load(state, stream, name, state.globals());
@@ -644,7 +704,7 @@ public class CobaltLuaEngine implements ILuaEngine {
     }
 
     @Override
-    public ILuaValue callFunction(ILuaValue function, ILuaValue... args) {
+    public synchronized ILuaValue callFunction(ILuaValue function, ILuaValue... args) {
         if (function != null && !function.isNil()) {
             try {
                 LuaValue cobaltFunc = toCobaltValue(function);
@@ -654,8 +714,12 @@ public class CobaltLuaEngine implements ILuaEngine {
                 }
                 Varargs result = org.squiddev.cobalt.function.Dispatch.invoke(state, cobaltFunc, ValueFactory.varargsOf(cobaltArgs));
                 return new CobaltLuaValue(result.arg(1));
+            } catch (org.squiddev.cobalt.UnwindThrowable e) {
+                // Control-flow exception used internally by the Cobalt VM for coroutine yields
+                // and thread resumptions. It is NOT a script error and carries no message.
             } catch (Throwable e) {
-                AsyncFileLogger.get().error("FUNCTION_CALL", "Lua error executing callback: " + e.getMessage(), state);
+                String msg = e.getMessage() != null && !e.getMessage().isBlank() ? e.getMessage() : e.toString();
+                AsyncFileLogger.get().error("FUNCTION_CALL", "Lua error executing callback: " + msg, state);
             }
         }
         return nilValue();
@@ -689,7 +753,7 @@ public class CobaltLuaEngine implements ILuaEngine {
     }
 
     @Override
-    public void executeScript(File file, String context) {
+    public synchronized void executeScript(File file, String context) {
         if (!file.exists()) {
             AsyncFileLogger.get().warn(context, "Script file does not exist: " + file.getAbsolutePath(), state);
             return;

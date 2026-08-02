@@ -28,7 +28,17 @@ public class NeoForgeClientEventListener {
                 ILuaValue onRender = guiService.rawget("OnRenderHUD");
                 if (onRender != null && onRender.isTable()) {
                     ILuaTable signal = onRender.asTable();
-                    ILuaValue fireFn = signal.rawget("Fire");
+                    // FireSync invokes the HUD listeners synchronously on the render
+                    // thread, while the GuiGraphics context is still active. Using the
+                    // async Signal:Fire would defer drawing to the next server tick,
+                    // where no graphics context exists and all draw calls no-op.
+                    ILuaValue fireFn = signal.rawget("FireSync");
+                    if (fireFn == null || !fireFn.isFunction()) {
+                        ILuaValue signalClass = globals.rawget("Signal");
+                        if (signalClass != null && signalClass.isTable()) {
+                            fireFn = signalClass.asTable().rawget("FireSync");
+                        }
+                    }
                     if (fireFn != null && fireFn.isFunction()) {
                         engine.callFunction(fireFn, signal, engine.wrapNumber(event.getPartialTick().getGameTimeDeltaTicks()));
                     }

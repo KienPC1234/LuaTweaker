@@ -68,11 +68,13 @@ public class AIGoalServiceImpl implements IAIGoalService {
             IEntity target = entity.getTarget();
             if (castCallback != null) {
                 if (castCallback instanceof com.luatweaker.api.vm.ILuaValue luaVal && luaVal.isFunction()) {
-                    engine.callFunction(luaVal, target != null ? engine.wrapUserdata(target) : engine.nilValue());
+                    engine.callFunction(luaVal,
+                        target != null ? EntitiesLuaBinding.createEntityLuaTable(engine, target) : engine.nilValue());
                 } else if (castCallback instanceof ILuaTable tbl) {
                     com.luatweaker.api.vm.ILuaValue fn = tbl.rawget("fn");
                     if (fn != null && fn.isFunction()) {
-                        engine.callFunction(fn, target != null ? engine.wrapUserdata(target) : engine.nilValue());
+                        engine.callFunction(fn,
+                            target != null ? EntitiesLuaBinding.createEntityLuaTable(engine, target) : engine.nilValue());
                     }
                 }
             }

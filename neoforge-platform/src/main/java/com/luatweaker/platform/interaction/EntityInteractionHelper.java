@@ -73,8 +73,23 @@ public final class EntityInteractionHelper {
                         com.luatweaker.api.log.LogStage.SYSTEM,
                         "[Projectile] Fired projectile '" + projectileType + "' at pos (" + String.format("%.2f, %.2f, %.2f", spawnPos.x, spawnPos.y, spawnPos.z) + ") with speed " + speed
                     );
+                } else {
+                    com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                        com.luatweaker.api.log.LogStage.SYSTEM,
+                        "[Projectile] createProjectile returned null for type '" + projectileType + "'"
+                    );
                 }
+            } else {
+                com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "[Projectile] Cannot fire '" + projectileType + "': shooter's level is not a ServerLevel (" + (level != null ? level.getClass().getSimpleName() : "null") + ")"
+                );
             }
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                com.luatweaker.api.log.LogStage.SYSTEM,
+                "[Projectile] Cannot fire '" + projectileType + "': shooter raw entity is not a LivingEntity (" + (shooter.getRawEntity() != null ? shooter.getRawEntity().getClass().getSimpleName() : "null") + ")"
+            );
         }
     }
 
@@ -94,8 +109,27 @@ public final class EntityInteractionHelper {
                     double dz = targetLiving.getZ() - spawnPos.z;
                     projectile.shoot(dx, dy, dz, (float) speed, 1.0F);
                     serverLevel.addFreshEntity(projectile);
+                    com.luatweaker.api.log.LuaTweakerLog.get().info(
+                        com.luatweaker.api.log.LogStage.SYSTEM,
+                        "[Projectile] Fired projectile '" + projectileType + "' at target '" + targetLiving.getDisplayName().getString() + "' with speed " + speed
+                    );
+                } else {
+                    com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                        com.luatweaker.api.log.LogStage.SYSTEM,
+                        "[Projectile] createProjectile returned null for type '" + projectileType + "'"
+                    );
                 }
+            } else {
+                com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "[Projectile] Cannot fire '" + projectileType + "': shooter's level is not a ServerLevel"
+                );
             }
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                com.luatweaker.api.log.LogStage.SYSTEM,
+                "[Projectile] Cannot fire '" + projectileType + "': shooter or target is not a LivingEntity"
+            );
         }
     }
 

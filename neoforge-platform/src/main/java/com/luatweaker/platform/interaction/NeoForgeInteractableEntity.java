@@ -1,5 +1,6 @@
 package com.luatweaker.platform.interaction;
 
+import com.luatweaker.api.entity.IEntity;
 import com.luatweaker.api.interaction.IInteractableEntity;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
@@ -9,7 +10,7 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 
-public class NeoForgeInteractableEntity implements IInteractableEntity {
+public class NeoForgeInteractableEntity implements IInteractableEntity, IEntity {
     private final Entity entity;
 
     public NeoForgeInteractableEntity(@NotNull Entity entity) {
@@ -336,5 +337,42 @@ public class NeoForgeInteractableEntity implements IInteractableEntity {
     @Override
     public void Destroy() {
         entity.discard();
+    }
+
+    @Override
+    public void remove() {
+        entity.discard();
+    }
+
+    @Override
+    public Object getRawEntity() {
+        return entity;
+    }
+
+    @Override
+    public void setTarget(IEntity target) {
+        if (entity instanceof Mob mob) {
+            mob.setTarget(target != null && target.getRawEntity() instanceof LivingEntity living ? living : null);
+        }
+    }
+
+    @Override
+    public IEntity getTarget() {
+        if (entity instanceof Mob mob && mob.getTarget() != null) {
+            return new NeoForgeInteractableEntity(mob.getTarget());
+        }
+        return null;
+    }
+
+    @Override
+    public void damage(float amount) {
+        if (entity instanceof LivingEntity living) {
+            living.hurt(living.damageSources().generic(), amount);
+        }
+    }
+
+    @Override
+    public boolean isLiving() {
+        return entity instanceof LivingEntity;
     }
 }

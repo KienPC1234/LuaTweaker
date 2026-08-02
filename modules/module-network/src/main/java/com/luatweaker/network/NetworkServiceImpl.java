@@ -70,12 +70,12 @@ public class NetworkServiceImpl implements IRocketNetworkService {
             }
             ILuaValue newFn = remoteEventClass.asTable().rawget("new");
             ILuaValue res = engine.callFunction(newFn, remoteEventClass, engine.wrapString(name), createServiceTable());
+            com.luatweaker.api.log.LuaTweakerLog.get().info(
+                com.luatweaker.api.log.LogStage.SYSTEM,
+                "[Network Registry] [NetService@" + System.identityHashCode(this) + " / Engine@" + System.identityHashCode(engine) + "] Registered RemoteEvent '" + channelName + "'. All channels in this instance: " + remoteEvents.keySet()
+            );
             return res.asTable();
         });
-        com.luatweaker.api.log.LuaTweakerLog.get().info(
-            com.luatweaker.api.log.LogStage.SYSTEM,
-            "[Network Registry] [NetService@" + System.identityHashCode(this) + " / Engine@" + System.identityHashCode(engine) + "] Registered RemoteEvent '" + channelName + "'. All channels in this instance: " + remoteEvents.keySet()
-        );
         return resTable;
     }
 

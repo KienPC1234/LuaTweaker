@@ -87,29 +87,30 @@ function task.wait(...)
     return coroutine.yield()
 end
 
+-- Run a deferred function inside a Cobalt coroutine loop (task._run_deferred is a
+-- Java binding). Catches Lua errors per task so one crashing task cannot abort the
+-- whole tick or leak VM control-flow exceptions into Java.
+local function runDeferred(fn, args)
+    if type(fn) ~= 'function' then
+        return
+    end
+    local ok, err = pcall(task._run_deferred, fn, args)
+    if not ok and err then
+        print('[ERROR][task] Deferred task error: ' .. tostring(err))
+    end
+end
+
 function task._tick()
     local def = deferred
     deferred = {}
     for _, item in ipairs(def) do
-        if type(item.fn) == 'function' then
-            local thread = coroutine.create(function(...) return item.fn(...) end)
-            local ok, err = coroutine.resume(thread, table.unpack(item.args or {}))
-            if not ok and err and not tostring(err):find("UnwindThrowable") then
-                print('[ERROR][task._tick] Deferred task error: ' .. tostring(err))
-            end
-        end
+        runDeferred(item.fn, item.args)
     end
     local now = getTimeClock()
     local remaining = {}
     for _, item in ipairs(delays) do
         if now >= item.time then
-            if type(item.fn) == 'function' then
-                local thread = coroutine.create(function(...) return item.fn(...) end)
-                local ok, err = coroutine.resume(thread, table.unpack(item.args or {}))
-                if not ok and err and not tostring(err):find("UnwindThrowable") then
-                    print('[ERROR][task._tick] Delay task error: ' .. tostring(err))
-                end
-            end
+            runDeferred(item.fn, item.args)
         else
             table.insert(remaining, item)
         end
@@ -165,15 +166,30 @@ end
 function Signal:Fire(...)
     self._listeners = self._listeners or {}
     local args = {...}
-    print("[Signal] Firing signal with listener count: " .. tostring(#self._listeners))
     for _, l in ipairs(self._listeners) do
         if l.connected and type(l.fn) == 'function' then
-            print("[Signal] Invoking listener callback...")
             task.spawn(l.fn, table.unpack(args))
         end
     end
 end
 Signal.fire = Signal.Fire
+
+-- Synchronous variant: invokes listeners immediately on the calling thread.
+-- Required for render-time callbacks (e.g. GuiService.OnRenderHUD) that must
+-- draw during the render event while the GuiGraphics context is available.
+function Signal:FireSync(...)
+    self._listeners = self._listeners or {}
+    local args = {...}
+    for _, l in ipairs(self._listeners) do
+        if l.connected and type(l.fn) == 'function' then
+            local ok, err = pcall(l.fn, table.unpack(args))
+            if not ok and err then
+                print('[ERROR][Signal] Listener error: ' .. tostring(err))
+            end
+        end
+    end
+end
+Signal.fireSync = Signal.FireSync
 
 function Signal:Wait()
     local runningThread = coroutine.running()

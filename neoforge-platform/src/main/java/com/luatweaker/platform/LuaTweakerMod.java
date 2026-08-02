@@ -161,6 +161,8 @@ public class LuaTweakerMod {
         com.luatweaker.client.ClientServiceImpl clientService = new com.luatweaker.client.ClientServiceImpl();
         com.luatweaker.client.ClientLuaBinding.registerBindings(engine, clientService);
 
+        com.luatweaker.math.MathLuaBinding.registerBindings(engine);
+
         com.luatweaker.tasks.TaskServiceImpl taskService = new com.luatweaker.tasks.TaskServiceImpl();
         com.luatweaker.tasks.TaskLuaBinding.registerBindings(engine, taskService);
 

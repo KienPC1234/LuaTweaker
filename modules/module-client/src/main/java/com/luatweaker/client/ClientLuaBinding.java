@@ -20,7 +20,12 @@ public class ClientLuaBinding {
 
         boolean isDedicatedServer = com.luatweaker.api.pal.Platform.isInitialized() && com.luatweaker.api.pal.Platform.getContent().isDedicatedServer();
 
-        ILuaTable clientTable = engine.createTable();
+        // Merge into the bootstrap-provided Client table (which defines OnKeyBindPressed)
+        // instead of replacing it, so keybind Lua listeners keep working.
+        ILuaValue existingClient = globals.rawget("Client");
+        ILuaTable clientTable = (existingClient != null && existingClient.isTable())
+                ? existingClient.asTable()
+                : engine.createTable();
         clientTable.rawset("registerKeyBinding", args -> {
             int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
             if (args.length - off >= 5) {
@@ -53,6 +58,7 @@ public class ClientLuaBinding {
         });
 
         globals.rawset("Client", clientTable);
+        engine.registerService("KeyBindService", keyBindService);
 
         ILuaValue uisValue = globals.rawget("UserInputService");
         if (uisValue != null && uisValue.isTable()) {
@@ -199,6 +205,78 @@ public class ClientLuaBinding {
             return engine.nilValue();
         });
         guiServiceTable.rawset("drawText", guiServiceTable.rawget("DrawText"));
+
+        guiServiceTable.rawset("DrawTextCentered", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (guiService != null && args.length - off >= 4) {
+                String text = args[off].asString();
+                int centerX = args[off + 1].asInt();
+                int y = args[off + 2].asInt();
+                int color = (int) (long) args[off + 3].asDouble();
+                boolean dropShadow = args.length - off >= 5 ? args[off + 4].asBoolean() : true;
+                guiService.drawTextCentered(text, centerX, y, color, dropShadow);
+            }
+            return engine.nilValue();
+        });
+        guiServiceTable.rawset("drawTextCentered", guiServiceTable.rawget("DrawTextCentered"));
+
+        guiServiceTable.rawset("DrawOutline", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (guiService != null && args.length - off >= 5) {
+                int x = args[off].asInt();
+                int y = args[off + 1].asInt();
+                int width = args[off + 2].asInt();
+                int height = args[off + 3].asInt();
+                int color = (int) (long) args[off + 4].asDouble();
+                guiService.drawOutline(x, y, width, height, color);
+            }
+            return engine.nilValue();
+        });
+        guiServiceTable.rawset("drawOutline", guiServiceTable.rawget("DrawOutline"));
+
+        guiServiceTable.rawset("DrawProgressBar", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (guiService != null && args.length - off >= 7) {
+                int x = args[off].asInt();
+                int y = args[off + 1].asInt();
+                int width = args[off + 2].asInt();
+                int height = args[off + 3].asInt();
+                double fillPercent = args[off + 4].asDouble();
+                int bgColor = (int) (long) args[off + 5].asDouble();
+                int fillColor = (int) (long) args[off + 6].asDouble();
+                guiService.drawProgressBar(x, y, width, height, fillPercent, bgColor, fillColor);
+            }
+            return engine.nilValue();
+        });
+        guiServiceTable.rawset("drawProgressBar", guiServiceTable.rawget("DrawProgressBar"));
+
+        guiServiceTable.rawset("GetScreenSize", args -> {
+            if (guiService != null) {
+                int[] size = guiService.getScreenSize();
+                ILuaTable result = engine.createTable();
+                result.rawset(1, engine.wrapNumber(size[0]));
+                result.rawset(2, engine.wrapNumber(size[1]));
+                result.rawset("Width", engine.wrapNumber(size[0]));
+                result.rawset("Height", engine.wrapNumber(size[1]));
+                return result;
+            }
+            return engine.nilValue();
+        });
+        guiServiceTable.rawset("getScreenSize", guiServiceTable.rawget("GetScreenSize"));
+
+        guiServiceTable.rawset("DrawTexture", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (guiService != null && args.length - off >= 5) {
+                String textureId = args[off].asString();
+                int x = args[off + 1].asInt();
+                int y = args[off + 2].asInt();
+                int width = args[off + 3].asInt();
+                int height = args[off + 4].asInt();
+                guiService.drawTexture(textureId, x, y, width, height);
+            }
+            return engine.nilValue();
+        });
+        guiServiceTable.rawset("drawTexture", guiServiceTable.rawget("DrawTexture"));
 
         globals.rawset("GuiService", guiServiceTable);
         engine.registerService("GuiService", guiServiceTable);
