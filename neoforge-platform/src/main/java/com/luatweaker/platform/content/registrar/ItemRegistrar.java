@@ -57,7 +57,7 @@ public final class ItemRegistrar {
                 Item item = switch (type) {
                     case "SWORD" -> new SwordItem(Tiers.IRON, props) {
                         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            if (builder.getRightClickHandler() != null) {
+                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
                                 builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), player.getItemInHand(hand));
                                 return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
                             }
@@ -66,7 +66,7 @@ public final class ItemRegistrar {
                     };
                     case "PICKAXE" -> new PickaxeItem(Tiers.IRON, props) {
                         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            if (builder.getRightClickHandler() != null) {
+                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
                                 builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), player.getItemInHand(hand));
                                 return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
                             }
@@ -75,7 +75,7 @@ public final class ItemRegistrar {
                     };
                     case "AXE" -> new AxeItem(Tiers.IRON, props) {
                         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            if (builder.getRightClickHandler() != null) {
+                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
                                 builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), player.getItemInHand(hand));
                                 return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
                             }
@@ -84,7 +84,7 @@ public final class ItemRegistrar {
                     };
                     case "SHOVEL" -> new ShovelItem(Tiers.IRON, props) {
                         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            if (builder.getRightClickHandler() != null) {
+                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
                                 builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), player.getItemInHand(hand));
                                 return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
                             }
@@ -93,7 +93,7 @@ public final class ItemRegistrar {
                     };
                     case "HOE" -> new HoeItem(Tiers.IRON, props) {
                         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            if (builder.getRightClickHandler() != null) {
+                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
                                 builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), player.getItemInHand(hand));
                                 return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
                             }
@@ -106,7 +106,7 @@ public final class ItemRegistrar {
                     case "BOOTS" -> new CustomArmorItem(ArmorMaterials.DIAMOND, ArmorItem.Type.BOOTS, props, builder);
                     default -> new Item(props) {
                         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            if (builder.getRightClickHandler() != null) {
+                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
                                 try {
                                     builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), player.getItemInHand(hand));
                                 } catch (Exception e) {
@@ -123,7 +123,7 @@ public final class ItemRegistrar {
                         }
 
                         @Override public ItemStack finishUsingItem(ItemStack stack, Level level, LivingEntity entity) {
-                            if (builder.getOnConsumeHandler() != null && entity instanceof Player player) {
+                            if (!level.isClientSide() && builder.getOnConsumeHandler() != null && entity instanceof Player player) {
                                 try {
                                     builder.getOnConsumeHandler().accept(new NeoForgePlayerWrapper(player), stack);
                                 } catch (Exception e) {

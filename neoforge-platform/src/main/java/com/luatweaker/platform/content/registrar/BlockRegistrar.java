@@ -63,7 +63,7 @@ public final class BlockRegistrar {
                 if (id.endsWith("_stairs") || id.contains("stairs")) {
                     block = new StairBlock(Blocks.STONE.defaultBlockState(), props) {
                         @Override public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
-                            if (builder.getRightClickHandler() != null) {
+                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
                                 try {
                                     builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), null);
                                 } catch (Exception e) {
@@ -77,7 +77,7 @@ public final class BlockRegistrar {
                 } else if (id.endsWith("_slab") || id.contains("slab")) {
                     block = new SlabBlock(props) {
                         @Override public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
-                            if (builder.getRightClickHandler() != null) {
+                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
                                 try {
                                     builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), null);
                                 } catch (Exception e) {
@@ -91,7 +91,7 @@ public final class BlockRegistrar {
                 } else if (id.endsWith("_wall") || id.contains("wall")) {
                     block = new WallBlock(props) {
                         @Override public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
-                            if (builder.getRightClickHandler() != null) {
+                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
                                 try {
                                     builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), null);
                                 } catch (Exception e) {
@@ -105,7 +105,7 @@ public final class BlockRegistrar {
                 } else {
                     block = new Block(props) {
                         @Override public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
-                            if (builder.getRightClickHandler() != null) {
+                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
                                 try {
                                     builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), null);
                                 } catch (Exception e) {

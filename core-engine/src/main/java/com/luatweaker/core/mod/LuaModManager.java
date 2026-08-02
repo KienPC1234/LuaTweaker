@@ -24,9 +24,15 @@ import java.util.zip.ZipFile;
 public class LuaModManager {
 
     private static final Map<String, LuaMod> LOADED_MODS = new ConcurrentHashMap<>();
+    private static final Map<String, String> LOAD_ERRORS = new ConcurrentHashMap<>();
 
     public static @NotNull Map<String, LuaMod> getLoadedMods() {
         return Collections.unmodifiableMap(LOADED_MODS);
+    }
+
+    /** Per-mod entrypoint load errors from the most recent load cycle (empty when all mods loaded cleanly). */
+    public static @NotNull Map<String, String> getLoadErrors() {
+        return Collections.unmodifiableMap(LOAD_ERRORS);
     }
 
     /**
@@ -34,6 +40,7 @@ public class LuaModManager {
      */
     public static void loadLuaMods(@NotNull File targetDir, @NotNull ILuaEngine engine) {
         LOADED_MODS.clear();
+        LOAD_ERRORS.clear();
 
         File luamodsDir = "luamods".equalsIgnoreCase(targetDir.getName()) ? targetDir : new File(targetDir, "luamods");
         if (!luamodsDir.exists()) {
@@ -180,6 +187,12 @@ public class LuaModManager {
                     LuaTweakerLog.get().info(LogStage.SCRIPT_LOAD,
                             "[LuaMod][" + modId + "] Executing entrypoint: " + mainScriptPath);
                     engine.executeString(mainCode, modId + "/" + mainScriptPath);
+                    if (engine instanceof com.luatweaker.core.vm.CobaltLuaEngine cobaltEngine) {
+                        String loadError = cobaltEngine.getAndClearLastExecutionError();
+                        if (loadError != null) {
+                            LOAD_ERRORS.put(modId, loadError);
+                        }
+                    }
 
                     // Trigger mod.OnEnable() if provided
                     ILuaValue onEnableVal = modTable.rawget("OnEnable");

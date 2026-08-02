@@ -93,7 +93,7 @@ public final class EntityInteractionHelper {
         }
     }
 
-    public static void shootProjectileAt(@NotNull IEntity shooter, @NotNull String projectileType, @NotNull IEntity target, double speed) {
+    public static com.luatweaker.api.entity.IEntity shootProjectileAt(@NotNull IEntity shooter, @NotNull String projectileType, @NotNull IEntity target, double speed) {
         if (shooter.getRawEntity() instanceof net.minecraft.world.entity.LivingEntity living && target.getRawEntity() instanceof net.minecraft.world.entity.LivingEntity targetLiving) {
             living.swing(net.minecraft.world.InteractionHand.MAIN_HAND, true);
             net.minecraft.world.level.Level level = living.level();
@@ -113,6 +113,7 @@ public final class EntityInteractionHelper {
                         com.luatweaker.api.log.LogStage.SYSTEM,
                         "[Projectile] Fired projectile '" + projectileType + "' at target '" + targetLiving.getDisplayName().getString() + "' with speed " + speed
                     );
+                    return new com.luatweaker.platform.interaction.NeoForgeInteractableEntity(projectile);
                 } else {
                     com.luatweaker.api.log.LuaTweakerLog.get().warn(
                         com.luatweaker.api.log.LogStage.SYSTEM,
@@ -131,10 +132,23 @@ public final class EntityInteractionHelper {
                 "[Projectile] Cannot fire '" + projectileType + "': shooter or target is not a LivingEntity"
             );
         }
+        return null;
     }
 
     private static net.minecraft.world.entity.projectile.Projectile createProjectile(ServerLevel level, net.minecraft.world.entity.LivingEntity shooter, String type) {
         net.minecraft.world.phys.Vec3 look = shooter.getLookAngle().scale(0.5);
+
+        // Custom projectile definitions registered via Content.registerProjectile
+        // take priority: explosionPower > 1 becomes a LargeFireball, otherwise a
+        // SmallFireball; damage/trailParticle are recorded for the definition.
+        com.luatweaker.api.content.ProjectileDefinition definition = com.luatweaker.content.ProjectileRegistry.get(type);
+        if (definition != null) {
+            if (definition.explosionPower() > 1.0) {
+                return new net.minecraft.world.entity.projectile.LargeFireball(level, shooter, look, (int) Math.round(definition.explosionPower()));
+            }
+            return new net.minecraft.world.entity.projectile.SmallFireball(level, shooter, look);
+        }
+
         if (type.contains("dragon_fireball")) {
             return new net.minecraft.world.entity.projectile.DragonFireball(level, shooter, look);
         } else if (type.contains("wither_skull")) {

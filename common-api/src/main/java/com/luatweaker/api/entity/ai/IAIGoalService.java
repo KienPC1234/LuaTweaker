@@ -1,6 +1,7 @@
 package com.luatweaker.api.entity.ai;
 
 import com.luatweaker.api.annotation.LuaDoc;
+import com.luatweaker.api.annotation.LuaDefault;
 import com.luatweaker.api.entity.IEntity;
 import com.luatweaker.api.vm.ILuaTable;
 import org.jetbrains.annotations.NotNull;
@@ -19,7 +20,7 @@ public interface IAIGoalService {
     @LuaDoc(description = "Clears all custom goals registered on the entity.", params = {"entity: table"})
     void clearGoals(@NotNull IEntity entity);
 
-    default void addSkillGoal(@NotNull IEntity entity, int priority, @NotNull String skillName, double cooldownSeconds, double range, @NotNull Object castCallback) {}
+    default void addSkillGoal(@NotNull IEntity entity, int priority, @NotNull String skillName, double cooldownSeconds, double range, @LuaDefault("nil") @NotNull Object castCallback) {}
     default void addDashGoal(@NotNull IEntity entity, int priority, double cooldownSeconds, double speed) {}
 
     @LuaDoc(description = "Adds a target selection goal targeting nearest players, monsters, or living entities.", params = {"entity: table", "priority: integer", "targetType: string ('player' | 'monster' | 'animal' | 'living')"})
@@ -29,5 +30,5 @@ public interface IAIGoalService {
     default void addHurtByTargetGoal(@NotNull IEntity entity, int priority) {}
 
     @LuaDoc(description = "Adds a standard melee attack goal.", params = {"entity: table", "priority: integer", "[speed: number]", "[pauseWhenMobIdle: boolean]"})
-    default void addMeleeAttackGoal(@NotNull IEntity entity, int priority, double speed, boolean pauseWhenMobIdle) {}
+    default void addMeleeAttackGoal(@NotNull IEntity entity, int priority, @LuaDefault("1.2") double speed, @LuaDefault("false") boolean pauseWhenMobIdle) {}
 }

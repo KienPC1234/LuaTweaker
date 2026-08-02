@@ -22,156 +22,111 @@ Minecraft 1.21.1 NeoForge mod — Lua scripting engine with runtime recipe/conte
 | Hiding broken/failing code behind `@Deprecated`, `// TODO`, or "unused" flags | Fully implement it, or explicitly report it as incomplete |
 | Commenting out logic so the code "compiles" or "passes" | Real logic that compiles and actually works |
 | Reusing old results/cache as a fake success while new code is missing | Fresh, real execution path that produces real output |
+| Registering a feature that only logs and discards its data (e.g. a config table that is never read) | Wire the registered data to real behavior, or do not register it |
+
+> **Lesson from the codebase**: `registerProjectile` was once a log-only stub — the `damage`/`explosionPower` config was thrown away. It is now a real registry (`ProjectileRegistry`) consumed by the firing layer. Any "registration" API must have a consumer.
 
 ## 0.2 — NO Sloppy / Careless Code (Code Cẩu Thả) — Absolute Ban
 
 - **No dead code**: unused imports, unused fields, unused methods, unused local variables, unused parameters.
 - **No placeholder values**: returning `0`, `null`, `""`, `false`, or hardcoded constants as if they were real results.
-- **No copy-paste duplication**: duplicate logic must be extracted or the change is rejected.
-- **No leftover markers**: `// TODO`, `// FIXME`, `// HACK`, `// WIP`, `// XXX` left in delivered code. Finish the work or state it is unfinished.
-- **No fake signals**: every log line, `print()`, and return value must reflect the real behavior — never fabricate success messages.
+- **No copy-paste duplication**: duplicate logic must be extracted or the change is rejected. (Two parallel projectile builders, two parallel entity wrappers, and repeated 12-line binding glue have all been removed — do not reintroduce them.)
+- **No leftover markers**: `// TODO`, `// FIXME`, `// HACK`, `// WIP`, `// XXX` left in delivered code.
+- **No fake signals**: every log line, `print()`, and return value must reflect the real behavior.
 - **No lazy shortcuts**: no hardcoded paths, no magic string switching instead of real dispatch, no bypassing the module/builder architecture in Section 1.
+- **No duplicate API surfaces**: the SAME concept must not exist twice under different names (e.g. two entity wrapper APIs). See Section 5.
 
-## 0.3 — NO Non-Functional / Broken Code (Code Không Dùng Được) — Absolute Ban
+## 0.3 — NO Non-Functional / Broken Code — Absolute Ban
 
 - **Every change MUST compile.** Run the build before submitting — never hand over code you did not compile.
 - **Every change MUST pass tests.** Add tests for all new behavior; never ship untested logic.
-- **Every exposed API must work end-to-end**: Java interface → implementation → Lua binding → runtime effect. Test the full path, not just the signature.
+- **Every exposed API must work end-to-end**: Java interface → binding → Lua script → runtime effect.
 - **No runtime crashes** in default-reachable paths: no NPEs, no `ClassCastException`, no illegal state reached by normal usage.
-- **No code that merely "type-checks"** but throws on first invocation.
 - **Never merge code you have not actually run and verified** (build + tests + relevant runtime path).
 
-## 0.4 — NO Silent Stubs (Code Stub Giấu Diếm) — Absolute Ban
+## 0.4 — NO Silent Stubs — Absolute Ban
 
 > **A "stub" is any code that is NOT the real implementation.** Using a stub is **STRICTLY FORBIDDEN** unless ALL of the following hold:
 
-1. **The stub is explicitly disclosed** to the user in the response, with the exact file and line.
-2. **The stub is loudly marked in code**, e.g. `throw new UnsupportedOperationException("STUB <reason>")`, `assert false : "STUB ..."`, or an explicit `log.warn("STUB ...")` before returning.
-3. **A follow-up task is recorded** to replace the stub, and the user is told it remains unfinished.
+1. The stub is explicitly disclosed to the user, with the exact file and line.
+2. The stub is loudly marked in code (`throw new UnsupportedOperationException("STUB <reason>")`, `assert false : "STUB ..."`, or `log.warn("STUB ...")`).
+3. A follow-up task is recorded, and the user is told it remains unfinished.
 
 | ❌ Forbidden | ✅ Required |
 |---|---|
 | Returning a stub silently as if the feature were done | Disclose it clearly + mark it + log the follow-up |
-| Empty interfaces / empty method bodies handed off as "done" | Real implementations only |
 | `Mock*` classes used in production code paths | Mocks exist only in tests — never in runtime |
 | `return null` / `return 0` / blank `{}` as a "complete" feature | Complete, working behavior or explicit disclosure |
-| Deleting code to make a stub "invisible" | Keep it visible, loud, and reported |
+| A binding method that only writes a log line instead of doing its job | Real behavior, or remove the method |
 
 ## 0.5 — NO Hallucinations / Fabricated Code — Absolute Ban
 
-> **Never invent APIs, methods, classes, or libraries that do not exist.** Hallucinated code compiles in the author's head, not in the project.
-
-- **Verify every symbol exists**: before calling any internal API or third-party method, confirm it exists in the exact version of the library/project in use. No guessing from memory.
-- **No invented signatures**: never write calls to methods you have not seen. Read the real source or docs first.
-- **No phantom return types**: never return a made-up type to "make it work".
-- **No imagined registry entries**: never claim a recipe/block/item/event exists unless it is actually registered and verifiable in code.
-- **State uncertainty, do not guess**: if you are not 100% sure a symbol/behavior exists, SAY SO instead of fabricating code around it. Never code around an assumption without verifying it.
+- **Verify every symbol exists** in the exact library/project version (read the real source — e.g. `javap` the NeoForge jar — before calling a Minecraft API).
+- **No invented signatures**, phantom return types, or imagined registry entries.
+- **State uncertainty, do not guess**: if you are not 100% sure a symbol/behavior exists, SAY SO.
 
 ## 0.6 — NO Fake Tests / Fake Coverage — Absolute Ban
 
-| ❌ Forbidden | ✅ Required |
-|---|---|
-| Tests that assert nothing (`@Test void test() {}`), always pass, or never run | Every new behavior has real, runnable tests that exercise the actual logic |
-| Testing only the happy path and ignoring failure modes | Cover success path **and** error/failure paths |
-| Mocking everything so nothing real runs | Mocks only for cross-platform seams; the real engine/binding path must be exercised |
-| Deleting/renaming tests to make a red suite green | Fix the code; never fix the test report |
-| Skipping edge cases: `null`, empty, max/min values, malformed input | Boundary and edge-case tests for every new function |
-
-- Every delivered function MUST have at least one unit test covering the primary success path and its failure modes.
-- Run `./gradlew test` — all relevant tests MUST be green. A test suite you cannot run does not count.
-- Never claim coverage you cannot prove. Report actual pass/fail output.
+- Tests that assert nothing, always pass, or never run = rejection.
+- Cover success path **and** error/failure paths, plus edge cases (nil, empty, min/max, malformed input).
+- Every delivered function MUST have at least one unit test.
+- Run `./gradlew test` — all relevant tests MUST be green. Report actual pass/fail output.
 
 ## 0.7 — NO Hidden Secrets / Credentials — Absolute Ban
 
-- **Never commit or embed** API keys, tokens, passwords, database URLs, or any credential — even "placeholder" ones like `sk-test-...`.
-- **Never hardcode credentials** in code, config, or default files. Use environment variables or a properly git-ignored local config.
-- Scan every delivered diff for secrets before submission.
+Never commit or embed API keys, tokens, passwords, database URLs — even "placeholder" ones. Scan every diff.
 
 ## 0.8 — NO Inaccurate Comments / Documentation — Absolute Ban
 
-- **No stale or invented comments**: comments must describe what the code ACTUALLY does. Delete outdated comments; never keep them to "look documented".
-- **No docstring lies**: `@LuaDoc`, `@param`, `@return`, JavaDoc must match the real signature and behavior.
-- **No fake success narratives**: comments/log messages must never claim behavior the code does not have.
+- Comments must describe what the code ACTUALLY does. Delete stale comments.
+- `@LuaDoc`, `@param`, `@return`, JavaDoc must match the real signature and behavior.
+- README claims must be TRUE: if a feature does not exist, do not advertise it.
 
 ## 0.9 — Complete Codebase Awareness (Mandatory Before Any Change)
 
-- **Analyze before modifying**: read the surrounding code, dependencies, imports, and existing implementations. Never edit in a vacuum.
-- **Respect existing patterns**: new code must follow the module/builder architecture and Roblox-style Lua conventions already in the project.
-- **Check environment parity**: confirm runtime versions (Java 21, NeoForge, Cobalt, Luau) before writing code that depends on them.
+- Read the surrounding code, dependencies, imports, and existing implementations before editing.
+- Respect existing patterns: module/builder architecture, Roblox-style Lua conventions, LuaBinder auto-binding (Section 5).
+- Check environment parity: Java 21, NeoForge 21.1.242, Cobalt 0.9.9, Luau-style Lua.
 
-## 0.10 — NO Silent Errors — Loud, Honest Failure Reporting (Absolute Requirement)
+## 0.10 — NO Silent Errors — Loud, Honest Failure Reporting
 
-> **If anything fails — a compile error, a failing test, a runtime error, an unverifiable step, an incomplete feature — you MUST say so loudly and immediately. Silence about a failure is treated as a lie.**
+- Report every error, warning, and limitation at the exact moment it happens — WHAT failed, WHERE (file:line), WHY, WHAT was done.
+- **Unverified ≠ verified.** Label unverifiable steps UNVERIFIED — never quietly upgrade them to "done".
+- When uncertain, say "I don't know".
 
-- **Report every error, warning, and limitation at the exact moment it happens** — never hide it, never save it for later, never mention it only after claiming success.
-- **Every error report MUST include**: WHAT failed, WHERE (file:line), WHY it failed, and WHAT was done about it.
-- **No "everything works" summary when anything failed.** One failing test or one unverified path invalidates a "done" claim.
-- **Unverified ≠ verified.** If a step could not be compiled, run, or tested, label it **UNVERIFIED** — never quietly upgrade it to "done".
-- **When uncertain, say "I don't know"** — guessing or staying silent is forbidden.
+## 0.11 — NO Rule Evasion / Loopholing — Absolute Ban
 
-## 0.11 — NO Rule Evasion / Loopholing (Anti-Loophole Clause) — Absolute Ban
-
-> **Rules cannot be technically or literally bypassed. The SPIRIT of each rule is as binding as its LETTER. Any attempt to exploit wording, skip a step, or disguise non-compliance is itself a violation.**
-
-| ❌ Forbidden evasion | ✅ Required honest compliance |
-|---|---|
-| Following a rule "technically" while ignoring its intent | Comply with both the letter **and** the spirit |
-| Telling only part of the truth to avoid admitting failure | Full disclosure of everything, including failures |
-| Saying "it might work" / "should be fine" without verifying | Verify, or explicitly label the step UNVERIFIED |
-| Doing the minimum literal step and stopping | Complete the task to its full, real requirement |
-| Reinterpreting rules to justify skipping work | Ask for clarification if a rule seems ambiguous |
-| Blaming tools/environment to excuse missing verification | Report the blocker, then re-verify once resolved |
-| Reusing old tests/output as "current results" | Fresh run output only, labeled with the actual command |
-| Claiming a build/test "passed" without running it | Only claim what you actually ran and saw pass |
-| Quietly changing scope to avoid hard parts | Keep the original scope; say what you could not do |
-| Reporting success on a partial implementation | Report the exact percentage done and what remains |
-| Generic claims ("the fix is applied") with no specifics | Name the file, the change, and the proof (build/test output) |
+The SPIRIT of each rule is as binding as its LETTER. No technical bypasses, no partial truths, no scope-shrinking.
 
 ## 0.12 — Error Handling in Delivered Code — Loud, Never Silent
 
-- **No empty `catch` blocks. Ever.** Every `catch` MUST log the error with context (what failed, where) and take a visible corrective action or rethrow.
-- **No swallowed exceptions**: no `catch (Exception e) {}`, no `catch` + `// ignored` comment, no silently returning a default on failure.
-- **Errors must surface**: log with message/stack trace, and fail loudly when the operation cannot continue.
-- **Failed Lua/Java calls must be reported** through the engine logger — never silently dropped.
-- **The error path must be tested**: write at least one test asserting the failure path throws/logs correctly rather than silently returning.
+- **No empty `catch` blocks. Ever.** Every `catch` logs with context and takes visible corrective action or rethrows.
+- Errors must surface through the engine logger; failed Lua/Java calls must be reported.
+- The error path must be tested (at least one test asserting the failure path throws/logs).
 
-## 0.13 — Self-Review Checklist — Catch Your Own Violations
-
-Before declaring anything done, run ALL of the following and report each result:
+## 0.13 — Self-Review Checklist — Before Declaring Anything Done
 
 1. Did I compile? What was the exact output?
 2. Did I run the tests? How many passed / failed / skipped?
 3. Did I loudly report every error, warning, and UNVERIFIED step?
-4. Did I follow the letter **and** the spirit of every rule — no loopholes?
+4. Did I follow the letter **and** the spirit of every rule?
 5. Did I name every file changed and every behavior added?
-6. Am I claiming anything I cannot prove? If yes → label it UNVERIFIED instead.
+6. Am I claiming anything I cannot prove? If yes → label it UNVERIFIED.
 
 ## 0.14 — NO Hardcoding — Absolute Ban
 
-> **Hardcoded values are STRICTLY forbidden. Every value that can be configured, derived, resolved, or passed as a parameter MUST be — never baked into code as a literal.**
-
-| ❌ Forbidden | ✅ Required |
-|---|---|
-| Absolute file/dir paths (`C:\...`, `/home/...`) | Project-relative paths, `Path` resolution, or config entries |
-| Item/recipe/block IDs and namespaces as scattered literals | Centralized constants or the registry |
-| Magic numbers (`delay(5000)`, `limit * 3.1415`) | Named `static final` constants (`TICK_INTERVAL`, `MAX_STACK`) |
-| Tunable values baked in (durations, counts, thresholds, multipliers) | Read from `default_config.json` / config files |
-| Version/platform literals (`1.21.1`, mod versions) | `gradle.properties` / build config expansion |
-| Credentials, tokens, database URLs (see 0.7) | Environment variables or git-ignored config |
-| Hardcoded coordinates/offsets/spawn positions in Lua scripts | Config-driven values |
-| OS-specific literals (`\` path separators, line endings, encodings) | Portable APIs (`Path`, `System.lineSeparator()`) |
-
-- **Every hardcoded value is a defect.** If a literal is truly unavoidable, it MUST be a named constant with a comment explaining why it is not configurable — and the exception MUST be reported to the user.
-- **Lua scripts too**: coordinates, spawn positions, item counts, and event timings must come from config, never hardcoded.
-- **Tests MAY hardcode expected values** in assertions — production code never does.
+- Absolute paths, magic numbers, tunable values (durations, costs, cooldowns, damage, thresholds) → config (`default_config.json` → `luaconfig/<mod_id>.json`) or named `static final` constants.
+- Version/platform literals → `gradle.properties` expansion.
+- Lua scripts: skill costs, cooldowns, spawn positions, regen rates MUST come from `mod:GetConfig()` with a sane fallback.
+- Tests MAY hardcode expected values in assertions — production code never does.
 
 ## 0.15 — Verification Gate (Mandatory Before "Done")
 
-1. **Plan → Code → Test → Verify → Report.** Do not skip steps.
-2. **Compile**: `./gradlew build` (or at minimum the affected modules) — MUST pass.
+1. **Plan → Code → Test → Verify → Report.**
+2. **Compile**: `./gradlew build` — MUST pass.
 3. **Test**: `./gradlew test` — all relevant tests MUST be green.
-4. **Self-review your diff**: no hidden files, no leftover stubs, no commented-out code, no dead code, no fabricated symbols, no secrets.
-5. **Report honestly**: state exactly what works, what is untested, and any known limitations. Never claim success without proof. If unsure, reply "I don't know" rather than guessing.
+4. Self-review your diff: no hidden files, no stubs, no dead code, no fabricated symbols, no secrets.
+5. Report honestly: what works, what is untested, known limitations.
 
 ---
 
@@ -179,32 +134,33 @@ Before declaring anything done, run ALL of the following and report each result:
 
 > **🚨 BẢN SẮC THIẾT KẾ: TƯ DUY LẮP RÁP (MODULE & BUILDER) + NGỮ PHÁP TỰ NHIÊN CỦA LUA**
 
-## 1. Bản Sắc Thiết Kế LuaTweaker Style (Bắt Buộc Cum Compliance)
+## 1. Bản Sắc Thiết Kế LuaTweaker Style
 
 1. **Content & Recipe Definitions (Đăng ký tĩnh):**
-   - Sử dụng **Chainable Builder Pattern** phân nhóm rõ ràng theo Namespace (`Content.NewItem("id")`, `Content.NewBlock("id")`, `Recipe.Shaped("id")`), kết thúc bằng `:Register()`.
-   - **CẤM** sử dụng các hàm global trôi nổi như `item()`, `ingredient()`, `recipes:addShaped()`.
+   - Chainable Builder Pattern theo Namespace: `Content.NewItem("id")`, `Content.NewBlock("id")`, `Content.createEntity("id", fn)`, `Recipe.Shaped("id"):Pattern(...):Register()`.
+   - **CẤM** hàm global trôi nổi `item()`, `ingredient()` làm API chính (chúng chỉ là helper trong recipes).
 
-2. **Runtime Services & AI Logic (Vận hành Game):**
-   - Quản lý bởi các Service & Signal chuẩn PascalCase (`Events.OnEntityDamaged:Connect(...)`, `Task.Delay(...)`, `World:StrikeLightning(...)`).
-   - Sử dụng kiểu dữ liệu `Vector3.new(x, y, z)` cho tọa độ không gian.
+2. **Runtime Services & AI Logic:**
+   - Service/Signal PascalCase: `Events:Listen(...)`, `Task:delay(...)`, `World:StrikeLightning(...)`, `Vector3.new(...)`.
+   - Entity API **thống nhất**: một bảng entity duy nhất hỗ trợ CẢ method style (`entity:setHealth(50)`) lẫn property style (`entity.Health = 50`) — xem Section 5.
 
 3. **Nạp Thư Viện Tường Minh:**
-   - Mọi script phải nạp thư viện tường minh bằng `require("LuaTweaker.ModuleName")`.
-   - **CẤM** phụ thuộc vào biến toàn cục ma thuật trôi nổi (magic globals).
+   - Mọi script nạp thư viện bằng `require("LuaTweaker.ModuleName")`.
+   - **CẤM** magic globals trôi nổi (trừ `mod`, `Mod`, `Events`/`Content`/... do engine cung cấp).
+
+4. **Cấu trúc 1 LuaMod:**
+   - `luamods/<mod_id>/manifest.json` + `main.lua` (entrypoint duy nhất) + `src/startup`, `src/server`, `src/client` + `default_config.json` + `assets/`, `data/`.
 
 ---
 
 ## 2. Quy Trình 5 Bước Tạo 1 Module Mới Chuẩn OOP
 
-Khi thêm bất kỳ tính năng hoặc mô-đun mới nào vào dự án, **BẮT BUỘC** phải tuân thủ 5 bước chuẩn hóa sau:
-
-### Bước 1: Khai báo Java Interface trong `common-api` với `@LuaDoc`
-Tạo interface mô tả dịch vụ trong `common-api/src/main/java/com/luatweaker/api/<feature>/` và đánh dấu `@LuaDoc`:
+### Bước 1: Khai báo Java Interface trong `common-api` với `@LuaDoc` (+ `@LuaDefault` cho tham số tùy chọn)
 ```java
 package com.luatweaker.api.example;
 
 import com.luatweaker.api.annotation.LuaDoc;
+import com.luatweaker.api.annotation.LuaDefault;
 
 @LuaDoc(description = "Dịch vụ quản lý mô-đun ví dụ.")
 public interface IExampleModuleService {
@@ -213,12 +169,12 @@ public interface IExampleModuleService {
         params = {"id: string", "power: number"},
         returnType = "void"
     )
-    void executeFeature(String id, double power);
+    void executeFeature(String id, @LuaDefault("1.0") double power);
 }
 ```
+> Interface là **single source of truth**: binding + EmmyLua stubs + docs đều sinh từ nó. KHÔNG viết binding tay.
 
 ### Bước 2: Viết Implementation độc lập trong `modules/module-<feature>`
-Triển khai interface trong mô-đun tương ứng (không phụ thuộc platform NeoForge/Minecraft):
 ```java
 public class ExampleModuleServiceImpl implements IExampleModuleService {
     @Override
@@ -228,31 +184,22 @@ public class ExampleModuleServiceImpl implements IExampleModuleService {
 }
 ```
 
-### Bước 3: Tạo Lua Binding Binder
-Viết binder ánh xạ phương thức Java sang `ILuaTable` trong `modules/module-<feature>`:
+### Bước 3: Đăng ký binding bằng **LuaBinder** — KHÔNG viết glue tay
 ```java
-public class ExampleLuaBinding {
+public class ExampleModuleLuaBinding {
     public static void registerBindings(ILuaEngine engine, IExampleModuleService service) {
-        ILuaTable tbl = engine.createTable();
-        tbl.set("ExecuteFeature", (state, args) -> {
-            String id = args.arg(1).toString();
-            double p = args.arg(2).toDouble();
-            service.executeFeature(id, p);
-            return engine.nilValue();
-        });
-        engine.getGlobalEnvironment().set("ExampleModule", tbl);
+        LuaBinder.bind(engine, "ExampleModule", service, IExampleModuleService.class);
     }
 }
 ```
+`LuaBinder` (core-engine) tự động: convert tham số (String/int/double/boolean/table/IEntity), bỏ self của colon-call, sinh alias PascalCase, áp dụng `@LuaDefault`, ném lỗi rõ khi thiếu tham số bắt buộc, convert giá trị trả về. **CẤM viết tay `getOffset` + `args[i].asInt()` + delegate** trong binding mới.
 
-### Bước 4: Đăng ký trong `LuaServiceBootstrap` & `LtvmStubGenerator`
-Trong `neoforge-platform/src/main/java/.../LuaServiceBootstrap.java` và `LuaTweakerMod.java`:
+### Bước 4: Đăng ký trong `LuaServiceBootstrap` (+ stub trong `LuaTweakerMod.generateStubs`)
 ```java
-// Native Java Binding & OOP Reflection Stub Registration:
-ExampleLuaBinding.registerBindings(engine, exampleService);
+ExampleModuleLuaBinding.registerBindings(engine, exampleService);
 stubGen.registerService("ExampleModule", IExampleModuleService.class);
 ```
-> 💡 `LtvmStubGenerator` sẽ **tự động dùng Reflection** sinh ra toàn bộ stubs EmmyLua (`---@class ExampleModule`, `---@overload fun(modName: 'LuaTweaker.ExampleModule'): ExampleModule`) cho VSCode & IntelliJ mà không cần sửa code engine!
+> Entity/player wrapper classes: `stubGen.registerClassStub(IEntity.class, "Entity")` — sinh class stub có inheritance (`---@class Player: Entity`).
 
 ### Bước 5: Sử dụng trong Lua Script chuẩn LuaTweaker Style
 ```lua
@@ -264,258 +211,115 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 
 # ⚠️ CRITICAL SECTION 2 — SOLID Principles (Absolute Compliance Required)
 
-❌ **Every violation below = rejection. These are non-negotiable.**
-
----
-
-## S — Single Responsibility Principle
-
-> **Every class, module, and method must have *exactly one* reason to change.**
-
-| Module | Single Responsibility | Forbidden |
-|---|---|---|
-| `common-api/` | Define pure abstractions (interfaces, annotations). Zero dependencies. | NO logic, NO implementations, NO platform imports |
-| `core-engine/` | Wrap Cobalt Lua engine, logger, linter, stub gen. | NO Minecraft/NeoForge imports. NO recipe logic. |
-| `modules/*/` | Each module owns **exactly one** domain (recipes, events, etc.). | NO cross-domain coupling. NO platform code. |
-| `neoforge-platform/` | NeoForge bootstrap + concrete PAL implementation. | NO engine logic. NO business logic. Bootstrap only. |
-
-**Break-down rule**: if a class does more than its name implies → **refactor immediately**. If you need "and" in the class description, it fails S.
-
----
-
-## O — Open/Closed Principle
-
-> **Modules open for extension, closed for modification.**
-
-| Rule | Enforcement |
+| Principle | Enforcement |
 |---|---|
-| **PAL** (`Platform` interface) | New platform feature = extend interface. Never modify consumers. |
-| **Service Registry** | New Lua service = call `registerService()`. Never touch registry core. |
-| **Recipe interception** | New recipe type = extend visitor. `InterceptionHelper` is closed. |
-| **No `instanceof`** | Never check platform types in common/engine code. Use PAL only. |
-
-**Golden rule**: You add new code, you NEVER change existing working code.
-
----
-
-## L — Liskov Substitution Principle
-
-> **Subtypes must be replaceable for their base types without altering correctness.**
-
-- Every PAL impl must be **fully substitutable**. No platform assumptions in contracts.
-- `MockRecipeService` proves test-side substitutability.
-- Overrides must honor **preconditions, postconditions, invariants**.
-- **NO** `UnsupportedOperationException` in PAL impls unless the interface documents it.
-- If tests pass with `Mock*` but fail with real impl → L violation.
+| **S**ingle Responsibility | Mỗi class/module/method có ĐÚNG MỘT lý do thay đổi. `common-api` = abstraction thuần; `core-engine` = VM wrapper + LuaBinder + logger + stubs; `modules/*` = đúng một domain; `neoforge-platform` = bootstrap + PAL impl. |
+| **O**pen/Closed | Thêm tính năng = thêm code (binding mới, service mới), KHÔNG sửa code đang chạy. `InterceptionHelper` closed; `LuaServiceRegistry` mở rộng qua `register()`. |
+| **L**iskov | Mọi PAL impl thay thế được cho base type. Test với `Mock*` phải xanh CÙNG impl thật. |
+| **I**nterface Segregation | Interface nhỏ, đúng nhu cầu từng client. Nếu một impl phải stub method → TÁCH interface ngay. |
+| **D**ependency Inversion | Chỉ `neoforge-platform` import NeoForge/Minecraft. `common-api` zero-dependency. Module graph là DAG. |
 
 ---
 
-## I — Interface Segregation Principle
+# ⚠️ CRITICAL SECTION 3 — Java Coding Conventions
 
-> **No client depends on methods it does not use.**
-
-- `common-api` has **separate** interfaces: `Platform`, `ILuaEngine`, `ILuaService`, `ILogger`, etc.
-- NOT one monolithic "API" class.
-- If an implementing class is forced to stub a method → **split the interface NOW**.
-- Service interfaces in modules consumed only by their relevant clients.
-
----
-
-## D — Dependency Inversion Principle
-
-> **Depend on abstractions, not concretions. High-level modules never depend on low-level modules.**
-
-```
-common-api (zero deps)       ← ALL abstractions live here
-    ↑
-core-engine + modules/*      ← depend ONLY on common-api + Cobalt libs
-    ↑
-neoforge-platform            ← ONLY module that imports NeoForge
-```
-
-| Rule | If violated |
-|---|---|
-| `common-api` has **zero dependencies** | Build fails with classpath leak |
-| `core-engine` imports `net.minecraft.*` | **REJECTED** — platform leak |
-| `modules/*` imports `net.neoforged.*` | **REJECTED** — platform leak |
-| PAL set once at init: `Platform.setInstance()` | No service locator allowed |
-| Module dependency graph must be a **DAG** | Circular deps = build error |
-
----
-
-# ⚠️ CRITICAL SECTION 3 — Java Coding Conventions (Every Line Matters)
-
-❌ **Code style violations cause CI failures. Review each line.**
-
----
-
-## Language Level — Java 21 (Mandatory Feature Usage)
-
-| Feature | ✅ Correct Usage | ❌ Wrong Usage |
-|---|---|---|
-| `record` | Immutable DTOs, configs, results | Mutable state, complex logic |
-| `sealed class/interface` | Restricted type hierarchies | Open hierarchies that should be sealed |
-| `switch` + pattern matching | Exhaustive type-based dispatch (`if-else` replacement) | Non-exhaustive, missing default |
-| `TextBlock` | Multi-line Lua scripts, JSON, SQL | Single-line strings |
-| `Optional` | Return type for **nullable** results **only** | Fields, parameters, collections |
-| `Stream`/`Collectors` | Inline collection transforms | Hot paths, complex nested pipelines |
-| `var` | Local vars where type is obvious (`var list = new ArrayList<String>()`) | API return types, method params, ambiguous code |
-| `@NotNull/@Nullable` | **Every single parameter and return type** | Missing annotations |
-| `Instant`/`Duration` | All time handling | `long` millis, `Date`, `Calendar` |
-
----
-
-## Naming & Structure — Strict Rules
-
-| Element | Rule |
-|---|---|
-| **Packages** | `com.luatweaker.<module>.<feature>`. **No plurals** (`api` not `apis`). |
-| **Classes** | PascalCase, noun/noun phrase. Interfaces: `Runnable`-style or `I` prefix (consistent per module). |
-| **Methods** | camelCase, verb/verb phrase. **One verb per method.** |
-| **Constants** | `UPPER_SNAKE_CASE`. `static final`. Utility classes: `final class` + private constructor. |
-| **Fields** | `private final` default. Expose via getters (immutable) or builder. |
-| **Booleans** | `is*`, `has*`, `can*` prefix. Never `get*` for booleans. |
-
----
-
-## Encapsulation & Immutability — Zero Exceptions
-
-| Rule | Enforcement |
-|---|---|
-| All fields `private` | `public` only for constants and API |
-| Prefer `final` + constructor injection | No setters |
-| Collection getters | Return `Collections.unmodifiable*()` or `List.copyOf()`. Never expose raw mutable collections. |
-| Builder pattern | For objects with 3+ construction params |
-| No mutable statics | **Absolutely forbidden** |
-
----
-
-## Exception Handling — Never Break These
-
-| ✅ Do | ❌ Never Do |
-|---|---|
-| Catch specific checked exceptions | `catch (Exception e)` — **blanket catch forbidden** |
-| `IllegalArgument/StateException` for programming errors | Swallowed exceptions |
-| Custom `RuntimeException` + `@throws` JavaDoc | Checked exceptions for recoverable errors (use `Optional` or result types) |
-| try-with-resources | Manual `close()` in `finally` |
-
----
-
-## Package / Module Boundaries — Strict
-
-| Module | Visibility |
-|---|---|
-| `common-api` | `exports com.luatweaker.api.*`. No `requires` beyond `java.base`. |
-| `core-engine` | Qualified export to `neoforge-platform` only. |
-| `modules/*` | Sealed packages — only entrypoint is `public`. |
-| **Cross-module** | **No coupling outside declared API packages.** |
-
----
-
-## Immutable Data Pattern
-
-```java
-// ✅ GOOD — record + factory method
-public record RecipeId(String namespace, String path) {
-    public RecipeId {
-        Objects.requireNonNull(namespace);
-        Objects.requireNonNull(path);
-    }
-    public static RecipeId of(String namespace, String path) {
-        return new RecipeId(namespace, path);
-    }
-}
-
-// ❌ BAD — mutable struct with public fields
-public class RecipeId {
-    public String namespace;  // ❌ public mutable field
-    public String path;       // ❌ public mutable field
-}
-```
-
----
-
-## Code Style — Automated Enforcement Expected
-
-- **Braces**: K&R (opening brace on same line). **Always use braces**, even for single-line blocks.
-- **Indentation**: 4 spaces. **No tabs.**
-- **Line length**: 120 chars max. Break **before** operators.
-- **Imports**: No wildcard `*`. Order: static → Java → third-party → project (blank line between groups).
-- `@Override` **mandatory** on every overriding method.
-- `@Deprecated` must include `@deprecated` JavaDoc with migration path and removal plan.
+- **Java 21**: `record` cho DTO bất biến, sealed hierarchy, pattern matching switch, TextBlock, `Optional` CHỈ cho return nullable.
+- **@NotNull/@Nullable trên MỌI tham số và return.**
+- **Naming**: packages `com.luatweaker.<module>.<feature>` (không plural), class PascalCase, method camelCase (một verb), constants `UPPER_SNAKE_CASE`, boolean `is*/has*/can*`.
+- **Encapsulation**: fields `private final`, collection getters trả `List.copyOf()`/unmodifiable, builder cho 3+ params, **KHÔNG mutable statics** (trừ registry có chủ đích như `LuaServiceRegistry`, `EventServiceImpl`, `ProjectileRegistry` — phải có lý do + comment).
+- **Exceptions**: catch specific, KHÔNG blanket `catch (Exception e)`; try-with-resources; error path phải test.
+- **Braces K&R, 4 spaces, không tab, max 120 chars, imports không wildcard, `@Override` bắt buộc.**
 
 ---
 
 # ⚠️ CRITICAL SECTION 4 — Cross-Platform Architecture (PAL)
 
-❌ **Any direct platform dependency outside `neoforge-platform` = instant rejection.**
+- `core-engine` + `modules/*` **CẤM** import `net.minecraft.*`, `net.neoforged.*` — REJECTED.
+- Mọi platform call → `Platform.getInstance().<method>()` / `Platform.getX()`.
+- Capability mới → thêm vào `Platform` interface + impl trong `NeoForgePlatform` — zero change cho consumers.
+- Test không cần Minecraft (mock qua interface).
 
 ---
 
-## Dependency Hierarchy (Memorize This)
+# ⚠️ CRITICAL SECTION 5 — Anti-Boilerplate & Runtime Architecture Rules (MỚI — Bắt Buộc)
 
-```
-common-api (pure interfaces)
-    ↑
-core-engine (Cobalt wrapper, logger, stubs — ENGINE AGNOSTIC)
-    ↑
-module-recipes (recipe binding — ENGINE AGNOSTIC)
-    ↑
-neoforge-platform (NeoForge launcher, PAL impl — ONLY NEOFORGE MODULE)
-```
+> Những luật này được rút ra từ các bug thực tế đã sửa. Vi phạm = tái sinh bug cũ.
+
+## 5.1 — Binding bắt buộc qua LuaBinder (CẤM glue tay)
+
+- Mọi service binding MỚI: `LuaBinder.bind(engine, name, impl, apiClass, aliases...)` hoặc `LuaBinder.bindTable(...)` cho wrapper tables.
+- Tham số tùy chọn → `@LuaDefault` trên interface — KHÔNG tự viết default logic trong binding.
+- **CẤM** copy pattern cũ: `int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;` + `args[off].asInt()` + delegate.
+- Ngoại lệ (có lý do hợp lệ): builder DSL (`ContentLuaBinding`), parsing phức tạp (`RecipesLuaBinding`), wrapper có logic riêng (`StorageLuaBinding`, `NetworkLuaBinding`).
+
+## 5.2 — MỘT Entity API duy nhất (CẤM 2 wrapper song song)
+
+- `IEntity` là wrapper duy nhất. `NeoForgeEntityWrapper` + `NeoForgePlayerWrapper` là impl; `NeoForgeInteractableEntity implements IEntity` (không có view thứ 2).
+- Lua table entity/player: `EntitiesLuaBinding.createEntityLuaTable` / `createPlayerLuaTable` — method style + property aliases (Health, MaxHealth, Type, CustomName, Velocity, Position) qua metatable.
+- **CẤM** tạo API entity thứ 2 (kiểu `wrapEntity` cũ với method khác tên: `ShootProjectile` vs `shootProjectile`).
+- Projectile: **MỘT nơi duy nhất** bắn — `EntityInteractionHelper.shootProjectile/shootProjectileAt` + `NeoForgeInteractableEntity` override delegate về helper. **CẤM** 2 bảng switch tạo projectile độc lập.
+
+## 5.3 — Event Bus: shared + replace semantics
+
+- `EventServiceImpl` dùng **một map dùng chung mọi engine**; `Listen` **THAY THẾ** listener cũ (engine mới nhất thắng) — không tích lũy.
+- Lý do: item handler closure bị pin vào startup engine — dispatch qua bus shared để tới listener của runtime engine hiện tại.
+- **CẤM** đưa listener map về per-instance tích lũy (gây double-fire) hoặc clear sai thời điểm.
+
+## 5.4 — Item/Block handler CHỈ dispatch server-side
+
+- `ItemRegistrar` / `BlockRegistrar`: Lua handler chỉ chạy khi `!level.isClientSide()` — client chỉ consume click (`sidedSuccess`).
+- **CẤM** dispatch Lua event ở cả 2 phía — client-side cast sẽ trừ mana/đặt cooldown sai + không thể bắn projectile (`ClientLevel`).
+
+## 5.5 — Thread Safety: VM entry points synchronized
+
+- `CobaltLuaEngine.executeString/executeScript/callFunction` là `synchronized` — VM Cobalt không thread-safe (render thread + server thread).
+- Render callbacks (OnRenderHUD) phải dùng `Signal:FireSync` (đồng bộ, đúng render thread với GuiGraphics context) — **CẤM** async Fire cho render.
+- Coroutine/deferred: chạy qua `task._run_deferred` (Java, có Cobalt loop) — **CẤM** `coroutine.resume` trực tiếp trong `task._tick`.
+
+## 5.6 — Network: clientbound → network service của ACTIVE engine
+
+- Clientbound packet → `LuaServiceRegistry.get("NetworkServiceImpl")` (engine active, nơi mods load + listener connect) — KHÔNG dùng service của client engine (không bao giờ load mods → remoteEvents rỗng → HUD/effects chết).
+
+## 5.7 — Stub Generator: inheritance + class cho wrapper
+
+- `generateClassStub` phải emit `---@class X: Parent` cho interface kế thừa; transitive scan dùng `classNameByType`.
+- Entity/player: `registerClassStub(IEntity.class, "Entity")`, `registerClassStub(IPlayer.class, "Player")`.
+
+## 5.8 — Config-driven mọi tunable
+
+- Skill cost/cooldown/regen, boss health, spawn offsets, GUI geometry → `default_config.json` → `mod:GetConfig()` với fallback hợp lý.
+- **CẤM** hardcode trong Lua script (AGENTS.md 0.14).
+
+## 5.9 — Log ASCII thuần
+
+- Log output (log file + console) dùng ASCII: `=== BEGIN RELOAD ===`, `->`, `-`. **CẤM** box-drawing/em-dash/arrow unicode trong log strings.
 
 ---
 
-## PAL Rules — Absolute
-
-| # | Rule | Consequence |
-|---|---|---|
-| 1 | `core-engine` + `modules/*` **NEVER** import `net.minecraft.*`, `net.neoforged.*` | **REJECTED** |
-| 2 | All platform calls → `Platform.getInstance().<method>()` | **No direct platform access** |
-| 3 | New platform capability → define in `Platform` interface, impl in `NeoForgePlatform` | **Zero changes to consumers** |
-| 4 | New loader (Fabric, Forge) = new module implementing PAL | **Zero changes to core/modules** |
-
----
-
-## Service Registration Pattern (Must Follow)
-
-```java
-// ✅ CORRECT — cross-platform
-ILuaEngine engine = Platform.getInstance().getEngine();
-engine.registerService("Recipes", new RecipeService());
-
-// ❌ WRONG — platform leak
-// engine.registerService("Recipes", new NeoForgeRecipeService());
-// The line above would be REJECTED
-```
-
----
-
-## Testing Without Minecraft — Mandatory
-
-- All engine tests run against `MockRecipeService`. **No Minecraft on classpath**.
-- PAL is mockable via interface. Verify against interface contract, NOT concrete impl.
-- `AsyncFileLogger` must be shut down in `@AfterAll` (documented thread-safety requirement).
-- Every test must be runnable **without Minecraft installed**.
-
----
-
-## Other Information (Build, Structure, etc.)
-
-### Project Structure
+# Project Structure (Hiện Tại)
 
 | Module | Role | Depends On |
 |---|---|---|
-| `common-api/` | Pure Java 21 interfaces (PAL, VM, LuaDoc annotations). Zero deps. | *(none)* |
-| `core-engine/` | Cobalt Lua engine wrapper, async logger, linter, EmmyLua stub gen. Fat-jars Cobalt 0.9.9. | `common-api` |
-| `modules/module-recipes/` | Engine-agnostic recipe binding + Lua scripts. | `common-api`, `core-engine` |
-| `neoforge-platform/` | **Only runnable module**. NeoForge launcher, concrete PAL impl. Jar-in-Jar embeds all submodules. | all of the above + NeoForge |
+| `common-api/` | Pure Java 21: PAL, VM interfaces, `@LuaDoc`/`@LuaDefault`, object wrappers | *(none)* |
+| `core-engine/` | Cobalt wrapper, **LuaBinder**, async logger (ASCII), linter, stub generator, LuaModManager | `common-api` |
+| `modules/module-content/` | Content builders (items/blocks/fluids/entities/tabs/keybinds), ProjectileRegistry | `common-api`, `core-engine` |
+| `modules/module-recipes/` | Recipe manipulation + builder DSL | `common-api`, `core-engine` |
+| `modules/module-events/` | Shared event bus (replace semantics) | `common-api`, `core-engine` |
+| `modules/module-entities/` | Unified entity/player tables, AI goals, LuaBinder bindings | `common-api`, `core-engine` |
+| `modules/module-interaction/` | World/block interaction, entity wrapping | `common-api`, `core-engine`, `module-entities` |
+| `modules/module-network/` | Remote events/functions | `common-api`, `core-engine` |
+| `modules/module-client/` | GuiService, ClientEffects, keybinds, RunService | `common-api`, `core-engine` |
+| `modules/module-storage/` | World/player/session data stores | `common-api`, `core-engine` |
+| `modules/module-tasks/` | Task scheduler bridge | `common-api`, `core-engine` |
+| `modules/module-math/` | Vector3/Vector2/Color3, math/string extensions | `common-api`, `core-engine` |
+| `modules/module-interception/` | Anvil/brewing/trade interception | `common-api`, `core-engine` |
+| `neoforge-platform/` | **Only runnable module**. NeoForge launcher, registrars, PAL impl, commands | all of the above + NeoForge |
 
 Entrypoint: `com.luatweaker.platform.LuaTweakerMod` (`@Mod("luatweaker")`).
 
 ---
 
-### Build & Run
+# Build & Run
 
 ```sh
 # full build (CI)
@@ -535,129 +339,63 @@ Entrypoint: `com.luatweaker.platform.LuaTweakerMod` (`@Mod("luatweaker")`).
 ./gradlew :modules:module-recipes:test --tests *EngineTest
 ```
 
-Java 21 (temurin), Gradle via wrapper. CI runs `./gradlew build` on push/PR (`.github/workflows/build.yml`).
+Java 21 (Temurin), Gradle wrapper, NeoForge 21.1.242. CI: `.github/workflows/build.yml`.
 
 ---
 
-### Autonomous LuaMod Directory (`luamods/`)
+# LuaMod Directory (Game Run Dir)
 
-- `luamods/<mod_id>/manifest.json` — Mod identity & metadata declaration
-- `luamods/<mod_id>/default_config.json` — Default configuration copied to `luaconfig/<mod_id>.json`
-- `luamods/<mod_id>/main.lua` — Single autonomous entrypoint
-- `luamods/<mod_id>/src/` — Modular business logic (server, client, startup) loaded strictly via `require()`
-- `luamods/<mod_id>/assets/` + `data/` — Auto-mounted virtual resourcepack & datapack roots
-- `.luatweaker/stubs/` — Auto-generated EmmyLua stubs
-- `logs/luatweaker/mods/<mod_id>.log` — Dedicated per-mod engine output
+- `luamods/<mod_id>/manifest.json` — identity + metadata (id, name, author, version, main, permissions)
+- `luamods/<mod_id>/default_config.json` — defaults copied to `luaconfig/<mod_id>.json`
+- `luamods/<mod_id>/main.lua` — single autonomous entrypoint (requires `src/startup`, `src/server`, `src/client`)
+- `luamods/<mod_id>/assets/` + `data/` — auto-mounted virtual resourcepack & datapack roots
+- `.luatweaker/stubs/` — auto-generated EmmyLua stubs (class inheritance included)
+- `logs/luatweaker/mods/<mod_id>.log` — dedicated per-mod engine output
 
-Game directory: `run/`. The `syncLuaMods` Gradle task copies `neoforge-platform/luamods/` → `run/luamods/` before each run.
-
----
-
-### Lua Script Style — Roblox (Luau) Convention (Maximize Fidelity)
-
-Lua scripts MUST replicate Roblox Studio's official Lua/Luau style as closely as possible. The auto-generated EmmyLua stubs (`luatweaker-api.lua`) mirror a `--!strict` Roblox API, so every script should read like a Roblox ModuleScript. Copy the look and feel of `neoforge-platform/luamods/` scripts.
-
-#### Naming
-
-| Element | Roblox Rule | ✅ Correct | ❌ Wrong |
-|---|---|---|---|
-| Local vars & local functions | `camelCase` | `local maxStack = 64`, `local function registerItems()` | `local MaxStack`, `local max_stack` |
-| Global API / module exports | `PascalCase` | `Mod`, `startup`, `Recipes` | `mod`, `recipesService` |
-| New script file names | `PascalCase` | `RubyRecipes.lua` | `ruby_recipes.lua` |
-| Constants | `UPPER_SNAKE_CASE` | `local MAX_STACK = 64` | `local maxStack = 64` |
-| Booleans | `is*` / `has*` / `can*` prefix | `isServer`, `canAttack` | `getEnabled`, `server` |
-| Events / callbacks | `on*` prefix | `onRightClick`, `onConsume` | `rightClick` |
-
-#### Formatting
-
-- **Indentation**: 4 spaces. **No tabs** (keep consistent with the Java modules).
-- **One statement per line**. Never pack multiple statements into one line.
-- Blank line between logical blocks; blank line **before** each `-- ====` section banner.
-- **Line length**: 120 chars max. Break **before** binary operators (`..`, `and`, `or`).
-- **Strings**: use `[[ ... ]]` long brackets for multi-line data (JSON DataPack patches, long messages). Roblox-style banner:
-
-```lua
--- ===================================================================
--- SECTION TITLE
--- ===================================================================
-```
-
-#### Module Structure (Roblox ModuleScript Pattern)
-
-```lua
-local recipes = Mod:GetService("Recipes")
-
--- PRIVATE FUNCTIONS
-local function buildRubyBlockPattern()
-    return { "RRR", "RRR", "RRR" }
-end
-
--- PUBLIC API
-recipes:addShaped("ruby_block_craft", item("luatweaker:ruby_block", 1), buildRubyBlockPattern(), {
-    R = ingredient("luatweaker:custom_ruby")
-})
-```
-
-- All variables declared `local`. **NEVER** create implicit globals.
-- Use colon method syntax: `object:method()`, chained as `obj:a():b():c()` (same as `Player:sendMessage(...)`).
-- Keep callbacks small — extract helpers into `local function` above the call site.
-- Order inside a script: banner header → `Mod:GetService(...)` handles → constants → private functions → public API → final `print()`.
-
-#### EmmyLua Type Annotations (`--!strict` Equivalent)
-
-Annotate every public script function with `---@param` / `---@return`, matching the generated `.luatweaker/stubs/` types:
-
-```lua
----@param player any
----@param itemStack any
-local function onRightClick(player, itemStack)
-    player:sendMessage("§6Shine!")
-end
-```
-
-#### Forbidden
-
-- No `goto`.
-- No single-letter variable names (except loop counters `i`).
-- No string concatenation for large/multiline text — use `[[ ]]` blocks or `table.concat`.
-- No nested method chains deeper than ~3 calls — split into named locals.
-- No redundant `return nil` / `return true` at the end of void functions.
+Dev workspace: `neoforge-platform/luamods/` → synced to `run/luamods/` by `syncLuaMods`.
 
 ---
 
-### Build Gotchas
+# Lua Script Style — Roblox (Luau) Convention
 
-- **`syncLua`** must run before client/server launch (auto-wired in `neoforge-platform/build.gradle`).
-- **`copyDevelopmentMods`** runs before `processResources` (copies JEI JAR to `run/mods`).
-- **`generateModMetadata`** expands template properties from `gradle.properties` into `build/generated/sources/modMetadata`.
-- **IDE sync** (`neoForgeIdeSync`) depends on all subproject `jar` tasks (root `build.gradle` `projectsEvaluated` block). After a clean build, run `./gradlew build` before opening IDE to avoid classpath errors.
-- **`core-engine`** fat-jars Cobalt (`cc.tweaked:cobalt:0.9.9`) into its own output via `jar { from { configurations.runtimeClasspath.filter { ... } } }`.
-- **`evaluationDependsOn`** in `neoforge-platform/build.gradle` ensures submodules evaluate first. Do not remove.
-
----
-
-### Test Quirks
-
-- Tests use `MockRecipeService` — no Minecraft runtime required.
-- `AsyncFileLogger` must be shut down in `@AfterAll` to avoid dangling threads.
-- The `EngineTest.findScriptFile()` helper checks relative paths then falls back to `../../` for IDE vs CLI execution.
-- `testSyntaxErrorTraceback` relies on `Thread.sleep(1000)` for async logger flush — inherently timing-sensitive.
+- `local` mọi biến; **CẤM** implicit globals (trừ API engine cung cấp).
+- Colon method: `object:method()`, chain tối đa ~3.
+- Banner `-- ==== SECTION ====`, 4 spaces indent, max 120 chars, break trước operator.
+- EmmyLua annotations cho hàm public: `---@param player Player`, `---@return boolean` (dùng class stub `Player`/`Entity`).
+- Naming: local `camelCase`, API export `PascalCase`, constants `UPPER_SNAKE_CASE`, boolean `is*/has*/can*`, callback `on*`.
+- **CẤM**: `goto`, biến 1 ký tự (trừ `i`), concat chuỗi lớn (dùng `[[ ]]` / `table.concat`).
+- Thứ tự script: banner → `require` → config (`mod:GetConfig()`) → constants → private functions → public API → final `print()`.
 
 ---
 
-### Architecture Notes
+# In-Game Commands (Thực Tế)
 
-- **PAL** (`com.luatweaker.api.pal.Platform`) — singleton abstraction over NeoForge. Set once at mod init.
-- **Service Registry** — Lua-side `Mod:GetService("Recipes")` maps to `ILuaEngine.registerService()`. Maintained in `core-engine/src/.../LuaServiceRegistry.java`.
-- **`InterceptionHelper`** — accumulates pending recipe modifications, flushed on `ServerAboutToStartEvent` / `AddReloadListenerEvent` / `/lt reload`. Cleared each cycle.
-- **`@LuaDoc`** annotation on API interfaces drives auto-generated stub files (`luatweaker-api.lua`). Generated whenever stubs are enabled (`AUTO_GENERATE_STUBS` config, default true).
-- **Lua execution stages**: `startup` files run during mod construction; `server` files run on server start and `/lt reload`; `client` files run on client init.
-
----
-
-### In-Game Commands
-
-- `/lt reload` — hot-reloads all Lua scripts, regenerates stubs, re-applies recipes
-- `/lt doctor` — health diagnostics on loaded scripts
+- `/lt reload` — hot-reload Lua, regenerate stubs, re-apply recipes
+- `/lt doctor` — health diagnostics: mods + per-mod load errors + engine/service status
 - `/lt hand` — inspect held item/block
-- `/lt dump` — dump registries to logs
+- `/lt syntax <file>` — syntax check
+- `/lt list` — list loaded mods/scripts
+- `/lt debug [on|off]` — toggle debug logging
+
+---
+
+# Runtime Architecture Notes (Bắt Buộc Nắm)
+
+- **PAL** (`Platform`) — singleton abstraction, set một lần tại mod init.
+- **LuaBinder** — auto-binding từ interface; interface là single source of truth (binding + stubs + docs).
+- **Event bus** — shared map, replace semantics, cross-engine dispatch.
+- **Item/Block handlers** — server-side only dispatch.
+- **`CobaltLuaEngine`** — synchronized VM entry points; `getAndClearLastExecutionError()` cho per-mod load error tracking; `task._run_deferred` chạy coroutine đúng Cobalt loop.
+- **`Signal:FireSync`** — đồng bộ, dùng cho render; `Signal:Fire` — async qua task.
+- **Clientbound network** — dispatch qua network service của active engine.
+- **ProjectileRegistry** — custom projectile definitions thật (damage/explosionPower được áp dụng).
+- **Lua execution stages**: `startup` (content registration) → `server` (runtime) → `client` (HUD/keybind) — tất cả qua `main.lua` require; reload dựng engine mới + re-load mods.
+
+---
+
+# Test Quirks
+
+- Tests dùng `Mock*` interface — không cần Minecraft runtime.
+- `AsyncFileLogger` shutdown trong `@AfterAll`.
+- `EngineTest.findScriptFile()` — relative path + fallback `../../` cho IDE vs CLI.
+- Mỗi module có `build.gradle` riêng với junit deps; module mới cần thêm test deps nếu chưa có.

@@ -19,6 +19,10 @@ public class LuaServiceRegistry {
         return res;
     }
 
+    public static int size() {
+        return SERVICES.size();
+    }
+
     public static void clear() {
         com.luatweaker.api.log.LuaTweakerLog.get().info(
             com.luatweaker.api.log.LogStage.SYSTEM,

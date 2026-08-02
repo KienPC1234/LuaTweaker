@@ -144,14 +144,25 @@ public class SignalCallbackTest {
 
     @Test
     public void modifiedLuaScriptsAreSyntacticallyValid() throws Exception {
-        java.io.File candidate = new java.io.File("../../neoforge-platform/luamods/ruby_mod/src/client/magic_staff_client.lua");
-        if (!candidate.exists()) {
-            candidate = new java.io.File("../neoforge-platform/luamods/ruby_mod/src/client/magic_staff_client.lua");
+        String[] relativePaths = {
+            "neoforge-platform/luamods/ruby_mod/src/client/magic_staff_client.lua",
+            "neoforge-platform/luamods/ruby_mod/src/server/magic_staff.lua",
+            "neoforge-platform/luamods/ruby_mod/src/server/ruby_boss.lua",
+            "neoforge-platform/luamods/ruby_mod/src/startup/ruby_content.lua",
+            "neoforge-platform/luamods/ruby_mod/main.lua",
+            "neoforge-platform/luamods/my_custom_mod/main.lua",
+            "neoforge-platform/luamods/my_custom_mod/src/server/boss_ai.lua"
+        };
+        for (String rel : relativePaths) {
+            java.io.File candidate = new java.io.File("../../" + rel);
+            if (!candidate.exists()) {
+                candidate = new java.io.File("../" + rel);
+            }
+            assertTrue(candidate.exists(), "Script must be found: " + candidate.getAbsolutePath());
+            String source = java.nio.file.Files.readString(candidate.toPath());
+            String error = com.luatweaker.core.engine.LuaEngine.checkSyntax(candidate.getName(), source);
+            assertNull(error, candidate.getName() + " has syntax errors: " + error);
         }
-        assertTrue(candidate.exists(), "magic_staff_client.lua must be found: " + candidate.getAbsolutePath());
-        String source = java.nio.file.Files.readString(candidate.toPath());
-        String error = com.luatweaker.core.engine.LuaEngine.checkSyntax("magic_staff_client.lua", source);
-        assertNull(error, "magic_staff_client.lua has syntax errors: " + error);
     }
 
     @Test

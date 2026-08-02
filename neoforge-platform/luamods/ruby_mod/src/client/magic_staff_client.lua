@@ -1,10 +1,11 @@
 -- ===================================================================
--- Magic Staff: Client-Side HUD, Keybind Feedback & Skill Effects
+-- Magic Staff: Client-Side HUD, Target Outline, Keybind Feedback & Effects
 -- ===================================================================
 local Client = require("LuaTweaker.Client")
 local Network = require("LuaTweaker.Network")
 local ClientEffects = require("LuaTweaker.ClientEffects")
 local GuiService = require("LuaTweaker.GuiService")
+local RenderService = require("LuaTweaker.RenderService")
 
 print("[Client] Initializing Magic Staff Client Visual Effects & HUD Listener...")
 
@@ -12,8 +13,15 @@ print("[Client] Initializing Magic Staff Client Visual Effects & HUD Listener...
 local currentMana = 100
 local maxMana = 100
 local activeSkill = "Ruby Orb Fireball"
-local hudVisible = true
+local hudVisible = false
 local flashTicks = 0
+
+-- TARGET MARKER (client-only border box around the entity marked with [X])
+local markedTargetUuid = nil
+
+-- CONFIG-DRIVEN CLIENT TUNING
+local cfg = mod and mod:GetConfig() or {}
+local TARGET_OUTLINE_COLOR = tonumber(cfg.target_outline_color) or 4294902015
 
 -- HUD GEOMETRY CONSTANTS
 local PANEL_WIDTH = 170
@@ -34,7 +42,8 @@ local FLASH_DURATION = 10
 local SKILL_ACCENTS = {
     ["Ruby Orb Fireball"] = 0xFF38BDF8,
     ["Summon Ruby Guardian"] = 0xFF4ADE80,
-    ["Aegis Shield Barrier"] = 0xFFF472B6
+    ["Aegis Shield Barrier"] = 0xFFF472B6,
+    ["Homing Ruby Dart"] = 0xFFC084FC
 }
 
 -- PRIVATE FUNCTIONS
@@ -67,18 +76,33 @@ if Network then
                 if ClientEffects then ClientEffects:FlashScreen("0xFF55FF55", 0.2) end
             elseif effectType == "aegis" then
                 if ClientEffects then ClientEffects:FlashScreen("0xFF55FFFF", 0.2) end
+            elseif effectType == "homing" then
+                if ClientEffects then ClientEffects:FlashScreen("0xFFC084FC", 0.2) end
             end
         end)
     end
 
-    -- MANA & ACTIVE SKILL SYNC
+    -- MANA & ACTIVE SKILL SYNC (isHolding = false hides the HUD)
     local syncEvent = Network:GetOrCreateRemoteEvent("StaffManaSync")
     if syncEvent and syncEvent.OnClientEvent then
-        syncEvent.OnClientEvent:Connect(function(mana, maxM, skill)
+        syncEvent.OnClientEvent:Connect(function(mana, maxM, skill, isHolding)
             if mana then currentMana = tonumber(mana) or currentMana end
             if maxM then maxMana = tonumber(maxM) or maxMana end
             if skill then activeSkill = tostring(skill) end
-            hudVisible = true
+            hudVisible = isHolding == true
+        end)
+    end
+
+    -- TARGET MARKED: draw a client-only border box around the marked entity
+    local markSyncEvent = Network:GetOrCreateRemoteEvent("TargetMarked")
+    if markSyncEvent and markSyncEvent.OnClientEvent then
+        markSyncEvent.OnClientEvent:Connect(function(uuid)
+            print("[Client] Target marked: " .. tostring(uuid))
+            if uuid and tostring(uuid) ~= "" then
+                markedTargetUuid = tostring(uuid)
+            else
+                markedTargetUuid = nil
+            end
         end)
     end
 end
@@ -113,6 +137,51 @@ if GuiService and GuiService.OnRenderHUD then
         GuiService:DrawTextCentered(manaText, startX + PANEL_WIDTH / 2, barY + 1, TEXT_COLOR, true)
 
         -- Keybind Hint Footer
-        GuiService:DrawTextCentered("[G] Cast  |  [Z] Swap Skill", startX + PANEL_WIDTH / 2, startY + PANEL_HEIGHT - 10, 0xFF94A3B8, true)
+        GuiService:DrawTextCentered("[G] Cast | [Z] Swap | [X] Mark Target", startX + PANEL_WIDTH / 2, startY + PANEL_HEIGHT - 10, 0xFF94A3B8, true)
+    end)
+end
+
+-- WORLD-SPACE TARGET OUTLINE — computed in pure Lua from client-side entity data.
+-- Java only provides primitives (DrawLine/DrawBox/GetEntity/WorldToScreen); all
+-- shape logic, margins, colors and labels live here.
+
+local outlineDebugState = nil
+
+---@param uuid string
+---@param color number
+local function drawTargetOutline(uuid, color)
+    local ent = RenderService:GetEntity(uuid)
+    if not ent then
+        if outlineDebugState ~= "missing" then
+            print("[Client] Outline entity NOT FOUND for uuid: " .. tostring(uuid))
+            outlineDebugState = "missing"
+        end
+        return
+    end
+    if outlineDebugState ~= "ok" then
+        print("[Client] Outline entity found: " .. tostring(ent.Name) .. " (" .. tostring(ent.Type) .. ") @ " .. string.format("%.1f, %.1f, %.1f", ent.X, ent.Y, ent.Z))
+        outlineDebugState = "ok"
+    end
+    local margin = 0.12
+    local halfW = ent.Width / 2 + margin
+    RenderService:DrawBox(
+        ent.X - halfW, ent.Y - margin, ent.Z - halfW,
+        ent.X + halfW, ent.Y + ent.Height + margin, ent.Z + halfW,
+        color
+    )
+    -- Name label above the box (projected to screen space)
+    local labelPos = RenderService:WorldToScreen(ent.X, ent.Y + ent.Height + 0.6, ent.Z)
+    if labelPos and labelPos.Visible then
+        GuiService:DrawTextCentered(ent.Name, math.floor(labelPos.X), math.floor(labelPos.Y), color, true)
+    end
+end
+
+if Client and Client.OnRenderWorld and RenderService then
+    Client.OnRenderWorld:Connect(function(dt)
+        if markedTargetUuid then
+            drawTargetOutline(markedTargetUuid, TARGET_OUTLINE_COLOR)
+        else
+            outlineDebugState = nil
+        end
     end)
 end

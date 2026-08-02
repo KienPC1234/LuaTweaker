@@ -9,7 +9,10 @@ import java.util.List;
 
 public interface IPlatformInteraction {
     void shootProjectile(@NotNull IEntity shooter, @NotNull String projectileType, double speed, double inaccuracy);
-    void shootProjectileAt(@NotNull IEntity shooter, @NotNull String projectileType, @NotNull IEntity target, double speed);
+
+    /** Fires a projectile toward a target entity and returns the spawned projectile (null if it could not fire). */
+    @Nullable
+    IEntity shootProjectileAt(@NotNull IEntity shooter, @NotNull String projectileType, @NotNull IEntity target, double speed);
     void playAnimation(@NotNull IEntity entity, @NotNull String animName, double speed, double transition);
     
     boolean performBlockBreak(@NotNull IEntity actor, int x, int y, int z);
@@ -27,6 +30,9 @@ public interface IPlatformInteraction {
     List<IWorldBlock> getNearbyBlocks(@NotNull IEntity entity, int radius);
     @NotNull
     List<ILocatedItem> getInventoryItems(@NotNull IEntity entity);
+
+    @NotNull
+    List<IEntity> getNearbyEntities(@NotNull IEntity center, double radius);
 
     @Nullable
     com.luatweaker.api.interaction.IInteractableBlock getInteractableBlock(@NotNull String dimension, int x, int y, int z);

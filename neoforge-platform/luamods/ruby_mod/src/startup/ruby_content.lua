@@ -306,3 +306,12 @@ Content.NewKeyMapping("magic_staff_switch")
     :defaultKey(82)
     :onPress("StaffSwapSkill")
     :register()
+
+-- 8. KeyBinding: Mark Target (X) — raycast the entity in front, draw a client-only outline
+local markCfg = mod and mod:GetConfig() or {}
+Content.NewKeyMapping("magic_staff_mark_target")
+    :displayName("Magic Staff: Mark Target")
+    :category("LuaTweaker Controls")
+    :defaultKey(markCfg.mark_target_key or 88)
+    :onPress("TargetMark")
+    :register()

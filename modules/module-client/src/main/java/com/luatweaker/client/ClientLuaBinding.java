@@ -4,6 +4,7 @@ import com.luatweaker.api.client.IKeyBindService;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
+import com.luatweaker.core.bind.LuaBinder;
 import org.jetbrains.annotations.NotNull;
 
 public class ClientLuaBinding {
@@ -54,7 +55,12 @@ public class ClientLuaBinding {
             );
             try {
                 engine.executeString(script, "KeyBindTrigger");
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                com.luatweaker.api.log.LuaTweakerLog.get().error(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "Failed to dispatch keybind Lua signal '" + id + "': " + e.getMessage()
+                );
+            }
         });
 
         globals.rawset("Client", clientTable);
@@ -147,9 +153,12 @@ public class ClientLuaBinding {
         globals.rawset("TweenService", tweenService);
         engine.registerService("TweenService", tweenService);
 
-        // 5. Roblox RunService
+        // 5. Roblox RunService — merge into the bootstrap table (keeps IsServer/IsClient)
         ILuaValue signalClass = globals.rawget("Signal");
-        ILuaTable runService = engine.createTable();
+        ILuaValue existingRun = globals.rawget("RunService");
+        ILuaTable runService = (existingRun != null && existingRun.isTable())
+                ? existingRun.asTable()
+                : engine.createTable();
         if (signalClass != null && signalClass.isTable()) {
             ILuaValue newSignalFn = signalClass.asTable().rawget("new");
             if (newSignalFn != null && !newSignalFn.isNil()) {
@@ -160,96 +169,16 @@ public class ClientLuaBinding {
         globals.rawset("RunService", runService);
         engine.registerService("RunService", runService);
 
-        // 6. Roblox GuiService
-        ILuaTable guiServiceTable = engine.createTable();
+        // 6. Roblox GuiService — method bindings auto-generated from IGuiService
+        ILuaTable guiServiceTable = LuaBinder.bind(engine, "GuiService", guiService, com.luatweaker.api.client.IGuiService.class);
         if (signalClass != null && signalClass.isTable()) {
             ILuaValue newSignalFn = signalClass.asTable().rawget("new");
             if (newSignalFn != null && !newSignalFn.isNil()) {
                 guiServiceTable.rawset("OnRenderHUD", engine.callFunction(newSignalFn, signalClass));
             }
         }
-        guiServiceTable.rawset("ShowNotification", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
-            if (args.length - off >= 2) {
-                String title = args[off].asString();
-                String text = args[off + 1].asString();
-                com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM, "[GUI Notification] " + title + ": " + text);
-            }
-            return engine.nilValue();
-        });
 
-        guiServiceTable.rawset("DrawRect", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
-            if (guiService != null && args.length - off >= 5) {
-                int x = args[off].asInt();
-                int y = args[off + 1].asInt();
-                int width = args[off + 2].asInt();
-                int height = args[off + 3].asInt();
-                int color = (int) (long) args[off + 4].asDouble();
-                guiService.drawRect(x, y, width, height, color);
-            }
-            return engine.nilValue();
-        });
-        guiServiceTable.rawset("drawRect", guiServiceTable.rawget("DrawRect"));
-
-        guiServiceTable.rawset("DrawText", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
-            if (guiService != null && args.length - off >= 4) {
-                String text = args[off].asString();
-                int x = args[off + 1].asInt();
-                int y = args[off + 2].asInt();
-                int color = (int) (long) args[off + 3].asDouble();
-                boolean dropShadow = args.length - off >= 5 ? args[off + 4].asBoolean() : true;
-                guiService.drawText(text, x, y, color, dropShadow);
-            }
-            return engine.nilValue();
-        });
-        guiServiceTable.rawset("drawText", guiServiceTable.rawget("DrawText"));
-
-        guiServiceTable.rawset("DrawTextCentered", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
-            if (guiService != null && args.length - off >= 4) {
-                String text = args[off].asString();
-                int centerX = args[off + 1].asInt();
-                int y = args[off + 2].asInt();
-                int color = (int) (long) args[off + 3].asDouble();
-                boolean dropShadow = args.length - off >= 5 ? args[off + 4].asBoolean() : true;
-                guiService.drawTextCentered(text, centerX, y, color, dropShadow);
-            }
-            return engine.nilValue();
-        });
-        guiServiceTable.rawset("drawTextCentered", guiServiceTable.rawget("DrawTextCentered"));
-
-        guiServiceTable.rawset("DrawOutline", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
-            if (guiService != null && args.length - off >= 5) {
-                int x = args[off].asInt();
-                int y = args[off + 1].asInt();
-                int width = args[off + 2].asInt();
-                int height = args[off + 3].asInt();
-                int color = (int) (long) args[off + 4].asDouble();
-                guiService.drawOutline(x, y, width, height, color);
-            }
-            return engine.nilValue();
-        });
-        guiServiceTable.rawset("drawOutline", guiServiceTable.rawget("DrawOutline"));
-
-        guiServiceTable.rawset("DrawProgressBar", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
-            if (guiService != null && args.length - off >= 7) {
-                int x = args[off].asInt();
-                int y = args[off + 1].asInt();
-                int width = args[off + 2].asInt();
-                int height = args[off + 3].asInt();
-                double fillPercent = args[off + 4].asDouble();
-                int bgColor = (int) (long) args[off + 5].asDouble();
-                int fillColor = (int) (long) args[off + 6].asDouble();
-                guiService.drawProgressBar(x, y, width, height, fillPercent, bgColor, fillColor);
-            }
-            return engine.nilValue();
-        });
-        guiServiceTable.rawset("drawProgressBar", guiServiceTable.rawget("DrawProgressBar"));
-
+        // GetScreenSize returns a table {1, 2, Width, Height} — bind manually.
         guiServiceTable.rawset("GetScreenSize", args -> {
             if (guiService != null) {
                 int[] size = guiService.getScreenSize();
@@ -263,23 +192,6 @@ public class ClientLuaBinding {
             return engine.nilValue();
         });
         guiServiceTable.rawset("getScreenSize", guiServiceTable.rawget("GetScreenSize"));
-
-        guiServiceTable.rawset("DrawTexture", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
-            if (guiService != null && args.length - off >= 5) {
-                String textureId = args[off].asString();
-                int x = args[off + 1].asInt();
-                int y = args[off + 2].asInt();
-                int width = args[off + 3].asInt();
-                int height = args[off + 4].asInt();
-                guiService.drawTexture(textureId, x, y, width, height);
-            }
-            return engine.nilValue();
-        });
-        guiServiceTable.rawset("drawTexture", guiServiceTable.rawget("DrawTexture"));
-
-        globals.rawset("GuiService", guiServiceTable);
-        engine.registerService("GuiService", guiServiceTable);
 
         engine.registerService("ClientService", clientService);
         engine.registerService("ClientEffects", clientEffects);

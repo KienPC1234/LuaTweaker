@@ -31,7 +31,21 @@ public class ContentLuaBinding {
             int off = getOffset(args);
             if (args.length - off < 1) throw new IllegalArgumentException("startup:registerProjectile requires (id, [configTable])");
             String id = args[off].asString();
-            LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom Projectile definition: " + id);
+            double damage = 0;
+            double explosionPower = 0;
+            String trailParticle = "";
+            if (args.length - off >= 2 && args[off + 1].isTable()) {
+                ILuaTable cfg = args[off + 1].asTable();
+                ILuaValue dmgVal = cfg.rawget("damage");
+                if (dmgVal != null && !dmgVal.isNil()) damage = dmgVal.asDouble();
+                ILuaValue expVal = cfg.rawget("explosionPower");
+                if (expVal != null && !expVal.isNil()) explosionPower = expVal.asDouble();
+                ILuaValue trailVal = cfg.rawget("trailParticle");
+                if (trailVal != null && !trailVal.isNil()) trailParticle = trailVal.asString();
+            }
+            ProjectileRegistry.register(id, new com.luatweaker.api.content.ProjectileDefinition(damage, explosionPower, trailParticle));
+            LuaTweakerLog.get().info(LogStage.SYSTEM,
+                    "Registered Custom Projectile definition: " + id + " (damage=" + damage + ", explosionPower=" + explosionPower + ")");
             return null;
         });
 

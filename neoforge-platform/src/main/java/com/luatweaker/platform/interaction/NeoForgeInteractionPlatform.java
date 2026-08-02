@@ -16,8 +16,9 @@ public class NeoForgeInteractionPlatform implements IPlatformInteraction {
     }
 
     @Override
-    public void shootProjectileAt(@NotNull IEntity shooter, @NotNull String projectileType, @NotNull IEntity target, double speed) {
-        com.luatweaker.platform.interaction.EntityInteractionHelper.shootProjectileAt(shooter, projectileType, target, speed);
+    @Nullable
+    public com.luatweaker.api.entity.IEntity shootProjectileAt(@NotNull IEntity shooter, @NotNull String projectileType, @NotNull IEntity target, double speed) {
+        return com.luatweaker.platform.interaction.EntityInteractionHelper.shootProjectileAt(shooter, projectileType, target, speed);
     }
 
     @Override
@@ -75,6 +76,21 @@ public class NeoForgeInteractionPlatform implements IPlatformInteraction {
     @NotNull
     public List<ILocatedItem> getInventoryItems(@NotNull IEntity entity) {
         return com.luatweaker.platform.interaction.InventoryInteractionHelper.getInventoryItems(entity);
+    }
+
+    @Override
+    @NotNull
+    public List<IEntity> getNearbyEntities(@NotNull IEntity center, double radius) {
+        java.util.List<IEntity> result = new java.util.ArrayList<>();
+        if (center.getRawEntity() instanceof net.minecraft.world.entity.Entity mcEntity
+                && mcEntity.level() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            net.minecraft.world.phys.AABB area = mcEntity.getBoundingBox().inflate(radius);
+            for (net.minecraft.world.entity.LivingEntity living
+                    : serverLevel.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class, area, e -> e != mcEntity)) {
+                result.add(new NeoForgeInteractableEntity(living));
+            }
+        }
+        return result;
     }
 
     @Override

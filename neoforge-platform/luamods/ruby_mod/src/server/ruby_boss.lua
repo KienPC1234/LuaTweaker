@@ -10,7 +10,14 @@ local Vector3  = require("LuaTweaker.Math.Vector3")
 print("Initializing RubyBossTest.lua...")
 
 Entities.EntitySpawned:Connect(function(entity)
+    -- Entity: the unified entity Lua table (method-style API + property aliases)
     if entity.Type == "luatweaker:ruby_boss" then
+        -- Summoned minions are follow-mode pets: the owner's scripts decide when
+        -- they may attack (marking a target), so skip the boss AI here.
+        if entity:hasTag("ruby_minion") then
+            print("[Boss System] Summoned minion spawned — follow mode active.")
+            return
+        end
         print("[Boss System] Initializing Pure Custom AI for " .. entity.Type .. "...")
 
         -- 1. CLEAR ALL DEFAULT VANILLA AI GOALS (100% Pure Custom Lua AI)

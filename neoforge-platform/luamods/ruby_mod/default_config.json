@@ -1,5 +1,22 @@
 {
   "debug_mode": true,
   "ruby_boss_health": 300.0,
-  "ruby_sword_damage": 10.0
+  "ruby_sword_damage": 10.0,
+  "staff_max_mana": 100,
+  "staff_mana_regen_per_tick": 4,
+  "staff_skills": [
+    { "name": "Ruby Orb Fireball", "cost": 20, "cooldown": 1.5 },
+    { "name": "Summon Ruby Guardian", "cost": 50, "cooldown": 10.0 },
+    { "name": "Aegis Shield Barrier", "cost": 35, "cooldown": 8.0 },
+    { "name": "Homing Ruby Dart", "cost": 30, "cooldown": 4.0 }
+  ],
+  "mark_target_key": 88,
+  "target_mark_max_distance": 64.0,
+  "target_mark_radius": 1.0,
+  "target_outline_color": 4294902015,
+  "homing_range": 24.0,
+  "homing_max_ticks": 100,
+  "homing_dart_speed": 2.0,
+  "minion_follow_speed": 1.1,
+  "minion_attack_speed": 1.3
 }

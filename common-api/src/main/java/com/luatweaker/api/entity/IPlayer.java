@@ -1,6 +1,7 @@
 package com.luatweaker.api.entity;
 
 import com.luatweaker.api.annotation.LuaDoc;
+import com.luatweaker.api.annotation.LuaDefault;
 
 @LuaDoc(description = "Represents a Minecraft player entity wrapper with messaging, inventory, and stats interaction.")
 public interface IPlayer extends IEntity {
@@ -23,7 +24,7 @@ public interface IPlayer extends IEntity {
     boolean isCreative();
 
     @LuaDoc(description = "Gives an item to the player inventory.", params = {"itemId: string", "count: integer"})
-    void giveItem(String itemId, int count);
+    void giveItem(String itemId, @LuaDefault("1") int count);
 
     @LuaDoc(description = "Gives experience points to the player.", params = {"exp: integer"})
     void giveExperience(int exp);
@@ -42,13 +43,13 @@ public interface IPlayer extends IEntity {
     default String getOffHandItem() { return "minecraft:air"; }
 
     @LuaDoc(description = "Sets item held in main hand.", params = {"itemId: string", "count: integer"})
-    default void setMainHandItem(String itemId, int count) {}
+    default void setMainHandItem(String itemId, @LuaDefault("1") int count) {}
 
     @LuaDoc(description = "Clears all items from the player's inventory.")
     default void clearInventory() {}
 
     @LuaDoc(description = "Drops specified item from the player.", params = {"itemId: string", "count: integer"})
-    default void dropItem(String itemId, int count) {}
+    default void dropItem(String itemId, @LuaDefault("1") int count) {}
 
     @LuaDoc(description = "Returns current hunger / food level.", returnType = "integer")
     default int getFoodLevel() { return 20; }
@@ -57,14 +58,14 @@ public interface IPlayer extends IEntity {
     default void setFoodLevel(int level) {}
 
     @LuaDoc(description = "Displays title and subtitle on player screen.", params = {"title: string", "subtitle: string", "fadeIn: integer", "stay: integer", "fadeOut: integer"})
-    default void sendTitle(String title, String subtitle, int fadeInTicks, int stayTicks, int fadeOutTicks) {}
+    default void sendTitle(String title, String subtitle, @LuaDefault("10") int fadeInTicks, @LuaDefault("70") int stayTicks, @LuaDefault("20") int fadeOutTicks) {}
     default void sendTitle(String title, String subtitle) { sendTitle(title, subtitle, 10, 70, 20); }
 
     @LuaDoc(description = "Heals the player by specified health amount.", params = {"amount: number"})
     default void heal(float amount) { setHealth(Math.min(getMaxHealth(), getHealth() + Math.max(0, amount))); }
 
     @LuaDoc(description = "Feeds the player by adding food and saturation points.", params = {"foodAmount: integer", "saturation: number"})
-    default void feed(int foodAmount, float saturation) {}
+    default void feed(int foodAmount, @LuaDefault("1.0") float saturation) {}
 
     @LuaDoc(description = "Teleports player to target coordinates.", params = {"x: number", "y: number", "z: number"})
     default void teleport(double x, double y, double z) {}

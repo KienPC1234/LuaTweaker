@@ -136,6 +136,7 @@ public class LuaTweakerMod {
         if (Platform.getContent().isClient()) {
             modEventBus.addListener(com.luatweaker.platform.client.DynamicKeyMappingHandler::onRegisterKeyMappings);
             NeoForge.EVENT_BUS.addListener(com.luatweaker.platform.client.DynamicKeyMappingHandler::onClientTick);
+            NeoForge.EVENT_BUS.addListener(com.luatweaker.platform.client.NeoForgeWorldRenderEventListener::onRenderLevel);
         }
 
         // Build the command registry (core commands auto-registered inside)
@@ -160,6 +161,11 @@ public class LuaTweakerMod {
 
         com.luatweaker.client.ClientServiceImpl clientService = new com.luatweaker.client.ClientServiceImpl();
         com.luatweaker.client.ClientLuaBinding.registerBindings(engine, clientService);
+
+        ILuaValue clientVal = engine.getGlobalEnvironment().rawget("Client");
+        if (clientVal != null && clientVal.isTable()) {
+            com.luatweaker.platform.client.NeoForgeWorldRenderEventListener.registerRenderService(engine, clientVal.asTable());
+        }
 
         com.luatweaker.math.MathLuaBinding.registerBindings(engine);
 
@@ -353,11 +359,14 @@ public class LuaTweakerMod {
                                     LOGGER.warn("serverNetworkService is null when handling serverbound payload {}", payload.channelName());
                                 }
                             } else {
-                                com.luatweaker.network.NetworkServiceImpl ns = clientNetworkService;
-                                if (ns != null) {
-                                    ns.OnServerFired(payload.channelName(), "", args);
+                                // Clientbound: the OnClientEvent listeners are connected on the
+                                // network service of the CURRENTLY ACTIVE engine (where the mods
+                                // loaded), not on the client setup engine which never loads mods.
+                                Object ns = com.luatweaker.core.service.LuaServiceRegistry.get("NetworkServiceImpl");
+                                if (ns instanceof com.luatweaker.network.NetworkServiceImpl networkService) {
+                                    networkService.OnServerFired(payload.channelName(), "", args);
                                 } else {
-                                    LOGGER.warn("clientNetworkService is null when handling clientbound payload {}", payload.channelName());
+                                    LOGGER.warn("No active NetworkService for clientbound payload {}", payload.channelName());
                                 }
                             }
                         }
@@ -417,6 +426,10 @@ public class LuaTweakerMod {
         stubGen.registerService("WorldAction", com.luatweaker.api.entity.ai.IWorldActionService.class);
         stubGen.registerService("Interaction", com.luatweaker.api.interaction.IInteractionService.class);
         stubGen.registerService("GuiService", com.luatweaker.api.client.IGuiService.class);
+
+        // Runtime wrapper classes (entity/player tables created dynamically at runtime)
+        stubGen.registerClassStub(com.luatweaker.api.entity.IEntity.class, "Entity");
+        stubGen.registerClassStub(com.luatweaker.api.entity.IPlayer.class, "Player");
 
         // Legacy Mod Service Names (Compatibility)
         stubGen.registerService("Recipes", com.luatweaker.api.recipe.IRecipeManagerService.class);

@@ -79,7 +79,7 @@ public class LuaScriptsIntegrationTest {
 
         Platform.setInteraction(new com.luatweaker.api.pal.IPlatformInteraction() {
             public void shootProjectile(com.luatweaker.api.entity.IEntity s, String p, double sp, double i) {}
-            public void shootProjectileAt(com.luatweaker.api.entity.IEntity s, String p, com.luatweaker.api.entity.IEntity t, double sp) {}
+            public com.luatweaker.api.entity.IEntity shootProjectileAt(com.luatweaker.api.entity.IEntity s, String p, com.luatweaker.api.entity.IEntity t, double sp) { return null; }
             public void playAnimation(com.luatweaker.api.entity.IEntity e, String a, double sp, double tr) {}
             public boolean performBlockBreak(com.luatweaker.api.entity.IEntity a, int x, int y, int z) { return false; }
             public boolean performBlockPlace(com.luatweaker.api.entity.IEntity a, int x, int y, int z, String b) { return false; }
@@ -91,6 +91,7 @@ public class LuaScriptsIntegrationTest {
             public boolean dropInventoryItem(com.luatweaker.api.entity.IEntity a, int s, int c) { return false; }
             public java.util.List<com.luatweaker.api.objects.IWorldBlock> getNearbyBlocks(com.luatweaker.api.entity.IEntity e, int r) { return java.util.List.of(); }
             public java.util.List<com.luatweaker.api.objects.ILocatedItem> getInventoryItems(com.luatweaker.api.entity.IEntity e) { return java.util.List.of(); }
+            public java.util.List<com.luatweaker.api.entity.IEntity> getNearbyEntities(com.luatweaker.api.entity.IEntity c, double r) { return java.util.List.of(); }
             public com.luatweaker.api.interaction.IInteractableBlock getInteractableBlock(String d, int x, int y, int z) { return null; }
             public com.luatweaker.api.interaction.IInteractableItem getInteractableItem(Object e, int s) { return null; }
             public com.luatweaker.api.interaction.IInteractableEntity getInteractableEntity(String u) { return null; }

@@ -2,6 +2,7 @@ package com.luatweaker.platform.bootstrap;
 
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
+import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.client.ClientLuaBinding;
 import com.luatweaker.client.ClientServiceImpl;
 import com.luatweaker.content.ContentLuaBinding;
@@ -84,6 +85,13 @@ public final class LuaServiceBootstrap {
         com.luatweaker.platform.client.NeoForgeGuiService guiService = new com.luatweaker.platform.client.NeoForgeGuiService();
         ClientLuaBinding.registerBindings(engine, clientService, keyBindService, guiService);
         engine.registerService("KeyBindService", keyBindService);
+
+        // 10b. World-space render service + Client.OnRenderWorld signal (all engines,
+        // so client scripts loaded on the runtime engine can require it).
+        ILuaValue clientVal = engine.getGlobalEnvironment().rawget("Client");
+        if (clientVal != null && clientVal.isTable()) {
+            com.luatweaker.platform.client.NeoForgeWorldRenderEventListener.registerRenderService(engine, clientVal.asTable());
+        }
 
         // 11. Recipe Manager Table
         ILuaTable recipesTable = engine.createTable();

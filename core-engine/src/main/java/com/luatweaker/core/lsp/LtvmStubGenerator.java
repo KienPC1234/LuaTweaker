@@ -19,6 +19,7 @@ import java.util.*;
 public class LtvmStubGenerator {
     private final Map<String, Class<?>> registeredModules = new LinkedHashMap<>();
     private final Set<Class<?>> processedClasses = new HashSet<>();
+    private final Map<Class<?>, String> classNameByType = new HashMap<>();
     private final StringBuilder classStubs = new StringBuilder();
 
     public LtvmStubGenerator() {
@@ -46,7 +47,10 @@ public class LtvmStubGenerator {
     }
 
     public LtvmStubGenerator registerClassStub(Class<?> clazz, String luaClassName) {
-        generateClassStub(clazz, luaClassName);
+        if (clazz != null && luaClassName != null) {
+            classNameByType.put(clazz, luaClassName);
+            generateClassStub(clazz, luaClassName);
+        }
         return this;
     }
 
@@ -56,11 +60,26 @@ public class LtvmStubGenerator {
         }
         processedClasses.add(clazz);
 
+        // Emit parent class stubs first so `---@class X: Parent` references resolve.
+        StringBuilder inheritance = new StringBuilder();
+        for (Class<?> iface : clazz.getInterfaces()) {
+            if (iface.isAnnotationPresent(LuaDoc.class)) {
+                String parentName = classNameByType.getOrDefault(iface, iface.getSimpleName());
+                generateClassStub(iface, parentName);
+                if (inheritance.length() > 0) {
+                    inheritance.append(", ");
+                }
+                inheritance.append(parentName);
+            }
+        }
+
         LuaDoc typeDoc = clazz.getAnnotation(LuaDoc.class);
         if (typeDoc != null && !typeDoc.description().isEmpty()) {
             classStubs.append("--- ").append(typeDoc.description()).append("\n");
         }
-        classStubs.append("---@class ").append(luaClassName).append("\n");
+        classStubs.append("---@class ").append(luaClassName)
+                .append(inheritance.length() > 0 ? ": " + inheritance : "")
+                .append("\n");
         classStubs.append("local ").append(luaClassName).append(" = {}\n\n");
 
         for (Method method : clazz.getDeclaredMethods()) {
@@ -110,12 +129,12 @@ public class LtvmStubGenerator {
             // Transitive scanning: check return type for @LuaDoc
             Class<?> returnType = method.getReturnType();
             if (returnType.isAnnotationPresent(LuaDoc.class) && !processedClasses.contains(returnType)) {
-                generateClassStub(returnType, returnType.getSimpleName());
+                generateClassStub(returnType, classNameByType.getOrDefault(returnType, returnType.getSimpleName()));
             }
             // Transitive scanning: check parameter types for @LuaDoc
             for (Class<?> paramType : method.getParameterTypes()) {
                 if (paramType.isAnnotationPresent(LuaDoc.class) && !processedClasses.contains(paramType)) {
-                    generateClassStub(paramType, paramType.getSimpleName());
+                    generateClassStub(paramType, classNameByType.getOrDefault(paramType, paramType.getSimpleName()));
                 }
             }
         }

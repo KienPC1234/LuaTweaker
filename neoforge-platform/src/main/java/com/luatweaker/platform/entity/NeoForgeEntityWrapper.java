@@ -36,6 +36,11 @@ public class NeoForgeEntityWrapper implements IEntity {
     }
 
     @Override
+    public String getUuid() {
+        return entity != null ? entity.getUUID().toString() : "";
+    }
+
+    @Override
     public float getHealth() {
         return (entity instanceof LivingEntity living) ? living.getHealth() : 0.0f;
     }
@@ -50,6 +55,19 @@ public class NeoForgeEntityWrapper implements IEntity {
     @Override
     public float getMaxHealth() {
         return (entity instanceof LivingEntity living) ? living.getMaxHealth() : 0.0f;
+    }
+
+    @Override
+    public void setMaxHealth(float maxHealth) {
+        if (entity instanceof LivingEntity living) {
+            var attr = living.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH);
+            if (attr != null) {
+                attr.setBaseValue(maxHealth);
+                if (living.getHealth() > maxHealth) {
+                    living.setHealth(maxHealth);
+                }
+            }
+        }
     }
 
     @Override
@@ -175,6 +193,14 @@ public class NeoForgeEntityWrapper implements IEntity {
     }
 
     @Override
+    public boolean moveTo(double x, double y, double z, double speed) {
+        if (entity instanceof net.minecraft.world.entity.PathfinderMob mob) {
+            return mob.getNavigation().moveTo(x, y, z, speed);
+        }
+        return false;
+    }
+
+    @Override
     public void addVelocity(double vx, double vy, double vz) {
         if (entity != null) {
             entity.push(vx, vy, vz);
@@ -242,6 +268,51 @@ public class NeoForgeEntityWrapper implements IEntity {
 
     @Override public boolean isPlayer() { return entity instanceof Player; }
     @Override public boolean isLiving() { return entity instanceof LivingEntity; }
+
+    @Override
+    public void shootProjectile(String projectileType, double speed, double inaccuracy) {
+        com.luatweaker.platform.interaction.EntityInteractionHelper.shootProjectile(this, projectileType, speed, inaccuracy);
+    }
+
+    @Override
+    public IEntity shootProjectileAt(String projectileType, IEntity target, double speed) {
+        return com.luatweaker.platform.interaction.EntityInteractionHelper.shootProjectileAt(this, projectileType, target, speed);
+    }
+
+    @Override
+    public void playAnimation(String animName, double speed, double transition) {
+        com.luatweaker.platform.interaction.EntityInteractionHelper.playAnimation(this, animName, speed, transition);
+    }
+
+    @Override
+    public void setAttribute(String key, String value) {
+        if (entity != null && key != null) {
+            entity.getPersistentData().putString(key, value);
+        }
+    }
+
+    @Override
+    public String getAttribute(String key) {
+        if (entity != null && key != null && entity.getPersistentData().contains(key)) {
+            return entity.getPersistentData().get(key).getAsString();
+        }
+        return null;
+    }
+
+    @Override
+    public double getMotionX() {
+        return entity != null ? entity.getDeltaMovement().x : 0;
+    }
+
+    @Override
+    public double getMotionY() {
+        return entity != null ? entity.getDeltaMovement().y : 0;
+    }
+
+    @Override
+    public double getMotionZ() {
+        return entity != null ? entity.getDeltaMovement().z : 0;
+    }
 
     @Override
     public void remove() {

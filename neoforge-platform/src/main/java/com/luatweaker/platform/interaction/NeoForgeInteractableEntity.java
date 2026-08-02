@@ -36,6 +36,11 @@ public class NeoForgeInteractableEntity implements IInteractableEntity, IEntity 
     }
 
     @Override
+    public String getUuid() {
+        return entity.getUUID().toString();
+    }
+
+    @Override
     public double getX() {
         return entity.getX();
     }
@@ -276,47 +281,47 @@ public class NeoForgeInteractableEntity implements IInteractableEntity, IEntity 
         }
     }
 
-    private void spawnProjectile(ServerLevel level, LivingEntity shooter, Vec3 spawnPos, Vec3 dir, String typeId, double speed, double inaccuracy) {
+    private net.minecraft.world.entity.projectile.Projectile spawnProjectile(ServerLevel level, LivingEntity shooter, Vec3 spawnPos, Vec3 dir, String typeId, double speed, double inaccuracy) {
         String cleanId = typeId.contains(":") ? typeId : "minecraft:" + typeId;
         switch (cleanId) {
             case "minecraft:small_fireball": {
                 var projectile = new net.minecraft.world.entity.projectile.SmallFireball(level, shooter, dir.scale(speed));
                 projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
                 level.addFreshEntity(projectile);
-                break;
+                return projectile;
             }
             case "minecraft:fireball":
             case "minecraft:large_fireball": {
                 var projectile = new net.minecraft.world.entity.projectile.LargeFireball(level, shooter, dir.scale(speed), 1);
                 projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
                 level.addFreshEntity(projectile);
-                break;
+                return projectile;
             }
             case "minecraft:dragon_fireball": {
                 var projectile = new net.minecraft.world.entity.projectile.DragonFireball(level, shooter, dir.scale(speed));
                 projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
                 level.addFreshEntity(projectile);
-                break;
+                return projectile;
             }
             case "minecraft:wither_skull": {
                 var projectile = new net.minecraft.world.entity.projectile.WitherSkull(level, shooter, dir.scale(speed));
                 projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
                 level.addFreshEntity(projectile);
-                break;
+                return projectile;
             }
             case "minecraft:snowball": {
                 var projectile = new net.minecraft.world.entity.projectile.Snowball(level, shooter);
                 projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
                 projectile.shoot(dir.x, dir.y, dir.z, (float) speed, (float) inaccuracy);
                 level.addFreshEntity(projectile);
-                break;
+                return projectile;
             }
             default: {
                 var projectile = new net.minecraft.world.entity.projectile.Arrow(level, shooter, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.ARROW), null);
                 projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
                 projectile.shoot(dir.x, dir.y, dir.z, (float) speed, (float) inaccuracy);
                 level.addFreshEntity(projectile);
-                break;
+                return projectile;
             }
         }
     }
@@ -369,6 +374,88 @@ public class NeoForgeInteractableEntity implements IInteractableEntity, IEntity 
         if (entity instanceof LivingEntity living) {
             living.hurt(living.damageSources().generic(), amount);
         }
+    }
+
+    @Override
+    public void setMotion(double vx, double vy, double vz) {
+        entity.setDeltaMovement(vx, vy, vz);
+        entity.hasImpulse = true;
+    }
+
+    @Override
+    public boolean moveTo(double x, double y, double z, double speed) {
+        if (entity instanceof net.minecraft.world.entity.PathfinderMob mob) {
+            return mob.getNavigation().moveTo(x, y, z, speed);
+        }
+        return false;
+    }
+
+    @Override
+    public void addVelocity(double vx, double vy, double vz) {
+        entity.push(vx, vy, vz);
+        entity.hasImpulse = true;
+    }
+
+    @Override
+    public void teleport(double x, double y, double z) {
+        entity.teleportTo(x, y, z);
+    }
+
+    @Override
+    public double getMotionX() {
+        return entity.getDeltaMovement().x;
+    }
+
+    @Override
+    public double getMotionY() {
+        return entity.getDeltaMovement().y;
+    }
+
+    @Override
+    public double getMotionZ() {
+        return entity.getDeltaMovement().z;
+    }
+
+    @Override
+    public void swingArm() {
+        if (entity instanceof LivingEntity living) {
+            living.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
+        }
+    }
+
+    @Override
+    public void shootProjectile(String projectileType, double speed, double inaccuracy) {
+        if (entity instanceof LivingEntity shooter && shooter.level() instanceof ServerLevel level) {
+            Vec3 look = shooter.getLookAngle();
+            Vec3 spawnPos = shooter.getEyePosition().add(look.scale(1.2));
+            spawnProjectile(level, shooter, spawnPos, look, projectileType, speed, inaccuracy);
+        }
+    }
+
+    @Override
+    public IEntity shootProjectileAt(String projectileType, IEntity target, double speed) {
+        if (target != null && target.getRawEntity() instanceof Entity t
+                && entity instanceof LivingEntity shooter && shooter.level() instanceof ServerLevel level) {
+            Vec3 targetPos = t.getEyePosition();
+            Vec3 shooterPos = shooter.getEyePosition();
+            Vec3 dir = targetPos.subtract(shooterPos).normalize();
+            Vec3 spawnPos = shooterPos.add(dir.scale(1.2));
+            net.minecraft.world.entity.projectile.Projectile projectile = spawnProjectile(level, shooter, spawnPos, dir, projectileType, speed, 0.0);
+            if (projectile != null) {
+                return new NeoForgeInteractableEntity(projectile);
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public void playAnimation(String animName, double speed, double transition) {
+        entity.getPersistentData().putString("PlayingAnimation", animName);
+        entity.getPersistentData().putDouble("AnimSpeed", speed);
+        com.luatweaker.api.log.LuaTweakerLog.get().info(
+            com.luatweaker.api.log.LogStage.SYSTEM,
+            "[EntityAnimation] Played animation '" + animName + "' on entity " + entity.getUUID() + " speed=" + speed
+        );
     }
 
     @Override

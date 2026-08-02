@@ -30,6 +30,15 @@ public class CobaltLuaEngine implements ILuaEngine {
     private final java.util.Map<String, LuaValue> moduleCache = new java.util.concurrent.ConcurrentHashMap<>();
     private final ThreadLocal<java.util.Deque<String>> activeModuleStack = ThreadLocal.withInitial(java.util.ArrayDeque::new);
 
+    private volatile String lastExecutionError;
+
+    /** Returns and clears the error recorded by the most recent execution, if any. */
+    public String getAndClearLastExecutionError() {
+        String error = lastExecutionError;
+        lastExecutionError = null;
+        return error;
+    }
+
     public CobaltLuaEngine() {
         this(false);
     }
@@ -498,6 +507,7 @@ public class CobaltLuaEngine implements ILuaEngine {
             }
             case "LuaTweaker.ClientEffects", "ClientEffects" -> globals.rawget("ClientEffects");
             case "LuaTweaker.GuiService", "GuiService" -> globals.rawget("GuiService");
+            case "LuaTweaker.RenderService", "RenderService" -> globals.rawget("RenderService");
             case "LuaTweaker.RunService", "RunService" -> globals.rawget("RunService");
             case "LuaTweaker.KeyBindService", "KeyBindService" -> globals.rawget("KeyBindService");
             case "LuaTweaker.Signal", "Signal" -> globals.rawget("Signal");
@@ -518,7 +528,9 @@ public class CobaltLuaEngine implements ILuaEngine {
             org.squiddev.cobalt.function.Dispatch.call(state, closure);
         } catch (Throwable e) {
             if (!e.getClass().getName().contains("UnwindThrowable")) {
-                AsyncFileLogger.get().error("BOOTSTRAP", "Error running bootstrap script " + name + ": " + e.getMessage(), state);
+                String msg = e.getMessage() != null && !e.getMessage().isBlank() ? e.getMessage() : e.toString();
+                lastExecutionError = msg;
+                AsyncFileLogger.get().error("BOOTSTRAP", "Error running bootstrap script " + name + ": " + msg, state);
             }
         } finally {
             activeModuleStack.get().pop();
@@ -719,6 +731,7 @@ public class CobaltLuaEngine implements ILuaEngine {
                 // and thread resumptions. It is NOT a script error and carries no message.
             } catch (Throwable e) {
                 String msg = e.getMessage() != null && !e.getMessage().isBlank() ? e.getMessage() : e.toString();
+                lastExecutionError = msg;
                 AsyncFileLogger.get().error("FUNCTION_CALL", "Lua error executing callback: " + msg, state);
             }
         }
@@ -764,12 +777,16 @@ public class CobaltLuaEngine implements ILuaEngine {
             org.squiddev.cobalt.function.Dispatch.call(state, closure);
             AsyncFileLogger.get().info(context, "Successfully executed script: " + file.getName(), state);
         } catch (CompileException e) {
+            lastExecutionError = e.getMessage();
             LuaLinter.logFancyCompileError(context, file.getName(), file, e);
         } catch (LuaError e) {
             e.fillTraceback(state);
+            lastExecutionError = e.getMessage();
             LuaLinter.logFancyRuntimeError(context, file.getName(), file, e);
         } catch (Throwable e) {
-            AsyncFileLogger.get().error(context, "Unexpected error running script " + file.getName() + ": " + e.getMessage(), state);
+            String msg = e.getMessage() != null && !e.getMessage().isBlank() ? e.getMessage() : e.toString();
+            lastExecutionError = msg;
+            AsyncFileLogger.get().error(context, "Unexpected error running script " + file.getName() + ": " + msg, state);
         }
     }
 

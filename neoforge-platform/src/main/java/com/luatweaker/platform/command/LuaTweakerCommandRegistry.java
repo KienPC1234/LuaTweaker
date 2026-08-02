@@ -50,6 +50,7 @@ public class LuaTweakerCommandRegistry {
         register(new SyntaxCommand(luaRoot));
         register(new ListCommand(luaRoot));
         register(new DebugCommand());
+        register(new DoctorCommand());
         // Help must come last so the list snapshot it captures is complete
         register(new HelpCommand(Collections.unmodifiableList(commands)));
     }
