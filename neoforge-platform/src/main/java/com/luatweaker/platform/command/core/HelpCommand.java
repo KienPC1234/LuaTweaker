@@ -36,6 +36,16 @@ public class HelpCommand implements ILuaTweakerCommand {
                     + " §7- " + cmd.getDescription()
                     + " §8(op:" + cmd.getPermissionLevel() + ")");
         }
+        // Lua mod commands are top-level (no /lt prefix); resolved live so
+        // /lt reload changes appear here too.
+        Object service = com.luatweaker.core.service.LuaServiceRegistry.get("CommandServiceImpl");
+        if (service instanceof com.luatweaker.command.CommandServiceImpl commandService) {
+            for (com.luatweaker.command.CommandDefinition def : commandService.getSnapshot()) {
+                sender.sendMessage("§6  /§e" + def.name()
+                        + " §7- " + def.description()
+                        + " §8(op:" + def.permissionLevel() + ", mod:" + def.modId() + ")");
+            }
+        }
         sender.sendMessage("§6╚══════════════════════════╝");
         return 1;
     }

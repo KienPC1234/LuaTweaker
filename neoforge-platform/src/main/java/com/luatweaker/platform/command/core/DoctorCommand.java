@@ -52,6 +52,20 @@ public class DoctorCommand implements ILuaTweakerCommand {
 
         int serviceCount = LuaServiceRegistry.size();
         sender.sendMessage("§7Registered services: §e" + serviceCount);
+
+        Object cmdService = LuaServiceRegistry.get("CommandServiceImpl");
+        if (cmdService instanceof com.luatweaker.command.CommandServiceImpl commandService) {
+            var luaCommands = commandService.getSnapshot();
+            sender.sendMessage("§7Lua-registered commands: §e" + luaCommands.size());
+            for (var def : luaCommands) {
+                sender.sendMessage("§7  - /§f" + def.name()
+                        + " §7(mod:§f" + def.modId()
+                        + "§7, op:§f" + def.permissionLevel()
+                        + "§7, console:§f" + def.consoleAllowed()
+                        + (def.aliases().isEmpty() ? "" : "§7, aliases:§f " + String.join(", ", def.aliases()))
+                        + "§7)");
+            }
+        }
         return 1;
     }
 }

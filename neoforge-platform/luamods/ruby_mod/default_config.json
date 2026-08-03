@@ -18,5 +18,10 @@
   "homing_max_ticks": 100,
   "homing_dart_speed": 2.0,
   "minion_follow_speed": 1.1,
-  "minion_attack_speed": 1.3
+  "minion_attack_speed": 1.3,
+  "woodcrate_check_interval": 5,
+  "woodcrate_blacklist": [
+    "minecraft:tnt",
+    "minecraft:diamond_ore"
+  ]
 }

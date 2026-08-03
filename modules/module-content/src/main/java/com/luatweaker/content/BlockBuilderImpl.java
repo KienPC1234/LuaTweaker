@@ -143,6 +143,45 @@ public class BlockBuilderImpl implements IBlockBuilder {
         return this;
     }
 
+    private int containerRows = 0;
+    private int containerCols = 6;
+    private String containerDropMode = "packed";
+
+    @Override
+    public IBlockBuilder container(int rows, int cols, String dropMode) {
+        this.containerRows = Math.max(1, Math.min(6, rows));
+        this.containerCols = Math.max(1, Math.min(9, cols));
+        String mode = dropMode != null ? dropMode.toLowerCase() : "packed";
+        this.containerDropMode = switch (mode) {
+            case "spill", "none" -> mode;
+            default -> "packed";
+        };
+        return this;
+    }
+
+    private java.util.function.BiFunction<Object, Object, Boolean> itemFilter;
+
+    @Override
+    public IBlockBuilder itemFilter(java.util.function.BiFunction<Object, Object, Boolean> handler) {
+        this.itemFilter = handler;
+        return this;
+    }
+
+    private String containerTexture;
+    private String containerTitle;
+
+    @Override
+    public IBlockBuilder containerTexture(String texturePath) {
+        this.containerTexture = texturePath;
+        return this;
+    }
+
+    @Override
+    public IBlockBuilder containerTitle(String title) {
+        this.containerTitle = title;
+        return this;
+    }
+
     @Override public String getId() { return id; }
     @Override public float getHardness() { return hardness; }
     @Override public float getResistance() { return resistance; }
@@ -162,6 +201,13 @@ public class BlockBuilderImpl implements IBlockBuilder {
     @Override public int getMaxDropCount() { return maxDropCount; }
     @Override public int getMinExp() { return minExp; }
     @Override public int getMaxExp() { return maxExp; }
+    @Override public boolean isContainer() { return containerRows > 0; }
+    @Override public int getContainerRows() { return containerRows; }
+    @Override public int getContainerCols() { return containerCols; }
+    @Override public String getContainerDropMode() { return containerDropMode; }
+    @Override public java.util.function.BiFunction<Object, Object, Boolean> getItemFilter() { return itemFilter; }
+    @Override public String getContainerTexture() { return containerTexture; }
+    @Override public String getContainerTitle() { return containerTitle; }
 }
 
 

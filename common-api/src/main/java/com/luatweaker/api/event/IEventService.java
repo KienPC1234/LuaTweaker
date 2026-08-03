@@ -7,4 +7,8 @@ public interface IEventService {
     void listen(@NotNull String eventName, @NotNull Object callback);
     void post(@NotNull String eventName, @NotNull ILuaTable payload);
     void fireEvent(@NotNull String eventName, @NotNull ILuaTable payload);
+
+    /** Engine that owns this service (used to build payload tables before posting). */
+    @NotNull
+    com.luatweaker.api.vm.ILuaEngine getEngine();
 }

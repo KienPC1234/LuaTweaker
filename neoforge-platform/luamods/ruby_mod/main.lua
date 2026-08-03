@@ -11,6 +11,7 @@ require(".src.server.ruby_recipes")
 -- 3. NẠP BOSS AI & MAGIC STAFF SKILLS (Server)
 require(".src.server.ruby_boss")
 require(".src.server.magic_staff")
+require(".src.server.woodcrate")
 
 -- 4. NẠP CLIENT CONTROLLER (KeyInput & RemoteEvent Dispatch)
 require(".src.client.magic_staff_client")

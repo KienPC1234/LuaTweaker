@@ -150,6 +150,8 @@ public class LuaTweakerMod {
                 startupEngine, contentService, storageService, datapackService, new NeoForgeRecipeManager()
         );
 
+        // Fresh command set per load cycle: only the mods loaded below register commands.
+        com.luatweaker.command.CommandServiceImpl.clear();
         // Load Autonomous LuaMods from luamods/ directory
         com.luatweaker.core.mod.LuaModManager.loadLuaMods(luaDir, startupEngine);
     }
@@ -316,6 +318,10 @@ public class LuaTweakerMod {
         com.luatweaker.platform.bootstrap.LuaServiceBootstrap.registerAllServices(engine, contentService,
                 storageService, datapackService, recipeManager);
 
+        // Fresh command set per load cycle: disabled/removed mods must not leave
+        // stale /lt commands behind (see CommandServiceImpl.clear()).
+        com.luatweaker.command.CommandServiceImpl.clear();
+
         // Load Autonomous LuaMods from luamods/
         com.luatweaker.core.mod.LuaModManager.loadLuaMods(getLuaDirectory(), engine);
 
@@ -426,10 +432,12 @@ public class LuaTweakerMod {
         stubGen.registerService("WorldAction", com.luatweaker.api.entity.ai.IWorldActionService.class);
         stubGen.registerService("Interaction", com.luatweaker.api.interaction.IInteractionService.class);
         stubGen.registerService("GuiService", com.luatweaker.api.client.IGuiService.class);
+        stubGen.registerService("Commands", com.luatweaker.api.command.ICommandService.class);
 
         // Runtime wrapper classes (entity/player tables created dynamically at runtime)
         stubGen.registerClassStub(com.luatweaker.api.entity.IEntity.class, "Entity");
         stubGen.registerClassStub(com.luatweaker.api.entity.IPlayer.class, "Player");
+        stubGen.registerClassStub(com.luatweaker.api.command.ICommandSender.class, "CommandSender");
 
         // Legacy Mod Service Names (Compatibility)
         stubGen.registerService("Recipes", com.luatweaker.api.recipe.IRecipeManagerService.class);

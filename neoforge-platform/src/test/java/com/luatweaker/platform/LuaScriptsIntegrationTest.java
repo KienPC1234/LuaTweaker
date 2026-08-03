@@ -24,11 +24,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class LuaScriptsIntegrationTest {
 
     private NeoForgeRecipeManager recipeManager;
+    private static java.util.Map<String, Object> lastWrittenNbt;
 
     @BeforeEach
     public void setUp() {
         recipeManager = new NeoForgeRecipeManager();
         LuaServiceRegistry.clear();
+        com.luatweaker.command.CommandServiceImpl.clear();
 
         Platform.setContent(new IPlatformContent() {
             @Override
@@ -96,6 +98,14 @@ public class LuaScriptsIntegrationTest {
             public com.luatweaker.api.interaction.IInteractableItem getInteractableItem(Object e, int s) { return null; }
             public com.luatweaker.api.interaction.IInteractableEntity getInteractableEntity(String u) { return null; }
             public com.luatweaker.api.interaction.IInteractableEntity getInteractableEntity(Object e) { return null; }
+            public java.util.Map<String, Object> getBlockState(String d, int x, int y, int z) { return null; }
+            public boolean setBlockState(String d, int x, int y, int z, String b, java.util.Map<String, Object> p) { return false; }
+            public java.util.Map<String, Object> getBlockEntityData(String d, int x, int y, int z) { return null; }
+            public boolean setBlockEntityData(String d, int x, int y, int z, java.util.Map<String, Object> data) { lastWrittenNbt = data; return true; }
+            public boolean ejectContainerItem(String d, int x, int y, int z, int slot, int count) { return false; }
+            public long fillBlocks(String d, int x1, int y1, int z1, int x2, int y2, int z2, String b, java.util.Map<String, Object> p) { return 0; }
+            public long replaceBlocks(String d, int x1, int y1, int z1, int x2, int y2, int z2, String f, String t) { return 0; }
+            public boolean executeCommand(String c) { return false; }
         });
 
         Platform.setEntity(new com.luatweaker.api.pal.IPlatformEntity() {
@@ -143,6 +153,42 @@ public class LuaScriptsIntegrationTest {
                 "StaffSwapSkill packet firing failed");
         assertDoesNotThrow(() -> ns.OnClientFired("StaffCastSkill", "dummy-uuid", new com.luatweaker.api.vm.ILuaValue[0]),
                 "StaffCastSkill packet firing failed");
+    }
+
+    @Test
+    public void testBlockStateAndNbtBindings() {
+        File baseDir = findLuamodsDir();
+        ILuaEngine engine = new CobaltLuaEngine(true);
+        engine.setLuaDirectory(baseDir);
+        ContentServiceImpl contentService = new ContentServiceImpl();
+        StorageServiceImpl storageService = new StorageServiceImpl(new File(baseDir, "storage.json"));
+        DatapackServiceImpl datapackService = new DatapackServiceImpl();
+        LuaServiceBootstrap.registerAllServices(engine, contentService, storageService, datapackService, recipeManager);
+
+        // No server is running in tests: block-state/NBT calls must return
+        // nil/false gracefully and never throw.
+        assertDoesNotThrow(() -> engine.executeString(
+                "local World = require('LuaTweaker.World')\n" +
+                "assert(World:GetBlockState(0, 0, 0) == nil, 'GetBlockState should be nil without server')\n" +
+                "assert(World:GetBlockEntityData(0, 0, 0) == nil, 'GetBlockEntityData should be nil without server')\n" +
+                "assert(World:SetBlockState(0, 0, 0, 'minecraft:stone') == false, 'SetBlockState should fail without server')\n" +
+                "assert(World:SetBlockEntityData(0, 0, 0, {Items = {{id='minecraft:stick', count=1, slot=0}}}) == true, 'SetBlockEntityData should accept valid data')\n" +
+                "assert(World:EjectContainerItem(0, 0, 0, 0, 1) == false, 'EjectContainerItem should fail without server')\n" +
+                "assert(World:ExecuteCommand('say hi') == false, 'ExecuteCommand should fail without server')\n",
+                "testBlockStateAndNbtBindings"),
+                "BlockState/NBT bindings must not throw without a server");
+
+        // Lua array-like tables (Items list) must arrive as Java Lists, not Maps —
+        // otherwise NbtCodec would write a CompoundTag instead of a ListTag and
+        // ContainerHelper.loadAllItems would fail, wiping the crate contents.
+        assertTrue(lastWrittenNbt != null && lastWrittenNbt.get("Items") instanceof java.util.List,
+                "Lua array table must convert to a Java List for NBT lists");
+        java.util.List<?> items = (java.util.List<?>) lastWrittenNbt.get("Items");
+        org.junit.jupiter.api.Assertions.assertEquals(1, items.size());
+        Object first = items.get(0);
+        assertTrue(first instanceof java.util.Map, "nested item entry should be a Map");
+        org.junit.jupiter.api.Assertions.assertEquals("minecraft:stick",
+                ((java.util.Map<?, ?>) first).get("id"));
     }
 
     private File findLuamodsDir() {

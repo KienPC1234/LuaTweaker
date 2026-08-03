@@ -73,6 +73,165 @@ public class InteractionLuaBinding {
         });
         workspaceTable.rawset("getEntitiesInRadius", workspaceTable.rawget("GetEntitiesInRadius"));
 
+        // ===== BlockState API (GetBlockState(x,y,z) or GetBlockState(dim,x,y,z)) =====
+        workspaceTable.rawset("GetBlockState", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int dimOff = -1;
+            if (args.length - off >= 1 && args[off].toJavaObject() instanceof String) {
+                dimOff = off;
+                off = off + 1;
+            }
+            if (args.length - off < 3) return engine.nilValue();
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : "minecraft:overworld";
+            int x = args[off].asInt();
+            int y = args[off + 1].asInt();
+            int z = args[off + 2].asInt();
+            java.util.Map<String, Object> state = com.luatweaker.api.pal.Platform.getInteraction()
+                    .getBlockState(dimension, x, y, z);
+            return state != null ? wrapValue(engine, state) : engine.nilValue();
+        });
+        workspaceTable.rawset("getBlockState", workspaceTable.rawget("GetBlockState"));
+
+        workspaceTable.rawset("SetBlockState", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int dimOff = -1;
+            if (args.length - off >= 1 && args[off].toJavaObject() instanceof String) {
+                dimOff = off;
+                off = off + 1;
+            }
+            if (args.length - off < 4) return engine.nilValue();
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : "minecraft:overworld";
+            int x = args[off].asInt();
+            int y = args[off + 1].asInt();
+            int z = args[off + 2].asInt();
+            String blockId = args[off + 3].asString();
+            java.util.Map<String, Object> properties = null;
+            if (args.length - off >= 5 && args[off + 4].isTable()) {
+                properties = toJavaMap(args[off + 4].asTable());
+            }
+            return engine.wrapBoolean(com.luatweaker.api.pal.Platform.getInteraction()
+                    .setBlockState(dimension, x, y, z, blockId, properties));
+        });
+        workspaceTable.rawset("setBlockState", workspaceTable.rawget("SetBlockState"));
+
+        // ===== BlockEntity NBT API (GetBlockEntityData / SetBlockEntityData) =====
+        workspaceTable.rawset("GetBlockEntityData", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int dimOff = -1;
+            if (args.length - off >= 1 && args[off].toJavaObject() instanceof String) {
+                dimOff = off;
+                off = off + 1;
+            }
+            if (args.length - off < 3) return engine.nilValue();
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : "minecraft:overworld";
+            int x = args[off].asInt();
+            int y = args[off + 1].asInt();
+            int z = args[off + 2].asInt();
+            java.util.Map<String, Object> data = com.luatweaker.api.pal.Platform.getInteraction()
+                    .getBlockEntityData(dimension, x, y, z);
+            return data != null ? wrapValue(engine, data) : engine.nilValue();
+        });
+        workspaceTable.rawset("getBlockEntityData", workspaceTable.rawget("GetBlockEntityData"));
+
+        workspaceTable.rawset("SetBlockEntityData", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int dimOff = -1;
+            if (args.length - off >= 1 && args[off].toJavaObject() instanceof String) {
+                dimOff = off;
+                off = off + 1;
+            }
+            if (args.length - off < 4 || !args[off + 3].isTable()) return engine.wrapBoolean(false);
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : "minecraft:overworld";
+            int x = args[off].asInt();
+            int y = args[off + 1].asInt();
+            int z = args[off + 2].asInt();
+            java.util.Map<String, Object> data = toJavaMap(args[off + 3].asTable());
+            return engine.wrapBoolean(com.luatweaker.api.pal.Platform.getInteraction()
+                    .setBlockEntityData(dimension, x, y, z, data));
+        });
+        workspaceTable.rawset("setBlockEntityData", workspaceTable.rawget("SetBlockEntityData"));
+
+        // ===== Container ejection (EjectContainerItem(x,y,z,slot,[count])) =====
+        workspaceTable.rawset("EjectContainerItem", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int dimOff = -1;
+            if (args.length - off >= 1 && args[off].toJavaObject() instanceof String) {
+                dimOff = off;
+                off = off + 1;
+            }
+            if (args.length - off < 4) return engine.wrapBoolean(false);
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : "minecraft:overworld";
+            int x = args[off].asInt();
+            int y = args[off + 1].asInt();
+            int z = args[off + 2].asInt();
+            int slot = args[off + 3].asInt();
+            int count = args.length - off >= 5 ? args[off + 4].asInt() : 1;
+            return engine.wrapBoolean(com.luatweaker.api.pal.Platform.getInteraction()
+                    .ejectContainerItem(dimension, x, y, z, slot, count));
+        });
+        workspaceTable.rawset("ejectContainerItem", workspaceTable.rawget("EjectContainerItem"));
+
+        // ===== Bulk world editing (FillBlocks / ReplaceBlocks) =====
+        // FillBlocks(x1,y1,z1,x2,y2,z2,blockId,[properties]) or with a dimension prefix.
+        // Returns the number of blocks set, or -1 when the platform rejected the
+        // operation (unknown block, invalid region, or over the platform cap).
+        workspaceTable.rawset("FillBlocks", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int dimOff = -1;
+            if (args.length - off >= 1 && args[off].toJavaObject() instanceof String) {
+                dimOff = off;
+                off = off + 1;
+            }
+            if (args.length - off < 7) return engine.wrapNumber(-1);
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : "minecraft:overworld";
+            int x1 = args[off].asInt();
+            int y1 = args[off + 1].asInt();
+            int z1 = args[off + 2].asInt();
+            int x2 = args[off + 3].asInt();
+            int y2 = args[off + 4].asInt();
+            int z2 = args[off + 5].asInt();
+            String blockId = args[off + 6].asString();
+            java.util.Map<String, Object> properties = null;
+            if (args.length - off >= 8 && args[off + 7].isTable()) {
+                properties = toJavaMap(args[off + 7].asTable());
+            }
+            return engine.wrapNumber(com.luatweaker.api.pal.Platform.getInteraction()
+                    .fillBlocks(dimension, x1, y1, z1, x2, y2, z2, blockId, properties));
+        });
+        workspaceTable.rawset("fillBlocks", workspaceTable.rawget("FillBlocks"));
+
+        // ReplaceBlocks(x1,y1,z1,x2,y2,z2,fromId,toId) or with a dimension prefix.
+        workspaceTable.rawset("ReplaceBlocks", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int dimOff = -1;
+            if (args.length - off >= 1 && args[off].toJavaObject() instanceof String) {
+                dimOff = off;
+                off = off + 1;
+            }
+            if (args.length - off < 8) return engine.wrapNumber(-1);
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : "minecraft:overworld";
+            int x1 = args[off].asInt();
+            int y1 = args[off + 1].asInt();
+            int z1 = args[off + 2].asInt();
+            int x2 = args[off + 3].asInt();
+            int y2 = args[off + 4].asInt();
+            int z2 = args[off + 5].asInt();
+            String fromId = args[off + 6].asString();
+            String toId = args[off + 7].asString();
+            return engine.wrapNumber(com.luatweaker.api.pal.Platform.getInteraction()
+                    .replaceBlocks(dimension, x1, y1, z1, x2, y2, z2, fromId, toId));
+        });
+        workspaceTable.rawset("replaceBlocks", workspaceTable.rawget("ReplaceBlocks"));
+
+        // ===== Server console command (ExecuteCommand("give ...")) =====
+        workspaceTable.rawset("ExecuteCommand", args -> {
+            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            if (args.length - off < 1) return engine.wrapBoolean(false);
+            return engine.wrapBoolean(com.luatweaker.api.pal.Platform.getInteraction()
+                    .executeCommand(args[off].asString()));
+        });
+        workspaceTable.rawset("executeCommand", workspaceTable.rawget("ExecuteCommand"));
+
         // 2. EntityService Service
         ILuaTable entityServiceTable = engine.createTable();
         ILuaValue sigClass = engine.getGlobalEnvironment().rawget("Signal");
@@ -378,5 +537,96 @@ public class InteractionLuaBinding {
         ILuaTable table = engine.createTable();
         table.rawset("__entity", engine.wrapUserdata(entity));
         return table;
+    }
+
+    /** Recursively converts a Java Map/List/primitive (NbtCodec shape) to a Lua table/value. */
+    @NotNull
+    public static ILuaValue wrapValue(@NotNull ILuaEngine engine, @NotNull Object value) {
+        if (value instanceof String s) return engine.wrapString(s);
+        if (value instanceof Boolean b) return engine.wrapBoolean(b);
+        if (value instanceof Number n) return engine.wrapNumber(n.doubleValue());
+        if (value instanceof byte[] arr) {
+            ILuaTable t = engine.createTable();
+            for (int i = 0; i < arr.length; i++) t.rawset(i + 1, engine.wrapNumber(arr[i] & 0xFF));
+            return t;
+        }
+        if (value instanceof int[] arr) {
+            ILuaTable t = engine.createTable();
+            for (int i = 0; i < arr.length; i++) t.rawset(i + 1, engine.wrapNumber(arr[i]));
+            return t;
+        }
+        if (value instanceof long[] arr) {
+            ILuaTable t = engine.createTable();
+            for (int i = 0; i < arr.length; i++) t.rawset(i + 1, engine.wrapNumber(arr[i]));
+            return t;
+        }
+        if (value instanceof java.util.List<?> list) {
+            ILuaTable t = engine.createTable();
+            for (int i = 0; i < list.size(); i++) {
+                t.rawset(i + 1, wrapValue(engine, list.get(i)));
+            }
+            return t;
+        }
+        if (value instanceof java.util.Map<?, ?> map) {
+            ILuaTable t = engine.createTable();
+            for (java.util.Map.Entry<?, ?> entry : map.entrySet()) {
+                t.rawset(String.valueOf(entry.getKey()), wrapValue(engine, entry.getValue()));
+            }
+            return t;
+        }
+        return engine.nilValue();
+    }
+
+    /** Recursively converts a Lua table/value to a Java Map (NbtCodec shape). */
+    @NotNull
+    public static java.util.Map<String, Object> toJavaMap(@NotNull ILuaTable table) {
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
+        for (java.util.Map.Entry<ILuaValue, ILuaValue> entry : table.asMap().entrySet()) {
+            map.put(String.valueOf(entry.getKey().toJavaObject()), toJavaValue(entry.getValue()));
+        }
+        return map;
+    }
+
+    private static Object toJavaValue(ILuaValue value) {
+        if (value.isTable()) return toJavaTableValue(value.asTable());
+        Object raw = value.toJavaObject();
+        if (raw instanceof String || raw instanceof Boolean || raw instanceof Number) {
+            return raw;
+        }
+        if (value.isNil()) return null;
+        return raw;
+    }
+
+    /**
+     * Lua tables come in two shapes that must map to different NBT forms:
+     * array-like tables (integer keys 1..n, e.g. NBT lists such as {@code Items})
+     * become {@code List}s, everything else becomes a {@code Map}.
+     */
+    private static Object toJavaTableValue(ILuaTable table) {
+        java.util.Map<ILuaValue, ILuaValue> entries = table.asMap();
+        if (entries.isEmpty()) return new java.util.LinkedHashMap<>();
+        boolean arrayLike = true;
+        for (ILuaValue key : entries.keySet()) {
+            if (!(key.toJavaObject() instanceof Number num) || num.intValue() < 1) {
+                arrayLike = false;
+                break;
+            }
+        }
+        if (!arrayLike) return toJavaMap(table);
+        Object[] ordered = new Object[entries.size()];
+        boolean placedAny = false;
+        for (java.util.Map.Entry<ILuaValue, ILuaValue> entry : entries.entrySet()) {
+            int index = ((Number) entry.getKey().toJavaObject()).intValue();
+            if (index >= 1 && index <= ordered.length) {
+                ordered[index - 1] = toJavaValue(entry.getValue());
+                placedAny = true;
+            }
+        }
+        if (!placedAny) return toJavaMap(table);
+        java.util.List<Object> list = new java.util.ArrayList<>(ordered.length);
+        for (Object item : ordered) {
+            list.add(item);
+        }
+        return list;
     }
 }

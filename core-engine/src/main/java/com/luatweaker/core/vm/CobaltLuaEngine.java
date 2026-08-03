@@ -78,7 +78,7 @@ public class CobaltLuaEngine implements ILuaEngine {
                 }
                 String msg = sb.toString();
                 AsyncFileLogger.get().info("PRINT", msg, state);
-                String modId = getActiveModId();
+                String modId = resolveModId(state);
                 if (modId != null) AsyncFileLogger.get().logMod(modId, "INFO", msg);
                 return Constants.NIL;
             }
@@ -91,7 +91,7 @@ public class CobaltLuaEngine implements ILuaEngine {
             public Varargs invoke(LuaState state, Varargs args) throws LuaError {
                 String msg = args.arg(1).toString();
                 AsyncFileLogger.get().info("SCRIPT", msg, state);
-                String modId = getActiveModId();
+                String modId = resolveModId(state);
                 if (modId != null) AsyncFileLogger.get().logMod(modId, "INFO", msg);
                 return Constants.NIL;
             }
@@ -101,7 +101,7 @@ public class CobaltLuaEngine implements ILuaEngine {
             public Varargs invoke(LuaState state, Varargs args) throws LuaError {
                 String msg = args.arg(1).toString();
                 AsyncFileLogger.get().warn("SCRIPT", msg, state);
-                String modId = getActiveModId();
+                String modId = resolveModId(state);
                 if (modId != null) AsyncFileLogger.get().logMod(modId, "WARN", msg);
                 return Constants.NIL;
             }
@@ -111,7 +111,7 @@ public class CobaltLuaEngine implements ILuaEngine {
             public Varargs invoke(LuaState state, Varargs args) throws LuaError {
                 String msg = args.arg(1).toString();
                 AsyncFileLogger.get().error("SCRIPT", msg, state);
-                String modId = getActiveModId();
+                String modId = resolveModId(state);
                 if (modId != null) AsyncFileLogger.get().logMod(modId, "ERROR", msg);
                 return Constants.NIL;
             }
@@ -122,7 +122,7 @@ public class CobaltLuaEngine implements ILuaEngine {
                 if (debugMode) {
                     String msg = args.arg(1).toString();
                     AsyncFileLogger.get().info("DEBUG", msg, state);
-                    String modId = getActiveModId();
+                    String modId = resolveModId(state);
                     if (modId != null) AsyncFileLogger.get().logMod(modId, "DEBUG", msg);
                 }
                 return Constants.NIL;
@@ -320,6 +320,31 @@ public class CobaltLuaEngine implements ILuaEngine {
         return dot > 0 ? currentModule.substring(0, dot) : currentModule;
     }
 
+    private static final java.util.regex.Pattern MOD_ID_PATTERN =
+            java.util.regex.Pattern.compile("([A-Za-z0-9_]+)[/\\\\][^/\\\\]+\\.lua");
+
+    /**
+     * Resolves the owning mod id for the currently executing Lua code. Falls back
+     * to parsing the chunk name (e.g. "ruby_mod/main.lua") when the call happens
+     * on a coroutine thread that never pushed onto the module stack — so per-mod
+     * log files receive coroutine output too.
+     */
+    private String resolveModId(LuaState state) {
+        String modId = getActiveModId();
+        if (modId != null) return modId;
+        if (state == null || state.getCurrentThread() == null) return null;
+        try {
+            String location = org.squiddev.cobalt.debug.DebugHelpers.fileLine(state.getCurrentThread());
+            if (location != null) {
+                java.util.regex.Matcher matcher = MOD_ID_PATTERN.matcher(location);
+                if (matcher.find()) return matcher.group(1);
+            }
+        } catch (Exception ignored) {
+            // Never let logging break script execution
+        }
+        return null;
+    }
+
     private File luaDirectory;
 
     @Override
@@ -342,6 +367,9 @@ public class CobaltLuaEngine implements ILuaEngine {
                     if (modName.startsWith("..")) {
                         throw new LuaError("Parent directory traversal ('..') is forbidden for Sibling Require security.");
                     }
+                    // A "." require is relative to the MOD ROOT (e.g. from
+                    // luamods/my_mod/main.lua or luamods/my_mod/src/server/x.lua,
+                    // ".src.server.y" always resolves to "my_mod.src.server.y").
                     java.util.Deque<String> stack = activeModuleStack.get();
                     String currentModule = stack.peek();
                     if (currentModule != null && !currentModule.isBlank()) {
@@ -349,13 +377,9 @@ public class CobaltLuaEngine implements ILuaEngine {
                             currentModule = currentModule.substring(0, currentModule.length() - 4);
                         }
                         currentModule = currentModule.replace('/', '.');
-                        int lastDot = currentModule.lastIndexOf('.');
-                        if (lastDot > 0) {
-                            String parentPackage = currentModule.substring(0, lastDot);
-                            modName = parentPackage + "." + modName.substring(1);
-                        } else {
-                            modName = currentModule + "." + modName.substring(1);
-                        }
+                        int firstDot = currentModule.indexOf('.');
+                        String modRoot = firstDot > 0 ? currentModule.substring(0, firstDot) : currentModule;
+                        modName = modRoot + "." + modName.substring(1);
                     } else {
                         modName = modName.substring(1);
                     }
@@ -500,6 +524,7 @@ public class CobaltLuaEngine implements ILuaEngine {
                 LuaValue val = globals.rawget("Interception");
                 yield (val != null && !val.isNil()) ? val : globals.rawget("InterceptionService");
             }
+            case "LuaTweaker.Commands", "Commands" -> globals.rawget("Commands");
             case "LuaTweaker.Camera", "Camera" -> globals.rawget("Camera");
             case "LuaTweaker.Client", "LuaTweaker.ClientService", "Client", "ClientService" -> {
                 LuaValue val = globals.rawget("Client");

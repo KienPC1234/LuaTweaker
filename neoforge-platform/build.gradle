@@ -20,6 +20,7 @@ evaluationDependsOn(':modules:module-storage')
 evaluationDependsOn(':modules:module-network')
 evaluationDependsOn(':modules:module-client')
 evaluationDependsOn(':modules:module-interception')
+evaluationDependsOn(':modules:module-command')
 evaluationDependsOn(':modules:module-tasks')
 
 sourceSets.main.resources {
@@ -75,6 +76,7 @@ neoForge {
             sourceSet(project(':modules:module-client').sourceSets.main)
             sourceSet(project(':modules:module-interception').sourceSets.main)
             sourceSet(project(':modules:module-tasks').sourceSets.main)
+sourceSet(project(':modules:module-command').sourceSets.main)
         }
     }
 }
@@ -100,6 +102,7 @@ dependencies {
     jarJar(project(':modules:module-client'))
     jarJar(project(':modules:module-interception'))
     jarJar(project(':modules:module-tasks'))
+jarJar(project(':modules:module-command'))
 
     // Also needed at compile time
     implementation project(':common-api')
@@ -115,6 +118,7 @@ dependencies {
     implementation project(':modules:module-client')
     implementation project(':modules:module-interception')
     implementation project(':modules:module-tasks')
+implementation project(':modules:module-command')
 
     // JEI integration for checking recipes in-game easily
     implementation "mezz.jei:jei-1.21.1-neoforge:19.32.0.359"

@@ -59,8 +59,23 @@ public final class BlockRegistrar {
                 }
 
                 String id = builder.getId().toLowerCase();
+
+                // Lua-configured inventory container: use the generic crate block.
+                // MUST be decided before the plain-block branch: every Block
+                // constructor creates an intrusive registry holder, and any
+                // instance that never gets registered crashes registry freeze.
                 Block block;
-                if (id.endsWith("_stairs") || id.contains("stairs")) {
+                if (builder.isContainer()) {
+                    String crateTitle = builder.getContainerTitle() != null && !builder.getContainerTitle().isBlank()
+                            ? builder.getContainerTitle() : toTitle(rl.getPath());
+                    block = new com.luatweaker.platform.crate.ContainerCrateBlock(
+                            props, rl.toString(), crateTitle, builder.getContainerRows(), builder.getContainerCols(),
+                            builder.getContainerDropMode(), builder.getContainerTexture(),
+                            builder.getRightClickHandler(), builder.getItemFilter());
+                    LuaTweakerLog.get().info(LogStage.SYSTEM,
+                            "Registered container block '" + id + "' (" + builder.getContainerRows() + "x"
+                                    + builder.getContainerCols() + ", drop=" + builder.getContainerDropMode() + ")");
+                } else if (id.endsWith("_stairs") || id.contains("stairs")) {
                     block = new StairBlock(Blocks.STONE.defaultBlockState(), props) {
                         @Override public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
                             if (!level.isClientSide() && builder.getRightClickHandler() != null) {
@@ -118,7 +133,8 @@ public final class BlockRegistrar {
                     };
                 }
 
-                event.register(Registries.BLOCK, rl, () -> block);
+                Block finalBlock = block;
+                event.register(Registries.BLOCK, rl, () -> finalBlock);
                 createdBlocks.put(rl, block);
                 LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom Block to NeoForge: " + rl);
             } catch (Exception e) {
@@ -142,6 +158,50 @@ public final class BlockRegistrar {
                 LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom BlockItem to NeoForge: " + rl);
             }
         }
+    }
+
+    public void registerContainerBlockEntities(RegisterEvent event) {
+        for (IBlockBuilder builder : contentService.getRegisteredBlocks()) {
+            if (!builder.isContainer()) continue;
+            ResourceLocation rl = locationParser.apply(builder.getId());
+            Block block = createdBlocks.get(rl);
+            if (block == null) block = BuiltInRegistries.BLOCK.get(rl);
+            if (block == null || block == Blocks.AIR) continue;
+            net.minecraft.world.level.block.entity.BlockEntityType<com.luatweaker.platform.crate.ContainerCrateBlockEntity> type =
+                    net.minecraft.world.level.block.entity.BlockEntityType.Builder.of(
+                            com.luatweaker.platform.crate.ContainerCrateBlockEntity::new, block).build(null);
+            com.luatweaker.platform.crate.ContainerCrateRegistry.TYPE_BY_BLOCK.put(
+                    (com.luatweaker.platform.crate.ContainerCrateBlock) block, type);
+            com.luatweaker.platform.crate.ContainerCrateRegistry.CRATE_BE_TYPES.put(rl, type);
+            event.register(Registries.BLOCK_ENTITY_TYPE, rl, () -> type);
+        }
+    }
+
+    public void registerContainerMenus(RegisterEvent event) {
+        for (IBlockBuilder builder : contentService.getRegisteredBlocks()) {
+            if (!builder.isContainer()) continue;
+            ResourceLocation rl = locationParser.apply(builder.getId());
+            int rows = builder.getContainerRows();
+            int cols = builder.getContainerCols();
+            int slotCount = rows * cols;
+            net.minecraft.world.inventory.MenuType<com.luatweaker.platform.crate.ContainerCrateMenu>[] ref =
+                    new net.minecraft.world.inventory.MenuType[1];
+            ref[0] = new net.minecraft.world.inventory.MenuType<>((containerId, inventory) ->
+                            new com.luatweaker.platform.crate.ContainerCrateMenu(
+                                    ref[0], containerId, inventory, new net.minecraft.world.SimpleContainer(slotCount), rows, cols),
+                            net.minecraft.world.flag.FeatureFlags.DEFAULT_FLAGS);
+            net.minecraft.world.inventory.MenuType<com.luatweaker.platform.crate.ContainerCrateMenu> menuType = ref[0];
+            com.luatweaker.platform.crate.ContainerCrateRegistry.CRATE_MENUS.put(rl, menuType);
+            com.luatweaker.platform.crate.ContainerCrateRegistry.CRATE_TEXTURES.put(
+                    menuType, builder.getContainerTexture());
+            event.register(Registries.MENU, rl, () -> menuType);
+        }
+    }
+
+    private static String toTitle(String id) {
+        String clean = id.substring(id.indexOf(':') + 1).replace('_', ' ');
+        if (clean.isEmpty()) return id;
+        return Character.toUpperCase(clean.charAt(0)) + clean.substring(1);
     }
 
     private net.minecraft.world.level.block.SoundType parseSoundType(String s) {

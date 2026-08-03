@@ -1,11 +1,14 @@
 package com.luatweaker.platform.command;
 
 import com.luatweaker.api.command.ICommandSender;
+import com.luatweaker.api.entity.IPlayer;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Adapts NeoForge's {@link CommandSourceStack} to {@link ICommandSender}.
@@ -42,6 +45,19 @@ public class NeoForgeCommandSender implements ICommandSender {
     @Override
     public boolean hasPermission(int level) {
         return source.hasPermission(level);
+    }
+
+    @Override
+    public boolean isPlayer() {
+        return source.getEntity() instanceof Player;
+    }
+
+    @Override
+    public @Nullable IPlayer getPlayer() {
+        if (source.getEntity() instanceof ServerPlayer serverPlayer) {
+            return new com.luatweaker.platform.entity.NeoForgePlayerWrapper(serverPlayer);
+        }
+        return null;
     }
 
     @Override

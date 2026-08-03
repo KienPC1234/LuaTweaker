@@ -1,4 +1,5 @@
 {
   "my_custom_mod": true,
-  "ruby_mod": true
+  "ruby_mod": true,
+  "command_test_mod": true
 }

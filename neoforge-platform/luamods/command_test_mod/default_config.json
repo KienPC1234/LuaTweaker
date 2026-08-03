@@ -1,0 +1,11 @@
+{
+  "hello_prefix": "[CMD]",
+  "announce_prefix": "[ANNOUNCE]",
+  "sum_max_digits": 6,
+  "shop_items": ["ruby_sword", "ruby_pickaxe", "magic_staff"],
+  "worldedit_max_volume": 4096,
+  "worldedit_min_y": -64,
+  "worldedit_max_y": 319,
+  "worldedit_dimension": "minecraft:overworld",
+  "worldedit_suggest_blocks": ["minecraft:stone", "minecraft:glass", "minecraft:gold_block", "minecraft:water"]
+}

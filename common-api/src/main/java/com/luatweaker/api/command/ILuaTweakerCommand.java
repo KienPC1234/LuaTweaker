@@ -46,4 +46,20 @@ public interface ILuaTweakerCommand {
      * @return        Brigadier result code (1 = success, 0 = failure).
      */
     int execute(ICommandSender sender, String[] args);
+
+    /**
+     * Execute the command with the raw argument tail as typed by the user.
+     * The default implementation tokenizes on whitespace and delegates to
+     * {@link #execute}; Lua commands override this to preserve the raw text
+     * (exposed to handlers as {@code args.Raw}).
+     *
+     * @param sender  The command sender (player or console).
+     * @param raw     The full argument tail exactly as typed (may be blank).
+     * @return        Brigadier result code (1 = success, 0 = failure).
+     */
+    default int executeRaw(ICommandSender sender, String raw) {
+        String trimmed = raw == null ? "" : raw.trim();
+        String[] args = trimmed.isEmpty() ? new String[0] : trimmed.split("\\s+");
+        return execute(sender, args);
+    }
 }

@@ -79,6 +79,9 @@ public final class LuaServiceBootstrap {
         InterceptionServiceImpl interceptionService = new InterceptionServiceImpl();
         InterceptionLuaBinding.registerBindings(engine, interceptionService);
 
+        // 9b. Server-side command registration (Commands:Register for /lt sub-commands)
+        com.luatweaker.command.CommandLuaBinding.registerBindings(engine);
+
         // 10. Client Visual & Audio Effects (Camera, Particle, Sound, Screen Flash, KeyBinds, GUI)
         ClientServiceImpl clientService = new ClientServiceImpl();
         com.luatweaker.client.KeyBindServiceImpl keyBindService = new com.luatweaker.client.KeyBindServiceImpl();

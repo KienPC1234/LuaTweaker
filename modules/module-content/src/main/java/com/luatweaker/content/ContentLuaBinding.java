@@ -739,6 +739,48 @@ public class ContentLuaBinding {
             return table;
         });
 
+        bindMethod(table, "container", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) {
+                int rows = args[off].asInt();
+                int cols = args.length - off >= 2 ? args[off + 1].asInt() : 6;
+                String dropMode = args.length - off >= 3 ? args[off + 2].asString() : "packed";
+                builder.container(rows, cols, dropMode);
+            }
+            return table;
+        });
+
+        bindMethod(table, "itemFilter", args -> {
+            int off = getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.itemFilter((itemId, count) -> {
+                    try {
+                        ILuaValue allowed = engine.callFunction(func,
+                                engine.wrapString(String.valueOf(itemId)),
+                                engine.wrapNumber(((Number) count).doubleValue()));
+                        return allowed.isNil() || allowed.asBoolean();
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing block itemFilter callback: " + e.getMessage());
+                        return false;
+                    }
+                });
+            }
+            return table;
+        });
+
+        bindMethod(table, "containerTexture", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) builder.containerTexture(args[off].asString());
+            return table;
+        });
+
+        bindMethod(table, "containerTitle", args -> {
+            int off = getOffset(args);
+            if (args.length - off >= 1) builder.containerTitle(args[off].asString());
+            return table;
+        });
+
         bindMethod(table, "texture", args -> { int off = getOffset(args); builder.texture(args[off].asString()); return table; });
         bindMethod(table, "creativeTab", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
         bindMethod(table, "tabGroup", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });

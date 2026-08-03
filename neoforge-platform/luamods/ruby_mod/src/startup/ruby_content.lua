@@ -116,15 +116,34 @@ local RubyWall = Content.NewBlock("ruby_wall")
     :CreativeTab("ruby_tab")
     :Register()
 
+-- 2b. Wood Crate: Lua-configured inventory container (NBT-persisted like a chest)
+-- :Container(rows, cols, dropMode) — dropMode:
+--   "packed" = breaking drops only the crate with its NBT (contents restored on place)
+--   "spill"  = contents drop like a chest
+--   "none"   = nothing drops
+-- :ItemFilter(fn) — pure-Lua container rule: return true to allow the item in,
+--                  false to reject it (fires 'CrateItemRejected' event).
+local crateCfg = mod and mod:GetConfig() or {}
+local crateBlacklist = crateCfg.woodcrate_blacklist or {}
 local WoodCrate = Content.NewBlock("wood_crate")
     :Hardness(2.0)
     :Resistance(5.0)
     :SoundType("WOOD")
     :MineableWith("axe")
-    :Drop("luatweaker:wood_crate", 1, 1)
+    :Container(4, 6, "packed")
+    :ContainerTitle("Wood Storage Crate")
+    :ContainerTexture("luatweaker:textures/gui/wood_crate_custom.png")
+    :ItemFilter(function(itemId, count)
+        -- No nested crates: a crate can never be stored inside a crate.
+        if itemId == "luatweaker:wood_crate" then return false end
+        -- Config blacklist (woodcrate_blacklist in luaconfig/ruby_mod.json).
+        for _, banned in ipairs(crateBlacklist) do
+            if itemId == banned then return false end
+        end
+        return true
+    end)
     :CreativeTab("ruby_tab")
     :OnRightClick(function(player, blockState)
-        player:sendMessage("§e[Storage Crate] Capacity: 27 Slots")
         player:playSound("minecraft:block.chest.open", 1.0, 1.0)
     end)
     :Register()

@@ -29,6 +29,12 @@ public class EventServiceImpl implements IEventService {
     }
 
     @Override
+    @NotNull
+    public ILuaEngine getEngine() {
+        return engine;
+    }
+
+    @Override
     public void listen(@NotNull String eventName, @NotNull Object callback) {
         if (callback instanceof ILuaValue lv && lv.isFunction()) {
             LISTENERS.put(eventName, new ListenerEntry(this.engine, lv));

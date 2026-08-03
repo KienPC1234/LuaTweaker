@@ -51,6 +51,18 @@ public interface IBlockBuilder {
     @LuaDoc(description = "Configures experience dropped when this block is mined.", params = {"minExp: integer", "maxExp: integer"}, returnType = "IBlockBuilder")
     IBlockBuilder dropExperience(int minExp, int maxExp);
 
+    @LuaDoc(description = "Turns this block into an inventory container opened on right-click. dropMode: 'packed' (drop the block with its NBT, contents never spill), 'spill' (drop contents like a chest), 'none' (no drops).", params = {"rows: integer (1-6, 6 columns each)", "cols: integer", "dropMode: string"}, returnType = "IBlockBuilder")
+    IBlockBuilder container(int rows, int cols, String dropMode);
+
+    @LuaDoc(description = "Registers an item filter for container blocks: handler(itemId: string, count: integer) -> boolean. Return true to allow the item into a slot, false to reject it (item never enters the crate, 'CrateItemRejected' event fires).", params = {"handler: function(itemId, count)"}, returnType = "IBlockBuilder")
+    IBlockBuilder itemFilter(java.util.function.BiFunction<Object, Object, Boolean> handler);
+
+    @LuaDoc(description = "Sets a custom GUI background texture for this container block (e.g. 'ruby_mod:textures/gui/my_crate.png', 176x190 region, slots are drawn on top automatically).", params = {"texturePath: string"}, returnType = "IBlockBuilder")
+    IBlockBuilder containerTexture(String texturePath);
+
+    @LuaDoc(description = "Sets the display title shown above the container GUI (defaults to the block name).", params = {"title: string"}, returnType = "IBlockBuilder")
+    IBlockBuilder containerTitle(String title);
+
     String getId();
     float getHardness();
     float getResistance();
@@ -70,6 +82,13 @@ public interface IBlockBuilder {
     int getMaxDropCount();
     int getMinExp();
     int getMaxExp();
+    boolean isContainer();
+    int getContainerRows();
+    int getContainerCols();
+    String getContainerDropMode();
+    java.util.function.BiFunction<Object, Object, Boolean> getItemFilter();
+    String getContainerTexture();
+    String getContainerTitle();
 }
 
 

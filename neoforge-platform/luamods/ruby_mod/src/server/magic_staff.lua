@@ -56,7 +56,7 @@ local function getOrCreatePlayerState(player)
             player = player,
             markedTargetUuid = nil,
             markedTarget = nil,
-            minion = nil,
+            minions = {},
             lastBarText = nil,
             lastSyncHolding = nil
         }
@@ -144,17 +144,20 @@ local function raycastNearestVisible(player, maxDistance, radius)
     return best
 end
 
--- The summoned guardian only FOLLOWS until its owner orders it to attack
--- (by marking a target). Ordering adds the attack goals + sets the target.
--- Declared BEFORE markTarget: Lua locals must exist before the call site is compiled.
+-- Orders EVERY living summoned guardian to attack the marked target. Attack
+-- goals are attached once per minion (guarded by the 'ruby_minion_ordered'
+-- tag); later orders only re-aim the target. No free-roaming target selection:
+-- guardians only fight what the owner marks (or what hits them).
 local function orderMinionToAttack(player, state, target)
-    local minion = state.minion
-    if not minion or not minion:isAlive() then return end
-    minion:setTarget(target)
-    if AIGoals then
-        AIGoals:addNearestAttackableTargetGoal(minion, 1, "monster")
-        AIGoals:addHurtByTargetGoal(minion, 2)
-        AIGoals:addMeleeAttackGoal(minion, 3, MINION_ATTACK_SPEED, false)
+    for _, minion in ipairs(state.minions or {}) do
+        if minion and minion:isAlive() then
+            minion:setTarget(target)
+            if AIGoals and not minion:hasTag("ruby_minion_ordered") then
+                minion:addTag("ruby_minion_ordered")
+                AIGoals:addHurtByTargetGoal(minion, 2)
+                AIGoals:addMeleeAttackGoal(minion, 3, MINION_ATTACK_SPEED, false)
+            end
+        end
     end
 end
 
@@ -162,9 +165,7 @@ local function markTarget(player, state, target)
     if target then
         state.markedTargetUuid = target:getUuid()
         state.markedTarget = target
-        if state.minion and state.minion:isAlive() then
-            orderMinionToAttack(player, state, target)
-        end
+        orderMinionToAttack(player, state, target)
     else
         state.markedTargetUuid = nil
         state.markedTarget = nil
@@ -308,7 +309,12 @@ local function handleStaffUse(player, itemStack)
         player:spawnParticle("minecraft:totem_of_undying", 30, 0.5)
         local minion = player:spawnEntity("luatweaker:ruby_boss", 0, 1, 0)
         if minion then
-            state.minion = minion
+            local aliveMinions = {}
+            for _, m in ipairs(state.minions or {}) do
+                if m and m:isAlive() then table.insert(aliveMinions, m) end
+            end
+            table.insert(aliveMinions, minion)
+            state.minions = aliveMinions
             minion:addTag("ruby_minion")
             if AIGoals then
                 AIGoals:clearGoals(minion)
@@ -316,8 +322,13 @@ local function handleStaffUse(player, itemStack)
                 AIGoals:addGoal(minion, 5, {
                     canUse = function() return true end,
                     tick = function()
-                        if state.minion and state.minion:isAlive() and not state.markedTargetUuid then
-                            state.minion:moveTo(player:getX(), player:getY(), player:getZ(), MINION_FOLLOW_SPEED)
+                        -- Target died / vanished: clear the mark so the whole
+                        -- pack regroups on the owner instead of standing idle.
+                        if state.markedTargetUuid and (not state.markedTarget or not state.markedTarget:isAlive()) then
+                            markTarget(player, state, nil)
+                        end
+                        if not state.markedTargetUuid and minion and minion:isAlive() then
+                            minion:moveTo(player:getX(), player:getY(), player:getZ(), MINION_FOLLOW_SPEED)
                         end
                     end
                 })

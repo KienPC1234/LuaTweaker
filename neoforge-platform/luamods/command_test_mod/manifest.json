@@ -1,0 +1,9 @@
+{
+  "id": "command_test_mod",
+  "name": "Command Test Mod",
+  "author": "KienDev",
+  "version": "1.0.0",
+  "main": "main.lua",
+  "dependencies": [],
+  "permissions": []
+}

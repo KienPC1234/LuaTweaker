@@ -115,6 +115,10 @@ public class NeoForgeContentRegistry {
             fluidRegistrar.registerFluids(event);
         } else if (event.getRegistryKey().equals(Registries.ENTITY_TYPE)) {
             entityRegistrar.registerEntityTypes(event);
+        } else if (event.getRegistryKey().equals(Registries.BLOCK_ENTITY_TYPE)) {
+            blockRegistrar.registerContainerBlockEntities(event);
+        } else if (event.getRegistryKey().equals(Registries.MENU)) {
+            blockRegistrar.registerContainerMenus(event);
         } else if (event.getRegistryKey().equals(NeoForgeRegistries.Keys.FLUID_TYPES)) {
             fluidRegistrar.registerFluidTypes(event);
         } else if (event.getRegistryKey().equals(Registries.CREATIVE_MODE_TAB)) {
@@ -135,6 +139,25 @@ public class NeoForgeContentRegistry {
     @SubscribeEvent
     public void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
         entityRegistrar.onRegisterRenderers(event);
+    }
+
+    @SubscribeEvent
+    public void onRegisterScreens(net.neoforged.neoforge.client.event.RegisterMenuScreensEvent event) {
+        for (net.minecraft.world.inventory.MenuType<com.luatweaker.platform.crate.ContainerCrateMenu> menuType
+                : com.luatweaker.platform.crate.ContainerCrateRegistry.CRATE_MENUS.values()) {
+            event.register(menuType, com.luatweaker.platform.crate.ContainerCrateScreen::new);
+        }
+    }
+
+    @SubscribeEvent
+    public void onRegisterCapabilities(net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent event) {
+        // Expose every Lua-configured crate as a standard IItemHandler so external
+        // mods (item pipes, automation, scanner tools) can read/move its contents.
+        for (net.minecraft.world.level.block.entity.BlockEntityType<com.luatweaker.platform.crate.ContainerCrateBlockEntity> type
+                : com.luatweaker.platform.crate.ContainerCrateRegistry.CRATE_BE_TYPES.values()) {
+            event.registerBlockEntity(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, type,
+                    (be, direction) -> be);
+        }
     }
 
     @SubscribeEvent
