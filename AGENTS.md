@@ -294,6 +294,40 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 
 - Log output (log file + console) dùng ASCII: `=== BEGIN RELOAD ===`, `->`, `-`. **CẤM** box-drawing/em-dash/arrow unicode trong log strings.
 
+## 5.10 — Dynamic Bridge Architecture (Hybrid Proxy Pattern)
+
+- **DynamicJavaProxy** (`core-engine/src/main/java/com/luatweaker/core/bind/DynamicJavaProxy.java`) cung cấp automatic property/method access cho Java objects trong Lua.
+- **Cơ chế:**
+  - `__index`: `obj.Health` → tự động gọi `getHealth()` hoặc `isHealth()`
+  - `__newindex`: `obj.Health = 20` → tự động gọi `setHealth(20)`
+  - Method call: `obj:teleport(0, 100, 0)` → exact method name match
+- **Security model - Smart Package Blacklist (CRITICAL):**
+  - **3 Bức Tường Phòng Ngự:**
+    1. **Cobalt VM Isolation:** Tước bỏ `os.*`, `io.*`, `package.loadlib` khỏi Lua VM.
+    2. **Method Blacklist:** Block `getClass`, `wait`, `notify`, `notifyAll`, `clone`, `finalize`, `hashCode`.
+    3. **Smart Package Blacklist:** Block `java.lang.Runtime`, `java.lang.Process`, `java.lang.ProcessBuilder`, `java.lang.System`, `java.lang.Thread`, `java.lang.Class`, `java.lang.ClassLoader`, `java.lang.reflect.*`, `java.lang.invoke.*`, `java.io.*`, `java.nio.*`, `java.net.*`, `javax.net.*`, `sun.*`, `com.sun.*`, `jdk.*`.
+  - **Cross-mod interop:** Mọi package KHÔNG nằm trong blacklist đều được phép (GregTech, Create, Mekanism...).
+  - Check thứ tự: package blacklist → method blacklist → cache → reflection → remapper.
+- **Runtime Remapper (`core-engine/src/main/java/com/luatweaker/core/remap/RuntimeRemapper.java`):**
+  - Giải quyết obfuscation trong production (Mojmap → SRG: `getHealth` → `m_21223_`).
+  - **3 tầng fallback:**
+    1. **Exact match:** Tìm method đúng tên (hoạt động trong dev).
+    2. **Heuristic match:** Case-insensitive + contains pattern (tìm methods tương tự).
+    3. **Signature match:** Tìm theo param types + return type (fallback cuối cùng).
+  - **Cache:** `ConcurrentHashMap` cho cả exact và signature results.
+  - **Obfuscation detection:** Tự động detect dev vs production environment.
+  - Tích hợp vào `DynamicJavaProxy.findMethodCached()` - gọi khi exact match thất bại.
+- **Integration points:**
+  - `UniversalEventForwarder`: wrap NeoForge events → Lua (auto proxy)
+  - `EntitiesLuaBinding`: fallback proxy cho unknown entity properties
+  - `InteractionLuaBinding`: fallback proxy cho unknown block/item properties
+- **Khi nào dùng:**
+  - ✅ Event objects (raw NeoForge events)
+  - ✅ Modded properties không có trong manual wrapper
+  - ✅ Arbitrary Java objects từ interop (cross-mod: GregTech, Create, Mekanism)
+  - ❌ KHÔNG dùng cho core APIs đã có manual wrapper (Entity/Player/Block/Item hot paths)
+- **Performance:** Cache `ConcurrentHashMap<Class<?>, Map<String, Method>>` cho method lookup. Benchmark target: < 2x manual wrapper.
+
 ---
 
 # Project Structure (Hiện Tại)
@@ -301,7 +335,7 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 | Module | Role | Depends On |
 |---|---|---|
 | `common-api/` | Pure Java 21: PAL, VM interfaces, `@LuaDoc`/`@LuaDefault`, object wrappers | *(none)* |
-| `core-engine/` | Cobalt wrapper, **LuaBinder**, async logger (ASCII), linter, stub generator, LuaModManager | `common-api` |
+| `core-engine/` | Cobalt wrapper, **LuaBinder**, **DynamicJavaProxy**, async logger (ASCII), linter, stub generator, LuaModManager | `common-api` |
 | `modules/module-content/` | Content builders (items/blocks/fluids/entities/tabs/keybinds), ProjectileRegistry | `common-api`, `core-engine` |
 | `modules/module-recipes/` | Recipe manipulation + builder DSL | `common-api`, `core-engine` |
 | `modules/module-events/` | Shared event bus (replace semantics) | `common-api`, `core-engine` |
@@ -313,6 +347,7 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 | `modules/module-tasks/` | Task scheduler bridge | `common-api`, `core-engine` |
 | `modules/module-math/` | Vector3/Vector2/Color3, math/string extensions | `common-api`, `core-engine` |
 | `modules/module-interception/` | Anvil/brewing/trade interception | `common-api`, `core-engine` |
+| `modules/module-loot/` | Loot table manipulation (mob drops, chest loot, block drops, fishing) | `common-api`, `core-engine` |
 | `neoforge-platform/` | **Only runnable module**. NeoForge launcher, registrars, PAL impl, commands | all of the above + NeoForge |
 
 Entrypoint: `com.luatweaker.platform.LuaTweakerMod` (`@Mod("luatweaker")`).

@@ -5,6 +5,9 @@ plugins {
     id 'idea'
 }
 
+evaluationDependsOn ':modules:module-loot'
+evaluationDependsOn ':modules:module-worldgen'
+
 version = mod_version
 group = mod_group_id
 
@@ -76,7 +79,9 @@ neoForge {
             sourceSet(project(':modules:module-client').sourceSets.main)
             sourceSet(project(':modules:module-interception').sourceSets.main)
             sourceSet(project(':modules:module-tasks').sourceSets.main)
-sourceSet(project(':modules:module-command').sourceSets.main)
+ sourceSet(project(':modules:module-command').sourceSets.main)
+ sourceSet(project(':modules:module-loot').sourceSets.main)
+ sourceSet(project(':modules:module-worldgen').sourceSets.main)
         }
     }
 }
@@ -102,7 +107,9 @@ dependencies {
     jarJar(project(':modules:module-client'))
     jarJar(project(':modules:module-interception'))
     jarJar(project(':modules:module-tasks'))
-jarJar(project(':modules:module-command'))
+ jarJar(project(':modules:module-command'))
+ jarJar(project(':modules:module-loot'))
+ jarJar(project(':modules:module-worldgen'))
 
     // Also needed at compile time
     implementation project(':common-api')
@@ -118,7 +125,9 @@ jarJar(project(':modules:module-command'))
     implementation project(':modules:module-client')
     implementation project(':modules:module-interception')
     implementation project(':modules:module-tasks')
-implementation project(':modules:module-command')
+ implementation project(':modules:module-command')
+ implementation project(':modules:module-loot')
+ implementation project(':modules:module-worldgen')
 
     // JEI integration for checking recipes in-game easily
     implementation "mezz.jei:jei-1.21.1-neoforge:19.32.0.359"

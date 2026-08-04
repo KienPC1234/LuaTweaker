@@ -79,6 +79,16 @@ public final class LuaServiceBootstrap {
         InterceptionServiceImpl interceptionService = new InterceptionServiceImpl();
         InterceptionLuaBinding.registerBindings(engine, interceptionService);
 
+        // 9a. Loot Service (Mob Drops, Chest Loot, Block Drops, Fishing)
+        com.luatweaker.loot.LootServiceImpl lootService = new com.luatweaker.loot.LootServiceImpl();
+        com.luatweaker.loot.LootLuaBinding.registerBindings(engine, lootService);
+        engine.registerService("LootServiceImpl", lootService);
+
+        // 9b. Worldgen Service (Ores, Vegetation, Biome Features)
+        com.luatweaker.worldgen.WorldgenServiceImpl worldgenService = new com.luatweaker.worldgen.WorldgenServiceImpl();
+        com.luatweaker.worldgen.WorldgenLuaBinding.registerBindings(engine, worldgenService);
+        engine.registerService("WorldgenServiceImpl", worldgenService);
+
         // 9b. Server-side command registration (Commands:Register for /lt sub-commands)
         com.luatweaker.command.CommandLuaBinding.registerBindings(engine);
 

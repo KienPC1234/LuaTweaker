@@ -62,4 +62,35 @@ public class EventServiceImpl implements IEventService {
             }
         }
     }
+
+    public void fireRawEvent(@NotNull String eventName, @NotNull ILuaValue payload) {
+        ListenerEntry entry = LISTENERS.get(eventName);
+        if (entry != null && entry.function() != null && entry.function().isFunction()) {
+            try {
+                entry.engine().callFunction(entry.function(), payload);
+            } catch (Exception e) {
+                java.io.StringWriter sw = new java.io.StringWriter();
+                e.printStackTrace(new java.io.PrintWriter(sw));
+                com.luatweaker.api.log.LuaTweakerLog.get().error(
+                    com.luatweaker.api.log.LogStage.RUNTIME_ERROR,
+                    "Error invoking event listener for " + eventName + ": " + e.getMessage() + "\n" + sw.toString()
+                );
+            }
+        }
+    }
+
+    public static void fireTeardownHooks() {
+        ListenerEntry entry = LISTENERS.get(com.luatweaker.api.event.EventNames.ON_SCRIPT_UNLOAD);
+        if (entry != null && entry.function() != null && entry.function().isFunction()) {
+            try {
+                entry.engine().callFunction(entry.function());
+            } catch (Exception e) {
+                com.luatweaker.api.log.LuaTweakerLog.get().error(
+                    com.luatweaker.api.log.LogStage.RUNTIME_ERROR,
+                    "Error in OnScriptUnload hook: " + e.getMessage()
+                );
+            }
+        }
+        LISTENERS.clear();
+    }
 }

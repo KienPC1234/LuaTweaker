@@ -42,3 +42,6 @@ neoforge-docs/
 ### Logs ###
 *.log
 logs/
+
+ARCHITECTURE_BLUEPRINT.md
+LONG_TERM_PLAN.md

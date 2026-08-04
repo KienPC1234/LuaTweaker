@@ -1,0 +1,9 @@
+{
+  "id": "arcane_rpg",
+  "name": "Arcane RPG",
+  "author": "LuaTweaker",
+  "version": "1.0.0",
+  "main": "main.lua",
+  "dependencies": [],
+  "permissions": []
+}

@@ -75,7 +75,27 @@ public class EntitiesLuaBinding {
                 }
                 default -> {
                     ILuaValue existing = table.rawget(key);
-                    return existing != null && !existing.isNil() ? existing : engine.nilValue();
+                    if (existing != null && !existing.isNil()) {
+                        return existing;
+                    }
+                    
+                    // Fallback to DynamicJavaProxy for unknown properties (e.g. Modded fields)
+                    Object rawJavaObj = entity.getRawEntity();
+                    if (rawJavaObj != null && engine instanceof com.luatweaker.core.vm.CobaltLuaEngine cobaltEngine) {
+                        org.squiddev.cobalt.LuaUserdata proxy = com.luatweaker.core.bind.DynamicJavaProxy.create(
+                                cobaltEngine.getCobaltState(), rawJavaObj);
+                        try {
+                            org.squiddev.cobalt.LuaValue result = org.squiddev.cobalt.OperationHelper.getTable(
+                                    cobaltEngine.getCobaltState(), proxy, org.squiddev.cobalt.ValueFactory.valueOf(key));
+                            if (!result.isNil()) {
+                                return new com.luatweaker.core.vm.CobaltLuaValue(result);
+                            }
+                        } catch (org.squiddev.cobalt.LuaError | org.squiddev.cobalt.UnwindThrowable e) {
+                            // Ignore and fall through to nil
+                        }
+                    }
+                    
+                    return engine.nilValue();
                 }
             }
         });
@@ -101,7 +121,34 @@ public class EntitiesLuaBinding {
                                 p.rawget("X"), p.rawget("Y"), p.rawget("Z"));
                     }
                 }
-                default -> table.rawset(key, val);
+                default -> {
+                    // 1. Check if the table itself has it
+                    if (!table.rawget(key).isNil()) {
+                        table.rawset(key, val);
+                        return engine.nilValue();
+                    }
+                    
+                    // 2. Fallback to DynamicJavaProxy setter
+                    Object rawJavaObj = entity.getRawEntity();
+                    if (rawJavaObj != null && engine instanceof com.luatweaker.core.vm.CobaltLuaEngine cobaltEngine) {
+                        org.squiddev.cobalt.LuaUserdata proxy = com.luatweaker.core.bind.DynamicJavaProxy.create(
+                                cobaltEngine.getCobaltState(), rawJavaObj);
+                        try {
+                            org.squiddev.cobalt.LuaValue cobaltVal = org.squiddev.cobalt.Constants.NIL;
+                            if (val instanceof com.luatweaker.core.vm.CobaltLuaValue cobaltWrapper) {
+                                cobaltVal = cobaltWrapper.getCobaltValue();
+                            }
+                            org.squiddev.cobalt.OperationHelper.setTable(
+                                    cobaltEngine.getCobaltState(), proxy, org.squiddev.cobalt.ValueFactory.valueOf(key), cobaltVal);
+                            return engine.nilValue();
+                        } catch (org.squiddev.cobalt.LuaError | org.squiddev.cobalt.UnwindThrowable e) {
+                            // Ignore and fall through
+                        }
+                    }
+                    
+                    // 3. Just set it on the table
+                    table.rawset(key, val);
+                }
             }
             return engine.nilValue();
         });

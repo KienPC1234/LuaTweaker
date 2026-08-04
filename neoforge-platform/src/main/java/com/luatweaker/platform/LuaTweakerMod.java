@@ -131,7 +131,7 @@ public class LuaTweakerMod {
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(
                 new com.luatweaker.platform.content.NeoForgeContentRegistry.BossBarTickHandler(contentService));
-        NeoForge.EVENT_BUS.register(new com.luatweaker.platform.event.NeoForgeGameEventListener());
+        com.luatweaker.platform.event.UniversalEventForwarder.registerAll();
 
         if (Platform.getContent().isClient()) {
             modEventBus.addListener(com.luatweaker.platform.client.DynamicKeyMappingHandler::onRegisterKeyMappings);
@@ -301,6 +301,17 @@ public class LuaTweakerMod {
         com.luatweaker.api.log.LuaTweakerLog.get().stageBegin(com.luatweaker.api.log.LogStage.RELOAD);
         com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.RELOAD,
                 "Reloading Lua server scripts... (Debug: " + debugMode + ")");
+
+        if (activeEngine != null) {
+            com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.RELOAD,
+                    "Firing OnScriptUnload teardown hooks...");
+            try {
+                com.luatweaker.events.EventServiceImpl.fireTeardownHooks();
+            } catch (Exception e) {
+                com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RELOAD,
+                        "Error during teardown hooks: " + e.getMessage());
+            }
+        }
 
         // Clear pending Anvil/Brewing/Trade from previous reload cycle
         InterceptionHelper.clearPending();

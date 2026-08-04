@@ -39,6 +39,7 @@ public class LuaModManager {
      * Scans and loads all autonomous LuaMods from the given luamods directory.
      */
     public static void loadLuaMods(@NotNull File targetDir, @NotNull ILuaEngine engine) {
+        fireModTeardownHooks(engine);
         LOADED_MODS.clear();
         LOAD_ERRORS.clear();
 
@@ -217,6 +218,30 @@ public class LuaModManager {
                 "[LuaModManager] Successfully initialized " + LOADED_MODS.size() + " active LuaMod(s).");
         LuaTweakerLog.get().info(LogStage.SYSTEM,
                 "========================================================================");
+    }
+
+    private static void fireModTeardownHooks(@NotNull ILuaEngine engine) {
+        for (Map.Entry<String, LuaMod> entry : LOADED_MODS.entrySet()) {
+            String modId = entry.getKey();
+            LuaMod mod = entry.getValue();
+            ILuaTable modTable = engine.getGlobalEnvironment().rawget("mod") instanceof ILuaTable t ? t : null;
+            if (modTable == null) continue;
+
+            ILuaValue onDisable = modTable.rawget("OnDisable");
+            if (onDisable == null || onDisable.isNil()) {
+                onDisable = modTable.rawget("onDisable");
+            }
+            if (onDisable != null && onDisable.isFunction()) {
+                try {
+                    LuaTweakerLog.get().info(LogStage.SYSTEM,
+                            "[LuaMod][" + modId + "] Firing OnDisable teardown hook...");
+                    engine.callFunction(onDisable);
+                } catch (Exception e) {
+                    LuaTweakerLog.get().error(LogStage.SYSTEM,
+                            "[LuaMod][" + modId + "] Error in OnDisable hook: " + e.getMessage());
+                }
+            }
+        }
     }
 
     private static String readScriptContent(File fileOrDir, String relPath) {

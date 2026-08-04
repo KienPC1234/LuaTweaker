@@ -372,16 +372,29 @@ public class InteractionLuaBinding {
                     if (method != null && !method.isNil()) {
                         return method;
                     }
+                    Object rawBlock = block.getRawBlockState();
+                    if (rawBlock != null) {
+                        ILuaValue fallback = getDynamicFallback(engine, rawBlock, key);
+                        if (fallback != null) {
+                            return fallback;
+                        }
+                    }
                     return engine.nilValue();
             }
         });
 
         meta.rawset("__newindex", args -> {
             String key = args[1].asString();
+            ILuaValue val = args[2];
             if ("Id".equals(key) || "id".equals(key)) {
-                block.setId(args[2].asString());
+                block.setId(val.asString());
             } else if ("Nbt".equals(key) || "nbt".equals(key)) {
-                block.setNbt(args[2].asString());
+                block.setNbt(val.asString());
+            } else {
+                Object rawBlock = block.getRawBlockState();
+                if (rawBlock != null) {
+                    setDynamicFallback(engine, rawBlock, key, val);
+                }
             }
             return engine.nilValue();
         });
@@ -500,22 +513,35 @@ public class InteractionLuaBinding {
                     if (method != null && !method.isNil()) {
                         return method;
                     }
+                    Object rawItem = item.getRawItemStack();
+                    if (rawItem != null) {
+                        ILuaValue fallback = getDynamicFallback(engine, rawItem, key);
+                        if (fallback != null) {
+                            return fallback;
+                        }
+                    }
                     return engine.nilValue();
             }
         });
 
         meta.rawset("__newindex", args -> {
             String key = args[1].asString();
+            ILuaValue val = args[2];
             if ("Count".equals(key) || "count".equals(key)) {
-                item.setCount(args[2].asInt());
+                item.setCount(val.asInt());
             } else if ("Slot".equals(key) || "slot".equals(key)) {
-                item.setSlot(args[2].asInt());
+                item.setSlot(val.asInt());
             } else if ("Damage".equals(key) || "damage".equals(key)) {
-                item.setDamage(args[2].asInt());
+                item.setDamage(val.asInt());
             } else if ("CustomName".equals(key) || "customName".equals(key)) {
-                item.setCustomName(args[2].asString());
+                item.setCustomName(val.asString());
             } else if ("Nbt".equals(key) || "nbt".equals(key)) {
-                item.setNbt(args[2].asString());
+                item.setNbt(val.asString());
+            } else {
+                Object rawItem = item.getRawItemStack();
+                if (rawItem != null) {
+                    setDynamicFallback(engine, rawItem, key, val);
+                }
             }
             return engine.nilValue();
         });
@@ -628,5 +654,42 @@ public class InteractionLuaBinding {
             list.add(item);
         }
         return list;
+    }
+
+    @org.jetbrains.annotations.Nullable
+    private static ILuaValue getDynamicFallback(@NotNull ILuaEngine engine, @NotNull Object rawJavaObj, @NotNull String key) {
+        if (engine instanceof com.luatweaker.core.vm.CobaltLuaEngine cobaltEngine) {
+            org.squiddev.cobalt.LuaUserdata proxy = com.luatweaker.core.bind.DynamicJavaProxy.create(
+                    cobaltEngine.getCobaltState(), rawJavaObj);
+            try {
+                org.squiddev.cobalt.LuaValue result = org.squiddev.cobalt.OperationHelper.getTable(
+                        cobaltEngine.getCobaltState(), proxy, org.squiddev.cobalt.ValueFactory.valueOf(key));
+                if (!result.isNil()) {
+                    return new com.luatweaker.core.vm.CobaltLuaValue(result);
+                }
+            } catch (org.squiddev.cobalt.LuaError | org.squiddev.cobalt.UnwindThrowable e) {
+                // Fall through to nil
+            }
+        }
+        return null;
+    }
+
+    private static boolean setDynamicFallback(@NotNull ILuaEngine engine, @NotNull Object rawJavaObj, @NotNull String key, @NotNull ILuaValue val) {
+        if (engine instanceof com.luatweaker.core.vm.CobaltLuaEngine cobaltEngine) {
+            org.squiddev.cobalt.LuaUserdata proxy = com.luatweaker.core.bind.DynamicJavaProxy.create(
+                    cobaltEngine.getCobaltState(), rawJavaObj);
+            try {
+                org.squiddev.cobalt.LuaValue cobaltVal = org.squiddev.cobalt.Constants.NIL;
+                if (val instanceof com.luatweaker.core.vm.CobaltLuaValue cobaltWrapper) {
+                    cobaltVal = cobaltWrapper.getCobaltValue();
+                }
+                org.squiddev.cobalt.OperationHelper.setTable(
+                        cobaltEngine.getCobaltState(), proxy, org.squiddev.cobalt.ValueFactory.valueOf(key), cobaltVal);
+                return true;
+            } catch (org.squiddev.cobalt.LuaError | org.squiddev.cobalt.UnwindThrowable e) {
+                // Fall through
+            }
+        }
+        return false;
     }
 }

@@ -59,6 +59,10 @@ public class CobaltLuaEngine implements ILuaEngine {
         return debugMode;
     }
 
+    public LuaState getCobaltState() {
+        return state;
+    }
+
     private void setupGlobalBindings() {
         LuaTable globals = state.globals();
         globals.rawset("_G", globals);

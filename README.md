@@ -37,10 +37,22 @@ The runtime is **Lua 5.2 / Cobalt** with a Roblox (Luau)-flavored API: services,
   - Shaped, shapeless, smelting, blasting, smoking, campfire, smithing, stonecutting, brewing, anvil and villager trades — add, remove, replace.
   - Chainable builders: `Recipe.Shaped("id"):Pattern(...):Key(...):Output(...):Register()`.
 
+- **Loot Table Manipulation (server)**
+  - Add/remove mob drops, chest loot, block drops, and fishing loot.
+  - Config-driven: `Loot:AddMobDrop("minecraft:zombie", "minecraft:diamond", 0.1, 1, 3, 1)`.
+  - Auto-generates datapack JSON and injects via virtual resource pack system.
+
 - **Roblox-style Runtime APIs**
   - Services loaded explicitly: `require("LuaTweaker.Players")`, `require("LuaTweaker.Events")`, `require("LuaTweaker.Network")`, `require("LuaTweaker.GuiService")`, ...
   - Signals (`Signal.new()`, `:Connect`, `:Once`, `:Wait`), task scheduling (`Task:spawn`, `Task:delay`, `Task:wait`), remote events (`Network:GetOrCreateRemoteEvent(...)`).
   - **Unified entity API**: one entity/player table with BOTH method style (`entity:setHealth(50)`) and Roblox property style (`entity.Health = 50`).
+
+- **Dynamic Bridge Architecture (NEW)**
+  - **Automatic property/method access** for Java objects via metatables — no manual wrappers needed for modded content.
+  - Access any modded entity/block/item property: `entity.ModdedProperty` → auto-calls `getModdedProperty()`.
+  - Generic event system: subscribe to raw NeoForge events with automatic proxy wrapping.
+  - **Smart Package Blacklist**: Blocks dangerous Java classes (`Runtime`, `Process`, `System`, `Thread`, `java.io.*`, `java.net.*`) while allowing full cross-mod interop (GregTech, Create, Mekanism...).
+  - **Runtime Remapper**: Auto-translates method names across obfuscation boundaries (Mojmap ↔ SRG), works in both dev and production environments.
 
 - **Client HUD & Effects**
   - `GuiService` with `OnRenderHUD`, `DrawRect`, `DrawText`, `DrawProgressBar`, `DrawOutline`, `DrawTexture`, `GetScreenSize`.
@@ -53,6 +65,10 @@ The runtime is **Lua 5.2 / Cobalt** with a Roblox (Luau)-flavored API: services,
   - Item/block interactions dispatch Lua events server-side only; clients receive effects via network packets.
   - Shared event bus routes dispatches from the startup engine to the current runtime engine.
 
+- **Teardown Hooks (Clean Reloads)**
+  - `mod.OnDisable()` called per-mod before reload, plus `Events:Listen("OnScriptUnload", fn)` for global cleanup.
+  - Ensures timers, signals, and UI elements are cleaned up before the new script cycle begins.
+
 ---
 
 ## Architecture
@@ -62,19 +78,20 @@ Strict **Separation of Concerns** across decoupled modules:
 ```text
 LuaTweaker/
 ├── common-api/         # Pure Java 21: PAL interfaces, VM interfaces, @LuaDoc / @LuaDefault annotations
-├── core-engine/        # Cobalt VM wrapper, LuaBinder (auto-binding), async logger, linter, stub generator
+├── core-engine/        # Cobalt VM wrapper, LuaBinder (auto-binding), DynamicJavaProxy, async logger, linter, stub generator
 ├── modules/
 │   ├── module-content/     # Content builders (items, blocks, fluids, entities, tabs, keybinds)
 │   ├── module-recipes/     # Recipe manipulation
 │   ├── module-events/      # Shared event bus
 │   ├── module-entities/    # Unified entity/player wrappers + AI goals
-│   ├── module-interaction/ # World/block interaction + projectile firing
+│   ├── module-interaction/ # World/block interaction + projectile firing + dynamic proxy fallback
 │   ├── module-network/     # Remote events / remote functions
 │   ├── module-client/      # GuiService, ClientEffects, keybinds, RunService
 │   ├── module-storage/     # Roblox-style data stores (world/player/session)
 │   ├── module-tasks/       # Task scheduler bridge
 │   ├── module-math/        # Vector3 / Vector2 / Color3 / math extensions
-│   └── module-interception/# Anvil / brewing / villager trade interception
+│   ├── module-interception/# Anvil / brewing / villager trade interception
+│   └── module-loot/        # Loot table manipulation (mob drops, chest, block, fishing)
 └── neoforge-platform/  # Reference PAL implementation (NeoForge launcher, registrars, render)
 ```
 
