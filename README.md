@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="logo.png" alt="LuaTweaker Logo" width="200" />
+<img src="logo.png" alt="LuaTweaker Logo" />
 
 # LuaTweaker
 
