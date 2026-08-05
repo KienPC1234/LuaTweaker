@@ -182,6 +182,14 @@ public class BlockBuilderImpl implements IBlockBuilder {
         return this;
     }
 
+    private String displayName;
+
+    @Override
+    public IBlockBuilder displayName(String name) {
+        this.displayName = name;
+        return this;
+    }
+
     @Override public String getId() { return id; }
     @Override public float getHardness() { return hardness; }
     @Override public float getResistance() { return resistance; }
@@ -208,6 +216,7 @@ public class BlockBuilderImpl implements IBlockBuilder {
     @Override public java.util.function.BiFunction<Object, Object, Boolean> getItemFilter() { return itemFilter; }
     @Override public String getContainerTexture() { return containerTexture; }
     @Override public String getContainerTitle() { return containerTitle; }
+    @Override public String getDisplayName() { return displayName; }
 }
 
 

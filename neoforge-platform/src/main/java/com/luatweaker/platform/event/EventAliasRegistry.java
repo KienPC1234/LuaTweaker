@@ -21,7 +21,7 @@ public class EventAliasRegistry {
 
     static {
         // Combat
-        ALIAS_MAP.put("EntityHurt", LivingDamageEvent.class);
+        ALIAS_MAP.put("EntityHurt", LivingDamageEvent.Pre.class);
         ALIAS_MAP.put("EntityDeath", LivingDeathEvent.class);
         
         // Interaction

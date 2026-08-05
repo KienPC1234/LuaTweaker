@@ -3,11 +3,21 @@
 -- Persistent mana storage + regeneration via task scheduler
 -- ================================================================
 local Storage = require("LuaTweaker.Storage")
+local Events = require("LuaTweaker.Events")
+local Players = require("LuaTweaker.Players")
+local Network = require("LuaTweaker.Network")
+
+-- Capture mod table at load time. `mod` is a GLOBAL shared across all mods,
+-- so referencing it later may point to a different mod's table (or nil).
+local THIS_MOD = mod
+local CONFIG = THIS_MOD and THIS_MOD:GetConfig() or {}
 
 local ManaSystem = {}
 
+local manaSyncEvent = Network:GetOrCreateRemoteEvent("ArcaneManaSync")
+
 local function getConfig()
-    return mod:GetConfig()
+    return CONFIG
 end
 
 function ManaSystem:GetMaxMana(player)
@@ -65,7 +75,6 @@ end
 function ManaSystem:RegenTick()
     local cfg = getConfig()
     local regenPerTick = cfg.mana.regen_per_second / 20.0
-    local Players = require("LuaTweaker.Players")
     local allPlayers = Players.GetPlayers()
     for i = 1, #allPlayers do
         local player = allPlayers[i]
@@ -77,17 +86,40 @@ function ManaSystem:RegenTick()
     end
 end
 
-local Events = require("LuaTweaker.Events")
+function ManaSystem:SyncMana(player)
+    if player == nil then return end
+    local current = ManaSystem:GetMana(player)
+    local maxMana = ManaSystem:GetMaxMana(player)
+    manaSyncEvent:FireClient(player, current, maxMana)
+end
+
+local syncCounter = 0
 Events:Listen("ServerTick", function()
     ManaSystem:RegenTick()
+    -- Sync mana to clients once per second (every 20 ticks) to avoid packet spam.
+    syncCounter = syncCounter + 1
+    if syncCounter >= 20 then
+        syncCounter = 0
+        local allPlayers = Players.GetPlayers()
+        for i = 1, #allPlayers do
+            ManaSystem:SyncMana(allPlayers[i])
+        end
+    end
 end)
 
 Events:Listen("PlayerJoin", function(event)
-    local player = event
+    if event == nil then return end
+    -- event is a DynamicJavaProxy of PlayerLoggedInEvent -> getEntity() returns the raw player.
+    -- NOTE: this is a RAW Java Player proxy, NOT an IPlayer Lua table. Only Entity-level
+    -- methods are safe here (getUuid etc.); IPlayer-only methods like sendActionBar do NOT exist.
+    local player = event.Entity
+    if player == nil then
+        player = event:getEntity()
+    end
     if player == nil then return end
     local cfg = getConfig()
     ManaSystem:SetMana(player, cfg.mana.start_mana)
-    player:sendActionBar("§bWelcome to Arcane RPG! Mana: " .. cfg.mana.start_mana .. "/" .. cfg.mana.max_mana)
+    ManaSystem:SyncMana(player)
 end)
 
 return ManaSystem

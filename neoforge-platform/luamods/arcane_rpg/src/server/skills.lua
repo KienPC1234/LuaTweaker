@@ -5,19 +5,17 @@
 local Storage = require("LuaTweaker.Storage")
 local Events = require("LuaTweaker.Events")
 local Network = require("LuaTweaker.Network")
+local World = require("LuaTweaker.World")
+
+local THIS_MOD = mod
+local CONFIG = THIS_MOD and THIS_MOD:GetConfig() or {}
 
 local Skills = {}
 
 local skillSyncEvent = Network:GetOrCreateRemoteEvent("ArcaneSkillSync")
-local cooldownEvent = Network:GetOrCreateRemoteEvent("ArcaneCooldownSync")
 
 local function getConfig()
-    return mod:GetConfig()
-end
-
-local function getCooldownStore(player)
-    local uuid = player:getUuid()
-    return Storage:GetPlayerStorage(uuid)
+    return CONFIG
 end
 
 local function getCachedCooldowns(player)
@@ -107,8 +105,7 @@ function Skills:_castFrostNova(player, cfg)
     local px = player:getX()
     local py = player:getY()
     local pz = player:getZ()
-    local Workspace = require("LuaTweaker.Workspace")
-    local nearby = Workspace:GetEntitiesInRadius(player, cfg.radius)
+    local nearby = World:GetEntitiesInRadius(player, cfg.radius)
     local hitCount = 0
     for i = 1, #nearby do
         local entity = nearby[i]
@@ -136,10 +133,9 @@ function Skills:_castMeteorStrike(player, cfg)
     local px = player:getX()
     local py = player:getY()
     local pz = player:getZ()
-    local Workspace = require("LuaTweaker.Workspace")
     task.delay(0.5, function()
-        Workspace:SetBlockState("minecraft:fire", px, py - 1, pz)
-        local nearby = Workspace:GetEntitiesInRadius(player, 8.0)
+        World:SetBlockState(px, py - 1, pz, "minecraft:fire")
+        local nearby = World:GetEntitiesInRadius(player, 8.0)
         for i = 1, #nearby do
             local entity = nearby[i]
             if entity:getUuid() ~= player:getUuid() and entity:isLiving() then
@@ -150,11 +146,15 @@ function Skills:_castMeteorStrike(player, cfg)
     end)
     player:spawnParticle("minecraft:flame", 50, 2.0)
     player:playSound("minecraft:entity.generic.explode", 2.0, 0.5)
-    player:sendActionBar("§d§lMETEOR STRIKE!")
+    player:sendActionBar("METEOR STRIKE!")
 end
 
-function Skills:GetAllCooldowns(player)
-    return getCachedCooldowns(player)
-end
+Events:Listen("ArcaneCastSkill", function(payload)
+    if payload == nil then return end
+    local player = payload.player
+    local skill = payload.skill
+    if player == nil or skill == nil then return end
+    Skills:CastSkill(player, skill)
+end)
 
 return Skills

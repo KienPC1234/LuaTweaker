@@ -4,6 +4,9 @@
 -- ================================================================
 local Commands = require("LuaTweaker.Commands")
 
+local THIS_MOD = mod
+local CONFIG = THIS_MOD and THIS_MOD:GetConfig() or {}
+
 Commands:Register("arcane", {
     Description = "Arcane RPG admin commands",
     PermissionLevel = 2,
@@ -11,6 +14,14 @@ Commands:Register("arcane", {
     Usage = "/arcane <resetmana|givemana|spawnboss> [args]",
     Aliases = { "arcanergp" },
     Handler = function(sender, args, raw)
+        -- sender is a command-sender table; the real player (IPlayer Lua table)
+        -- is exposed as sender.Player. Sender itself has no getX/getUuid etc.
+        local player = sender.Player
+        if player == nil or player == false then
+            sender:sendMessage("§cThis command requires a player.")
+            return
+        end
+
         if #args < 1 then
             sender:sendMessage("§bUsage: /arcane <resetmana|givemana|spawnboss>")
             return
@@ -20,8 +31,8 @@ Commands:Register("arcane", {
 
         if subcommand == "resetmana" then
             local ManaSystem = require("LuaTweaker.ManaSystem")
-            local cfg = mod:GetConfig()
-            ManaSystem:SetMana(sender, cfg.mana.max_mana)
+            local cfg = CONFIG
+            ManaSystem:SetMana(player, cfg.mana.max_mana)
             sender:sendMessage("§bMana reset to " .. cfg.mana.max_mana)
 
         elseif subcommand == "givemana" then
@@ -35,13 +46,13 @@ Commands:Register("arcane", {
                 return
             end
             local ManaSystem = require("LuaTweaker.ManaSystem")
-            local actual = ManaSystem:RestoreMana(sender, amount)
+            local actual = ManaSystem:RestoreMana(player, amount)
             sender:sendMessage("§bRestored " .. actual .. " mana")
 
         elseif subcommand == "spawnboss" then
-            local px = sender:getX()
-            local py = sender:getY()
-            local pz = sender:getZ()
+            local px = player:getX()
+            local py = player:getY()
+            local pz = player:getZ()
             local EntityService = require("LuaTweaker.EntityService")
             local boss = EntityService:spawnEntity("luatweaker:crystal_golem", px + 3, py, pz + 3)
             if boss ~= nil then
@@ -52,9 +63,9 @@ Commands:Register("arcane", {
 
         elseif subcommand == "status" then
             local ManaSystem = require("LuaTweaker.ManaSystem")
-            local current = ManaSystem:GetMana(sender)
-            local maxMana = ManaSystem:GetMaxMana(sender)
-            local percent = ManaSystem:GetManaPercent(sender)
+            local current = ManaSystem:GetMana(player)
+            local maxMana = ManaSystem:GetMaxMana(player)
+            local percent = ManaSystem:GetManaPercent(player)
             sender:sendMessage(string.format(
                 "§bMana: §f%.0f§b/§f%.0f §b(§f%.0f%%§b)",
                 current, maxMana, percent * 100

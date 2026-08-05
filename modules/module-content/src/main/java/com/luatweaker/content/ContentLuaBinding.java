@@ -639,6 +639,28 @@ public class ContentLuaBinding {
             return table;
         });
 
+        bindMethod(table, "food", args -> { int off = getOffset(args); builder.food(args[off].asInt(), (float) args[off + 1].asDouble()); return table; });
+        bindMethod(table, "alwaysEdible", args -> { builder.alwaysEdible(); return table; });
+        bindMethod(table, "onConsume", args -> {
+            int off = getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.onConsume((player, itemStack) -> {
+                    try {
+                        ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
+                                ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
+                                : engine.toLuaValue(player);
+                        engine.callFunction(func, playerVal, engine.toLuaValue(itemStack));
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item onConsume callback: " + e.getMessage());
+                    }
+                });
+            }
+            return table;
+        });
+        bindMethod(table, "glow", args -> { int off = getOffset(args); builder.glow(args[off].asBoolean()); return table; });
+        bindMethod(table, "tooltip", args -> { int off = getOffset(args); builder.tooltip(args[off].asString()); return table; });
+
         bindMethod(table, "food", args -> {
             int off = getOffset(args);
             if (args.length - off >= 2) {
@@ -782,6 +804,7 @@ public class ContentLuaBinding {
         });
 
         bindMethod(table, "texture", args -> { int off = getOffset(args); builder.texture(args[off].asString()); return table; });
+        bindMethod(table, "displayName", args -> { int off = getOffset(args); builder.displayName(args[off].asString()); return table; });
         bindMethod(table, "creativeTab", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
         bindMethod(table, "tabGroup", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
         bindMethod(table, "tag", args -> {

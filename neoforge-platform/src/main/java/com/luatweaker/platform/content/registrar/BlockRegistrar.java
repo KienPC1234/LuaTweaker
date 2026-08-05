@@ -192,8 +192,11 @@ public final class BlockRegistrar {
                             net.minecraft.world.flag.FeatureFlags.DEFAULT_FLAGS);
             net.minecraft.world.inventory.MenuType<com.luatweaker.platform.crate.ContainerCrateMenu> menuType = ref[0];
             com.luatweaker.platform.crate.ContainerCrateRegistry.CRATE_MENUS.put(rl, menuType);
-            com.luatweaker.platform.crate.ContainerCrateRegistry.CRATE_TEXTURES.put(
-                    menuType, builder.getContainerTexture());
+            String containerTexture = builder.getContainerTexture();
+            if (containerTexture != null) {
+                com.luatweaker.platform.crate.ContainerCrateRegistry.CRATE_TEXTURES.put(
+                        menuType, containerTexture);
+            }
             event.register(Registries.MENU, rl, () -> menuType);
         }
     }

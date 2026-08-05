@@ -63,6 +63,9 @@ public interface IBlockBuilder {
     @LuaDoc(description = "Sets the display title shown above the container GUI (defaults to the block name).", params = {"title: string"}, returnType = "IBlockBuilder")
     IBlockBuilder containerTitle(String title);
 
+    @LuaDoc(description = "Sets the display name of the block.", params = {"name: string"}, returnType = "IBlockBuilder")
+    IBlockBuilder displayName(String name);
+
     String getId();
     float getHardness();
     float getResistance();
@@ -89,6 +92,7 @@ public interface IBlockBuilder {
     java.util.function.BiFunction<Object, Object, Boolean> getItemFilter();
     String getContainerTexture();
     String getContainerTitle();
+    String getDisplayName();
 }
 
 

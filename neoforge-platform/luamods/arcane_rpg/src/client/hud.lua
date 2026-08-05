@@ -2,15 +2,20 @@
 -- ARCANE RPG: Client HUD
 -- Mana bar + Skill cooldown indicators
 -- ================================================================
-local Events = require("LuaTweaker.Events")
 local GuiService = require("LuaTweaker.GuiService")
 local Network = require("LuaTweaker.Network")
+local Storage = require("LuaTweaker.Storage")
+local sessionStorage = Storage:GetSessionStorage()
+
+local THIS_MOD = mod
+local CONFIG = THIS_MOD and THIS_MOD:GetConfig() or {}
 
 local function getConfig()
-    return mod:GetConfig()
+    return CONFIG
 end
 
 local skillSyncEvent = Network:GetOrCreateRemoteEvent("ArcaneSkillSync")
+local manaSyncEvent = Network:GetOrCreateRemoteEvent("ArcaneManaSync")
 local lastCastSkill = nil
 local lastCastTime = 0
 
@@ -21,13 +26,23 @@ skillSyncEvent.OnClientEvent:Connect(function(skillName, action)
     end
 end)
 
+-- Update cached mana whenever the server broadcasts it (server fires this every ~1s).
+manaSyncEvent.OnClientEvent:Connect(function(mana, maxMana)
+    if mana ~= nil then
+        sessionStorage:SetAsync("arcane_rpg.client.mana", mana)
+    end
+    if maxMana ~= nil then
+        sessionStorage:SetAsync("arcane_rpg.client.max_mana", maxMana)
+    end
+end)
+
 local skillOrder = { "crystal_bolt", "frost_nova", "arcane_shield", "meteor_strike" }
 
 local skillDisplayNames = {
-    crystal_bolt = "§b1",
-    frost_nova = "§b2",
-    arcane_shield = "§b3",
-    meteor_strike = "§b4"
+    crystal_bolt = "1",
+    frost_nova = "2",
+    arcane_shield = "3",
+    meteor_strike = "4"
 }
 
 local skillColors = {
@@ -37,7 +52,7 @@ local skillColors = {
     meteor_strike = 0xFF4400
 }
 
-Events:Listen("OnRenderHUD", function(guiGraphics)
+GuiService.OnRenderHUD:Connect(function(dt)
     local cfg = getConfig()
     local hudCfg = cfg.hud
 
@@ -53,8 +68,6 @@ Events:Listen("OnRenderHUD", function(guiGraphics)
     GuiService:DrawRect(barX, barY, barW, barH, hudCfg.mana_bar_bg)
 
     local manaPercent = 1.0
-    local Storage = require("LuaTweaker.Storage")
-    local sessionStorage = Storage:GetSessionStorage()
     local cachedMana = sessionStorage:GetAsync("arcane_rpg.client.mana")
     local cachedMax = sessionStorage:GetAsync("arcane_rpg.client.max_mana")
     if cachedMana ~= nil and cachedMax ~= nil and cachedMax > 0 then
@@ -95,11 +108,10 @@ Events:Listen("OnRenderHUD", function(guiGraphics)
 
     -- ==== CAST FEEDBACK ====
     if lastCastSkill ~= nil and task.getTimeClock() - lastCastTime < 2.0 then
-        local fadeAlpha = 1.0 - (task.getTimeClock() - lastCastTime) / 2.0
         local name = lastCastSkill:gsub("_", " ")
         name = name:gsub("^%l", string.upper)
         GuiService:DrawTextCentered(
-            "§b" .. name .. "!",
+            name .. "!",
             screenWidth / 2,
             screenHeight / 2 - 40,
             0xFFFFFF,
