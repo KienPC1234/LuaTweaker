@@ -2,8 +2,6 @@
 
 <img src="logo.png" alt="LuaTweaker Logo" />
 
-# LuaTweaker
-
 **Lua Scripting Engine & Modding Framework for Minecraft 1.21.1 (NeoForge)**
 
 [![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-brightgreen.svg?style=for-the-badge&logo=minecraft)](https://minecraft.net)
