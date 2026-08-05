@@ -153,6 +153,15 @@ public class EntitiesLuaBinding {
             return engine.nilValue();
         });
 
+        meta.rawset("__eq", args -> {
+            IEntity e1 = getEntityFromTable(args[1]);
+            IEntity e2 = getEntityFromTable(args[2]);
+            if (e1 != null && e2 != null) {
+                return engine.wrapBoolean(e1.getUuid().equals(e2.getUuid()));
+            }
+            return engine.wrapBoolean(false);
+        });
+
         table.setMetatable(meta);
     }
 

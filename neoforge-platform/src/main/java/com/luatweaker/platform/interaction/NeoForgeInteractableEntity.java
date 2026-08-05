@@ -254,77 +254,7 @@ public class NeoForgeInteractableEntity implements IInteractableEntity, IEntity 
         entity.getPersistentData().putString(key, value);
     }
 
-    @Override
-    public void ShootProjectile(@NotNull String projectileTypeId, double speed, double inaccuracy) {
-        if (entity instanceof LivingEntity shooter && shooter.level() instanceof ServerLevel level) {
-            Vec3 look = shooter.getLookAngle();
-            Vec3 spawnPos = shooter.getEyePosition().add(look.scale(1.2));
-            spawnProjectile(level, shooter, spawnPos, look, projectileTypeId, speed, inaccuracy);
-        }
-    }
 
-    @Override
-    public void ShootProjectileAt(@NotNull String projectileTypeId, @NotNull Object targetEntity, double speed) {
-        if (entity instanceof LivingEntity shooter && shooter.level() instanceof ServerLevel level) {
-            Vec3 targetPos = null;
-            if (targetEntity instanceof Entity t) {
-                targetPos = t.getEyePosition();
-            } else if (targetEntity instanceof IInteractableEntity ie) {
-                targetPos = new Vec3(ie.getX(), ie.getY() + 1.0, ie.getZ());
-            }
-            if (targetPos != null) {
-                Vec3 shooterPos = shooter.getEyePosition();
-                Vec3 dir = targetPos.subtract(shooterPos).normalize();
-                Vec3 spawnPos = shooterPos.add(dir.scale(1.2));
-                spawnProjectile(level, shooter, spawnPos, dir, projectileTypeId, speed, 0.0);
-            }
-        }
-    }
-
-    private net.minecraft.world.entity.projectile.Projectile spawnProjectile(ServerLevel level, LivingEntity shooter, Vec3 spawnPos, Vec3 dir, String typeId, double speed, double inaccuracy) {
-        String cleanId = typeId.contains(":") ? typeId : "minecraft:" + typeId;
-        switch (cleanId) {
-            case "minecraft:small_fireball": {
-                var projectile = new net.minecraft.world.entity.projectile.SmallFireball(level, shooter, dir.scale(speed));
-                projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
-                level.addFreshEntity(projectile);
-                return projectile;
-            }
-            case "minecraft:fireball":
-            case "minecraft:large_fireball": {
-                var projectile = new net.minecraft.world.entity.projectile.LargeFireball(level, shooter, dir.scale(speed), 1);
-                projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
-                level.addFreshEntity(projectile);
-                return projectile;
-            }
-            case "minecraft:dragon_fireball": {
-                var projectile = new net.minecraft.world.entity.projectile.DragonFireball(level, shooter, dir.scale(speed));
-                projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
-                level.addFreshEntity(projectile);
-                return projectile;
-            }
-            case "minecraft:wither_skull": {
-                var projectile = new net.minecraft.world.entity.projectile.WitherSkull(level, shooter, dir.scale(speed));
-                projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
-                level.addFreshEntity(projectile);
-                return projectile;
-            }
-            case "minecraft:snowball": {
-                var projectile = new net.minecraft.world.entity.projectile.Snowball(level, shooter);
-                projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
-                projectile.shoot(dir.x, dir.y, dir.z, (float) speed, (float) inaccuracy);
-                level.addFreshEntity(projectile);
-                return projectile;
-            }
-            default: {
-                var projectile = new net.minecraft.world.entity.projectile.Arrow(level, shooter, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.ARROW), null);
-                projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
-                projectile.shoot(dir.x, dir.y, dir.z, (float) speed, (float) inaccuracy);
-                level.addFreshEntity(projectile);
-                return projectile;
-            }
-        }
-    }
 
     @Override
     public void PlayAnimation(@NotNull String animationName, double speed, double transitionLength) {
@@ -425,27 +355,12 @@ public class NeoForgeInteractableEntity implements IInteractableEntity, IEntity 
 
     @Override
     public void shootProjectile(String projectileType, double speed, double inaccuracy) {
-        if (entity instanceof LivingEntity shooter && shooter.level() instanceof ServerLevel level) {
-            Vec3 look = shooter.getLookAngle();
-            Vec3 spawnPos = shooter.getEyePosition().add(look.scale(1.2));
-            spawnProjectile(level, shooter, spawnPos, look, projectileType, speed, inaccuracy);
-        }
+        EntityInteractionHelper.shootProjectile(this, projectileType, speed, inaccuracy);
     }
 
     @Override
     public IEntity shootProjectileAt(String projectileType, IEntity target, double speed) {
-        if (target != null && target.getRawEntity() instanceof Entity t
-                && entity instanceof LivingEntity shooter && shooter.level() instanceof ServerLevel level) {
-            Vec3 targetPos = t.getEyePosition();
-            Vec3 shooterPos = shooter.getEyePosition();
-            Vec3 dir = targetPos.subtract(shooterPos).normalize();
-            Vec3 spawnPos = shooterPos.add(dir.scale(1.2));
-            net.minecraft.world.entity.projectile.Projectile projectile = spawnProjectile(level, shooter, spawnPos, dir, projectileType, speed, 0.0);
-            if (projectile != null) {
-                return new NeoForgeInteractableEntity(projectile);
-            }
-        }
-        return null;
+        return EntityInteractionHelper.shootProjectileAt(this, projectileType, target, speed);
     }
 
     @Override

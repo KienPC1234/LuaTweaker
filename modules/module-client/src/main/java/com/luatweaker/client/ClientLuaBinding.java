@@ -28,7 +28,7 @@ public class ClientLuaBinding {
                 ? existingClient.asTable()
                 : engine.createTable();
         clientTable.rawset("registerKeyBinding", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 5) {
                 String id = args[off].asString();
                 String displayName = args[off + 1].asString();
@@ -71,7 +71,7 @@ public class ClientLuaBinding {
             ILuaTable uis = uisValue.asTable();
             uis.rawset("IsKeyDown", args -> {
                 if (isDedicatedServer) return engine.wrapBoolean(false);
-                int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 if (args.length - off >= 1) {
                     int key = args[off].asInt();
                     return engine.wrapBoolean(clientService.isKeyDown(key));
@@ -80,78 +80,29 @@ public class ClientLuaBinding {
             });
         }
 
-        ILuaTable cameraTable = engine.createTable();
-        cameraTable.rawset("Shake", args -> {
-            if (isDedicatedServer) {
-                com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM, "[Server Headless] Camera shake no-op on dedicated server");
-                return null;
-            }
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
-            double intensity = args.length - off >= 1 ? args[off].asDouble() : 1.0;
-            double duration = args.length - off >= 2 ? args[off + 1].asDouble() : 0.5;
-            com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM, "[Camera] Shake effect applied: intensity=" + intensity + ", duration=" + duration);
-            return null;
-        });
-        globals.rawset("Camera", cameraTable);
+        if (isDedicatedServer) {
+            // Bind dummy services for dedicated server that do nothing
+            ILuaTable dummyCamera = engine.createTable();
+            dummyCamera.rawset("Shake", args -> null);
+            globals.rawset("Camera", dummyCamera);
+            engine.registerService("Camera", dummyCamera);
 
-        ILuaTable clientEffects = engine.createTable();
-        clientEffects.rawset("SpawnParticle", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
-            if (args.length - off >= 4) {
-                String particleId = args[off].asString();
-                double x = args[off + 1].asDouble();
-                double y = args[off + 2].asDouble();
-                double z = args[off + 3].asDouble();
-                double vx = args.length - off >= 5 ? args[off + 4].asDouble() : 0.0;
-                double vy = args.length - off >= 6 ? args[off + 5].asDouble() : 0.0;
-                double vz = args.length - off >= 7 ? args[off + 6].asDouble() : 0.0;
-                com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM, "[Particle] Client Emitter: " + particleId + " at (" + x + "," + y + "," + z + ")");
-            }
-            return null;
-        });
-        clientEffects.rawset("PlaySound", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
-            if (args.length - off >= 1) {
-                String soundId = args[off].asString();
-                double volume = args.length - off >= 2 ? args[off + 1].asDouble() : 1.0;
-                double pitch = args.length - off >= 3 ? args[off + 2].asDouble() : 1.0;
-                com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM, "[Sound] Client PlaySound: " + soundId + " vol=" + volume + " pitch=" + pitch);
-            }
-            return null;
-        });
-        clientEffects.rawset("FlashScreen", args -> {
-            if (isDedicatedServer) return null;
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
-            if (args.length - off >= 1) {
-                String hex = args[off].asString();
-                double duration = args.length - off >= 2 ? args[off + 1].asDouble() : 0.3;
-                com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM, "[Overlay] Screen Flash: " + hex + " duration=" + duration);
-            }
-            return null;
-        });
-        globals.rawset("ClientEffects", clientEffects);
-        engine.registerService("ClientEffects", clientEffects);
-
-        // 4. Roblox TweenService
-        ILuaTable tweenService = engine.createTable();
-        tweenService.rawset("Create", args -> {
-            ILuaTable tween = engine.createTable();
-            tween.rawset("Play", a -> {
-                com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM, "[TweenService] Play executed");
-                return null;
-            });
-            tween.rawset("Pause", a -> {
-                com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM, "[TweenService] Pause executed");
-                return null;
-            });
-            tween.rawset("Cancel", a -> {
-                com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM, "[TweenService] Cancel executed");
-                return null;
-            });
-            return tween;
-        });
-        globals.rawset("TweenService", tweenService);
-        engine.registerService("TweenService", tweenService);
+            ILuaTable dummyEffects = engine.createTable();
+            dummyEffects.rawset("SpawnParticle", args -> null);
+            dummyEffects.rawset("PlaySound", args -> null);
+            dummyEffects.rawset("FlashScreen", args -> null);
+            globals.rawset("ClientEffects", dummyEffects);
+            engine.registerService("ClientEffects", dummyEffects);
+            
+            ILuaTable dummyTween = engine.createTable();
+            dummyTween.rawset("Create", args -> null);
+            globals.rawset("TweenService", dummyTween);
+            engine.registerService("TweenService", dummyTween);
+        } else {
+            LuaBinder.bind(engine, "Camera", new com.luatweaker.client.CameraServiceImpl(), com.luatweaker.api.client.ICameraService.class);
+            LuaBinder.bind(engine, "ClientEffects", new com.luatweaker.client.ClientEffectsServiceImpl(), com.luatweaker.api.client.IClientEffectsService.class);
+            LuaBinder.bind(engine, "TweenService", new com.luatweaker.client.TweenServiceImpl(engine), com.luatweaker.api.client.ITweenService.class);
+        }
 
         // 5. Roblox RunService — merge into the bootstrap table (keeps IsServer/IsClient)
         ILuaValue signalClass = globals.rawget("Signal");
@@ -169,32 +120,52 @@ public class ClientLuaBinding {
         globals.rawset("RunService", runService);
         engine.registerService("RunService", runService);
 
-        // 6. Roblox GuiService — method bindings auto-generated from IGuiService
-        ILuaTable guiServiceTable = LuaBinder.bind(engine, "GuiService", guiService, com.luatweaker.api.client.IGuiService.class);
-        if (signalClass != null && signalClass.isTable()) {
-            ILuaValue newSignalFn = signalClass.asTable().rawget("new");
-            if (newSignalFn != null && !newSignalFn.isNil()) {
-                guiServiceTable.rawset("OnRenderHUD", engine.callFunction(newSignalFn, signalClass));
+        if (!isDedicatedServer) {
+            // 6. Roblox GuiService — method bindings auto-generated from IGuiService
+            ILuaTable guiServiceTable = LuaBinder.bind(engine, "GuiService", guiService, com.luatweaker.api.client.IGuiService.class);
+            if (signalClass != null && signalClass.isTable()) {
+                ILuaValue newSignalFn = signalClass.asTable().rawget("new");
+                if (newSignalFn != null && !newSignalFn.isNil()) {
+                    guiServiceTable.rawset("OnRenderHUD", engine.callFunction(newSignalFn, signalClass));
+                }
             }
+
+            // GetScreenSize returns a table {1, 2, Width, Height} — bind manually.
+            guiServiceTable.rawset("GetScreenSize", args -> {
+                if (guiService != null) {
+                    int[] size = guiService.getScreenSize();
+                    ILuaTable result = engine.createTable();
+                    result.rawset(1, engine.wrapNumber(size[0]));
+                    result.rawset(2, engine.wrapNumber(size[1]));
+                    result.rawset("Width", engine.wrapNumber(size[0]));
+                    result.rawset("Height", engine.wrapNumber(size[1]));
+                    return result;
+                }
+                return engine.nilValue();
+            });
+            guiServiceTable.rawset("getScreenSize", guiServiceTable.rawget("GetScreenSize"));
+            engine.registerService("GuiService", guiServiceTable);
+
+            engine.registerService("ClientService", clientService);
+
+            ILuaTable cameraServiceTable = LuaBinder.bind(engine, "CameraService", new CameraServiceImpl(), com.luatweaker.api.client.ICameraService.class);
+            engine.registerService("CameraService", cameraServiceTable);
+
+            ILuaTable clientEffectsServiceTable = LuaBinder.bind(engine, "ClientEffectsService", new ClientEffectsServiceImpl(), com.luatweaker.api.client.IClientEffectsService.class);
+            engine.registerService("ClientEffectsService", clientEffectsServiceTable);
+
+            ILuaTable tweenServiceTable = LuaBinder.bind(engine, "TweenService", new TweenServiceImpl(engine), com.luatweaker.api.client.ITweenService.class);
+            engine.registerService("TweenService", tweenServiceTable);
+        } else {
+            // Ensure GuiService is bound as a dummy
+            ILuaTable dummyGui = engine.createTable();
+            dummyGui.rawset("GetScreenSize", args -> engine.createTable());
+            dummyGui.rawset("getScreenSize", dummyGui.rawget("GetScreenSize"));
+            globals.rawset("GuiService", dummyGui);
+            engine.registerService("GuiService", dummyGui);
+            
+            ILuaTable dummyClientService = engine.createTable();
+            engine.registerService("ClientService", dummyClientService);
         }
-
-        // GetScreenSize returns a table {1, 2, Width, Height} — bind manually.
-        guiServiceTable.rawset("GetScreenSize", args -> {
-            if (guiService != null) {
-                int[] size = guiService.getScreenSize();
-                ILuaTable result = engine.createTable();
-                result.rawset(1, engine.wrapNumber(size[0]));
-                result.rawset(2, engine.wrapNumber(size[1]));
-                result.rawset("Width", engine.wrapNumber(size[0]));
-                result.rawset("Height", engine.wrapNumber(size[1]));
-                return result;
-            }
-            return engine.nilValue();
-        });
-        guiServiceTable.rawset("getScreenSize", guiServiceTable.rawget("GetScreenSize"));
-
-        engine.registerService("ClientService", clientService);
-        engine.registerService("ClientEffects", clientEffects);
-        engine.registerService("Camera", cameraTable);
     }
 }

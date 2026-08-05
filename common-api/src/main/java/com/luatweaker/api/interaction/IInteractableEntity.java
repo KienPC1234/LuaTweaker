@@ -54,9 +54,6 @@ public interface IInteractableEntity {
     default void SendOverlayMessage(@NotNull String message) {}
     default boolean GiveItem(@NotNull String itemId, int count) { return false; }
 
-    default void ShootProjectile(@NotNull String projectileTypeId, double speed, double inaccuracy) {}
-    default void ShootProjectileAt(@NotNull String projectileTypeId, @NotNull Object targetEntity, double speed) {}
-
     default void PlayAnimation(@NotNull String animationName, double speed, double transitionLength) {}
     default void StopAnimation(@NotNull String animationName) {}
 

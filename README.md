@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="logo.png" alt="LuaTweaker Logo" width="200" />
+
 # LuaTweaker
 
 **Lua Scripting Engine & Modding Framework for Minecraft 1.21.1 (NeoForge)**
@@ -65,6 +67,10 @@ The runtime is **Lua 5.2 / Cobalt** with a Roblox (Luau)-flavored API: services,
   - Item/block interactions dispatch Lua events server-side only; clients receive effects via network packets.
   - Shared event bus routes dispatches from the startup engine to the current runtime engine.
 
+- **Safe Network Architecture (Update Checker + Permission-Gated HTTP)**
+  - **Zero-code update checks (default):** declare `"update_url": "https://..."` in `manifest.json` and the engine downloads the JSON feed on the Java side (never in the Lua sandbox), then shows update notices in chat and exposes the result read-only to Lua via `mod:GetUpdateStatus("mod_id")` / `require("LuaTweaker.Update")`. Only `https://` feeds are accepted.
+  - **Free HTTP is locked by default:** `Net:HttpGet(url, timeout)` is rejected unless a loaded mod declares `"permissions": ["net.http"]`. The grant is **per installation** (the VM cannot attribute runtime calls to a specific mod), so every granting mod triggers a red warning in chat and logs listing it.
+
 - **Teardown Hooks (Clean Reloads)**
   - `mod.OnDisable()` called per-mod before reload, plus `Events:Listen("OnScriptUnload", fn)` for global cleanup.
   - Ensures timers, signals, and UI elements are cleaned up before the new script cycle begins.
@@ -91,7 +97,8 @@ LuaTweaker/
 │   ├── module-tasks/       # Task scheduler bridge
 │   ├── module-math/        # Vector3 / Vector2 / Color3 / math extensions
 │   ├── module-interception/# Anvil / brewing / villager trade interception
-│   └── module-loot/        # Loot table manipulation (mob drops, chest, block, fishing)
+│   ├── module-loot/        # Loot table manipulation (mob drops, chest, block, fishing)
+│   └── module-update/      # Declarative update checker + permission-gated HTTP GET
 └── neoforge-platform/  # Reference PAL implementation (NeoForge launcher, registrars, render)
 ```
 
@@ -209,6 +216,36 @@ GuiService.OnRenderHUD:Connect(function(dt)
     local size = GuiService:GetScreenSize()
     GuiService:DrawTextCentered("Mana: 100/100", math.floor(size.Width / 2), 20, 0xFFFFFFFF, true)
 end)
+```
+
+### 5. Update Checking & Network Permission (manifest + read-only API)
+
+```json
+{
+  "id": "gt_addon",
+  "version": "1.0.2",
+  "environment": "universal",
+  "update_url": "https://raw.githubusercontent.com/.../update.json"
+}
+```
+
+```lua
+-- The engine already fetched the feed outside Lua; scripts only read the result.
+local updateInfo = mod:GetUpdateStatus("gt_addon")  -- or Update:GetStatus("gt_addon")
+if updateInfo and updateInfo.HasUpdate then
+    print("New version available: " .. updateInfo.LatestVersion)
+end
+```
+
+Free HTTP needs an explicit permission — without it the call is rejected loudly:
+
+```json
+{ "permissions": ["net.http"] }
+```
+
+```lua
+local Net = require("LuaTweaker.Net")
+local result = Net:HttpGet("https://example.com/api/price", 5)  -- {Success, StatusCode, Body, Json}
 ```
 
 ---

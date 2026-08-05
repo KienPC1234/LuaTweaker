@@ -82,6 +82,14 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
     }
 
     @Override
+    public String getDimension() {
+        if (player != null && player.level() != null) {
+            return player.level().dimension().location().toString();
+        }
+        return "minecraft:overworld";
+    }
+
+    @Override
     public String getOffHandItem() {
         if (player != null) {
             ItemStack stack = player.getOffhandItem();

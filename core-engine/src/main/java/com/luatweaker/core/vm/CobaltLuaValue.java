@@ -62,6 +62,16 @@ public class CobaltLuaValue implements ILuaValue {
     }
 
     @Override
+    public boolean isNumber() {
+        return value.isNumber();
+    }
+
+    @Override
+    public boolean isString() {
+        return value.isString();
+    }
+
+    @Override
     public ILuaTable asTable() {
         if (value instanceof LuaTable tbl) {
             return new CobaltLuaTable(tbl);

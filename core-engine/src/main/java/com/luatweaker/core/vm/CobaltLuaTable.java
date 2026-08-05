@@ -107,6 +107,22 @@ public class CobaltLuaTable extends CobaltLuaValue implements ILuaTable {
     }
 
     @Override
+    public void forEach(java.util.function.BiConsumer<ILuaValue, ILuaValue> action) {
+        LuaValue k = Constants.NIL;
+        while (true) {
+            try {
+                Varargs n = table.next(k);
+                k = n.first();
+                if (k.isNil()) break;
+                LuaValue v = n.arg(2);
+                action.accept(new CobaltLuaValue(k), new CobaltLuaValue(v));
+            } catch (LuaError e) {
+                break;
+            }
+        }
+    }
+
+    @Override
     public void setMetatable(ILuaTable meta) {
         if (meta instanceof CobaltLuaTable wrapper) {
             table.setMetatable(null, wrapper.table);

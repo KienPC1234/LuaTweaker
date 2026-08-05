@@ -166,22 +166,7 @@ public class CommandServiceImpl implements ICommandService {
      * runs; commands must be registered during loading.
      */
     private @Nullable String resolveCurrentModId() {
-        try {
-            ILuaValue modVal = engine.getGlobalEnvironment().rawget("mod");
-            if (modVal == null || modVal.isNil()) {
-                modVal = engine.getGlobalEnvironment().rawget("Mod");
-            }
-            if (modVal != null && !modVal.isNil() && modVal.isTable()) {
-                ILuaValue idVal = modVal.asTable().rawget("ID");
-                if (idVal != null && !idVal.isNil()) {
-                    return idVal.asString();
-                }
-            }
-        } catch (Exception e) {
-            LuaTweakerLog.get().error(LogStage.COMMAND,
-                    "Commands:Register failed while resolving owning mod id: " + e.getMessage());
-        }
-        return null;
+        return com.luatweaker.core.mod.LuaModContext.resolveCurrentModId(engine);
     }
 
     /** Validates a slash-separated command path: {@code [a-z0-9_:]+} segments, max depth 4. */

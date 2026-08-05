@@ -75,7 +75,12 @@ public class BlockBuilderImpl implements IBlockBuilder {
                 case "DIAMOND" -> 3;
                 case "NETHERITE" -> 4;
                 default -> {
-                    try { yield Integer.parseInt(levelName); } catch (Exception e) { yield 1; }
+                    try { 
+                        yield Integer.parseInt(levelName); 
+                    } catch (NumberFormatException e) { 
+                        com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Invalid mining level: " + levelName + ". Defaulting to 1.");
+                        yield 1; 
+                    }
                 }
             };
             this.requiresTool = true;

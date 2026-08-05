@@ -131,38 +131,71 @@ public class NeoForgeContentRegistry {
         tabRegistrar.onBuildCreativeModeTabContents(event);
     }
 
-    @SubscribeEvent
-    public void onRegisterClientExtensions(RegisterClientExtensionsEvent event) {
-        fluidRegistrar.registerClientExtensions(event);
-    }
+    public static class ClientModEvents {
+        private final NeoForgeContentRegistry parent;
 
-    @SubscribeEvent
-    public void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
-        entityRegistrar.onRegisterRenderers(event);
-    }
+        public ClientModEvents(NeoForgeContentRegistry parent) {
+            this.parent = parent;
+        }
 
-    @SubscribeEvent
-    public void onRegisterScreens(net.neoforged.neoforge.client.event.RegisterMenuScreensEvent event) {
-        for (net.minecraft.world.inventory.MenuType<com.luatweaker.platform.crate.ContainerCrateMenu> menuType
-                : com.luatweaker.platform.crate.ContainerCrateRegistry.CRATE_MENUS.values()) {
-            event.register(menuType, com.luatweaker.platform.crate.ContainerCrateScreen::new);
+
+
+        @SuppressWarnings("unchecked")
+        @SubscribeEvent
+        public void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
+            for (com.luatweaker.api.content.IEntityBuilder e : parent.contentService.getRegisteredEntities()) {
+                try {
+                    ResourceLocation rl = parent.parseLocation(e.getId());
+                    EntityType<?> rawType = parent.createdEntityTypes.get(rl);
+                    if (rawType != null) {
+                        ResourceLocation texLoc = e.getTexture() != null
+                                ? parent.parseLocation(e.getTexture())
+                                : ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/zombie/zombie.png");
+                        com.luatweaker.platform.content.ClientMobParentRegistry.RendererFactory factory = com.luatweaker.platform.content.ClientMobParentRegistry.getFactory(e.getParentMob());
+                        EntityType entityType = rawType;
+                        event.registerEntityRenderer(entityType, ctx -> factory.create(ctx, texLoc));
+                        LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom EntityRenderer for: " + rl);
+                    }
+                } catch (Exception ex) {
+                    LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed entity renderer registration for " + e.getId() + ": " + ex.getMessage());
+                }
+            }
+        }
+
+        @SubscribeEvent
+        public void onRegisterScreens(net.neoforged.neoforge.client.event.RegisterMenuScreensEvent event) {
+            for (net.minecraft.world.inventory.MenuType<com.luatweaker.platform.container.CustomContainerMenu> menuType
+                    : com.luatweaker.platform.container.CustomContainerRegistry.CONTAINER_MENUS.values()) {
+                event.register(menuType, com.luatweaker.platform.container.CustomContainerScreen::new);
+            }
+        }
+
+        @SubscribeEvent
+        public void onRegisterItemColors(RegisterColorHandlersEvent.Item event) {
+            for (com.luatweaker.api.content.IFluidBuilder builder : parent.contentService.getRegisteredFluids()) {
+                ResourceLocation bucketRl = parent.parseLocation(builder.getId() + "_bucket");
+                Item bucketItem = parent.createdItems.get(bucketRl);
+                if (bucketItem != null) {
+                    event.register(new net.neoforged.neoforge.client.model.DynamicFluidContainerModel.Colors(), bucketItem);
+                }
+                ResourceLocation altBucketRl = parent.parseLocation(builder.getId().replace("_fluid", "") + "_bucket");
+                Item altBucketItem = parent.createdItems.get(altBucketRl);
+                if (altBucketItem != null && altBucketItem != bucketItem) {
+                    event.register(new net.neoforged.neoforge.client.model.DynamicFluidContainerModel.Colors(), altBucketItem);
+                }
+            }
         }
     }
 
     @SubscribeEvent
     public void onRegisterCapabilities(net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent event) {
-        // Expose every Lua-configured crate as a standard IItemHandler so external
+        // Expose every Lua-configured container as a standard IItemHandler so external
         // mods (item pipes, automation, scanner tools) can read/move its contents.
-        for (net.minecraft.world.level.block.entity.BlockEntityType<com.luatweaker.platform.crate.ContainerCrateBlockEntity> type
-                : com.luatweaker.platform.crate.ContainerCrateRegistry.CRATE_BE_TYPES.values()) {
+        for (net.minecraft.world.level.block.entity.BlockEntityType<com.luatweaker.platform.container.CustomContainerBlockEntity> type
+                : com.luatweaker.platform.container.CustomContainerRegistry.CONTAINER_BE_TYPES.values()) {
             event.registerBlockEntity(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, type,
                     (be, direction) -> be);
         }
-    }
-
-    @SubscribeEvent
-    public void onRegisterItemColors(RegisterColorHandlersEvent.Item event) {
-        fluidRegistrar.registerItemColors(event);
     }
 
     @SubscribeEvent

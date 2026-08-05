@@ -92,18 +92,36 @@ public final class LuaServiceBootstrap {
         // 9b. Server-side command registration (Commands:Register for /lt sub-commands)
         com.luatweaker.command.CommandLuaBinding.registerBindings(engine);
 
+        // 9c. Update Checker (declarative, default for every mod) + Web Service
+        // (HTTP GET locked behind the 'net.http' manifest permission).
+        com.luatweaker.update.UpdateServiceImpl updateService = new com.luatweaker.update.UpdateServiceImpl(engine);
+        com.luatweaker.update.WebServiceImpl webService = new com.luatweaker.update.WebServiceImpl(engine);
+        com.luatweaker.update.UpdateLuaBinding.registerBindings(engine, updateService, webService);
+
         // 10. Client Visual & Audio Effects (Camera, Particle, Sound, Screen Flash, KeyBinds, GUI)
         ClientServiceImpl clientService = new ClientServiceImpl();
         com.luatweaker.client.KeyBindServiceImpl keyBindService = new com.luatweaker.client.KeyBindServiceImpl();
-        com.luatweaker.platform.client.NeoForgeGuiService guiService = new com.luatweaker.platform.client.NeoForgeGuiService();
+        
+        boolean isDedicatedServer = com.luatweaker.api.pal.Platform.isInitialized() && com.luatweaker.api.pal.Platform.getContent().isDedicatedServer();
+        com.luatweaker.api.client.IGuiService guiService = null;
+        
+        if (!isDedicatedServer) {
+            try {
+                guiService = (com.luatweaker.api.client.IGuiService) Class.forName("com.luatweaker.platform.client.NeoForgeGuiService").getDeclaredConstructor().newInstance();
+            } catch (Exception ignored) {}
+        }
+        
         ClientLuaBinding.registerBindings(engine, clientService, keyBindService, guiService);
         engine.registerService("KeyBindService", keyBindService);
 
         // 10b. World-space render service + Client.OnRenderWorld signal (all engines,
         // so client scripts loaded on the runtime engine can require it).
         ILuaValue clientVal = engine.getGlobalEnvironment().rawget("Client");
-        if (clientVal != null && clientVal.isTable()) {
-            com.luatweaker.platform.client.NeoForgeWorldRenderEventListener.registerRenderService(engine, clientVal.asTable());
+        if (clientVal != null && clientVal.isTable() && !isDedicatedServer) {
+            try {
+                Class<?> clazz = Class.forName("com.luatweaker.platform.client.NeoForgeWorldRenderEventListener");
+                clazz.getMethod("registerRenderService", ILuaEngine.class, ILuaTable.class).invoke(null, engine, clientVal.asTable());
+            } catch (Exception ignored) {}
         }
 
         // 11. Recipe Manager Table

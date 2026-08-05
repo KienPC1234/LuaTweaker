@@ -38,6 +38,7 @@
     "spawn_weight": 5
   },
   "hud": {
+    "enabled": false,
     "mana_bar_x": 10,
     "mana_bar_y": 50,
     "mana_bar_width": 120,

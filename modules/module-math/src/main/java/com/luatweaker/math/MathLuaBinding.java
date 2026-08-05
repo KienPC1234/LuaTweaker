@@ -98,7 +98,7 @@ public class MathLuaBinding {
         if (globalMath != null && globalMath.isTable()) {
             ILuaTable mathTbl = globalMath.asTable();
             mathTbl.rawset("clamp", args -> {
-                int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 if (args.length - off < 3) return engine.wrapNumber(0);
                 double val = args[off].asDouble();
                 double min = args[off + 1].asDouble();
@@ -106,17 +106,17 @@ public class MathLuaBinding {
                 return engine.wrapNumber(Math.clamp(val, min, max));
             });
             mathTbl.rawset("sign", args -> {
-                int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 if (args.length - off < 1) return engine.wrapNumber(0);
                 return engine.wrapNumber(Math.signum(args[off].asDouble()));
             });
             mathTbl.rawset("round", args -> {
-                int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 if (args.length - off < 1) return engine.wrapNumber(0);
                 return engine.wrapNumber((double) Math.round(args[off].asDouble()));
             });
             mathTbl.rawset("lerp", args -> {
-                int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 if (args.length - off < 3) return engine.wrapNumber(0);
                 double a = args[off].asDouble();
                 double b = args[off + 1].asDouble();
@@ -130,7 +130,7 @@ public class MathLuaBinding {
         if (globalString != null && globalString.isTable()) {
             ILuaTable strTbl = globalString.asTable();
             strTbl.rawset("split", args -> {
-                int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 if (args.length - off < 1) return engine.createTable();
                 String input = args[off].asString();
                 String sep = args.length - off >= 2 ? args[off + 1].asString() : ",";
@@ -142,7 +142,7 @@ public class MathLuaBinding {
                 return result;
             });
             strTbl.rawset("trim", args -> {
-                int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 if (args.length - off < 1) return engine.wrapString("");
                 return engine.wrapString(args[off].asString().trim());
             });

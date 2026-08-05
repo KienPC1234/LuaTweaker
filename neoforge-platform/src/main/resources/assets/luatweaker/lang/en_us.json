@@ -2,6 +2,5 @@
   "itemGroup.luatweaker": "LuaTweaker",
   "luatweaker.configuration.title": "LuaTweaker Configs",
   "luatweaker.configuration.debug": "Enable Debug Logging",
-  "luatweaker.configuration.autoGenerateStubs": "Auto Generate Stubs",
-  "container.luatweaker.crate": "Crate"
+  "luatweaker.configuration.autoGenerateStubs": "Auto Generate Stubs"
 }

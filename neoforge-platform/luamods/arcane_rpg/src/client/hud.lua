@@ -56,7 +56,24 @@ GuiService.OnRenderHUD:Connect(function(dt)
     local cfg = getConfig()
     local hudCfg = cfg.hud
 
-    local screenWidth, screenHeight = GuiService:GetScreenSize()
+    -- HUD can be fully disabled via luaconfig/arcane_rpg.json (hud.enabled).
+    -- The mana bar + skill slot numbers ("1".."4") are off by default.
+    if hudCfg == nil or hudCfg.enabled == false then
+        return
+    end
+
+    local size = GuiService:GetScreenSize()
+    local screenWidth, screenHeight = 0, 0
+    if type(size) == "table" or type(size) == "userdata" then
+        screenWidth = size.Width or size[1] or size[0] or 1920
+        screenHeight = size.Height or size[2] or size[1] or 1080
+    end
+    if type(screenWidth) == "table" or type(screenWidth) == "userdata" then
+        screenWidth = 1920 -- Fallback if somehow width is a table
+    end
+    if type(screenHeight) == "table" or type(screenHeight) == "userdata" then
+        screenHeight = 1080
+    end
 
     -- ==== MANA BAR ====
     local barX = hudCfg.mana_bar_x

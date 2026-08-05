@@ -59,7 +59,7 @@ public class InteractionLuaBinding {
         });
 
         workspaceTable.rawset("GetEntitiesInRadius", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 2) return engine.nilValue();
             IEntity center = EntitiesLuaBinding.getEntityFromTable(args[off]);
             double radius = args[off + 1].asDouble();
@@ -75,7 +75,7 @@ public class InteractionLuaBinding {
 
         // ===== BlockState API (GetBlockState(x,y,z) or GetBlockState(dim,x,y,z)) =====
         workspaceTable.rawset("GetBlockState", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             int dimOff = -1;
             if (args.length - off >= 1 && args[off].toJavaObject() instanceof String) {
                 dimOff = off;
@@ -93,7 +93,7 @@ public class InteractionLuaBinding {
         workspaceTable.rawset("getBlockState", workspaceTable.rawget("GetBlockState"));
 
         workspaceTable.rawset("SetBlockState", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             int dimOff = -1;
             if (args.length - off >= 1 && args[off].toJavaObject() instanceof String) {
                 dimOff = off;
@@ -116,7 +116,7 @@ public class InteractionLuaBinding {
 
         // ===== BlockEntity NBT API (GetBlockEntityData / SetBlockEntityData) =====
         workspaceTable.rawset("GetBlockEntityData", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             int dimOff = -1;
             if (args.length - off >= 1 && args[off].toJavaObject() instanceof String) {
                 dimOff = off;
@@ -134,7 +134,7 @@ public class InteractionLuaBinding {
         workspaceTable.rawset("getBlockEntityData", workspaceTable.rawget("GetBlockEntityData"));
 
         workspaceTable.rawset("SetBlockEntityData", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             int dimOff = -1;
             if (args.length - off >= 1 && args[off].toJavaObject() instanceof String) {
                 dimOff = off;
@@ -153,7 +153,7 @@ public class InteractionLuaBinding {
 
         // ===== Container ejection (EjectContainerItem(x,y,z,slot,[count])) =====
         workspaceTable.rawset("EjectContainerItem", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             int dimOff = -1;
             if (args.length - off >= 1 && args[off].toJavaObject() instanceof String) {
                 dimOff = off;
@@ -176,7 +176,7 @@ public class InteractionLuaBinding {
         // Returns the number of blocks set, or -1 when the platform rejected the
         // operation (unknown block, invalid region, or over the platform cap).
         workspaceTable.rawset("FillBlocks", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             int dimOff = -1;
             if (args.length - off >= 1 && args[off].toJavaObject() instanceof String) {
                 dimOff = off;
@@ -202,7 +202,7 @@ public class InteractionLuaBinding {
 
         // ReplaceBlocks(x1,y1,z1,x2,y2,z2,fromId,toId) or with a dimension prefix.
         workspaceTable.rawset("ReplaceBlocks", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             int dimOff = -1;
             if (args.length - off >= 1 && args[off].toJavaObject() instanceof String) {
                 dimOff = off;
@@ -225,7 +225,7 @@ public class InteractionLuaBinding {
 
         // ===== Server console command (ExecuteCommand("give ...")) =====
         workspaceTable.rawset("ExecuteCommand", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 1) return engine.wrapBoolean(false);
             return engine.wrapBoolean(com.luatweaker.api.pal.Platform.getInteraction()
                     .executeCommand(args[off].asString()));
@@ -241,7 +241,7 @@ public class InteractionLuaBinding {
             entityServiceTable.rawset("EntitySpawned", entitySpawnedSignal);
         }
         entityServiceTable.rawset("spawnEntity", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 4) return engine.nilValue();
             String type = args[off].asString();
             double x = args[off + 1].asDouble();

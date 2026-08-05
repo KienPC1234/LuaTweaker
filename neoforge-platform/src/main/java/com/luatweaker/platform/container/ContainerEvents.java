@@ -1,4 +1,4 @@
-package com.luatweaker.platform.crate;
+package com.luatweaker.platform.container;
 
 import com.luatweaker.api.event.IEventService;
 import com.luatweaker.api.log.LogStage;
@@ -9,10 +9,10 @@ import com.luatweaker.core.service.LuaServiceRegistry;
 
 import java.util.function.Function;
 
-/** Fires Lua events from crate Java code through the shared event bus. */
-final class CrateEvents {
+/** Fires Lua events from container Java code through the shared event bus. */
+final class ContainerEvents {
 
-    private CrateEvents() {}
+    private ContainerEvents() {}
 
     static void post(String eventName, Function<ILuaEngine, ILuaTable> payloadBuilder) {
         Object service = LuaServiceRegistry.get("Events");
@@ -21,17 +21,17 @@ final class CrateEvents {
                 events.post(eventName, payloadBuilder.apply(events.getEngine()));
             } catch (Exception e) {
                 LuaTweakerLog.get().error(LogStage.SYSTEM,
-                        "Failed to fire crate event '" + eventName + "': " + e.getMessage());
+                        "Failed to fire container event '" + eventName + "': " + e.getMessage());
             }
         }
     }
 
-    static ILuaTable basePayload(ILuaEngine engine, ContainerCrateBlock crate, int x, int y, int z) {
+    static ILuaTable basePayload(ILuaEngine engine, CustomContainerBlock container, int x, int y, int z) {
         ILuaTable payload = engine.createTable();
         payload.rawset("X", engine.wrapNumber(x));
         payload.rawset("Y", engine.wrapNumber(y));
         payload.rawset("Z", engine.wrapNumber(z));
-        payload.rawset("Id", engine.wrapString(crate.getCrateId()));
+        payload.rawset("Id", engine.wrapString(container.getContainerId()));
         return payload;
     }
 }

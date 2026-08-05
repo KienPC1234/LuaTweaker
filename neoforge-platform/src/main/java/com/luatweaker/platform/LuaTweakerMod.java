@@ -55,6 +55,29 @@ public class LuaTweakerMod {
         return activeEngine;
     }
 
+    /**
+     * Pumps the Lua task queues of the ACTIVE engine (bootstrap {@code task._tick}
+     * plus the Java {@code _java_tick}). Every {@code Signal:Fire}, {@code Task.spawn},
+     * {@code task.delay} and {@code task.wait} schedules through these queues, so this
+     * MUST be called once per game tick (server tick + client tick); without it all
+     * async Lua callbacks (network RemoteEvents, mana loops, HUD sync) silently die.
+     */
+    public static void tickActiveEngineTasks() {
+        ILuaEngine engine = activeEngine;
+        if (engine == null) return;
+        ILuaValue taskVal = engine.getGlobalEnvironment().rawget("task");
+        if (taskVal == null || !taskVal.isTable()) return;
+        ILuaTable taskTbl = taskVal.asTable();
+        ILuaValue luaTick = taskTbl.rawget("_tick");
+        if (luaTick != null && luaTick.isFunction()) {
+            engine.callFunction(luaTick);
+        }
+        ILuaValue javaTick = taskTbl.rawget("_java_tick");
+        if (javaTick != null && javaTick.isFunction()) {
+            engine.callFunction(javaTick);
+        }
+    }
+
     public static void setServerNetworkService(com.luatweaker.network.NetworkServiceImpl service) {
         serverNetworkService = service;
     }
@@ -87,6 +110,10 @@ public class LuaTweakerMod {
         return INSTANCE;
     }
 
+    private void initClientPlatform() {
+        Platform.setClient(new com.luatweaker.platform.client.NeoForgeClientPlatform());
+    }
+
     public LuaTweakerMod(IEventBus modEventBus, ModContainer modContainer) {
         INSTANCE = this;
         LOGGER.info("LuaTweaker constructor starting");
@@ -101,6 +128,9 @@ public class LuaTweakerMod {
         Platform.setInteraction(new com.luatweaker.platform.interaction.NeoForgeInteractionPlatform());
         Platform.setContent(new com.luatweaker.platform.content.NeoForgeContentPlatform());
         Platform.setStorage(new com.luatweaker.platform.storage.NeoForgeStoragePlatform());
+        if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) {
+            initClientPlatform();
+        }
         LOGGER.info("Platform helpers set");
 
         // Setup the global stage-aware logger
@@ -121,7 +151,11 @@ public class LuaTweakerMod {
         loadStartupLuaMods(luaDir);
 
         // Register Mod Event Bus listeners for Content Registry and Asset Pack Finder
-        modEventBus.register(new com.luatweaker.platform.content.NeoForgeContentRegistry(contentService));
+        com.luatweaker.platform.content.NeoForgeContentRegistry contentRegistry = new com.luatweaker.platform.content.NeoForgeContentRegistry(contentService);
+        modEventBus.register(contentRegistry);
+        if (Platform.getContent().isClient()) {
+            modEventBus.register(new com.luatweaker.platform.content.NeoForgeContentRegistry.ClientModEvents(contentRegistry));
+        }
         modEventBus.register(
                 new com.luatweaker.platform.content.LuaAssetsPackFinder(luaDir, datapackService, contentService));
         modEventBus.addListener(LuaTweakerMod::registerPayloads);
@@ -138,6 +172,8 @@ public class LuaTweakerMod {
             NeoForge.EVENT_BUS.addListener(com.luatweaker.platform.client.DynamicKeyMappingHandler::onClientTick);
             NeoForge.EVENT_BUS.addListener(com.luatweaker.platform.client.NeoForgeWorldRenderEventListener::onRenderLevel);
         }
+        // Server tick pump for the Lua task queues is registered via @SubscribeEvent
+        // on onServerTick (LuaTweakerMod is registered on NeoForge.EVENT_BUS above).
 
         // Build the command registry (core commands auto-registered inside)
         commandRegistry = new LuaTweakerCommandRegistry(luaDir);
@@ -153,7 +189,11 @@ public class LuaTweakerMod {
         // Fresh command set per load cycle: only the mods loaded below register commands.
         com.luatweaker.command.CommandServiceImpl.clear();
         // Load Autonomous LuaMods from luamods/ directory
-        com.luatweaker.core.mod.LuaModManager.loadLuaMods(luaDir, startupEngine);
+        String dist = net.neoforged.fml.loading.FMLEnvironment.dist.isClient() ? "universal" : "server";
+        com.luatweaker.core.mod.LuaModManager.loadLuaMods(luaDir, startupEngine, dist);
+
+        // Kick off declarative update checks for mods that declare update_url.
+        com.luatweaker.update.UpdateServiceImpl.checkAll();
     }
 
     private void onClientSetup(final net.neoforged.fml.event.lifecycle.FMLClientSetupEvent event) {
@@ -238,6 +278,39 @@ public class LuaTweakerMod {
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
         commandRegistry.build(event);
+    }
+
+    @SubscribeEvent
+    public void onPlayerLoggedIn(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent event) {
+        if (!(event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player)) return;
+
+        // Available updates discovered by the engine-side declarative checker.
+        for (com.luatweaker.update.UpdateStatus status : com.luatweaker.update.UpdateServiceImpl.getUpdates()) {
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                    "§a[LuaTweaker] §fUpdate available: §e" + status.modId() + " §fv" + status.currentVersion()
+                            + " §7-> §a" + status.latestVersion()
+                            + (status.updateName() == null || status.updateName().isEmpty()
+                                    ? "" : " §7(" + status.updateName() + ")")));
+        }
+
+        // Loud warning for mods holding the network permission (anti-malware notice).
+        for (com.luatweaker.core.mod.LuaMod mod : com.luatweaker.core.mod.LuaModManager.getLoadedMods().values()) {
+            if (mod.getManifest().permissions().contains(com.luatweaker.update.WebServiceImpl.PERMISSION)) {
+                player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                        "§c[LuaTweaker] WARNING: mod '" + mod.getManifest().id()
+                                + "' holds the 'net.http' permission and can access the internet."));
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public void onServerTick(net.neoforged.neoforge.event.tick.ServerTickEvent.Post event) {
+        // ALWAYS pump from the server thread: Lua game logic (mana loops, summoning,
+        // AI goals, RemoteEvent listeners) touches server-side Minecraft APIs that
+        // must run on the server thread. Pumping from the client tick (singleplayer)
+        // makes e.g. ServerLevel.addFreshEntity run on the client thread, which races
+        // with the integrated server and freezes the game.
+        tickActiveEngineTasks();
     }
 
     @SubscribeEvent
@@ -334,7 +407,11 @@ public class LuaTweakerMod {
         com.luatweaker.command.CommandServiceImpl.clear();
 
         // Load Autonomous LuaMods from luamods/
-        com.luatweaker.core.mod.LuaModManager.loadLuaMods(getLuaDirectory(), engine);
+        String dist = net.neoforged.fml.loading.FMLEnvironment.dist.isClient() ? "universal" : "server";
+        com.luatweaker.core.mod.LuaModManager.loadLuaMods(getLuaDirectory(), engine, dist);
+
+        // Kick off declarative update checks for mods that declare update_url.
+        com.luatweaker.update.UpdateServiceImpl.checkAll();
 
         InterceptionHelper.populatePendingEvents(recipeManager.getModifications());
 
@@ -444,6 +521,8 @@ public class LuaTweakerMod {
         stubGen.registerService("Interaction", com.luatweaker.api.interaction.IInteractionService.class);
         stubGen.registerService("GuiService", com.luatweaker.api.client.IGuiService.class);
         stubGen.registerService("Commands", com.luatweaker.api.command.ICommandService.class);
+        stubGen.registerService("Update", com.luatweaker.api.update.IUpdateService.class);
+        stubGen.registerService("Net", com.luatweaker.api.web.IWebService.class);
 
         // Runtime wrapper classes (entity/player tables created dynamically at runtime)
         stubGen.registerClassStub(com.luatweaker.api.entity.IEntity.class, "Entity");

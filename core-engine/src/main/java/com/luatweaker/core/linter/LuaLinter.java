@@ -25,7 +25,7 @@ public class LuaLinter {
             try {
                 errLineNum = Integer.parseInt(matcher.group(1));
                 errDetail = matcher.group(2);
-            } catch (NumberFormatException ignored) {}
+            } catch (NumberFormatException nfe) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Linter error ignored: " + nfe.getMessage()); }
         }
 
         renderFancyError(context, "LUA SYNTAX ERROR (COMPILE TIME)", sourceName, file, errLineNum, errDetail);
@@ -42,7 +42,7 @@ public class LuaLinter {
         if (matcher.find()) {
             try {
                 errLineNum = Integer.parseInt(matcher.group(1));
-            } catch (NumberFormatException ignored) {}
+            } catch (NumberFormatException nfe) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Linter error ignored: " + nfe.getMessage()); }
         }
 
         renderFancyError(context, "LUA RUNTIME EXCEPTION", sourceName, file, errLineNum, msg);
@@ -74,7 +74,7 @@ public class LuaLinter {
                         builder.append(String.format("    %3d | %s%n", i, lineContent));
                     }
                 }
-            } catch (IOException ignored) {}
+            } catch (IOException ioe) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Linter error ignored: " + ioe.getMessage()); }
         }
         builder.append("========================================================================");
 

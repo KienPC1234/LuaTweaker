@@ -47,7 +47,20 @@ public class DoctorCommand implements ILuaTweakerCommand {
 
         for (com.luatweaker.core.mod.LuaMod mod : mods.values()) {
             String status = loadErrors.containsKey(mod.getManifest().id()) ? "§c[ERROR]" : "§a[OK]";
-            sender.sendMessage("§7  " + status + " §f" + mod.getManifest().id() + " §7v" + mod.getManifest().version());
+            sender.sendMessage("§7  " + status + " §f" + mod.getManifest().id() + " §7v" + mod.getManifest().version()
+                    + (mod.getManifest().updateUrl() == null ? "" : " §8(update feed declared)"));
+            if (mod.getManifest().permissions().contains(com.luatweaker.update.WebServiceImpl.PERMISSION)) {
+                sender.sendMessage("§c    ! holds 'net.http' permission (internet access)");
+            }
+        }
+
+        var updateStatuses = com.luatweaker.update.UpdateServiceImpl.getUpdateStatuses();
+        if (!updateStatuses.isEmpty()) {
+            sender.sendMessage("§7Update checks: §e" + updateStatuses.size()
+                    + " declared, §a" + com.luatweaker.update.UpdateServiceImpl.getUpdates().size() + " available");
+            for (com.luatweaker.update.UpdateStatus us : com.luatweaker.update.UpdateServiceImpl.getUpdates()) {
+                sender.sendMessage("§a  - " + us.modId() + " §fv" + us.currentVersion() + " §7-> §a" + us.latestVersion());
+            }
         }
 
         int serviceCount = LuaServiceRegistry.size();

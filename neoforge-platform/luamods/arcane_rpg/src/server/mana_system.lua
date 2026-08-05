@@ -20,9 +20,20 @@ local function getConfig()
     return CONFIG
 end
 
+-- Defensive fallbacks: if the config file was missing/unreadable CONFIG is empty,
+-- so every tunable gets a sane default instead of crashing the regen tick.
+local function cfgValue(path, fallback)
+    local node = getConfig()
+    if type(node) ~= "table" then return fallback end
+    for _, key in ipairs(path) do
+        if type(node) ~= "table" then return fallback end
+        node = node[key]
+    end
+    return (node ~= nil and type(node) ~= "table") and node or fallback
+end
+
 function ManaSystem:GetMaxMana(player)
-    local cfg = getConfig()
-    return cfg.mana.max_mana
+    return cfgValue({ "mana", "max_mana" }, 200)
 end
 
 function ManaSystem:GetMana(player)
@@ -30,16 +41,14 @@ function ManaSystem:GetMana(player)
     local store = Storage:GetPlayerStorage(uuid)
     local current = store:GetAsync("arcane_rpg.mana")
     if current == nil then
-        local cfg = getConfig()
-        current = cfg.mana.start_mana
+        current = cfgValue({ "mana", "start_mana" }, 50)
         store:SetAsync("arcane_rpg.mana", current)
     end
     return current
 end
 
 function ManaSystem:SetMana(player, amount)
-    local cfg = getConfig()
-    local maxMana = cfg.mana.max_mana
+    local maxMana = ManaSystem:GetMaxMana(player)
     amount = math.max(0, math.min(amount, maxMana))
     local uuid = player:getUuid()
     local store = Storage:GetPlayerStorage(uuid)
@@ -63,9 +72,8 @@ function ManaSystem:RestoreMana(player, amount)
 end
 
 function ManaSystem:GetManaPercent(player)
-    local cfg = getConfig()
     local current = ManaSystem:GetMana(player)
-    return current / cfg.mana.max_mana
+    return current / ManaSystem:GetMaxMana(player)
 end
 
 function ManaSystem:HasEnough(player, amount)
@@ -73,13 +81,12 @@ function ManaSystem:HasEnough(player, amount)
 end
 
 function ManaSystem:RegenTick()
-    local cfg = getConfig()
-    local regenPerTick = cfg.mana.regen_per_second / 20.0
+    local regenPerTick = cfgValue({ "mana", "regen_per_second" }, 5) / 20.0
+    local maxMana = ManaSystem:GetMaxMana(nil)
     local allPlayers = Players.GetPlayers()
     for i = 1, #allPlayers do
         local player = allPlayers[i]
         local current = ManaSystem:GetMana(player)
-        local maxMana = cfg.mana.max_mana
         if current < maxMana then
             ManaSystem:SetMana(player, current + regenPerTick)
         end
@@ -105,21 +112,6 @@ Events:Listen("ServerTick", function()
             ManaSystem:SyncMana(allPlayers[i])
         end
     end
-end)
-
-Events:Listen("PlayerJoin", function(event)
-    if event == nil then return end
-    -- event is a DynamicJavaProxy of PlayerLoggedInEvent -> getEntity() returns the raw player.
-    -- NOTE: this is a RAW Java Player proxy, NOT an IPlayer Lua table. Only Entity-level
-    -- methods are safe here (getUuid etc.); IPlayer-only methods like sendActionBar do NOT exist.
-    local player = event.Entity
-    if player == nil then
-        player = event:getEntity()
-    end
-    if player == nil then return end
-    local cfg = getConfig()
-    ManaSystem:SetMana(player, cfg.mana.start_mana)
-    ManaSystem:SyncMana(player)
 end)
 
 return ManaSystem

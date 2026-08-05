@@ -53,7 +53,7 @@ public class AsyncFileLogger implements ILuaTweakerLog {
             writer.println(SEPARATOR);
             writer.println("  LuaTweaker Log - " + HEADER_DATE_FORMAT.format(new Date()));
             writer.println(SEPARATOR);
-        } catch (Exception ignored) {}
+        } catch (Exception e) { System.err.println("AsyncFileLogger error: " + e.getMessage()); e.printStackTrace(); }
 
         this.workerThread = new Thread(this::processQueue, "LuaTweaker-AsyncLogger");
         this.workerThread.setDaemon(true);
@@ -80,7 +80,7 @@ public class AsyncFileLogger implements ILuaTweakerLog {
             writer.println("========================================================================");
             writer.println("  LuaMod Dedicated Log: " + modId + " - " + HEADER_DATE_FORMAT.format(new Date()));
             writer.println("========================================================================");
-        } catch (Exception ignored) {}
+        } catch (Exception e) { System.err.println("AsyncFileLogger error: " + e.getMessage()); e.printStackTrace(); }
     }
 
     public void logMod(String modId, String level, String message) {
@@ -91,7 +91,7 @@ public class AsyncFileLogger implements ILuaTweakerLog {
         try (PrintWriter writer = new PrintWriter(new FileWriter(modLogFile, true))) {
             String ts = TIME_FORMAT.format(new Date());
             writer.printf("%s [%s] %s%n", ts, level.trim(), message != null ? message : "");
-        } catch (Exception ignored) {}
+        } catch (Exception e) { System.err.println("AsyncFileLogger error: " + e.getMessage()); e.printStackTrace(); }
     }
 
     // ── ILuaTweakerLog implementation ─────────────────────────────────────

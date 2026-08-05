@@ -81,7 +81,7 @@ public class LuaTweakerJeiPlugin implements IModPlugin {
                         brewingRecipes.add(brewingRecipe);
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
         }
         if (!brewingRecipes.isEmpty()) {
             registration.addRecipes(RecipeTypes.BREWING, brewingRecipes);

@@ -17,6 +17,7 @@ public interface ILuaTable extends ILuaValue {
     ILuaValue rawget(int index);
     
     int length();
+    void forEach(java.util.function.BiConsumer<ILuaValue, ILuaValue> action);
 
     void setMetatable(ILuaTable meta);
     

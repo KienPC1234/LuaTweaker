@@ -47,6 +47,6 @@ public class DebugCommand implements ILuaTweakerCommand {
     }
 
     private void setDebug(boolean value) {
-        try { LuaTweakerConfig.DEBUG.set(value); } catch (Exception ignored) {}
+        try { LuaTweakerConfig.DEBUG.set(value); } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
     }
 }

@@ -655,7 +655,7 @@ public class CobaltLuaEngine implements ILuaEngine {
                     return indexTable.rawget(key);
                 }
             });
-        } catch (LuaError ignored) {}
+        } catch (LuaError e) { com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RUNTIME_ERROR, "LuaError ignored: " + e.getMessage()); }
 
         LuaUserdata ud = new LuaUserdata(ic);
         ud.setMetatable(state, meta);
@@ -683,7 +683,7 @@ public class CobaltLuaEngine implements ILuaEngine {
             meta.rawset("otherwise", orFunc);
             meta.rawset("or", orFunc);
             meta.rawset(Constants.INDEX, meta);
-        } catch (LuaError ignored) {}
+        } catch (LuaError e) { com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RUNTIME_ERROR, "LuaError ignored: " + e.getMessage()); }
 
         LuaUserdata ud = new LuaUserdata(ing);
         ud.setMetatable(state, meta);
@@ -758,6 +758,12 @@ public class CobaltLuaEngine implements ILuaEngine {
             } catch (org.squiddev.cobalt.UnwindThrowable e) {
                 // Control-flow exception used internally by the Cobalt VM for coroutine yields
                 // and thread resumptions. It is NOT a script error and carries no message.
+            } catch (org.squiddev.cobalt.LuaError e) {
+                String msg = e.getMessage() != null && !e.getMessage().isBlank() ? e.getMessage() : e.toString();
+                lastExecutionError = msg;
+                java.io.StringWriter sw = new java.io.StringWriter();
+                e.printStackTrace(new java.io.PrintWriter(sw));
+                AsyncFileLogger.get().error("FUNCTION_CALL", "Lua error executing callback: " + msg + "\n" + sw, state);
             } catch (Throwable e) {
                 String msg = e.getMessage() != null && !e.getMessage().isBlank() ? e.getMessage() : e.toString();
                 lastExecutionError = msg;

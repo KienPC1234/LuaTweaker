@@ -270,6 +270,7 @@ public class EngineTest {
           "name": "Test Mod",
           "author": "Tester",
           "version": "1.0.0",
+          "environment": "universal",
           "main": "main.lua"
         }
         """);
@@ -281,7 +282,7 @@ public class EngineTest {
         """);
 
         ILuaEngine engine = new CobaltLuaEngine(true);
-        com.luatweaker.core.mod.LuaModManager.loadLuaMods(luamodsDir, engine);
+        com.luatweaker.core.mod.LuaModManager.loadLuaMods(luamodsDir, engine, "universal");
 
         File modsManagerFile = new File(luamodsDir, "mods_manager.json");
         assertTrue(modsManagerFile.exists(), "mods_manager.json should be auto-generated");

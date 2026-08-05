@@ -1,4 +1,4 @@
-package com.luatweaker.platform.crate;
+package com.luatweaker.platform.container;
 
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
@@ -11,11 +11,11 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Generic container menu for Lua-configured crate blocks. The crate region is a
+ * Generic container menu for Lua-configured container blocks. The container region is a
  * grid of {@code rows} rows x {@code cols} columns (indices 0..rows*cols-1);
  * the player inventory follows (indices rows*cols..+35).
  */
-public class ContainerCrateMenu extends AbstractContainerMenu {
+public class CustomContainerMenu extends AbstractContainerMenu {
 
     private static final int CRATE_START_X = 34;
     private static final int CRATE_START_Y = 17;
@@ -23,20 +23,20 @@ public class ContainerCrateMenu extends AbstractContainerMenu {
     private static final int PLAYER_START_Y = 107;
     private static final int HOTBAR_Y = 165;
 
-    private final Container crate;
-    private final int crateRows;
-    private final int crateCols;
+    private final Container container;
+    private final int containerRows;
+    private final int containerCols;
 
-    public ContainerCrateMenu(@Nullable MenuType<?> menuType, int containerId, @NotNull Inventory playerInventory,
-                              @NotNull Container crate, int crateRows, int crateCols) {
+    public CustomContainerMenu(@Nullable MenuType<?> menuType, int containerId, @NotNull Inventory playerInventory,
+                              @NotNull Container container, int containerRows, int containerCols) {
         super(menuType, containerId);
-        this.crate = crate;
-        this.crateRows = crateRows;
-        this.crateCols = crateCols;
+        this.container = container;
+        this.containerRows = containerRows;
+        this.containerCols = containerCols;
 
-        for (int row = 0; row < crateRows; row++) {
-            for (int col = 0; col < crateCols; col++) {
-                addSlot(new CrateFilteredSlot(crate, row * crateCols + col,
+        for (int row = 0; row < containerRows; row++) {
+            for (int col = 0; col < containerCols; col++) {
+                addSlot(new ContainerFilteredSlot(container, row * containerCols + col,
                         CRATE_START_X + col * 18, CRATE_START_Y + row * 18));
             }
         }
@@ -53,17 +53,17 @@ public class ContainerCrateMenu extends AbstractContainerMenu {
         }
     }
 
-    public int getCrateRows() {
-        return crateRows;
+    public int getContainerRows() {
+        return containerRows;
     }
 
-    public int getCrateCols() {
-        return crateCols;
+    public int getContainerCols() {
+        return containerCols;
     }
 
     @Override
     public boolean stillValid(@NotNull Player player) {
-        return crate.stillValid(player);
+        return container.stillValid(player);
     }
 
     @Override
@@ -74,11 +74,11 @@ public class ContainerCrateMenu extends AbstractContainerMenu {
         if (slot != null && slot.hasItem()) {
             ItemStack stack = slot.getItem();
             moved = stack.copy();
-            if (index < crate.getContainerSize()) {
-                if (!moveItemStackTo(stack, crate.getContainerSize(), this.slots.size(), true)) {
+            if (index < container.getContainerSize()) {
+                if (!moveItemStackTo(stack, container.getContainerSize(), this.slots.size(), true)) {
                     return ItemStack.EMPTY;
                 }
-            } else if (!moveItemStackTo(stack, 0, crate.getContainerSize(), false)) {
+            } else if (!moveItemStackTo(stack, 0, container.getContainerSize(), false)) {
                 return ItemStack.EMPTY;
             }
             if (stack.isEmpty()) {

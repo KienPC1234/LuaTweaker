@@ -21,7 +21,7 @@ public class NetworkServiceImpl implements IRocketNetworkService {
     private ILuaTable createServiceTable() {
         ILuaTable table = engine.createTable();
         table.rawset("FireServer", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 2) {
                 String name = args[off].asString();
                 ILuaValue[] passArgs = args[off + 1].isTable() ? unpackTable(args[off + 1].asTable()) : new ILuaValue[0];
@@ -30,7 +30,7 @@ public class NetworkServiceImpl implements IRocketNetworkService {
             return engine.nilValue();
         });
         table.rawset("FireClient", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 3) {
                 String name = args[off].asString();
                 String uuid = args[off + 1].asString();
@@ -40,7 +40,7 @@ public class NetworkServiceImpl implements IRocketNetworkService {
             return engine.nilValue();
         });
         table.rawset("FireAllClients", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 2) {
                 String name = args[off].asString();
                 ILuaValue[] passArgs = args[off + 1].isTable() ? unpackTable(args[off + 1].asTable()) : new ILuaValue[0];

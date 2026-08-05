@@ -55,8 +55,10 @@ local function getManaPercent()
     return math.clamp(currentMana / math.max(1, maxMana), 0, 1)
 end
 
--- KEYBIND FEEDBACK (the server receives keybind casts via the payload packet,
--- so this listener only plays client-side feedback — never re-fires the server)
+-- KEYBIND FEEDBACK (the server receives keybind casts via the payload packet
+-- sent by the Java KeyMapping handler, so this listener only plays client-side
+-- feedback — it must never re-fire the server, or every key press would cast
+-- the skill twice).
 if Client and Client.OnKeyBindPressed then
     Client.OnKeyBindPressed:Connect(function(keyBindId, payload)
         print("[Client] KeyMapping feedback: " .. tostring(keyBindId) .. " (" .. tostring(payload) .. ")")

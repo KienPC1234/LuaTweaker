@@ -182,7 +182,7 @@ public class NeoForgeInteractableItem implements IInteractableItem {
             try {
                 net.minecraft.nbt.CompoundTag tag = net.minecraft.nbt.TagParser.parseTag(nbtJson);
                 net.minecraft.world.item.component.CustomData.update(net.minecraft.core.component.DataComponents.CUSTOM_DATA, stack, t -> t.merge(tag));
-            } catch (Exception ignored) {}
+            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
         }
     }
 

@@ -1,4 +1,4 @@
-package com.luatweaker.platform.crate;
+package com.luatweaker.platform.container;
 
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
@@ -25,16 +25,16 @@ import java.util.function.BiConsumer;
 /**
  * Generic Lua-configured container block. The row/column count, display title
  * and drop behaviour all come from the {@code Content.NewBlock(...):Container(..)}
- * builder. Right-click opens the crate GUI (after the optional Lua handler);
+ * builder. Right-click opens the container GUI (after the optional Lua handler);
  * breaking the block follows the configured drop mode:
  * <ul>
- *   <li>{@code packed}: only the crate item drops, contents packed into its NBT
+ *   <li>{@code packed}: only the container item drops, contents packed into its NBT
  *       (place it again to restore everything)</li>
  *   <li>{@code spill}: contents drop like a vanilla chest</li>
  *   <li>{@code none}: nothing drops</li>
  * </ul>
  */
-public class ContainerCrateBlock extends Block implements EntityBlock {
+public class CustomContainerBlock extends Block implements EntityBlock {
 
     public static final BooleanProperty OPENED = BlockStateProperties.OPEN;
 
@@ -47,7 +47,7 @@ public class ContainerCrateBlock extends Block implements EntityBlock {
     private final BiConsumer<Object, Object> rightClickHandler;
     private final java.util.function.BiFunction<Object, Object, Boolean> itemFilter;
 
-    public ContainerCrateBlock(Properties properties, String crateId, String crateTitle,
+    public CustomContainerBlock(Properties properties, String crateId, String crateTitle,
                                int rows, int cols, String dropMode, @Nullable String texturePath,
                                @Nullable BiConsumer<Object, Object> rightClickHandler,
                                @Nullable java.util.function.BiFunction<Object, Object, Boolean> itemFilter) {
@@ -63,11 +63,11 @@ public class ContainerCrateBlock extends Block implements EntityBlock {
         registerDefaultState(defaultBlockState().setValue(OPENED, false));
     }
 
-    public String getCrateId() {
+    public String getContainerId() {
         return crateId;
     }
 
-    public String getCrateTitle() {
+    public String getContainerTitle() {
         return crateTitle;
     }
 
@@ -99,7 +99,7 @@ public class ContainerCrateBlock extends Block implements EntityBlock {
         try {
             return Boolean.TRUE.equals(itemFilter.apply(itemId, stack.getCount()));
         } catch (Exception e) {
-            LuaTweakerLog.get().error(LogStage.SYSTEM, "Crate itemFilter failed for " + crateId + ": " + e.getMessage());
+            LuaTweakerLog.get().error(LogStage.SYSTEM, "Container itemFilter failed for " + crateId + ": " + e.getMessage());
             return false;
         }
     }
@@ -112,27 +112,27 @@ public class ContainerCrateBlock extends Block implements EntityBlock {
     @Nullable
     @Override
     public BlockEntity newBlockEntity(@NotNull BlockPos pos, @NotNull BlockState state) {
-        return new ContainerCrateBlockEntity(pos, state);
+        return new CustomContainerBlockEntity(pos, state);
     }
 
     @Override
     @NotNull
     public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
-        if (!level.isClientSide() && level.getBlockEntity(pos) instanceof ContainerCrateBlockEntity crate) {
+        if (!level.isClientSide() && level.getBlockEntity(pos) instanceof CustomContainerBlockEntity container) {
             if (rightClickHandler != null) {
                 try {
                     rightClickHandler.accept(new NeoForgePlayerWrapper(player), null);
                 } catch (Exception e) {
-                    LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed crate right-click handler for " + crateId + ": " + e.getMessage());
+                    LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed container right-click handler for " + crateId + ": " + e.getMessage());
                 }
             }
             level.setBlock(pos, state.setValue(OPENED, !state.getValue(OPENED)), 3);
-            player.openMenu(crate);
+            player.openMenu(container);
             final int fx = pos.getX();
             final int fy = pos.getY();
             final int fz = pos.getZ();
-            CrateEvents.post("CrateOpened", engine -> {
-                com.luatweaker.api.vm.ILuaTable payload = CrateEvents.basePayload(engine, this, fx, fy, fz);
+            ContainerEvents.post("CrateOpened", engine -> {
+                com.luatweaker.api.vm.ILuaTable payload = ContainerEvents.basePayload(engine, this, fx, fy, fz);
                 payload.rawset("Player", engine.wrapString(player.getName().getString()));
                 return payload;
             });
@@ -143,23 +143,23 @@ public class ContainerCrateBlock extends Block implements EntityBlock {
 
     @Override
     public boolean onDestroyedByPlayer(BlockState state, Level level, BlockPos pos, Player player, boolean willHarvest, FluidState fluid) {
-        if (!level.isClientSide() && level.getBlockEntity(pos) instanceof ContainerCrateBlockEntity crate) {
+        if (!level.isClientSide() && level.getBlockEntity(pos) instanceof CustomContainerBlockEntity container) {
             switch (dropMode) {
                 case "packed" -> {
                     ItemStack packed = new ItemStack(this);
-                    crate.saveToItem(packed, level.registryAccess());
+                    container.saveToItem(packed, level.registryAccess());
                     Block.popResource(level, pos, packed);
                 }
                 case "spill" -> {
-                    for (int i = 0; i < crate.getContainerSize(); i++) {
-                        ItemStack stack = crate.getItem(i);
+                    for (int i = 0; i < container.getContainerSize(); i++) {
+                        ItemStack stack = container.getItem(i);
                         if (!stack.isEmpty()) {
                             Block.popResource(level, pos, stack);
                         }
                     }
                 }
                 default -> {
-                    // "none": crate is destroyed, contents vanish with it.
+                    // "none": container is destroyed, contents vanish with it.
                 }
             }
         }

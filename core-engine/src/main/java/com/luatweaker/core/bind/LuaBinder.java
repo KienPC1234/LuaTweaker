@@ -59,6 +59,14 @@ public final class LuaBinder {
         return table;
     }
 
+    /**
+     * Standard helper to determine if the first argument is a table (the self parameter).
+     * Replaces the banned manual 'int off = (args.length > 0 && args[0].isTable()) ? 1 : 0' anti-pattern.
+     */
+    public static int getOffset(ILuaValue[] args) {
+        return (args.length > 0 && args != null && args[0] != null && args[0].isTable()) ? 1 : 0;
+    }
+
     /** Binds the interface to a fresh Lua table without registering any service or global. */
     public static ILuaTable bindTable(ILuaEngine engine, Object impl, Class<?> api) {
         ILuaTable table = engine.createTable();
@@ -94,7 +102,7 @@ public final class LuaBinder {
         if (impl == null) {
             return engine.nilValue();
         }
-        int off = (args.length > 0 && args[0] != null && args[0].isTable()) ? 1 : 0;
+        int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
         Class<?>[] paramTypes = method.getParameterTypes();
         java.lang.reflect.Parameter[] paramMeta = method.getParameters();
         Object[] callArgs = new Object[paramTypes.length];

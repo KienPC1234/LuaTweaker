@@ -58,20 +58,23 @@ public class DynamicJavaProxy {
                 public Varargs invoke(LuaState state, Varargs args) throws LuaError {
                     if (args.arg(2).isNil()) return Constants.NIL;
                     String key = args.arg(2).checkString();
-                    
-                    // 1. Try exact method name (e.g., "getHealth" or "cancel")
+
+                    // 1. Exact method name => method call intent (obj:getX() / obj:setX(...)).
+                    // Only an exact name match returns a wrapped function; a heuristic match
+                    // ("Entity" -> getEntity) must NOT become a function, or property access
+                    // like `event.Entity` yields a callable instead of the entity value.
                     Method exactMethod = findMethodCached(clazz, key);
-                    if (exactMethod != null) {
+                    if (exactMethod != null && exactMethod.getName().equals(key)) {
                         return wrapMethod(state, javaObject, exactMethod);
                     }
-    
-                    // 2. Try property to Getter translation (e.g., "Health" or "health" -> "getHealth" / "isHealth")
+
+                    // 2. Property to Getter translation (e.g., "Health" or "health" -> "getHealth" / "isHealth")
                     String capitalizedKey = key.substring(0, 1).toUpperCase() + key.substring(1);
                     Method getter = findMethodCached(clazz, "get" + capitalizedKey);
                     if (getter == null) {
                         getter = findMethodCached(clazz, "is" + capitalizedKey);
                     }
-                    
+
                     if (getter != null && getter.getParameterCount() == 0) {
                         try {
                             Object result = getter.invoke(javaObject);
@@ -81,7 +84,7 @@ public class DynamicJavaProxy {
                             throw new LuaError("Error invoking getter for " + key + ": " + e.getMessage());
                         }
                     }
-                    
+
                     return Constants.NIL;
                 }
             });

@@ -102,7 +102,7 @@ public class RuntimeRemapper implements IRemappingService {
         while (current != null && current != Object.class) {
             for (Method m : current.getDeclaredMethods()) {
                 if (!m.getName().equals(methodName) && matchesHeuristic(m.getName(), methodName)) {
-                    try { m.setAccessible(true); } catch (Exception ignored) {}
+                    try { m.setAccessible(true); } catch (Exception e) { /* fallback expected */ }
                     candidates.add(m);
                 }
             }

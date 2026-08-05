@@ -35,6 +35,14 @@ local MINION_ATTACK_SPEED = tonumber(cfg.minion_attack_speed) or 1.3
 -- PRIVATE FUNCTIONS
 
 ---@param player Player
+---@return boolean
+local function isHoldingStaff(player)
+    if not player or not player.getMainHandItem then return false end
+    local item = player:getMainHandItem()
+    return item ~= nil and tostring(item):find("magic_staff") ~= nil
+end
+
+---@param player Player
 local function getOrCreatePlayerState(player)
     local uuid = player:getUuid()
     if not playerStates[uuid] then
@@ -250,6 +258,7 @@ end
 -- HANDLE STAFF USE ACTION (Left-Click or Right-Click depending on binding)
 ---@param player Player
 local function handleStaffUse(player, itemStack)
+    if not isHoldingStaff(player) then return end
     print("[Server] [MagicStaffSkills] Executing HandleMagicStaffUse...")
     local state = getOrCreatePlayerState(player)
     local now = os.clock()
@@ -408,6 +417,7 @@ if Network then
     local swapSkillEvent = Network:GetOrCreateRemoteEvent("StaffSwapSkill")
     if swapSkillEvent and swapSkillEvent.OnServerEvent then
         swapSkillEvent.OnServerEvent:Connect(function(player)
+            if not player or not isHoldingStaff(player) then return end
             print("[MagicStaffSkills] StaffSwapSkill RemoteEvent received for player: " .. tostring(player))
             if player then
                 local state = getOrCreatePlayerState(player)
@@ -434,6 +444,7 @@ if Network then
     local markTargetEvent = Network:GetOrCreateRemoteEvent("TargetMark")
     if markTargetEvent and markTargetEvent.OnServerEvent then
         markTargetEvent.OnServerEvent:Connect(function(player)
+            if not player or not isHoldingStaff(player) then return end
             print("[MagicStaffSkills] TargetMark received for player: " .. tostring(player))
             if player then
                 local state = getOrCreatePlayerState(player)

@@ -5,5 +5,8 @@
   "version": "1.0.0",
   "main": "main.lua",
   "dependencies": [],
-  "permissions": ["runtime.bytecode_hook"]
+  "permissions": [
+    "runtime.bytecode_hook"
+  ],
+  "environment": "universal"
 }

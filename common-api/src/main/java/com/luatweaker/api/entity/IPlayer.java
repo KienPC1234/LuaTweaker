@@ -39,6 +39,9 @@ public interface IPlayer extends IEntity {
     @LuaDoc(description = "Returns item ID held in main hand.", returnType = "string")
     default String getMainHandItem() { return "minecraft:air"; }
 
+    @LuaDoc(description = "Returns the dimension ID the player is currently in (e.g. 'minecraft:overworld').", returnType = "string")
+    default String getDimension() { return "minecraft:overworld"; }
+
     @LuaDoc(description = "Returns item ID held in off hand.", returnType = "string")
     default String getOffHandItem() { return "minecraft:air"; }
 

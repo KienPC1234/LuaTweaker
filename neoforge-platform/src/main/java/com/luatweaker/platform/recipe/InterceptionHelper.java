@@ -253,7 +253,7 @@ public class InterceptionHelper {
                 if (val instanceof Multimap) {
                     return f;
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
         }
         for (Field f : RecipeManager.class.getDeclaredFields()) {
             f.setAccessible(true);
@@ -266,7 +266,7 @@ public class InterceptionHelper {
                         }
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
         }
         // Level 2: Known field names
         for (String name : new String[]{"byType", "recipes", "f_44007_"}) {
@@ -274,20 +274,20 @@ public class InterceptionHelper {
                 Field f = RecipeManager.class.getDeclaredField(name);
                 f.setAccessible(true);
                 if (Multimap.class.isAssignableFrom(f.getType())) return f;
-            } catch (Exception ignored) {}
+            } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
         }
         for (String name : new String[]{"byType", "recipes", "f_44007_"}) {
             try {
                 Field f = RecipeManager.class.getDeclaredField(name);
                 f.setAccessible(true);
                 if (Map.class.isAssignableFrom(f.getType())) return f;
-            } catch (Exception ignored) {}
+            } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
         }
         // Level 3: Find a Map/Multimap field different from byName
         Field byNameField = null;
         try {
             byNameField = findByNameMapField(recipeManager);
-        } catch (Exception ignored) {}
+        } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
 
         for (Field f : RecipeManager.class.getDeclaredFields()) {
             if (Map.class.isAssignableFrom(f.getType()) || Multimap.class.isAssignableFrom(f.getType())) {
@@ -315,7 +315,7 @@ public class InterceptionHelper {
                         if (++checked > 50) break;
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
         }
         // Level 2: Known field names in NeoForge/Mojang mappings
         for (String name : new String[]{"byName", "bySingleName", "f_44008_"}) {
@@ -323,7 +323,7 @@ public class InterceptionHelper {
                 Field f = RecipeManager.class.getDeclaredField(name);
                 f.setAccessible(true);
                 if (Map.class.isAssignableFrom(f.getType())) return f;
-            } catch (Exception ignored) {}
+            } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
         }
         // Level 3: Last Map field (byName is typically the last Map field in RecipeManager)
         Field lastMap = null;
@@ -346,7 +346,7 @@ public class InterceptionHelper {
                     if (val instanceof HolderLookup.Provider provider) {
                         return provider;
                     }
-                } catch (Exception ignored) {}
+                } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
             }
         }
         return null;
@@ -358,10 +358,10 @@ public class InterceptionHelper {
             if (registries != null) {
                 return recipe.getResultItem(registries);
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
         try {
             return recipe.getResultItem(null);
-        } catch (Exception ignored) {}
+        } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
         return ItemStack.EMPTY;
     }
 

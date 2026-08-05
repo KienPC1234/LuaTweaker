@@ -1,6 +1,8 @@
 package com.luatweaker.core.bind;
 
 import com.luatweaker.core.logger.AsyncFileLogger;
+import com.luatweaker.core.vm.CobaltLuaEngine;
+import com.luatweaker.core.vm.CobaltLuaValue;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 
@@ -155,5 +157,43 @@ public class DynamicJavaProxyTest {
         Method lengthMethod = (Method) method.invoke(null, String.class, "length");
         assertNotNull(lengthMethod, "String.length() should be accessible");
         assertEquals("length", lengthMethod.getName());
+    }
+
+    public static class GetterProbe {
+        private int amount;
+
+        public String getEntity() { return "minecraft:player"; }
+        public boolean isAlive() { return true; }
+        public int getAmount() { return amount; }
+        public void setAmount(int amount) { this.amount = amount; }
+    }
+
+    /**
+     * Regression: property access on a proxy must return the GETTER VALUE, not a
+     * wrapped method function. The heuristic remapper matches "Entity" -> getEntity(),
+     * and returning a function there breaks `event.Entity` (yielding "attempt to index
+     * local 'player' (a function value)" downstream). Method-call syntax (obj:getEntity())
+     * must keep working.
+     */
+    @Test
+    void testPropertyAccessReturnsValueNotMethodFunction() {
+        CobaltLuaEngine engine = new CobaltLuaEngine();
+        org.squiddev.cobalt.LuaState state = engine.getCobaltState();
+        org.squiddev.cobalt.LuaUserdata proxy = DynamicJavaProxy.create(state, new GetterProbe());
+        engine.getGlobalEnvironment().rawset("_proxy", new CobaltLuaValue(proxy));
+
+        engine.executeString(
+            "assert(type(_proxy.Entity) == 'string', 'Entity property must be a string, got ' .. type(_proxy.Entity))\n" +
+            "assert(_proxy.Entity == 'minecraft:player', 'Entity value mismatch')\n" +
+            "local ent = _proxy:getEntity()\n" +
+            "assert(type(ent) == 'string' and ent == 'minecraft:player', 'method-call getEntity must return value')\n" +
+            "assert(_proxy.IsAlive == true, 'IsAlive property must be boolean')\n" +
+            "assert(_proxy.isAlive == true, 'isAlive property must be boolean')\n" +
+            "assert(_proxy.Amount == 0, 'Amount property must read via getter')\n" +
+            "_proxy:setAmount(40)\n" +
+            "assert(_proxy.Amount == 40, 'setAmount must mutate state')\n" +
+            "assert(_proxy:getAmount() == 40, 'getAmount method call must return value')",
+            "proxy_getter_repro"
+        );
     }
 }

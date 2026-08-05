@@ -159,7 +159,7 @@ public final class LuaCommandWrapper implements ILuaTweakerCommand {
         }
 
         ILuaFunction sendMessage = args -> {
-            int off = (args.length > 0 && args[0] != null && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             sender.sendMessage(args[off].asString());
             return engine.nilValue();
         };
@@ -167,7 +167,7 @@ public final class LuaCommandWrapper implements ILuaTweakerCommand {
         table.rawset("sendMessage", sendMessage);
 
         ILuaFunction sendSuccess = args -> {
-            int off = (args.length > 0 && args[0] != null && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             sender.sendSuccess(args[off].asString());
             return engine.nilValue();
         };
@@ -175,7 +175,7 @@ public final class LuaCommandWrapper implements ILuaTweakerCommand {
         table.rawset("sendSuccess", sendSuccess);
 
         ILuaFunction sendError = args -> {
-            int off = (args.length > 0 && args[0] != null && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             sender.sendError(args[off].asString());
             return engine.nilValue();
         };
@@ -183,7 +183,7 @@ public final class LuaCommandWrapper implements ILuaTweakerCommand {
         table.rawset("sendError", sendError);
 
         ILuaFunction hasPermission = args -> {
-            int off = (args.length > 0 && args[0] != null && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             int level = off < args.length && args[off] != null ? args[off].asInt() : 2;
             return engine.wrapBoolean(sender.hasPermission(level));
         };

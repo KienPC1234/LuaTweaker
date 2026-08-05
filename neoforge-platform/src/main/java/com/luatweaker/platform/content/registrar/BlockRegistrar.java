@@ -60,7 +60,7 @@ public final class BlockRegistrar {
 
                 String id = builder.getId().toLowerCase();
 
-                // Lua-configured inventory container: use the generic crate block.
+                // Lua-configured inventory container: use the generic container block.
                 // MUST be decided before the plain-block branch: every Block
                 // constructor creates an intrusive registry holder, and any
                 // instance that never gets registered crashes registry freeze.
@@ -68,7 +68,7 @@ public final class BlockRegistrar {
                 if (builder.isContainer()) {
                     String crateTitle = builder.getContainerTitle() != null && !builder.getContainerTitle().isBlank()
                             ? builder.getContainerTitle() : toTitle(rl.getPath());
-                    block = new com.luatweaker.platform.crate.ContainerCrateBlock(
+                    block = new com.luatweaker.platform.container.CustomContainerBlock(
                             props, rl.toString(), crateTitle, builder.getContainerRows(), builder.getContainerCols(),
                             builder.getContainerDropMode(), builder.getContainerTexture(),
                             builder.getRightClickHandler(), builder.getItemFilter());
@@ -167,12 +167,12 @@ public final class BlockRegistrar {
             Block block = createdBlocks.get(rl);
             if (block == null) block = BuiltInRegistries.BLOCK.get(rl);
             if (block == null || block == Blocks.AIR) continue;
-            net.minecraft.world.level.block.entity.BlockEntityType<com.luatweaker.platform.crate.ContainerCrateBlockEntity> type =
+            net.minecraft.world.level.block.entity.BlockEntityType<com.luatweaker.platform.container.CustomContainerBlockEntity> type =
                     net.minecraft.world.level.block.entity.BlockEntityType.Builder.of(
-                            com.luatweaker.platform.crate.ContainerCrateBlockEntity::new, block).build(null);
-            com.luatweaker.platform.crate.ContainerCrateRegistry.TYPE_BY_BLOCK.put(
-                    (com.luatweaker.platform.crate.ContainerCrateBlock) block, type);
-            com.luatweaker.platform.crate.ContainerCrateRegistry.CRATE_BE_TYPES.put(rl, type);
+                            com.luatweaker.platform.container.CustomContainerBlockEntity::new, block).build(null);
+            com.luatweaker.platform.container.CustomContainerRegistry.TYPE_BY_BLOCK.put(
+                    (com.luatweaker.platform.container.CustomContainerBlock) block, type);
+            com.luatweaker.platform.container.CustomContainerRegistry.CONTAINER_BE_TYPES.put(rl, type);
             event.register(Registries.BLOCK_ENTITY_TYPE, rl, () -> type);
         }
     }
@@ -184,17 +184,17 @@ public final class BlockRegistrar {
             int rows = builder.getContainerRows();
             int cols = builder.getContainerCols();
             int slotCount = rows * cols;
-            net.minecraft.world.inventory.MenuType<com.luatweaker.platform.crate.ContainerCrateMenu>[] ref =
+            net.minecraft.world.inventory.MenuType<com.luatweaker.platform.container.CustomContainerMenu>[] ref =
                     new net.minecraft.world.inventory.MenuType[1];
             ref[0] = new net.minecraft.world.inventory.MenuType<>((containerId, inventory) ->
-                            new com.luatweaker.platform.crate.ContainerCrateMenu(
+                            new com.luatweaker.platform.container.CustomContainerMenu(
                                     ref[0], containerId, inventory, new net.minecraft.world.SimpleContainer(slotCount), rows, cols),
                             net.minecraft.world.flag.FeatureFlags.DEFAULT_FLAGS);
-            net.minecraft.world.inventory.MenuType<com.luatweaker.platform.crate.ContainerCrateMenu> menuType = ref[0];
-            com.luatweaker.platform.crate.ContainerCrateRegistry.CRATE_MENUS.put(rl, menuType);
+            net.minecraft.world.inventory.MenuType<com.luatweaker.platform.container.CustomContainerMenu> menuType = ref[0];
+            com.luatweaker.platform.container.CustomContainerRegistry.CONTAINER_MENUS.put(rl, menuType);
             String containerTexture = builder.getContainerTexture();
             if (containerTexture != null) {
-                com.luatweaker.platform.crate.ContainerCrateRegistry.CRATE_TEXTURES.put(
+                com.luatweaker.platform.container.CustomContainerRegistry.CONTAINER_TEXTURES.put(
                         menuType, containerTexture);
             }
             event.register(Registries.MENU, rl, () -> menuType);

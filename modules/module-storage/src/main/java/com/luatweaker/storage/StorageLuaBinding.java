@@ -10,8 +10,9 @@ public class StorageLuaBinding {
     private static ILuaValue wrapDataStore(ILuaEngine engine, IRobloxStorageService.IDataStore store) {
         ILuaTable table = engine.createTable();
         table.rawset("GetAsync", args -> {
-            if (args.length < 2) return engine.nilValue();
-            String key = args[1].asString();
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 1) return engine.nilValue();
+            String key = args[off].asString();
             Object res = store.GetAsync(key);
             if (res instanceof ILuaValue lv) return lv;
             if (res instanceof String s) return engine.wrapString(s);
@@ -21,9 +22,10 @@ public class StorageLuaBinding {
             return engine.wrapUserdata(res);
         });
         table.rawset("SetAsync", args -> {
-            if (args.length < 3) return engine.nilValue();
-            String key = args[1].asString();
-            ILuaValue val = args[2];
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 2) return engine.nilValue();
+            String key = args[off].asString();
+            ILuaValue val = args[off + 1];
             store.SetAsync(key, val);
             return engine.nilValue();
         });
@@ -36,8 +38,9 @@ public class StorageLuaBinding {
 
         ILuaTable playerStorageLookup = engine.createTable();
         playerStorageLookup.rawset("GetPlayerStorage", args -> {
-            if (args.length < 2) return engine.nilValue();
-            String playerUuid = args[1].asString();
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 1) return engine.nilValue();
+            String playerUuid = args[off].asString();
             return wrapDataStore(engine, storageService.GetPlayerStorage(playerUuid));
         });
 
@@ -46,7 +49,7 @@ public class StorageLuaBinding {
         storageTable.rawset("GetWorldStorage", args -> worldStorage);
         storageTable.rawset("GetSessionStorage", args -> sessionStorage);
         storageTable.rawset("get", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 1) return engine.nilValue();
             String key = args[off].asString();
             ILuaValue def = (args.length - off >= 2) ? args[off + 1] : engine.nilValue();
@@ -60,7 +63,7 @@ public class StorageLuaBinding {
             return engine.wrapUserdata(res);
         });
         storageTable.rawset("set", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 2) return engine.nilValue();
             String key = args[off].asString();
             ILuaValue val = args[off + 1];

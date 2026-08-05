@@ -81,6 +81,12 @@ function task.wait(...)
     end
     sec = tonumber(sec) or 0
     local thread = coroutine.running()
+    if thread == nil then
+        -- Without a coroutine there is nothing to resume later, and coroutine.yield()
+        -- would raise an UnwindThrowable that Java callFunction swallows silently.
+        print('[WARN][task] task.wait() called outside a coroutine - wrap it in Task.spawn()')
+        return
+    end
     task.delay(sec, function()
         if thread then coroutine.resume(thread) end
     end)
@@ -92,6 +98,7 @@ end
 -- whole tick or leak VM control-flow exceptions into Java.
 local function runDeferred(fn, args)
     if type(fn) ~= 'function' then
+        print('[WARN][task] Skipping deferred task: expected function, got ' .. tostring(fn))
         return
     end
     local ok, err = pcall(task._run_deferred, fn, args)
@@ -184,7 +191,8 @@ function Signal:FireSync(...)
         if l.connected and type(l.fn) == 'function' then
             local ok, err = pcall(l.fn, table.unpack(args))
             if not ok and err then
-                print('[ERROR][Signal] Listener error: ' .. tostring(err))
+                local tb = debug and debug.traceback and debug.traceback(err, 2)
+                print('[ERROR][Signal] Listener error: ' .. tostring(err) .. (tb and ('\n' .. tb) or ''))
             end
         end
     end
@@ -193,6 +201,10 @@ Signal.fireSync = Signal.FireSync
 
 function Signal:Wait()
     local runningThread = coroutine.running()
+    if runningThread == nil then
+        print('[WARN][Signal] Signal:Wait() called outside a coroutine - returning nil')
+        return nil
+    end
     local conn
     conn = self:Connect(function(...)
         conn:Disconnect()

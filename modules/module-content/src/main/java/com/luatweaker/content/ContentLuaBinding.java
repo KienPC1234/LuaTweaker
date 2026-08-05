@@ -28,7 +28,7 @@ public class ContentLuaBinding {
 
         // startup:registerProjectile("luatweaker:ruby_orb", { damage = 25, explosionPower = 2, trailParticle = "minecraft:flame" })
         startupTable.rawset("registerProjectile", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 1) throw new IllegalArgumentException("startup:registerProjectile requires (id, [configTable])");
             String id = args[off].asString();
             double damage = 0;
@@ -51,7 +51,7 @@ public class ContentLuaBinding {
 
         // startup:createBlock("custom_ruby_block", function(block) ... end)
         startupTable.rawset("createBlock", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 2) throw new IllegalArgumentException("startup:createBlock requires (id, builderFunc)");
             String id = args[off].asString();
             ILuaValue callbackVal = args[off + 1];
@@ -74,7 +74,7 @@ public class ContentLuaBinding {
 
         // startup:createFluid("liquid_ruby", function(fluid) ... end)
         startupTable.rawset("createFluid", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 2) throw new IllegalArgumentException("startup:createFluid requires (id, builderFunc)");
             String id = args[off].asString();
             ILuaValue callbackVal = args[off + 1];
@@ -96,7 +96,7 @@ public class ContentLuaBinding {
 
         // startup:createRangedItem("magic_staff", function(item) ... end)
         startupTable.rawset("createRangedItem", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 2) throw new IllegalArgumentException("startup:createRangedItem requires (id, builderFunc)");
             String id = args[off].asString();
             ILuaValue callbackVal = args[off + 1];
@@ -118,7 +118,7 @@ public class ContentLuaBinding {
 
         // startup:createEntity("ruby_boss", function(entity) ... end)
         startupTable.rawset("createEntity", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 2) throw new IllegalArgumentException("startup:createEntity requires (id, builderFunc)");
             String id = args[off].asString();
             ILuaValue callbackVal = args[off + 1];
@@ -141,7 +141,7 @@ public class ContentLuaBinding {
 
         // startup:createStairs("ruby_stairs", "luatweaker:ruby_block", function(block) ... end)
         startupTable.rawset("createStairs", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 1) throw new IllegalArgumentException("startup:createStairs requires (id, [baseBlockId])");
             String id = args[off].asString();
             String baseId = (args.length - off >= 2) ? args[off + 1].asString() : id;
@@ -166,7 +166,7 @@ public class ContentLuaBinding {
 
         // startup:createSlab("ruby_slab", "luatweaker:ruby_block", function(block) ... end)
         startupTable.rawset("createSlab", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 1) throw new IllegalArgumentException("startup:createSlab requires (id, [baseBlockId])");
             String id = args[off].asString();
             String baseId = (args.length - off >= 2) ? args[off + 1].asString() : id;
@@ -191,7 +191,7 @@ public class ContentLuaBinding {
 
         // startup:createWall("ruby_wall", "luatweaker:ruby_block", function(block) ... end)
         startupTable.rawset("createWall", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 1) throw new IllegalArgumentException("startup:createWall requires (id, [baseBlockId])");
             String id = args[off].asString();
             String baseId = (args.length - off >= 2) ? args[off + 1].asString() : id;
@@ -216,7 +216,7 @@ public class ContentLuaBinding {
 
         // startup:createTab("magic_tab", function(tab) ... end)
         startupTable.rawset("createTab", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 2) throw new IllegalArgumentException("startup:createTab requires (id, builderFunc)");
             String id = args[off].asString();
             ILuaValue callbackVal = args[off + 1];
@@ -247,7 +247,7 @@ public class ContentLuaBinding {
 
         // startup:createArmorMaterial("ruby", function(mat) ... end)
         startupTable.rawset("createArmorMaterial", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 2) throw new IllegalArgumentException("startup:createArmorMaterial requires (id, builderFunc)");
             String id = args[off].asString();
             ILuaValue callbackVal = args[off + 1];
@@ -280,7 +280,7 @@ public class ContentLuaBinding {
 
         // Content.NewItem("id"):DisplayName(...):MaxStackSize(...):Register()
         startupTable.rawset("NewItem", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             String id = args[off].asString();
             ILuaTable builderTable = engine.createTable();
             final IItemBuilder[] itemBuilder = new IItemBuilder[1];
@@ -292,7 +292,7 @@ public class ContentLuaBinding {
 
         // Content.NewBlock("id"):DisplayName(...):Hardness(...):Register()
         startupTable.rawset("NewBlock", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             String id = args[off].asString();
             ILuaTable builderTable = engine.createTable();
             final IBlockBuilder[] blockBuilder = new IBlockBuilder[1];
@@ -304,7 +304,7 @@ public class ContentLuaBinding {
 
         // Content.NewFluid("id"):Color(...):Register()
         startupTable.rawset("NewFluid", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             String id = args[off].asString();
             ILuaTable builderTable = engine.createTable();
             final IFluidBuilder[] fluidBuilder = new IFluidBuilder[1];
@@ -316,7 +316,7 @@ public class ContentLuaBinding {
 
         // Content.Item("id", count)
         startupTable.rawset("Item", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             String id = args[off].asString();
             int count = args.length - off >= 2 ? args[off + 1].asInt() : 1;
             return engine.toLuaValue(new com.luatweaker.api.wrapper.ItemCount(id, count));
@@ -324,14 +324,14 @@ public class ContentLuaBinding {
 
         // Content.Ingredient("desc")
         startupTable.rawset("Ingredient", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             String desc = args[off].asString();
             return engine.toLuaValue(new com.luatweaker.api.wrapper.IngredientWrapper(desc));
         });
 
         // Content.Tag("name")
         startupTable.rawset("Tag", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             String desc = args[off].asString();
             if (!desc.startsWith("#")) desc = "#" + desc;
             return engine.toLuaValue(new com.luatweaker.api.wrapper.IngredientWrapper(desc));
@@ -342,7 +342,7 @@ public class ContentLuaBinding {
 
         // Content.NewKeyMapping("staff_swap_skill"):DisplayName("Staff Skill Swap"):Category("luatweaker"):DefaultKey(90):OnPress("StaffSwapSkill"):Register()
         ILuaFunction newKeyMappingFn = args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 1) throw new IllegalArgumentException("Content.NewKeyMapping requires (id)");
             String id = args[off].asString();
             ILuaTable table = engine.createTable();
@@ -552,43 +552,43 @@ public class ContentLuaBinding {
     }
 
     private static void bindItemBuilderMethods(ILuaEngine engine, ILuaTable table, IItemBuilder builder, IDatapackService datapackService) {
-        bindMethod(table, "type", args -> { int off = getOffset(args); builder.type(args[off].asString()); return table; });
-        bindMethod(table, "maxStackSize", args -> { int off = getOffset(args); builder.maxStackSize(args[off].asInt()); return table; });
-        bindMethod(table, "rarity", args -> { int off = getOffset(args); builder.rarity(args[off].asString()); return table; });
-        bindMethod(table, "durability", args -> { int off = getOffset(args); builder.durability(args[off].asInt()); return table; });
-        bindMethod(table, "maxDamage", args -> { int off = getOffset(args); builder.durability(args[off].asInt()); return table; });
+        bindMethod(table, "type", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.type(args[off].asString()); return table; });
+        bindMethod(table, "maxStackSize", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.maxStackSize(args[off].asInt()); return table; });
+        bindMethod(table, "rarity", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.rarity(args[off].asString()); return table; });
+        bindMethod(table, "durability", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.durability(args[off].asInt()); return table; });
+        bindMethod(table, "maxDamage", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.durability(args[off].asInt()); return table; });
         bindMethod(table, "miningLevel", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             Object obj = args[off].toJavaObject();
             if (obj instanceof Number num) builder.miningLevel(num.intValue());
             else builder.miningLevel(args[off].asString());
             return table;
         });
         bindMethod(table, "tier", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             Object obj = args[off].toJavaObject();
             if (obj instanceof Number num) builder.miningLevel(num.intValue());
             else builder.miningLevel(args[off].asString());
             return table;
         });
-        bindMethod(table, "miningSpeed", args -> { int off = getOffset(args); builder.miningSpeed((float) args[off].asDouble()); return table; });
-        bindMethod(table, "efficiency", args -> { int off = getOffset(args); builder.miningSpeed((float) args[off].asDouble()); return table; });
-        bindMethod(table, "attackDamage", args -> { int off = getOffset(args); builder.attackDamage((float) args[off].asDouble()); return table; });
-        bindMethod(table, "attackSpeed", args -> { int off = getOffset(args); builder.attackSpeed((float) args[off].asDouble()); return table; });
-        bindMethod(table, "defense", args -> { int off = getOffset(args); builder.defense(args[off].asInt()); return table; });
-        bindMethod(table, "toughness", args -> { int off = getOffset(args); builder.toughness((float) args[off].asDouble()); return table; });
-        bindMethod(table, "knockbackResistance", args -> { int off = getOffset(args); builder.knockbackResistance((float) args[off].asDouble()); return table; });
-        bindMethod(table, "enchantability", args -> { int off = getOffset(args); builder.enchantability(args[off].asInt()); return table; });
-        bindMethod(table, "burnTime", args -> { int off = getOffset(args); builder.burnTime(args[off].asInt()); return table; });
-        bindMethod(table, "displayName", args -> { int off = getOffset(args); builder.displayName(args[off].asString()); return table; });
-        bindMethod(table, "model", args -> { int off = getOffset(args); builder.model(args[off].asString()); return table; });
-        bindMethod(table, "texture", args -> { int off = getOffset(args); builder.texture(args[off].asString()); return table; });
-        bindMethod(table, "armorMaterial", args -> { int off = getOffset(args); builder.armorMaterial(args[off].asString()); return table; });
-        bindMethod(table, "armorTexture", args -> { int off = getOffset(args); builder.armorTexture(args[off].asString()); return table; });
-        bindMethod(table, "creativeTab", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
-        bindMethod(table, "tabGroup", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
+        bindMethod(table, "miningSpeed", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.miningSpeed((float) args[off].asDouble()); return table; });
+        bindMethod(table, "efficiency", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.miningSpeed((float) args[off].asDouble()); return table; });
+        bindMethod(table, "attackDamage", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.attackDamage((float) args[off].asDouble()); return table; });
+        bindMethod(table, "attackSpeed", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.attackSpeed((float) args[off].asDouble()); return table; });
+        bindMethod(table, "defense", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.defense(args[off].asInt()); return table; });
+        bindMethod(table, "toughness", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.toughness((float) args[off].asDouble()); return table; });
+        bindMethod(table, "knockbackResistance", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.knockbackResistance((float) args[off].asDouble()); return table; });
+        bindMethod(table, "enchantability", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.enchantability(args[off].asInt()); return table; });
+        bindMethod(table, "burnTime", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.burnTime(args[off].asInt()); return table; });
+        bindMethod(table, "displayName", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.displayName(args[off].asString()); return table; });
+        bindMethod(table, "model", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.model(args[off].asString()); return table; });
+        bindMethod(table, "texture", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.texture(args[off].asString()); return table; });
+        bindMethod(table, "armorMaterial", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.armorMaterial(args[off].asString()); return table; });
+        bindMethod(table, "armorTexture", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.armorTexture(args[off].asString()); return table; });
+        bindMethod(table, "creativeTab", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.creativeTab(args[off].asString()); return table; });
+        bindMethod(table, "tabGroup", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.creativeTab(args[off].asString()); return table; });
         bindMethod(table, "tag", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) {
                 String tagId = args[off].asString();
                 builder.tag(tagId);
@@ -601,7 +601,7 @@ public class ContentLuaBinding {
         });
 
         bindMethod(table, "onRightClick", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             ILuaValue func = args[off];
             if (func != null && func.isFunction()) {
                 builder.onRightClick((player, itemStack) -> {
@@ -619,7 +619,7 @@ public class ContentLuaBinding {
         });
 
         bindMethod(table, "onHitEntity", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             ILuaValue func = args[off];
             if (func != null && func.isFunction()) {
                 builder.onHitEntity((targetEntity, shooterPlayer) -> {
@@ -639,10 +639,10 @@ public class ContentLuaBinding {
             return table;
         });
 
-        bindMethod(table, "food", args -> { int off = getOffset(args); builder.food(args[off].asInt(), (float) args[off + 1].asDouble()); return table; });
+        bindMethod(table, "food", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.food(args[off].asInt(), (float) args[off + 1].asDouble()); return table; });
         bindMethod(table, "alwaysEdible", args -> { builder.alwaysEdible(); return table; });
         bindMethod(table, "onConsume", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             ILuaValue func = args[off];
             if (func != null && func.isFunction()) {
                 builder.onConsume((player, itemStack) -> {
@@ -658,11 +658,11 @@ public class ContentLuaBinding {
             }
             return table;
         });
-        bindMethod(table, "glow", args -> { int off = getOffset(args); builder.glow(args[off].asBoolean()); return table; });
-        bindMethod(table, "tooltip", args -> { int off = getOffset(args); builder.tooltip(args[off].asString()); return table; });
+        bindMethod(table, "glow", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.glow(args[off].asBoolean()); return table; });
+        bindMethod(table, "tooltip", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.tooltip(args[off].asString()); return table; });
 
         bindMethod(table, "food", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 2) {
                 builder.food(args[off].asInt(), (float) args[off + 1].asDouble());
             }
@@ -672,7 +672,7 @@ public class ContentLuaBinding {
         bindMethod(table, "alwaysEdible", args -> { builder.alwaysEdible(); return table; });
 
         bindMethod(table, "onConsume", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             ILuaValue func = args[off];
             if (func != null && func.isFunction()) {
                 builder.onConsume((player, itemStack) -> {
@@ -690,14 +690,14 @@ public class ContentLuaBinding {
         });
 
         bindMethod(table, "glow", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             boolean enable = args.length - off < 1 || args[off].asBoolean();
             builder.glow(enable);
             return table;
         });
 
         bindMethod(table, "tooltip", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) builder.tooltip(args[off].asString());
             return table;
         });
@@ -705,12 +705,12 @@ public class ContentLuaBinding {
     }
 
     private static void bindBlockBuilderMethods(ILuaEngine engine, ILuaTable table, IBlockBuilder builder, IDatapackService datapackService) {
-        bindMethod(table, "hardness", args -> { int off = getOffset(args); builder.hardness((float) args[off].asDouble()); return table; });
-        bindMethod(table, "resistance", args -> { int off = getOffset(args); builder.resistance((float) args[off].asDouble()); return table; });
-        bindMethod(table, "lightLevel", args -> { int off = getOffset(args); builder.lightLevel(args[off].asInt()); return table; });
-        bindMethod(table, "light", args -> { int off = getOffset(args); builder.lightLevel(args[off].asInt()); return table; });
+        bindMethod(table, "hardness", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.hardness((float) args[off].asDouble()); return table; });
+        bindMethod(table, "resistance", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.resistance((float) args[off].asDouble()); return table; });
+        bindMethod(table, "lightLevel", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.lightLevel(args[off].asInt()); return table; });
+        bindMethod(table, "light", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.lightLevel(args[off].asInt()); return table; });
         bindMethod(table, "emissive", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) {
                 Object val = args[off].toJavaObject();
                 if (val instanceof Number num) {
@@ -727,21 +727,21 @@ public class ContentLuaBinding {
         });
 
 
-        bindMethod(table, "soundType", args -> { int off = getOffset(args); builder.soundType(args[off].asString()); return table; });
-        bindMethod(table, "requiresTool", args -> { int off = getOffset(args); builder.requiresTool(args[off].asBoolean()); return table; });
-        bindMethod(table, "mineableWith", args -> { int off = getOffset(args); builder.mineableWith(args[off].asString()); return table; });
+        bindMethod(table, "soundType", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.soundType(args[off].asString()); return table; });
+        bindMethod(table, "requiresTool", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.requiresTool(args[off].asBoolean()); return table; });
+        bindMethod(table, "mineableWith", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.mineableWith(args[off].asString()); return table; });
         bindMethod(table, "miningLevel", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             Object obj = args[off].toJavaObject();
             if (obj instanceof Number num) builder.miningLevel(num.intValue());
             else builder.miningLevel(args[off].asString());
             return table;
         });
-        bindMethod(table, "friction", args -> { int off = getOffset(args); builder.friction((float) args[off].asDouble()); return table; });
-        bindMethod(table, "model", args -> { int off = getOffset(args); builder.model(args[off].asString()); return table; });
+        bindMethod(table, "friction", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.friction((float) args[off].asDouble()); return table; });
+        bindMethod(table, "model", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.model(args[off].asString()); return table; });
 
         bindMethod(table, "drop", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) {
                 String itemId = args[off].asString();
                 int minCount = args.length - off >= 2 ? args[off + 1].asInt() : 1;
@@ -752,7 +752,7 @@ public class ContentLuaBinding {
         });
 
         bindMethod(table, "dropExperience", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) {
                 int minExp = args[off].asInt();
                 int maxExp = args.length - off >= 2 ? args[off + 1].asInt() : minExp;
@@ -762,7 +762,7 @@ public class ContentLuaBinding {
         });
 
         bindMethod(table, "container", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) {
                 int rows = args[off].asInt();
                 int cols = args.length - off >= 2 ? args[off + 1].asInt() : 6;
@@ -773,7 +773,7 @@ public class ContentLuaBinding {
         });
 
         bindMethod(table, "itemFilter", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             ILuaValue func = args[off];
             if (func != null && func.isFunction()) {
                 builder.itemFilter((itemId, count) -> {
@@ -792,23 +792,23 @@ public class ContentLuaBinding {
         });
 
         bindMethod(table, "containerTexture", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) builder.containerTexture(args[off].asString());
             return table;
         });
 
         bindMethod(table, "containerTitle", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) builder.containerTitle(args[off].asString());
             return table;
         });
 
-        bindMethod(table, "texture", args -> { int off = getOffset(args); builder.texture(args[off].asString()); return table; });
-        bindMethod(table, "displayName", args -> { int off = getOffset(args); builder.displayName(args[off].asString()); return table; });
-        bindMethod(table, "creativeTab", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
-        bindMethod(table, "tabGroup", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
+        bindMethod(table, "texture", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.texture(args[off].asString()); return table; });
+        bindMethod(table, "displayName", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.displayName(args[off].asString()); return table; });
+        bindMethod(table, "creativeTab", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.creativeTab(args[off].asString()); return table; });
+        bindMethod(table, "tabGroup", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.creativeTab(args[off].asString()); return table; });
         bindMethod(table, "tag", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) {
                 String tagId = args[off].asString();
                 builder.tag(tagId);
@@ -821,7 +821,7 @@ public class ContentLuaBinding {
         });
 
         bindMethod(table, "onRightClick", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             ILuaValue func = args[off];
             if (func != null && func.isFunction()) {
                 builder.onRightClick((player, blockState) -> {
@@ -841,29 +841,29 @@ public class ContentLuaBinding {
 
 
     private static void bindFluidBuilderMethods(ILuaEngine engine, ILuaTable table, IFluidBuilder builder) {
-        bindMethod(table, "displayName", args -> { int off = getOffset(args); builder.displayName(args[off].asString()); return table; });
-        bindMethod(table, "name", args -> { int off = getOffset(args); builder.displayName(args[off].asString()); return table; });
-        bindMethod(table, "color", args -> { int off = getOffset(args); builder.color(args[off].asInt()); return table; });
-        bindMethod(table, "stillTexture", args -> { int off = getOffset(args); builder.stillTexture(args[off].asString()); return table; });
-        bindMethod(table, "still", args -> { int off = getOffset(args); builder.stillTexture(args[off].asString()); return table; });
-        bindMethod(table, "flowingTexture", args -> { int off = getOffset(args); builder.flowingTexture(args[off].asString()); return table; });
-        bindMethod(table, "flowing", args -> { int off = getOffset(args); builder.flowingTexture(args[off].asString()); return table; });
-        bindMethod(table, "flow", args -> { int off = getOffset(args); builder.flowingTexture(args[off].asString()); return table; });
-        bindMethod(table, "temperature", args -> { int off = getOffset(args); builder.temperature(args[off].asInt()); return table; });
-        bindMethod(table, "viscosity", args -> { int off = getOffset(args); builder.viscosity(args[off].asInt()); return table; });
-        bindMethod(table, "density", args -> { int off = getOffset(args); builder.density(args[off].asInt()); return table; });
-        bindMethod(table, "lightLevel", args -> { int off = getOffset(args); builder.lightLevel(args[off].asInt()); return table; });
-        bindMethod(table, "light", args -> { int off = getOffset(args); builder.lightLevel(args[off].asInt()); return table; });
-        bindMethod(table, "luminance", args -> { int off = getOffset(args); builder.lightLevel(args[off].asInt()); return table; });
-        bindMethod(table, "slopeFindDistance", args -> { int off = getOffset(args); builder.slopeFindDistance(args[off].asInt()); return table; });
-        bindMethod(table, "levelDecreasePerBlock", args -> { int off = getOffset(args); builder.levelDecreasePerBlock(args[off].asInt()); return table; });
-        bindMethod(table, "tickRate", args -> { int off = getOffset(args); builder.tickRate(args[off].asInt()); return table; });
-        bindMethod(table, "explosionResistance", args -> { int off = getOffset(args); builder.explosionResistance((float) args[off].asDouble()); return table; });
-        bindMethod(table, "rarity", args -> { int off = getOffset(args); builder.rarity(args[off].asString()); return table; });
-        bindMethod(table, "creativeTab", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
-        bindMethod(table, "tabGroup", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
+        bindMethod(table, "displayName", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.displayName(args[off].asString()); return table; });
+        bindMethod(table, "name", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.displayName(args[off].asString()); return table; });
+        bindMethod(table, "color", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.color(args[off].asInt()); return table; });
+        bindMethod(table, "stillTexture", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.stillTexture(args[off].asString()); return table; });
+        bindMethod(table, "still", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.stillTexture(args[off].asString()); return table; });
+        bindMethod(table, "flowingTexture", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.flowingTexture(args[off].asString()); return table; });
+        bindMethod(table, "flowing", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.flowingTexture(args[off].asString()); return table; });
+        bindMethod(table, "flow", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.flowingTexture(args[off].asString()); return table; });
+        bindMethod(table, "temperature", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.temperature(args[off].asInt()); return table; });
+        bindMethod(table, "viscosity", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.viscosity(args[off].asInt()); return table; });
+        bindMethod(table, "density", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.density(args[off].asInt()); return table; });
+        bindMethod(table, "lightLevel", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.lightLevel(args[off].asInt()); return table; });
+        bindMethod(table, "light", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.lightLevel(args[off].asInt()); return table; });
+        bindMethod(table, "luminance", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.lightLevel(args[off].asInt()); return table; });
+        bindMethod(table, "slopeFindDistance", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.slopeFindDistance(args[off].asInt()); return table; });
+        bindMethod(table, "levelDecreasePerBlock", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.levelDecreasePerBlock(args[off].asInt()); return table; });
+        bindMethod(table, "tickRate", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.tickRate(args[off].asInt()); return table; });
+        bindMethod(table, "explosionResistance", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.explosionResistance((float) args[off].asDouble()); return table; });
+        bindMethod(table, "rarity", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.rarity(args[off].asString()); return table; });
+        bindMethod(table, "creativeTab", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.creativeTab(args[off].asString()); return table; });
+        bindMethod(table, "tabGroup", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.creativeTab(args[off].asString()); return table; });
         bindMethod(table, "onTouch", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             ILuaValue func = args[off];
             if (func != null && func.isFunction()) {
                 builder.onTouch(player -> {
@@ -880,32 +880,32 @@ public class ContentLuaBinding {
     }
 
     private static void bindEntityBuilderMethods(ILuaEngine engine, ILuaTable table, IEntityBuilder builder, IDatapackService datapackService) {
-        bindMethod(table, "category", args -> { int off = getOffset(args); builder.category(args[off].asString()); return table; });
+        bindMethod(table, "category", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.category(args[off].asString()); return table; });
         bindMethod(table, "dimensions", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 2) builder.dimensions((float) args[off].asDouble(), (float) args[off + 1].asDouble());
             return table;
         });
-        bindMethod(table, "maxHealth", args -> { int off = getOffset(args); builder.maxHealth(args[off].asDouble()); return table; });
-        bindMethod(table, "movementSpeed", args -> { int off = getOffset(args); builder.movementSpeed(args[off].asDouble()); return table; });
-        bindMethod(table, "speed", args -> { int off = getOffset(args); builder.movementSpeed(args[off].asDouble()); return table; });
-        bindMethod(table, "attackDamage", args -> { int off = getOffset(args); builder.attackDamage(args[off].asDouble()); return table; });
-        bindMethod(table, "followRange", args -> { int off = getOffset(args); builder.followRange(args[off].asDouble()); return table; });
-        bindMethod(table, "armor", args -> { int off = getOffset(args); builder.armor(args[off].asDouble()); return table; });
-        bindMethod(table, "knockbackResistance", args -> { int off = getOffset(args); builder.knockbackResistance(args[off].asDouble()); return table; });
+        bindMethod(table, "maxHealth", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.maxHealth(args[off].asDouble()); return table; });
+        bindMethod(table, "movementSpeed", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.movementSpeed(args[off].asDouble()); return table; });
+        bindMethod(table, "speed", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.movementSpeed(args[off].asDouble()); return table; });
+        bindMethod(table, "attackDamage", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.attackDamage(args[off].asDouble()); return table; });
+        bindMethod(table, "followRange", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.followRange(args[off].asDouble()); return table; });
+        bindMethod(table, "armor", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.armor(args[off].asDouble()); return table; });
+        bindMethod(table, "knockbackResistance", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.knockbackResistance(args[off].asDouble()); return table; });
         bindMethod(table, "spawnEgg", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 2) builder.spawnEgg(args[off].asInt(), args[off + 1].asInt());
             return table;
         });
-        bindMethod(table, "model", args -> { int off = getOffset(args); builder.model(args[off].asString()); return table; });
-        bindMethod(table, "texture", args -> { int off = getOffset(args); builder.texture(args[off].asString()); return table; });
-        bindMethod(table, "bbmodel", args -> { int off = getOffset(args); builder.bbmodel(args[off].asString()); return table; });
-        bindMethod(table, "ambientSound", args -> { int off = getOffset(args); builder.ambientSound(args[off].asString()); return table; });
-        bindMethod(table, "hurtSound", args -> { int off = getOffset(args); builder.hurtSound(args[off].asString()); return table; });
-        bindMethod(table, "deathSound", args -> { int off = getOffset(args); builder.deathSound(args[off].asString()); return table; });
+        bindMethod(table, "model", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.model(args[off].asString()); return table; });
+        bindMethod(table, "texture", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.texture(args[off].asString()); return table; });
+        bindMethod(table, "bbmodel", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.bbmodel(args[off].asString()); return table; });
+        bindMethod(table, "ambientSound", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.ambientSound(args[off].asString()); return table; });
+        bindMethod(table, "hurtSound", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.hurtSound(args[off].asString()); return table; });
+        bindMethod(table, "deathSound", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.deathSound(args[off].asString()); return table; });
         bindMethod(table, "drop", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) {
                 String itemId = args[off].asString();
                 int minCount = args.length - off >= 2 ? args[off + 1].asInt() : 1;
@@ -914,14 +914,14 @@ public class ContentLuaBinding {
             }
             return table;
         });
-        bindMethod(table, "experience", args -> { int off = getOffset(args); builder.experience(args[off].asInt()); return table; });
-        bindMethod(table, "creativeTab", args -> { int off = getOffset(args); builder.creativeTab(args[off].asString()); return table; });
-        bindMethod(table, "spawnEggTexture", args -> { int off = getOffset(args); builder.spawnEggTexture(args[off].asString()); return table; });
-        bindMethod(table, "eggTexture", args -> { int off = getOffset(args); builder.spawnEggTexture(args[off].asString()); return table; });
-        bindMethod(table, "parent", args -> { int off = getOffset(args); builder.parent(args[off].asString()); return table; });
-        bindMethod(table, "parentMob", args -> { int off = getOffset(args); builder.parentMob(args[off].asString()); return table; });
+        bindMethod(table, "experience", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.experience(args[off].asInt()); return table; });
+        bindMethod(table, "creativeTab", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.creativeTab(args[off].asString()); return table; });
+        bindMethod(table, "spawnEggTexture", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.spawnEggTexture(args[off].asString()); return table; });
+        bindMethod(table, "eggTexture", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.spawnEggTexture(args[off].asString()); return table; });
+        bindMethod(table, "parent", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.parent(args[off].asString()); return table; });
+        bindMethod(table, "parentMob", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.parentMob(args[off].asString()); return table; });
         bindMethod(table, "bossBar", args -> {
-            int off = getOffset(args);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) {
                 String title = args[off].asString();
                 String color = args.length - off >= 2 ? args[off + 1].asString() : "RED";

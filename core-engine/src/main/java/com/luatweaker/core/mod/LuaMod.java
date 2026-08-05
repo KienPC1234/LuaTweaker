@@ -31,14 +31,23 @@ public class LuaMod {
     private final Map<String, ILuaTable> exportedApis = new ConcurrentHashMap<>();
     private final Map<String, LuaMod> loadedModsRegistry;
 
+    private final String environment;
+
     public LuaMod(@NotNull LuaModManifest manifest,
                   @NotNull File modFileOrDir,
-                  @NotNull Map<String, LuaMod> loadedModsRegistry) {
+                  @NotNull String environment,
+                  @NotNull Map<String, LuaMod> loadedModsRegistry,
+                  @NotNull File luamodsDir) {
         this.manifest = manifest;
         this.modFileOrDir = modFileOrDir;
+        this.environment = environment;
         this.loadedModsRegistry = loadedModsRegistry;
 
-        File configDir = new File("luaconfig");
+        // Configs live NEXT TO the luamods dir (run/luaconfig/<mod_id>.json).
+        // Resolve from the absolute luamods path so GetConfig works regardless of
+        // the process working directory (a relative "luaconfig" silently returned
+        // an empty table and every cfg.mana / cfg.skills access crashed).
+        File configDir = new File(luamodsDir.getAbsoluteFile().getParentFile(), "luaconfig");
         if (!configDir.exists()) configDir.mkdirs();
         this.configFile = new File(configDir, manifest.id() + ".json");
     }
@@ -95,7 +104,15 @@ public class LuaMod {
                     if (json != null) {
                         return engine.toLuaValue(GSON.fromJson(json, Map.class));
                     }
-                } catch (Exception ignored) {}
+                    LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                            "[LuaMod][" + manifest.id() + "] Config parse returned null: " + configFile.getAbsolutePath());
+                } catch (Exception e) {
+                    LuaTweakerLog.get().error(LogStage.SYSTEM,
+                            "[LuaMod][" + manifest.id() + "] Failed to read config " + configFile.getAbsolutePath() + ": " + e.getMessage());
+                }
+            } else {
+                LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                        "[LuaMod][" + manifest.id() + "] Config file missing: " + configFile.getAbsolutePath());
             }
             return engine.createTable();
         });
@@ -103,7 +120,7 @@ public class LuaMod {
 
         // mod:ExportAPI("ApiName", apiTable)
         table.rawset("ExportAPI", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 2) throw new IllegalArgumentException("mod:ExportAPI requires (apiName, apiTable)");
             String apiName = args[off].asString();
             ILuaValue apiVal = args[off + 1];
@@ -118,7 +135,7 @@ public class LuaMod {
 
         // mod:ImportAPI("target_mod_id", "ApiName")
         table.rawset("ImportAPI", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 2) throw new IllegalArgumentException("mod:ImportAPI requires (targetModId, apiName)");
             String targetId = args[off].asString();
             String apiName = args[off + 1].asString();
@@ -135,6 +152,32 @@ public class LuaMod {
             return engine.nilValue();
         });
         table.rawset("importAPI", table.rawget("ImportAPI"));
+
+        table.rawset("IsClient", args -> engine.wrapBoolean("client".equalsIgnoreCase(environment) || "universal".equalsIgnoreCase(environment)));
+        table.rawset("isClient", table.rawget("IsClient"));
+
+        table.rawset("IsServer", args -> engine.wrapBoolean("server".equalsIgnoreCase(environment) || "universal".equalsIgnoreCase(environment)));
+        table.rawset("isServer", table.rawget("IsServer"));
+
+        // mod:GetUpdateStatus([modId]) - read-only view over the update status
+        // cached by the engine's update checker (module-update). The checker runs
+        // entirely on the Java side; this method only reads its result table.
+        table.rawset("GetUpdateStatus", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            String targetId = manifest.id();
+            if (args.length - off >= 1 && args[off] != null && !args[off].isNil()) {
+                targetId = args[off].asString();
+            }
+            Object svc = com.luatweaker.core.service.LuaServiceRegistry.get("UpdateServiceImpl");
+            if (svc instanceof com.luatweaker.api.update.IUpdateService updateService) {
+                ILuaValue status = updateService.GetStatus(targetId);
+                return status != null ? status : engine.nilValue();
+            }
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[LuaMod][" + manifest.id() + "] GetUpdateStatus: UpdateServiceImpl not registered (module-update missing).");
+            return engine.nilValue();
+        });
+        table.rawset("getUpdateStatus", table.rawget("GetUpdateStatus"));
 
         return table;
     }

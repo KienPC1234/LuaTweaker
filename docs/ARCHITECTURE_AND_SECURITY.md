@@ -67,3 +67,22 @@ Support parallel Luau actor execution model for background spatial calculations,
 
 ### 4.4 Custom GLSL Shader Pipeline (`Shaders`)
 Full custom GLSL post-processing render pipeline allowing modpack authors to supply custom shader JSON files and uniform parameters.
+
+### 4.5 Network Security Architecture (implemented in `module-update`)
+
+Outbound network access is a three-layer system:
+
+1. **Declarative update checks (default):** `"update_url": "https://..."` in
+   manifest.json is fetched by the engine on the Java side with a dedicated
+   daemon thread (never in the Lua sandbox, never on a game thread). Only
+   `https://` feeds are accepted. Results are shown in chat and exposed
+   read-only to Lua via `mod:GetUpdateStatus()` / `Update` service.
+2. **Safe read-only API:** `Net`-adjacent Lua code can never trigger a fetch;
+   it only reads the engine-cached result table.
+3. **Permission-gated free HTTP:** `Net:HttpGet(url, timeout)` is denied unless
+   at least one loaded mod declares `"permissions": ["net.http"]`. The grant
+   is **per installation**: the VM cannot attribute runtime calls to a
+   specific mod (the `mod` global is spoofable from Lua), so the decision is
+   made deterministically from the Java-side mod registry — never from the
+   global. All granting mods are listed in red warnings (chat + log) so
+   admins can audit their modpacks.

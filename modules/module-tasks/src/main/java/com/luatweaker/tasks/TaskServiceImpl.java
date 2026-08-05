@@ -36,8 +36,8 @@ public class TaskServiceImpl implements ITaskService {
 
     @Override
     public void cancel(@NotNull ILuaValue thread) {
-        // Coroutine task cancellation marker
-        throw new UnsupportedOperationException("STUB: Task cancellation is not implemented yet");
+        deferredTasks.removeIf(dt -> dt.task().equals(thread));
+        delayedTasks.removeIf(dt -> dt.task().equals(thread));
     }
 
     @Override
@@ -50,10 +50,12 @@ public class TaskServiceImpl implements ITaskService {
                 if (dt.task().isFunction()) {
                     try {
                         engine.callFunction(dt.task(), dt.args());
+                    } catch (RuntimeException re) {
+                        com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RUNTIME_ERROR, "LuaError executing deferred task: " + re.getMessage());
                     } catch (Exception e) {
                         java.io.StringWriter sw = new java.io.StringWriter();
                         e.printStackTrace(new java.io.PrintWriter(sw));
-                        com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RUNTIME_ERROR, "Error executing deferred task: " + e.getMessage() + "\n" + sw.toString());
+                        com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RUNTIME_ERROR, "Critical Error executing deferred task: " + e.getMessage() + "\n" + sw.toString());
                     }
                 }
             }
@@ -74,10 +76,12 @@ public class TaskServiceImpl implements ITaskService {
                     if (dt.task().isFunction()) {
                         try {
                             engine.callFunction(dt.task(), dt.args());
+                        } catch (RuntimeException re) {
+                            com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RUNTIME_ERROR, "LuaError executing delayed task: " + re.getMessage());
                         } catch (Exception e) {
                             java.io.StringWriter sw = new java.io.StringWriter();
                             e.printStackTrace(new java.io.PrintWriter(sw));
-                            com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RUNTIME_ERROR, "Error executing delayed task: " + e.getMessage() + "\n" + sw.toString());
+                            com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RUNTIME_ERROR, "Critical Error executing delayed task: " + e.getMessage() + "\n" + sw.toString());
                         }
                     }
                 }

@@ -38,7 +38,7 @@ public class LuaModManager {
     /**
      * Scans and loads all autonomous LuaMods from the given luamods directory.
      */
-    public static void loadLuaMods(@NotNull File targetDir, @NotNull ILuaEngine engine) {
+    public static void loadLuaMods(@NotNull File targetDir, @NotNull ILuaEngine engine, @NotNull String currentEnv) {
         fireModTeardownHooks(engine);
         LOADED_MODS.clear();
         LOAD_ERRORS.clear();
@@ -114,7 +114,7 @@ public class LuaModManager {
                         modsState.put(e.getKey(), Boolean.TRUE.equals(e.getValue()));
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
         }
 
         boolean stateChanged = false;
@@ -130,7 +130,7 @@ public class LuaModManager {
             try {
                 Files.writeString(modsManagerFile.toPath(), prettyGson.toJson(modsState), StandardCharsets.UTF_8);
                 LuaTweakerLog.get().info(LogStage.SYSTEM, "[LuaModManager] Updated " + modsManagerFile.getAbsolutePath());
-            } catch (Exception ignored) {}
+            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
         }
 
         LuaTweakerLog.get().info(LogStage.SYSTEM,
@@ -166,13 +166,20 @@ public class LuaModManager {
                 continue;
             }
 
+            String modEnv = dm.manifest().environment();
+            if (!modEnv.equals("universal") && !modEnv.equals(currentEnv)) {
+                LuaTweakerLog.get().info(LogStage.SYSTEM,
+                        "[LuaModManager] Mod '" + modId + "' is declared as '" + modEnv + "' but current environment is '" + currentEnv + "' - Skipping execution.");
+                continue;
+            }
+
             // Initialize fresh dedicated log file for this mod
             com.luatweaker.core.logger.AsyncFileLogger.get().initModLog(modId);
 
             LuaTweakerLog.get().info(LogStage.SYSTEM,
                     "[LuaModManager] Loading active LuaMod: " + modId + " v" + dm.manifest().version() + " by " + dm.manifest().author() + " (" + dm.file().getName() + ")");
 
-            LuaMod mod = new LuaMod(dm.manifest(), dm.file(), LOADED_MODS);
+            LuaMod mod = new LuaMod(dm.manifest(), dm.file(), currentEnv, LOADED_MODS, luamodsDir);
             LOADED_MODS.put(modId, mod);
             mod.ensureConfigFile(dm.defaultConfig());
 
@@ -250,7 +257,7 @@ public class LuaModManager {
             if (scriptFile.exists()) {
                 try {
                     return Files.readString(scriptFile.toPath(), StandardCharsets.UTF_8);
-                } catch (Exception ignored) {}
+                } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
             }
         } else if (fileOrDir.getName().endsWith(".zip")) {
             try (ZipFile zip = new ZipFile(fileOrDir)) {
@@ -260,7 +267,7 @@ public class LuaModManager {
                         return new String(is.readAllBytes(), StandardCharsets.UTF_8);
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
         }
         return null;
     }

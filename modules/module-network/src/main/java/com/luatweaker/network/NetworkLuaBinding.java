@@ -8,13 +8,13 @@ public class NetworkLuaBinding {
     public static void registerBindings(ILuaEngine engine, IRocketNetworkService networkService) {
         ILuaTable network = engine.createTable();
         network.rawset("GetOrCreateRemoteEvent", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 1) return engine.nilValue();
             String name = args[off].asString();
             return networkService.GetOrCreateRemoteEvent(name);
         });
         network.rawset("GetOrCreateRemoteFunction", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 1) return engine.nilValue();
             String name = args[off].asString();
             return networkService.GetOrCreateRemoteFunction(name);

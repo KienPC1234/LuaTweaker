@@ -33,7 +33,7 @@ public class NeoForgeWorldRenderEventListener {
         ILuaTable renderService = engine.createTable();
 
         renderService.rawset("DrawLine", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 7) {
                 PENDING_OPS.get().add(new Line(
                         args[off].asDouble(), args[off + 1].asDouble(), args[off + 2].asDouble(),
@@ -45,7 +45,7 @@ public class NeoForgeWorldRenderEventListener {
         renderService.rawset("drawLine", renderService.rawget("DrawLine"));
 
         renderService.rawset("DrawBox", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 7) {
                 PENDING_OPS.get().add(new Box(
                         args[off].asDouble(), args[off + 1].asDouble(), args[off + 2].asDouble(),
@@ -59,7 +59,7 @@ public class NeoForgeWorldRenderEventListener {
         // Client-side entity lookup: position + bounding box size, so Lua can
         // compute its own outlines/shapes from real world data.
         renderService.rawset("GetEntity", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 1) return engine.nilValue();
             String uuid = args[off].asString();
             Entity entity = findEntityByUuid(uuid);
@@ -78,7 +78,7 @@ public class NeoForgeWorldRenderEventListener {
 
         // World -> screen projection for HUD labels. Only valid inside OnRenderWorld.
         renderService.rawset("WorldToScreen", args -> {
-            int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 3) return engine.nilValue();
             double wx = args[off].asDouble();
             double wy = args[off + 1].asDouble();

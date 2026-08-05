@@ -50,7 +50,7 @@ public class NeoForgeEntityPlatform implements IPlatformEntity {
                 if (player != null) {
                     return new com.luatweaker.platform.entity.NeoForgePlayerWrapper(player);
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
         }
         return null;
     }

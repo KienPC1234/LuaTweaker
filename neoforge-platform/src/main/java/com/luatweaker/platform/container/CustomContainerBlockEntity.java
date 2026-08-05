@@ -1,4 +1,4 @@
-package com.luatweaker.platform.crate;
+package com.luatweaker.platform.container;
 
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
@@ -20,8 +20,8 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * Generic Lua-configured container block entity. The slot count is fixed by the
- * owning {@link ContainerCrateBlock} (rows x cols from the Lua builder), so the
- * same block entity class serves any crate size. Contents persist in NBT like a
+ * owning {@link CustomContainerBlock} (rows x cols from the Lua builder), so the
+ * same block entity class serves any container size. Contents persist in NBT like a
  * vanilla chest ({@code Items} via {@link ContainerHelper}); any extra Lua NBT
  * fields are preserved through {@link #getExtraNbt()} / {@link #setExtraNbt()}.
  *
@@ -30,7 +30,7 @@ import org.jetbrains.annotations.NotNull;
  * and move items through the standard NeoForge API. The Lua {@code itemFilter}
  * rule applies to pipe inserts as well.</p>
  */
-public class ContainerCrateBlockEntity extends BlockEntity implements Container, MenuProvider, IItemHandler {
+public class CustomContainerBlockEntity extends BlockEntity implements Container, MenuProvider, IItemHandler {
 
     private static final String TAG_ITEMS = "Items";
     private static final String TAG_EXTRA = "LuaData";
@@ -38,18 +38,18 @@ public class ContainerCrateBlockEntity extends BlockEntity implements Container,
     private final NonNullList<ItemStack> items;
     private CompoundTag extraNbt = new CompoundTag();
 
-    public ContainerCrateBlockEntity(net.minecraft.core.BlockPos pos, BlockState state) {
+    public CustomContainerBlockEntity(net.minecraft.core.BlockPos pos, BlockState state) {
         super(resolveType(state), pos, state);
-        ContainerCrateBlock crate = state.getBlock() instanceof ContainerCrateBlock c ? c : null;
-        int size = crate != null ? crate.getSlotCount() : 24;
+        CustomContainerBlock container = state.getBlock() instanceof CustomContainerBlock c ? c : null;
+        int size = container != null ? container.getSlotCount() : 24;
         this.items = NonNullList.withSize(size, ItemStack.EMPTY);
     }
 
     private static net.minecraft.world.level.block.entity.BlockEntityType<?> resolveType(BlockState state) {
-        if (state.getBlock() instanceof ContainerCrateBlock crate) {
-            net.minecraft.world.level.block.entity.BlockEntityType<ContainerCrateBlockEntity> type = ContainerCrateRegistry.TYPE_BY_BLOCK.get(crate);
+        if (state.getBlock() instanceof CustomContainerBlock container) {
+            net.minecraft.world.level.block.entity.BlockEntityType<CustomContainerBlockEntity> type = CustomContainerRegistry.TYPE_BY_BLOCK.get(container);
             if (type != null) return type;
-            LuaTweakerLog.get().warn(LogStage.SYSTEM, "No block entity type registered for crate " + crate.getCrateId() + " - using fallback");
+            LuaTweakerLog.get().warn(LogStage.SYSTEM, "No block entity type registered for container " + container.getContainerId() + " - using fallback");
         }
         return net.minecraft.world.level.block.entity.BlockEntityType.BARREL;
     }
@@ -110,7 +110,7 @@ public class ContainerCrateBlockEntity extends BlockEntity implements Container,
     @Override
     public void setItem(int slot, ItemStack stack) {
         if (slot >= 0 && slot < items.size()) {
-            // Lua-defined container rule: rejected items never enter the crate.
+            // Lua-defined container rule: rejected items never enter the container.
             if (!stack.isEmpty() && !acceptsStack(stack)) {
                 fireRejected(stack, slot);
                 return;
@@ -126,28 +126,28 @@ public class ContainerCrateBlockEntity extends BlockEntity implements Container,
     /** Lua-defined container rule, shared by GUI clicks and external IItemHandler inserts. */
     public boolean acceptsStack(ItemStack stack) {
         if (level == null || stack == null || stack.isEmpty()) return true;
-        if (level.getBlockState(worldPosition).getBlock() instanceof ContainerCrateBlock crate) {
-            return crate.acceptsItem(stack);
+        if (level.getBlockState(worldPosition).getBlock() instanceof CustomContainerBlock container) {
+            return container.acceptsItem(stack);
         }
         return true;
     }
 
     private void fireRejected(ItemStack stack, int slot) {
         if (level == null) return;
-        if (level.getBlockState(worldPosition).getBlock() instanceof ContainerCrateBlock crate) {
+        if (level.getBlockState(worldPosition).getBlock() instanceof CustomContainerBlock container) {
             String itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
             final int fx = worldPosition.getX();
             final int fy = worldPosition.getY();
             final int fz = worldPosition.getZ();
-            CrateEvents.post("CrateItemRejected", engine -> {
-                com.luatweaker.api.vm.ILuaTable payload = CrateEvents.basePayload(engine, crate, fx, fy, fz);
+            ContainerEvents.post("ContainerItemRejected", engine -> {
+                com.luatweaker.api.vm.ILuaTable payload = ContainerEvents.basePayload(engine, container, fx, fy, fz);
                 payload.rawset("ItemId", engine.wrapString(itemId));
                 payload.rawset("Count", engine.wrapNumber(stack.getCount()));
                 payload.rawset("Slot", engine.wrapNumber(slot));
                 return payload;
             });
             LuaTweakerLog.get().info(LogStage.SYSTEM,
-                    "Crate " + crate.getCrateId() + " rejected item " + itemId + " (slot " + slot + ")");
+                    "Container " + container.getContainerId() + " rejected item " + itemId + " (slot " + slot + ")");
         }
     }
 
@@ -233,26 +233,26 @@ public class ContainerCrateBlockEntity extends BlockEntity implements Container,
     @Override
     @NotNull
     public Component getDisplayName() {
-        if (level != null && level.getBlockState(worldPosition).getBlock() instanceof ContainerCrateBlock crate) {
-            return Component.literal(crate.getCrateTitle());
+        if (level != null && level.getBlockState(worldPosition).getBlock() instanceof CustomContainerBlock container) {
+            return Component.literal(container.getContainerTitle());
         }
-        return Component.translatable("container.luatweaker.crate");
+        return Component.translatable("container.luatweaker.container");
     }
 
     @Override
     @NotNull
     public AbstractContainerMenu createMenu(int containerId, @NotNull Inventory playerInventory, @NotNull Player player) {
-        net.minecraft.world.inventory.MenuType<ContainerCrateMenu> type = null;
+        net.minecraft.world.inventory.MenuType<CustomContainerMenu> type = null;
         int rows = 4;
         int cols = 6;
-        if (level != null && level.getBlockState(worldPosition).getBlock() instanceof ContainerCrateBlock crate) {
-            rows = crate.getRows();
-            cols = crate.getCols();
-            net.minecraft.resources.ResourceLocation id = net.minecraft.resources.ResourceLocation.tryParse(crate.getCrateId());
+        if (level != null && level.getBlockState(worldPosition).getBlock() instanceof CustomContainerBlock container) {
+            rows = container.getRows();
+            cols = container.getCols();
+            net.minecraft.resources.ResourceLocation id = net.minecraft.resources.ResourceLocation.tryParse(container.getContainerId());
             if (id != null) {
-                type = ContainerCrateRegistry.CRATE_MENUS.get(id);
+                type = CustomContainerRegistry.CONTAINER_MENUS.get(id);
             }
         }
-        return new ContainerCrateMenu(type, containerId, playerInventory, this, rows, cols);
+        return new CustomContainerMenu(type, containerId, playerInventory, this, rows, cols);
     }
 }

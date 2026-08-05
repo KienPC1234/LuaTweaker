@@ -80,7 +80,7 @@ public class RecipesLuaBinding {
         try {
             String s = val.asString();
             if (s != null && !s.isEmpty()) return new ItemCount(s, 1);
-        } catch (Exception ignored) {}
+        } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
         throw new IllegalArgumentException("Expected item ID string or item() wrapper for argument '" + argName + "'");
     }
 
@@ -102,7 +102,7 @@ public class RecipesLuaBinding {
         try {
             String s = val.asString();
             if (s != null && !s.isEmpty()) return new IngredientWrapper(s);
-        } catch (Exception ignored) {}
+        } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
         throw new IllegalArgumentException("Expected ingredient string, tag (#), or ingredient() wrapper for argument '" + argName + "'");
     }
 
@@ -352,7 +352,7 @@ public class RecipesLuaBinding {
         if (engine != null) {
             ILuaTable recipeTable = engine.createTable();
             recipeTable.rawset("Shaped", args -> {
-                int off = getOffset(args);
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 String id = args[off].asString();
                 ILuaTable builder = engine.createTable();
                 final List<String> pattern = new ArrayList<>();
@@ -405,7 +405,7 @@ public class RecipesLuaBinding {
             });
 
             recipeTable.rawset("Shapeless", args -> {
-                int off = getOffset(args);
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 String id = args[off].asString();
                 ILuaTable builder = engine.createTable();
                 final List<IngredientWrapper> inputs = new ArrayList<>();
@@ -447,7 +447,7 @@ public class RecipesLuaBinding {
             });
 
             recipeTable.rawset("Smelting", args -> {
-                int off = getOffset(args);
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 String id = args[off].asString();
                 ILuaTable builder = engine.createTable();
                 final IngredientWrapper[] input = new IngredientWrapper[1];
@@ -475,7 +475,7 @@ public class RecipesLuaBinding {
             });
 
             recipeTable.rawset("Blasting", args -> {
-                int off = getOffset(args);
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 String id = args[off].asString();
                 ILuaTable builder = engine.createTable();
                 final IngredientWrapper[] input = new IngredientWrapper[1];
@@ -503,7 +503,7 @@ public class RecipesLuaBinding {
             });
 
             recipeTable.rawset("Smoking", args -> {
-                int off = getOffset(args);
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 String id = args[off].asString();
                 ILuaTable builder = engine.createTable();
                 final IngredientWrapper[] input = new IngredientWrapper[1];
@@ -531,7 +531,7 @@ public class RecipesLuaBinding {
             });
 
             recipeTable.rawset("Campfire", args -> {
-                int off = getOffset(args);
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 String id = args[off].asString();
                 ILuaTable builder = engine.createTable();
                 final IngredientWrapper[] input = new IngredientWrapper[1];
@@ -559,7 +559,7 @@ public class RecipesLuaBinding {
             });
 
             recipeTable.rawset("Smithing", args -> {
-                int off = getOffset(args);
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 String id = args[off].asString();
                 ILuaTable builder = engine.createTable();
                 final IngredientWrapper[] tmpl = new IngredientWrapper[1];
@@ -581,27 +581,27 @@ public class RecipesLuaBinding {
             });
 
             recipeTable.rawset("ReplaceInput", args -> {
-                int off = getOffset(args);
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 if (args.length - off >= 2) service.replaceInput(args[off].asString(), args[off + 1].asString());
                 return null;
             });
             recipeTable.rawset("ReplaceOutput", args -> {
-                int off = getOffset(args);
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 if (args.length - off >= 2) service.replaceOutput(args[off].asString(), args[off + 1].asString());
                 return null;
             });
             recipeTable.rawset("RemoveByOutput", args -> {
-                int off = getOffset(args);
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 if (args.length - off >= 1) service.removeByOutput(args[off].asString());
                 return null;
             });
             recipeTable.rawset("RemoveById", args -> {
-                int off = getOffset(args);
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 if (args.length - off >= 1) service.removeById(args[off].asString());
                 return null;
             });
             recipeTable.rawset("RemoveByMod", args -> {
-                int off = getOffset(args);
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
                 if (args.length - off >= 1) service.removeByMod(args[off].asString());
                 return null;
             });

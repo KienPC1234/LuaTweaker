@@ -72,7 +72,7 @@ function Skills:CastSkill(player, skillName)
         return false
     end
 
-    local ManaSystem = require("LuaTweaker.ManaSystem")
+    local ManaSystem = require(".src.server.mana_system")
     if not ManaSystem:HasEnough(player, skillCfg.cost) then
         player:sendActionBar("§cNot enough mana! Need " .. skillCfg.cost)
         return false

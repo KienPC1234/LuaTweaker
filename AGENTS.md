@@ -348,6 +348,7 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 | `modules/module-math/` | Vector3/Vector2/Color3, math/string extensions | `common-api`, `core-engine` |
 | `modules/module-interception/` | Anvil/brewing/trade interception | `common-api`, `core-engine` |
 | `modules/module-loot/` | Loot table manipulation (mob drops, chest loot, block drops, fishing) | `common-api`, `core-engine` |
+| `modules/module-update/` | Declarative update checker (https-only feeds) + permission-gated `Net:HttpGet` (`net.http`) | `common-api`, `core-engine` |
 | `neoforge-platform/` | **Only runnable module**. NeoForge launcher, registrars, PAL impl, commands | all of the above + NeoForge |
 
 Entrypoint: `com.luatweaker.platform.LuaTweakerMod` (`@Mod("luatweaker")`).
@@ -380,12 +381,14 @@ Java 21 (Temurin), Gradle wrapper, NeoForge 21.1.242. CI: `.github/workflows/bui
 
 # LuaMod Directory (Game Run Dir)
 
-- `luamods/<mod_id>/manifest.json` — identity + metadata (id, name, author, version, main, permissions)
+- `luamods/<mod_id>/manifest.json` — identity + metadata (id, name, author, version, main, permissions, update_url)
 - `luamods/<mod_id>/default_config.json` — defaults copied to `luaconfig/<mod_id>.json`
 - `luamods/<mod_id>/main.lua` — single autonomous entrypoint (requires `src/startup`, `src/server`, `src/client`)
 - `luamods/<mod_id>/assets/` + `data/` — auto-mounted virtual resourcepack & datapack roots
 - `.luatweaker/stubs/` — auto-generated EmmyLua stubs (class inheritance included)
 - `logs/luatweaker/mods/<mod_id>.log` — dedicated per-mod engine output
+
+> **Network security (module-update):** update checks are declarative only — `"update_url": "https://..."` in manifest.json is fetched by the engine on the Java side (https-only) and exposed read-only via `mod:GetUpdateStatus()` / `Update` service. Free HTTP (`Net:HttpGet`) is denied by default; it requires the `"net.http"` manifest permission and triggers red warnings in chat/logs.
 
 Dev workspace: `neoforge-platform/luamods/` → synced to `run/luamods/` by `syncLuaMods`.
 

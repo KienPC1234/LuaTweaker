@@ -18,8 +18,10 @@ public record LuaModManifest(
         @NotNull String author,
         @NotNull String version,
         @NotNull String main,
+        @NotNull String environment,
         @NotNull List<String> dependencies,
-        @NotNull List<String> permissions
+        @NotNull List<String> permissions,
+        @Nullable String updateUrl
 ) {
     private static final Gson GSON = new Gson();
 
@@ -29,8 +31,13 @@ public record LuaModManifest(
         if (author == null) author = "Unknown";
         if (version == null) version = "1.0.0";
         if (main == null || main.isBlank()) main = "main.lua";
+        if (environment == null || environment.isBlank()) throw new IllegalArgumentException("LuaMod manifest requires non-empty 'environment' (must be 'client', 'server', or 'universal')");
+        if (!environment.equals("client") && !environment.equals("server") && !environment.equals("universal")) {
+            throw new IllegalArgumentException("LuaMod manifest 'environment' must be 'client', 'server', or 'universal', found: " + environment);
+        }
         if (dependencies == null) dependencies = Collections.emptyList();
         if (permissions == null) permissions = Collections.emptyList();
+        if (updateUrl != null && updateUrl.isBlank()) updateUrl = null;
     }
 
     public static @Nullable LuaModManifest parseJson(@NotNull String jsonString) {
@@ -54,7 +61,18 @@ public record LuaModManifest(
                 json.getAsJsonArray("permissions").forEach(elem -> perms.add(elem.getAsString()));
             }
 
-            return new LuaModManifest(id, name, author, version, main, deps, perms);
+            String updateUrl = null;
+            if (json.has("update_url") && json.get("update_url").isJsonPrimitive()) {
+                updateUrl = json.get("update_url").getAsString().trim();
+                if (updateUrl.isEmpty()) updateUrl = null;
+            }
+
+            if (!json.has("environment")) {
+                throw new IllegalArgumentException("Missing 'environment' field");
+            }
+            String environment = json.get("environment").getAsString();
+
+            return new LuaModManifest(id, name, author, version, main, environment, deps, perms, updateUrl);
         } catch (Exception e) {
             return null;
         }

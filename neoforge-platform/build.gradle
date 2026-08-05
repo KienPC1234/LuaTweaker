@@ -7,6 +7,7 @@ plugins {
 
 evaluationDependsOn ':modules:module-loot'
 evaluationDependsOn ':modules:module-worldgen'
+evaluationDependsOn ':modules:module-update'
 
 version = mod_version
 group = mod_group_id
@@ -82,6 +83,7 @@ neoForge {
  sourceSet(project(':modules:module-command').sourceSets.main)
  sourceSet(project(':modules:module-loot').sourceSets.main)
  sourceSet(project(':modules:module-worldgen').sourceSets.main)
+ sourceSet(project(':modules:module-update').sourceSets.main)
         }
     }
 }
@@ -110,6 +112,7 @@ dependencies {
  jarJar(project(':modules:module-command'))
  jarJar(project(':modules:module-loot'))
  jarJar(project(':modules:module-worldgen'))
+ jarJar(project(':modules:module-update'))
 
     // Also needed at compile time
     implementation project(':common-api')
@@ -128,6 +131,7 @@ dependencies {
  implementation project(':modules:module-command')
  implementation project(':modules:module-loot')
  implementation project(':modules:module-worldgen')
+ implementation project(':modules:module-update')
 
     // JEI integration for checking recipes in-game easily
     implementation "mezz.jei:jei-1.21.1-neoforge:19.32.0.359"
@@ -200,4 +204,5 @@ neoForge.ideSyncTask generateModMetadata
 neoForge.ideSyncTask copyDevelopmentMods
 neoForge.ideSyncTask syncLuaMods
 neoForge.ideSyncTask syncLuaConfig
+
 

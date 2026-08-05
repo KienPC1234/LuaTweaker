@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class DynamicKeyMappingHandler {
     private static final Map<String, KeyMappingRecord> REGISTERED_MAPPINGS = new ConcurrentHashMap<>();
+    private static final Map<String, Boolean> LAST_DOWN_STATE = new ConcurrentHashMap<>();
 
     private record KeyMappingRecord(KeyMapping mapping, String payload) {}
 
@@ -20,8 +21,14 @@ public class DynamicKeyMappingHandler {
         Object service = LuaServiceRegistry.get("KeyBindService");
         if (service instanceof IKeyBindService keyBindService) {
             for (IKeyBindService.KeyBindEntry entry : keyBindService.getRegisteredKeyBinds()) {
-                String descKey = (entry.displayName() != null && !entry.displayName().isBlank()) ? entry.displayName() : "key.luatweaker." + entry.id();
-                String categoryKey = "key.categories." + entry.category();
+                // Display name and category are used VERBATIM: Minecraft's translatable
+                // component falls back to the raw string when no lang entry exists, so a
+                // mod can declare a plain label ("Ruby Mod Controls") and it shows as-is.
+                // Lang entries are optional — they only override the label (i18n).
+                String descKey = (entry.displayName() != null && !entry.displayName().isBlank())
+                        ? entry.displayName() : entry.id();
+                String categoryKey = (entry.category() != null && !entry.category().isBlank())
+                        ? entry.category() : "LuaTweaker";
                 KeyMapping keyMapping = new KeyMapping(
                         descKey,
                         InputConstants.Type.KEYSYM,
@@ -29,10 +36,16 @@ public class DynamicKeyMappingHandler {
                         categoryKey
                 );
                 event.register(keyMapping);
-                REGISTERED_MAPPINGS.put(entry.id(), new KeyMappingRecord(keyMapping, entry.onPressPayload()));
+                KeyMappingRecord previous = REGISTERED_MAPPINGS.put(entry.id(), new KeyMappingRecord(keyMapping, entry.onPressPayload()));
+                if (previous != null) {
+                    com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                            com.luatweaker.api.log.LogStage.SYSTEM,
+                            "[KeyMapping] Duplicate keybind id '" + entry.id() + "' overwritten — mods must use unique ids to avoid collisions"
+                    );
+                }
                 com.luatweaker.api.log.LuaTweakerLog.get().info(
                         com.luatweaker.api.log.LogStage.SYSTEM,
-                        "[KeyMapping] Registered Dynamic KeyBinding with Minecraft Controls: '" + descKey + "' (ID: " + entry.id() + ", Default Key: " + entry.defaultKey() + ")"
+                        "[KeyMapping] Registered Dynamic KeyBinding with Minecraft Controls: '" + descKey + "' (ID: " + entry.id() + ", Category: " + categoryKey + ", Default Key: " + entry.defaultKey() + ")"
                 );
             }
         }
@@ -42,24 +55,32 @@ public class DynamicKeyMappingHandler {
         for (Map.Entry<String, KeyMappingRecord> mapEntry : REGISTERED_MAPPINGS.entrySet()) {
             String keyBindId = mapEntry.getKey();
             KeyMappingRecord record = mapEntry.getValue();
-            while (record.mapping().consumeClick()) {
-                if (Platform.isInitialized()) {
-                    com.luatweaker.api.log.LuaTweakerLog.get().info(
-                            com.luatweaker.api.log.LogStage.SYSTEM,
-                            "[KeyMapping] KeyMapping Triggered: '" + keyBindId + "' (Payload: " + record.payload() + ")"
-                    );
+            // Edge-trigger: fire exactly once per press. consumeClick() would replay
+            // every queued press while a key is HELD (OS auto-repeat queues several
+            // press events per tick), flooding the server with duplicate packets.
+            boolean isDown = InputConstants.isKeyDown(
+                    net.minecraft.client.Minecraft.getInstance().getWindow().getWindow(),
+                    record.mapping().getKey().getValue());
+            boolean wasDown = Boolean.TRUE.equals(LAST_DOWN_STATE.getOrDefault(keyBindId, false));
+            LAST_DOWN_STATE.put(keyBindId, isDown);
+            if (!isDown || wasDown || !Platform.isInitialized()) {
+                continue;
+            }
 
-                    // 1. Trigger Client-side Lua Signal by KeyMapping ID
-                    Object service = LuaServiceRegistry.get("KeyBindService");
-                    if (service instanceof IKeyBindService keyBindService) {
-                        keyBindService.triggerKeyBind(keyBindId, record.payload());
-                    }
+            com.luatweaker.api.log.LuaTweakerLog.get().info(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "[KeyMapping] KeyMapping Triggered: '" + keyBindId + "' (Payload: " + record.payload() + ")"
+            );
 
-                    // 2. If payload is present, also send payload packet to server
-                    if (record.payload() != null && !record.payload().isEmpty()) {
-                        Platform.getNetwork().sendPayloadPacketToServer(record.payload(), "[]");
-                    }
-                }
+            // 1. Trigger Client-side Lua Signal by KeyMapping ID
+            Object service = LuaServiceRegistry.get("KeyBindService");
+            if (service instanceof IKeyBindService keyBindService) {
+                keyBindService.triggerKeyBind(keyBindId, record.payload());
+            }
+
+            // 2. If payload is present, also send payload packet to server
+            if (record.payload() != null && !record.payload().isEmpty()) {
+                Platform.getNetwork().sendPayloadPacketToServer(record.payload(), "[]");
             }
         }
     }

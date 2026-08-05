@@ -219,22 +219,4 @@ public final class FluidRegistrar {
         }
     }
 
-    public void registerClientExtensions(RegisterClientExtensionsEvent event) {
-        // FluidType.initializeClient already registers IClientFluidTypeExtensions during creation
-    }
-
-    public void registerItemColors(RegisterColorHandlersEvent.Item event) {
-        for (IFluidBuilder builder : contentService.getRegisteredFluids()) {
-            ResourceLocation bucketRl = locationParser.apply(builder.getId() + "_bucket");
-            Item bucketItem = createdItems.get(bucketRl);
-            if (bucketItem != null) {
-                event.register(new DynamicFluidContainerModel.Colors(), bucketItem);
-            }
-            ResourceLocation altBucketRl = locationParser.apply(builder.getId().replace("_fluid", "") + "_bucket");
-            Item altBucketItem = createdItems.get(altBucketRl);
-            if (altBucketItem != null && altBucketItem != bucketItem) {
-                event.register(new DynamicFluidContainerModel.Colors(), altBucketItem);
-            }
-        }
-    }
 }

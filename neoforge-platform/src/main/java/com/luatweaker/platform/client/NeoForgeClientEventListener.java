@@ -43,7 +43,12 @@ public class NeoForgeClientEventListener {
     public static void onRenderFrame(RenderFrameEvent.Pre event) {
         ILuaEngine engine = LuaTweakerMod.getActiveEngine();
         if (engine != null) {
-            fireRunServiceSignal(engine, "RenderStepped", (double) net.minecraft.client.Minecraft.getInstance().getTimer().getGameTimeDeltaTicks());
+            double deltaTime = (double) net.minecraft.client.Minecraft.getInstance().getTimer().getGameTimeDeltaTicks();
+            fireRunServiceSignal(engine, "RenderStepped", deltaTime);
+            // Tween updates should use real time delta in seconds. Minecraft ticks are 1/20th of a second.
+            // But gameTimeDeltaTicks is partial tick fraction? No, getTimer().getGameTimeDeltaTicks() is in ticks (1 tick = 50ms = 0.05s).
+            // Actually, for real-time tweening, we should probably use real delta time, but since it's game ticks we just multiply by 0.05.
+            com.luatweaker.client.TweenServiceImpl.tickAll(deltaTime * 0.05);
         }
     }
 
@@ -51,7 +56,10 @@ public class NeoForgeClientEventListener {
     public static void onClientTick(ClientTickEvent.Post event) {
         ILuaEngine engine = LuaTweakerMod.getActiveEngine();
         if (engine != null) {
-            // Standard Minecraft tick is 50ms (0.05s)
+            // Standard Minecraft tick is 50ms (0.05s).
+            // NOTE: the Lua task queues are pumped from the SERVER tick only
+            // (LuaTweakerMod.onServerTick); pumping here too would resume
+            // coroutines from a second thread and freeze the game.
             fireRunServiceSignal(engine, "Heartbeat", 0.05);
         }
     }
@@ -92,6 +100,24 @@ public class NeoForgeClientEventListener {
             // Ignore frame render errors to prevent crashing client loop
         } finally {
             NeoForgeGuiService.clearGraphics();
+        }
+
+        // Render screen flash overlay on top of everything
+        int flashColor = com.luatweaker.client.ClientEffectsServiceImpl.getActiveFlashColor();
+        if (flashColor != 0) {
+            int width = net.minecraft.client.Minecraft.getInstance().getWindow().getGuiScaledWidth();
+            int height = net.minecraft.client.Minecraft.getInstance().getWindow().getGuiScaledHeight();
+            event.getGuiGraphics().fill(0, 0, width, height, flashColor);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onComputeCameraAngles(net.neoforged.neoforge.client.event.ViewportEvent.ComputeCameraAngles event) {
+        float[] shake = com.luatweaker.client.CameraServiceImpl.getCameraShakeOffsets();
+        if (shake != null && shake.length == 3) {
+            event.setYaw(event.getYaw() + shake[0]);
+            event.setPitch(event.getPitch() + shake[1]);
+            event.setRoll(event.getRoll() + shake[2]);
         }
     }
 }

@@ -141,7 +141,7 @@ public class LuaScriptsIntegrationTest {
         // Register all services using LuaServiceBootstrap
         LuaServiceBootstrap.registerAllServices(engine, contentService, storageService, datapackService, recipeManager);
 
-        assertDoesNotThrow(() -> LuaModManager.loadLuaMods(baseDir, engine),
+        assertDoesNotThrow(() -> LuaModManager.loadLuaMods(baseDir, engine, "universal"),
                 "Failed executing autonomous LuaMods in " + baseDir.getAbsolutePath());
 
         // Verify Network RemoteEvent Firing & Execution

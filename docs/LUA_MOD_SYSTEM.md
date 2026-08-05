@@ -81,7 +81,82 @@ Every Lua Mod **must** contain a `manifest.json` at its root:
 | `icon` | ❌ | `""` | Icon path inside `assets/` (e.g. `textures/gui/icon.png`) |
 | `dependencies` | ❌ | `[]` | Required LuaMod IDs (validated at load) |
 | `minLuaTweakerVersion` | ❌ | `""` | Minimum LuaTweaker version required |
-| `permissions` | ❌ | `[]` | Runtime permissions granted to the mod (e.g. `runtime.reflection`, `runtime.bytecode_hook`). Denied at load time if undeclared. See [**JAVA_PATCHER.md**](JAVA_PATCHER.md) |
+| `permissions` | ❌ | `[]` | Runtime permissions granted to the mod (e.g. `runtime.reflection`, `runtime.bytecode_hook`, `net.http`). Denied at load time if undeclared. See [**JAVA_PATCHER.md**](JAVA_PATCHER.md) |
+| `update_url` | ❌ | — | **HTTPS** URL of a JSON update feed (see [Update Checking](#-update-checking--network-security)) |
+
+---
+
+## 🛡️ Update Checking & Network Security
+
+The engine treats outbound network access like a smart mailbox: the postman may
+only drop the right postcard into the slot, never walk into the living room.
+
+### Layer 1 — Declarative Update Checks (default, 0 lines of Lua)
+
+```json
+{
+  "id": "gt_addon",
+  "version": "1.0.2",
+  "environment": "universal",
+  "update_url": "https://raw.githubusercontent.com/.../update.json"
+}
+```
+
+The engine downloads the feed **on the Java side** (never inside the Lua
+sandbox) at mod load time, compares versions and shows a chat notice when a
+player joins. Only `https://` feeds are accepted — plain HTTP is rejected.
+
+Expected feed JSON:
+
+```json
+{
+  "version": "1.1.0",
+  "name": "1.1.0 - New features",
+  "download_url": "https://example.com/gt_addon-1.1.0.jar",
+  "changelog": "- Fixed everything"
+}
+```
+
+Only `version` is required. Comparison is segment-based numeric (so `1.10`
+beats `1.9`), with lexicographic fallback for non-numeric segments.
+
+### Layer 2 — Safe Read-Only Status API (for custom UIs)
+
+The engine caches the feed result in RAM; Lua only reads it:
+
+```lua
+local updateInfo = mod:GetUpdateStatus("gt_addon")   -- or Update:GetStatus("gt_addon")
+if updateInfo and updateInfo.HasUpdate then
+    print("New version: " .. updateInfo.LatestVersion)
+end
+-- Fields: HasUpdate, LatestVersion, CurrentVersion, UpdateUrl, DownloadUrl,
+--         Changelog, Name, Checking, Error
+local all = Update:GetUpdates()  -- table of all available updates keyed by mod id
+```
+
+### Layer 3 — Permission-Gated HTTP GET (locked by default)
+
+Free HTTP is **denied by default**. The permission is **per installation**:
+the Lua VM cannot attribute a runtime call to the mod that made it (the
+`mod` global is only trustworthy while an entrypoint runs and is spoofable
+from Lua), so the grant is granted by the Java-side registry whenever **any**
+loaded mod declares it:
+
+```json
+{
+  "permissions": ["net.http"]
+}
+```
+
+- `Net:HttpGet(url, timeoutSeconds)` returns `{Success, StatusCode, Body, Json, Error}`.
+  `Json` is the parsed body when it is valid JSON.
+- The call is synchronous on the calling thread; keep `timeoutSeconds` low
+  (default 5, clamped to 1–60) and never call it from hot paths.
+- With no granting mod loaded, every call is rejected loudly — regardless of
+  what a script writes into the `mod` global.
+- Granting mods are listed in a loud warning on first HTTP use and in chat at
+  player login, so malicious or careless mods cannot reach the internet
+  silently.
 
 ---
 

@@ -30,7 +30,7 @@ Commands:Register("arcane", {
         local subcommand = args[1]
 
         if subcommand == "resetmana" then
-            local ManaSystem = require("LuaTweaker.ManaSystem")
+            local ManaSystem = require(".src.server.mana_system")
             local cfg = CONFIG
             ManaSystem:SetMana(player, cfg.mana.max_mana)
             sender:sendMessage("§bMana reset to " .. cfg.mana.max_mana)
@@ -45,7 +45,7 @@ Commands:Register("arcane", {
                 sender:sendMessage("§cInvalid amount: " .. args[2])
                 return
             end
-            local ManaSystem = require("LuaTweaker.ManaSystem")
+            local ManaSystem = require(".src.server.mana_system")
             local actual = ManaSystem:RestoreMana(player, amount)
             sender:sendMessage("§bRestored " .. actual .. " mana")
 
@@ -53,7 +53,7 @@ Commands:Register("arcane", {
             local px = player:getX()
             local py = player:getY()
             local pz = player:getZ()
-            local EntityService = require("LuaTweaker.EntityService")
+            local EntityService = require("LuaTweaker.Entities")
             local boss = EntityService:spawnEntity("luatweaker:crystal_golem", px + 3, py, pz + 3)
             if boss ~= nil then
                 sender:sendMessage("§b§lCrystal Golem spawned!")
@@ -62,7 +62,7 @@ Commands:Register("arcane", {
             end
 
         elseif subcommand == "status" then
-            local ManaSystem = require("LuaTweaker.ManaSystem")
+            local ManaSystem = require(".src.server.mana_system")
             local current = ManaSystem:GetMana(player)
             local maxMana = ManaSystem:GetMaxMana(player)
             local percent = ManaSystem:GetManaPercent(player)

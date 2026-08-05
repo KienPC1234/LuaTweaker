@@ -116,29 +116,7 @@ public final class EntityRegistrar {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    public void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
-        for (IEntityBuilder e : contentService.getRegisteredEntities()) {
-            try {
-                ResourceLocation rl = locationParser.apply(e.getId());
-                EntityType<?> rawType = createdEntityTypes.get(rl);
 
-                if (rawType != null) {
-                    EntityType entityType = rawType;
-                    ResourceLocation texLoc = e.getTexture() != null
-                            ? locationParser.apply(e.getTexture())
-                            : ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/zombie/zombie.png");
-
-                    MobParentRegistry.MobParentAdapter adapter = MobParentRegistry.getAdapter(e.getParentMob());
-                    event.registerEntityRenderer(entityType, ctx -> adapter.rendererFactory().create(ctx, texLoc));
-
-                    LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom EntityRenderer (Adapter: " + adapter.id() + ") for: " + rl);
-                }
-            } catch (Exception ex) {
-                LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed entity renderer registration for " + e.getId() + ": " + ex.getMessage());
-            }
-        }
-    }
 
     private MobCategory parseCategory(String cat) {
         if (cat == null) return MobCategory.MONSTER;
