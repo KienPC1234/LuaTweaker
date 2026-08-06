@@ -138,6 +138,168 @@ public class ContentBuilderTest {
     }
 
     @Test
+    public void testNewBlockPropertiesFromLua() throws IOException {
+        String script = """
+            local Content = require("LuaTweaker.Content")
+            local b = Content.NewBlock("prop_block")
+                :MapColor("RED")
+                :JumpFactor(1.5)
+                :SpeedFactor(0.5)
+                :NoCollision(true)
+                :NoOcclusion(true)
+                :PushReaction("BLOCK")
+                :Replaceable(true)
+                :IgnitedByLava(true)
+                :OffsetType("XZ")
+                :RedstoneConductor(false)
+                :Register()
+        """;
+        File file = createTempScript(script);
+        engine.executeScript(file, "TEST");
+
+        IBlockBuilder builder = contentService.getRegisteredBlocks().iterator().next();
+        assertEquals("prop_block", builder.getId());
+        assertEquals("RED", builder.getMapColor());
+        assertEquals(1.5f, builder.getJumpFactor());
+        assertEquals(0.5f, builder.getSpeedFactor());
+        assertTrue(builder.isNoCollision());
+        assertTrue(builder.isNoOcclusion());
+        assertEquals("BLOCK", builder.getPushReaction());
+        assertTrue(builder.isReplaceable());
+        assertTrue(builder.isIgnitedByLava());
+        assertFalse(builder.isLiquid(), "liquid must default to false");
+        assertEquals("XZ", builder.getOffsetType());
+        assertEquals(Boolean.FALSE, builder.getRedstoneConductor());
+    }
+
+    @Test
+    public void testContainerSlotCustomizationFromLua() throws IOException {
+        String script = """
+            local Content = require("LuaTweaker.Content")
+            local crate = Content.NewBlock("slot_crate")
+                :Container(4, 6, "packed")
+                :SlotTexture("luatweaker:textures/gui/wood_crate_slot.png")
+                :LockSlot(0, true)
+                :LockedSlots({ 5, 11 })
+                :SlotPosition(23, 44, 89)
+                :Register()
+            local openCrate = Content.NewBlock("open_crate")
+                :Container(2, 3, "spill")
+                :LockSlot(2, true)
+                :LockSlot(2, false)
+                :Register()
+        """;
+        File file = createTempScript(script);
+        engine.executeScript(file, "TEST");
+
+        assertEquals(2, contentService.getRegisteredBlocks().size());
+        boolean sawSlots = false;
+        boolean sawUnlock = false;
+        for (IBlockBuilder builder : contentService.getRegisteredBlocks()) {
+            if ("slot_crate".equals(builder.getId())) {
+                assertEquals("luatweaker:textures/gui/wood_crate_slot.png", builder.getSlotTexture());
+                assertEquals(java.util.Set.of(0, 5, 11), builder.getLockedSlots());
+                assertArrayEquals(new int[]{44, 89}, builder.getSlotPositions().get(23),
+                        "custom slot position must be stored per index");
+                assertEquals(1, builder.getSlotPositions().size());
+                sawSlots = true;
+            } else if ("open_crate".equals(builder.getId())) {
+                assertTrue(builder.getLockedSlots().isEmpty(),
+                        "locking then unlocking a slot must remove it from the locked set");
+                sawUnlock = true;
+            }
+        }
+        assertTrue(sawSlots, "customized container must have been registered");
+        assertTrue(sawUnlock, "unlock container must have been registered");
+    }
+
+    @Test
+    public void testMachineFeaturesFromLua() throws IOException {
+        String script = """
+            local Content = require("LuaTweaker.Content")
+            local machine = Content.NewBlock("test_machine")
+                :Container(3, 3, "packed")
+                :EnergyStorage(10000, 500, 250)
+                :FluidStorage(8000)
+                :GuiBar("energy_bar", 8, 60, 90, 10, "energy", 0xFF00E676)
+                :GuiBar("tank", 150, 40, 8, 40, "fluid", 0xFF2196F3)
+                :BooleanState("running", "luatweaker:block/test_machine", "luatweaker:block/test_machine_running")
+                :Register()
+            local pipe = Content.NewBlock("test_pipe")
+                :Texture("luatweaker:block/test_pipe")
+                :Container(1, 1, "none")
+                :ConnectionState(true)
+                :EnergyStorage(2000, 200, 200)
+                :FluidStorage(4000)
+                :OnTick(function(data)
+                    print("tick at " .. data.X .. "," .. data.Y .. "," .. data.Z)
+                end)
+                :Register()
+            local machine = Content.NewBlock("tick_machine")
+                :Container(2, 2, "packed")
+                :EnergyStorage(1000, 100, 100)
+                :OnTick(function(data)
+                    print("machine energy " .. data.Energy)
+                end)
+                :Register()
+        """;
+        File file = createTempScript(script);
+        engine.executeScript(file, "TEST");
+
+        assertEquals(3, contentService.getRegisteredBlocks().size());
+        for (IBlockBuilder builder : contentService.getRegisteredBlocks()) {
+            if ("test_machine".equals(builder.getId())) {
+                assertEquals(10000, builder.getEnergyCapacity());
+                assertEquals(500, builder.getEnergyMaxReceive());
+                assertEquals(250, builder.getEnergyMaxExtract());
+                assertEquals(8000, builder.getFluidCapacity());
+                assertEquals(2, builder.getGuiBars().size());
+                var energyBar = builder.getGuiBars().get(0);
+                assertEquals("energy_bar", energyBar.id());
+                assertEquals(90, energyBar.width());
+                assertEquals("energy", energyBar.source());
+                assertEquals(0xFF00E676, energyBar.color());
+                assertEquals("fluid", builder.getGuiBars().get(1).source());
+                assertNotNull(builder.getBooleanState());
+                assertEquals("running", builder.getBooleanState().property());
+                assertEquals("luatweaker:block/test_machine_running", builder.getBooleanState().onTexture());
+                assertFalse(builder.isConnectionState());
+                assertNull(builder.getTickHandler(), "no onTick registered for the plain machine");
+            } else if ("test_pipe".equals(builder.getId())) {
+                assertTrue(builder.isConnectionState());
+                assertNull(builder.getBooleanState());
+                assertEquals("luatweaker:block/test_pipe", builder.getTexture());
+                assertEquals(2000, builder.getEnergyCapacity());
+                assertEquals(4000, builder.getFluidCapacity());
+                assertNotNull(builder.getTickHandler(), "pipe transport must be Lua-defined via onTick");
+            } else if ("tick_machine".equals(builder.getId())) {
+                assertNotNull(builder.getTickHandler(), "onTick handler must be stored");
+            }
+        }
+    }
+
+    @Test
+    public void testItemOnUseOnBlockFromLua() throws IOException {
+        String script = """
+            local Content = require("LuaTweaker.Content")
+            local wrench = Content.NewItem("test_wrench")
+                :MaxStackSize(1)
+                :DisplayName("Test Wrench")
+                :OnUseOnBlock(function(player, hit)
+                    print("hit " .. hit.X .. "," .. hit.Y .. "," .. hit.Z .. " face=" .. hit.Face)
+                    return true
+                end)
+                :Register()
+        """;
+        File file = createTempScript(script);
+        engine.executeScript(file, "TEST");
+
+        IItemBuilder builder = contentService.getRegisteredItems().iterator().next();
+        assertEquals("test_wrench", builder.getId());
+        assertNotNull(builder.getOnUseOnBlockHandler(), "onUseOnBlock handler must be stored");
+    }
+
+    @Test
     public void testStorageFromLua() throws IOException {
         String script = """
             storage:set("test_key", "hello_world")

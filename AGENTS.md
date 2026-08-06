@@ -1,6 +1,13 @@
-# LuaTweaker ⚠️ READ THIS FIRST
+# LuaTweaker ⚠️ READ THIS FIRST (LỆNH TỐI CAO - KHÔNG LÀM HỘ USER)
 
 Minecraft 1.21.1 NeoForge mod — Lua scripting engine with runtime recipe/content patching.
+
+> **🛑 CẢNH BÁO ĐỎ CẤP ĐỘ 0: TRIẾT LÝ LOW-LEVEL API (CHỐNG LÁCH LUẬT)**
+> **Nhiệm vụ của bạn là CUNG CẤP CÔNG CỤ (Tool) chứ không phải LÀM HỘ (Do it for them).**
+> - **TUYỆT ĐỐI CẤM:** Xây dựng các wrapper/class high-level trên Java bọc hết mọi logic hoặc tạo các DSL khổng lồ che giấu sự phức tạp (Tư duy KubeJS).
+> - **CẤU TRÚC BẮT BUỘC:** Phải export **NHIỀU HÀM LOW-LEVEL, NGUYÊN THỦY** (ví dụ: `Raycast()`, `ApplyDamage()`, `SpawnParticle()`, `GetLookVec()`, v.v.) ra môi trường Lua. 
+> - **MỤC ĐÍCH:** Để người dùng (Lua Mod) tự do viết script, tự lắp ráp và tùy biến logic gameplay của riêng họ (Kiểu GMod / Roblox / WoW).
+> - **NẾU BẠN LÁCH LUẬT:** Việc bạn nhóm/gộp logic thành một hàm high-level to đùng trên Java (ví dụ: tạo Java method `castMagicSpell()` thay vì cấp các hàm rời rạc như `getCustomData()` / `setCustomData()` + `fireProjectile()` cho Lua) bị coi là **PHÁ HOẠI KIẾN TRÚC**.
 
 > **🚨 CRITICAL: Every AI agent MUST strictly follow ALL rules below. Violations cause bugs, broken builds, and SOLID violations.**
 
@@ -130,15 +137,26 @@ The SPIRIT of each rule is as binding as its LETTER. No technical bypasses, no p
 
 ---
 
-# ⚠️ CRITICAL SECTION 1 — LuaTweaker Style & Quy Trình Tạo Module Mới
+# ⚠️ CRITICAL SECTION 1 — Triết Lý Thiết Kế Cốt Lõi & Bản Sắc LuaTweaker
 
-> **🚨 BẢN SẮC THIẾT KẾ: TƯ DUY LẮP RÁP (MODULE & BUILDER) + NGỮ PHÁP TỰ NHIÊN CỦA LUA**
+> **🚨 TRIẾT LÝ CỐT LÕI: CUNG CẤP CÔNG CỤ (GMOD / ROBLOX / WOW STYLE) — KHÔNG LÀM HỘ (ANTI-KUBEJS)**
+> **Tầm nhìn xa:** Không viết code lởm/hacky chỉ để hoàn thành tính năng ngắn hạn. Xây dựng API nền tảng vững chắc, linh hoạt để user tự do sáng tạo.
 
-## 1. Bản Sắc Thiết Kế LuaTweaker Style
+## 1.1 Triết Lý API (BẮT BUỘC ĐỌC)
+
+1. **Cung cấp "Nguyên liệu" (Low-level), KHÔNG cung cấp "Thành phẩm" (High-level):**
+   - **✅ Chuẩn GMod / Roblox / WoW:** Cung cấp các API cơ bản, nguyên thủy, đa dụng (vd: `Raycast`, `ApplyImpulse`, `PlaySound`, `Timer`, `Events`). Trao quyền để user tự dùng Lua lắp ráp thành các cơ chế phức tạp (skills, súng, phép thuật, mini-games).
+   - **❌ Anti-KubeJS Pattern (CẤM):** KHÔNG tạo ra các abstraction/wrapper khổng lồ làm thay mọi thứ cho user (vd: cấm làm `MagicSpellBuilder` tự lo trừ mana, tính cooldown, spawn particle). Việc "làm hộ" quá nhiều sẽ tạo ra hệ thống cứng nhắc, cực kỳ khó maintain, hạn chế sự sáng tạo và "rất dễ toang" khi scale lên.
+
+2. **Chất Lượng Code & Tầm Nhìn Dài Hạn Đặt Lên Hàng Đầu:**
+   - Tuyệt đối không viết code lởm, code kém chất lượng (hacky workarounds) chỉ để qua bài test hoặc xong task nhanh. Phải có tư duy dài hạn.
+   - Java layer chỉ làm nhiệm vụ CẦU NỐI (bridge) nhanh, an toàn và tối ưu xuống NeoForge. Phần não bộ (logic trò chơi) phải nằm trọn ở Lua.
+
+## 1.2 Bản Sắc Thiết Kế LuaTweaker Style (Pattern & Cú Pháp)
 
 1. **Content & Recipe Definitions (Đăng ký tĩnh):**
    - Chainable Builder Pattern theo Namespace: `Content.NewItem("id")`, `Content.NewBlock("id")`, `Content.createEntity("id", fn)`, `Recipe.Shaped("id"):Pattern(...):Register()`.
-   - **CẤM** hàm global trôi nổi `item()`, `ingredient()` làm API chính (chúng chỉ là helper trong recipes).
+   - Các Builder này chỉ làm nhiệm vụ **khai báo** dữ liệu cơ bản. **CẤM** hàm global trôi nổi `item()`, `ingredient()` làm API chính (chúng chỉ là helper trong recipes).
 
 2. **Runtime Services & AI Logic:**
    - Service/Signal PascalCase: `Events:Listen(...)`, `Task:delay(...)`, `World:StrikeLightning(...)`, `Vector3.new(...)`.
@@ -153,7 +171,7 @@ The SPIRIT of each rule is as binding as its LETTER. No technical bypasses, no p
 
 ---
 
-## 2. Quy Trình 5 Bước Tạo 1 Module Mới Chuẩn OOP
+## 1.3 Quy Trình 5 Bước Tạo 1 Module Mới Chuẩn OOP
 
 ### Bước 1: Khai báo Java Interface trong `common-api` với `@LuaDoc` (+ `@LuaDefault` cho tham số tùy chọn)
 ```java

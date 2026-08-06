@@ -27,5 +27,14 @@ public interface ILuaEngine {
 
     ILuaValue toLuaValue(Object obj);
     ILuaValue callFunction(ILuaValue function, ILuaValue... args);
+
+    /**
+     * Invokes a Lua function and returns ALL return values (not just the first).
+     * Empty when the function is nil or errored.
+     */
+    default ILuaValue[] callFunctionMulti(ILuaValue function, ILuaValue... args) {
+        ILuaValue result = callFunction(function, args);
+        return (result == null || result.isNil()) ? new ILuaValue[0] : new ILuaValue[]{result};
+    }
     ILuaTable getGlobalEnvironment();
 }

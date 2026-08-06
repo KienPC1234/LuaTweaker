@@ -5,6 +5,7 @@
 
 -- ==== STARTUP PHASE: Content Registration ====
 require(".src.startup.content")
+require(".src.startup.dimension")
 
 -- ==== SERVER PHASE: Game Logic ====
 require(".src.server.mana_system")

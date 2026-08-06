@@ -342,6 +342,43 @@ public class NeoForgeInteractionPlatform implements IPlatformInteraction {
     }
 
     @Override
+    public boolean placeStructure(@NotNull String dimension, @NotNull String templateId,
+                                  int x, int y, int z, int rotationDegrees) {
+        net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
+        if (level == null) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "placeStructure failed: dimension '" + dimension + "' is not loaded");
+            return false;
+        }
+        net.minecraft.resources.ResourceLocation rl = net.minecraft.resources.ResourceLocation.tryParse(templateId);
+        if (rl == null) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "placeStructure failed: invalid template id '" + templateId + "'");
+            return false;
+        }
+        java.util.Optional<net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate> template =
+                level.getStructureManager().get(rl);
+        if (template.isEmpty()) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "placeStructure failed: template '" + templateId
+                            + "' not found (data/" + rl.getNamespace() + "/structures/" + rl.getPath() + ".nbt)");
+            return false;
+        }
+        net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings settings =
+                new net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings()
+                        .setRotation(net.minecraft.world.level.block.Rotation.values()[
+                                Math.floorMod(rotationDegrees / 90, 4)]);
+        net.minecraft.util.RandomSource random = net.minecraft.util.RandomSource.create();
+        settings.setRandom(random);
+        template.get().placeInWorld(level, new net.minecraft.core.BlockPos(x, y, z),
+                new net.minecraft.core.BlockPos(0, 0, 0), settings, random, 2);
+        return true;
+    }
+
+    @Override
     public boolean executeCommand(@NotNull String command) {
         var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
         if (server == null || command == null || command.isBlank()) return false;

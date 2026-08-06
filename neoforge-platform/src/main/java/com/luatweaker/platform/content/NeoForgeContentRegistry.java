@@ -195,12 +195,24 @@ public class NeoForgeContentRegistry {
                 : com.luatweaker.platform.container.CustomContainerRegistry.CONTAINER_BE_TYPES.values()) {
             event.registerBlockEntity(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, type,
                     (be, direction) -> be);
+            // Machine blocks (Lua:EnergyStorage / Lua:FluidStorage) additionally expose
+            // the NeoForge energy and fluid capabilities - cables/ducts can charge and
+            // fill them without any extra mods.
+            event.registerBlockEntity(net.neoforged.neoforge.capabilities.Capabilities.EnergyStorage.BLOCK, type,
+                    (be, direction) -> be.getEnergyCapacity() > 0 ? be : null);
+            event.registerBlockEntity(net.neoforged.neoforge.capabilities.Capabilities.FluidHandler.BLOCK, type,
+                    (be, direction) -> be.getFluidCapacity() > 0 ? be : null);
         }
     }
 
     @SubscribeEvent
     public void onEntityAttributeCreation(EntityAttributeCreationEvent event) {
         entityRegistrar.onEntityAttributeCreation(event);
+    }
+
+    @SubscribeEvent
+    public void onRegisterSpawnPlacements(net.neoforged.neoforge.event.entity.RegisterSpawnPlacementsEvent event) {
+        entityRegistrar.onRegisterSpawnPlacements(event);
     }
 
     private ResourceLocation parseLocation(String id) {

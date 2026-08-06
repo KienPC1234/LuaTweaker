@@ -93,6 +93,8 @@ local RubyBlock = Content.NewBlock("ruby_block")
     :RequiresTool(true)
     :MineableWith("pickaxe")
     :MiningLevel("iron")
+    :MapColor("RED")
+    :PushReaction("BLOCK")
     :CreativeTab("ruby_tab")
     :Tag("c:storage_blocks/ruby")
     :Tag("c:storage_blocks")
@@ -132,16 +134,24 @@ local RubyWall = Content.NewBlock("ruby_wall")
 --   "none"   = nothing drops
 -- :ItemFilter(fn) — pure-Lua container rule: return true to allow the item in,
 --                  false to reject it (fires 'ContainerItemRejected' event).
+-- :SlotTexture(path) — custom 18x18 slot cell texture for every slot.
+-- :LockSlot(idx, true) / :LockedSlots({...}) — read-only slots (no insert, no take).
+-- :SlotPosition(idx, x, y) — move a single slot to an absolute GUI position.
 local crateBlacklist = cfg.woodcrate_blacklist or {}
 local WoodCrate = Content.NewBlock("wood_crate")
     :Hardness(2.0)
     :Resistance(5.0)
     :SoundType("WOOD")
     :MineableWith("axe")
+    :MapColor("WOOD")
     :Container(4, 6, "packed")
     :ContainerUseDistance(10)
     :ContainerTitle("Wood Storage Crate")
     :ContainerTexture("luatweaker:textures/gui/wood_crate_custom.png")
+    :SlotTexture("luatweaker:textures/gui/wood_crate_slot.png")
+    :LockSlot(0, true)
+    :LockedSlots({ 5, 11 })
+    :SlotPosition(23, 44, 89)
     :ItemFilter(function(itemId, count)
         -- No nested crates: a crate can never be stored inside a crate.
         if itemId == "luatweaker:wood_crate" then return false end
@@ -155,6 +165,68 @@ local WoodCrate = Content.NewBlock("wood_crate")
     :OnRightClick(function(player, blockState)
         player:playSound("minecraft:block.chest.open", 1.0, 1.0)
     end)
+    :Register()
+
+-- ===================================================================
+-- 2c. Ruby Charger: Lua-defined machine (FE energy + running state + bars)
+-- ===================================================================
+-- The blockstate JSON + both cube-all models are generated automatically from
+-- the two textures - no JSON files to write.
+-- Machine BEHAVIOR is Lua code via :OnTick(data): the engine only ticks blocks
+-- that define a handler and hands over a data table {X, Y, Z, Energy,
+-- EnergyCapacity, FluidId, FluidAmount, FluidCapacity, Progress}. Read/write the
+-- block entity with World:GetBlockEntityData / World:SetBlockEntityData, toggle
+-- the running state with World:SetBlockState, eject items with
+-- World:EjectContainerItem - the actual machine logic is yours to write.
+local RubyCharger = Content.NewBlock("ruby_charger")
+    :Hardness(3.0)
+    :Resistance(12.0)
+    :SoundType("METAL")
+    :RequiresTool(true)
+    :MineableWith("pickaxe")
+    :MapColor("RED")
+    :Container(2, 6, "packed")
+    :ContainerTitle("Ruby Charger")
+    :EnergyStorage(10000, 500, 250)
+    :BooleanState("running", "luatweaker:block/ruby_charger", "luatweaker:block/ruby_charger_running")
+    :GuiBar("energy_bar", 8, 60, 90, 10, "energy", 0xFF00E676)
+    :GuiBar("progress_bar", 8, 74, 90, 6, "progress", 0xFFFFC107)
+    :OnTick(function(data)
+        local genPerTick = tonumber(cfg.ruby_charger_gen_per_tick) or 5
+        local newEnergy = math.min(data.Energy + genPerTick, data.EnergyCapacity)
+        if newEnergy ~= data.Energy then
+            World:SetBlockEntityData(data.X, data.Y, data.Z, { Energy = newEnergy })
+            World:SetBlockState(data.X, data.Y, data.Z, "luatweaker:ruby_charger", { running = true })
+        else
+            World:SetBlockState(data.X, data.Y, data.Z, "luatweaker:ruby_charger", { running = false })
+        end
+    end)
+    :CreativeTab("ruby_tab")
+    :Register()
+
+-- ===================================================================
+-- 2d. Ruby Pipe: connectable container (connections auto-computed)
+-- ===================================================================
+-- :ConnectionState(true) adds the 6 connection properties and generates the
+-- full blockstate + 64 pipe models automatically. Neighbors of the same block
+-- connect visually on place/remove - no Lua needed.
+-- The engine ships NO transport logic: write your own conduction in Lua with
+-- :OnTick + World:GetBlockEntityData / World:SetBlockEntityData / the item
+-- and energy capabilities (external mods can still push/pull through the
+-- standard NeoForge APIs exposed by :EnergyStorage / :FluidStorage).
+local RubyPipe = Content.NewBlock("ruby_pipe")
+    :Hardness(2.0)
+    :Resistance(4.0)
+    :SoundType("METAL")
+    :RequiresTool(true)
+    :MineableWith("pickaxe")
+    :MapColor("RED")
+    :Texture("luatweaker:block/ruby_pipe")
+    :Container(1, 1, "none")
+    :ConnectionState(true)
+    :EnergyStorage(2000, 200, 200)
+    :FluidStorage(4000)
+    :CreativeTab("ruby_tab")
     :Register()
 
 -- 3. Dynamic KeyMapping Registration (Controls Menu)

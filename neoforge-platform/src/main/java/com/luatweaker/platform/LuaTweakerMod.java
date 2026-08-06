@@ -129,6 +129,7 @@ public class LuaTweakerMod {
         Platform.setInteraction(new com.luatweaker.platform.interaction.NeoForgeInteractionPlatform());
         Platform.setContent(new com.luatweaker.platform.content.NeoForgeContentPlatform());
         Platform.setStorage(new com.luatweaker.platform.storage.NeoForgeStoragePlatform());
+        Platform.setDimension(new com.luatweaker.platform.dimension.NeoForgeDimensionPlatform());
         if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) {
             initClientPlatform();
         }
@@ -160,6 +161,7 @@ public class LuaTweakerMod {
         }
         modEventBus.register(luaAssetsPackFinder);        modEventBus.addListener(LuaTweakerMod::registerPayloads);
         modEventBus.addListener(this::onClientSetup);
+        modEventBus.addListener(com.luatweaker.platform.dimension.NeoForgeDimensionProvider::registerCodecs);
 
         // Register Game Event Bus listeners (gameplay events)
         NeoForge.EVENT_BUS.register(this);
@@ -171,12 +173,15 @@ public class LuaTweakerMod {
             modEventBus.addListener(com.luatweaker.platform.client.DynamicKeyMappingHandler::onRegisterKeyMappings);
             NeoForge.EVENT_BUS.addListener(com.luatweaker.platform.client.DynamicKeyMappingHandler::onClientTick);
             NeoForge.EVENT_BUS.addListener(com.luatweaker.platform.client.NeoForgeWorldRenderEventListener::onRenderLevel);
+            modEventBus.addListener(com.luatweaker.platform.client.dimension.LuaDimensionEffects::register);
+            NeoForge.EVENT_BUS.addListener(com.luatweaker.platform.client.ExperimentalWarningHandler::onScreenInit);
         }
         // Server tick pump for the Lua task queues is registered via @SubscribeEvent
         // on onServerTick (LuaTweakerMod is registered on NeoForge.EVENT_BUS above).
 
         // Build the command registry (core commands auto-registered inside)
         commandRegistry = new LuaTweakerCommandRegistry(luaDir);
+        commandRegistry.register(new com.luatweaker.platform.command.core.DimensionCommand());
     }
 
     private void loadStartupLuaMods(File luaDir) {
@@ -216,6 +221,7 @@ public class LuaTweakerMod {
         if (lootObj instanceof com.luatweaker.loot.LootServiceImpl lootService) {
             new com.luatweaker.platform.loot.NeoForgeLootProvider(lootService, datapackService).applyAll();
         }
+        com.luatweaker.platform.dimension.NeoForgeDimensionProvider.applyAll(datapackService);
     }
 
     private void onClientSetup(final net.neoforged.fml.event.lifecycle.FMLClientSetupEvent event) {
@@ -303,8 +309,7 @@ public class LuaTweakerMod {
     }
 
     @SubscribeEvent
-    public void onPlayerLoggedIn(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent event) {
-        if (!(event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player)) return;
+    public void onPlayerLoggedIn(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent event) {        if (!(event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player)) return;
 
         // Available updates discovered by the engine-side declarative checker.
         for (com.luatweaker.update.UpdateStatus status : com.luatweaker.update.UpdateServiceImpl.getUpdates()) {
@@ -333,6 +338,30 @@ public class LuaTweakerMod {
         // makes e.g. ServerLevel.addFreshEntity run on the client thread, which races
         // with the integrated server and freezes the game.
         tickActiveEngineTasks();
+        com.luatweaker.platform.dimension.DimensionMobSpawner.onServerTick();
+    }
+
+    /**
+     * Fires the "DimensionEntered" world event (payload: player, dimensionId,
+     * fromDimensionId) whenever a player changes dimensions.
+     */
+    @SubscribeEvent
+    public void onPlayerChangedDimension(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerChangedDimensionEvent event) {
+        Object events = com.luatweaker.core.service.LuaServiceRegistry.get("Events");
+        if (!(events instanceof com.luatweaker.api.event.IEventService eventService)) return;
+        if (!(event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player)) return;
+        try {
+            com.luatweaker.platform.entity.NeoForgePlayerWrapper wrapper =
+                    new com.luatweaker.platform.entity.NeoForgePlayerWrapper(player);
+            com.luatweaker.api.vm.ILuaTable payload = eventService.getEngine().createTable();
+            payload.rawset("player", com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(
+                    eventService.getEngine(), wrapper));
+            payload.rawset("dimensionId", event.getTo().location().toString());
+            payload.rawset("fromDimensionId", event.getFrom().location().toString());
+            eventService.fireEvent("DimensionEntered", payload);
+        } catch (Exception e) {
+            // A Lua listener error must never break the dimension-change flow.
+        }
     }
 
     @SubscribeEvent
@@ -559,6 +588,10 @@ public class LuaTweakerMod {
         stubGen.registerService("Commands", com.luatweaker.api.command.ICommandService.class);
         stubGen.registerService("Update", com.luatweaker.api.update.IUpdateService.class);
         stubGen.registerService("Net", com.luatweaker.api.web.IWebService.class);
+        stubGen.registerService("Noise", com.luatweaker.api.noise.INoiseService.class);
+        stubGen.registerService("Dimensions", com.luatweaker.api.dimension.IDimensionService.class);
+        stubGen.registerService("SpawnRules", com.luatweaker.api.spawn.ISpawnRuleService.class);
+        stubGen.registerService("Biomes", com.luatweaker.api.biome.IBiomesService.class);
 
         // Runtime wrapper classes (entity/player tables created dynamically at runtime)
         stubGen.registerClassStub(com.luatweaker.api.entity.IEntity.class, "Entity");

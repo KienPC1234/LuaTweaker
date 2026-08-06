@@ -73,6 +73,31 @@ public class EventServiceImpl implements IEventService {
         }
     }
 
+    @Override
+    public boolean fireCancellable(@NotNull String eventName, @NotNull ILuaTable payload) {
+        java.util.List<ListenerEntry> entries = LISTENERS.get(eventName);
+        if (entries == null) return true;
+        boolean cancelled = false;
+        for (ListenerEntry entry : entries) {
+            if (entry.function() == null || !entry.function().isFunction()) continue;
+            try {
+                ILuaValue result = entry.engine().callFunction(entry.function(), payload);
+                // A listener returning Lua `false` cancels the event.
+                if (result != null && result.toJavaObject() instanceof Boolean bool && !bool) {
+                    cancelled = true;
+                }
+            } catch (Exception e) {
+                java.io.StringWriter sw = new java.io.StringWriter();
+                e.printStackTrace(new java.io.PrintWriter(sw));
+                com.luatweaker.api.log.LuaTweakerLog.get().error(
+                    com.luatweaker.api.log.LogStage.RUNTIME_ERROR,
+                    "Error invoking event listener for " + eventName + ": " + e.getMessage() + "\n" + sw.toString()
+                );
+            }
+        }
+        return !cancelled;
+    }
+
     public void fireRawEvent(@NotNull String eventName, @NotNull ILuaValue payload) {
         java.util.List<ListenerEntry> entries = LISTENERS.get(eventName);
         if (entries == null) return;

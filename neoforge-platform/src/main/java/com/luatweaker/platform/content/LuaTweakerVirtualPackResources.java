@@ -38,13 +38,17 @@ import java.util.Set;
 public class LuaTweakerVirtualPackResources extends AbstractPackResources {
 
     private static final String PACK_MCMETA = """
-            {
-              "pack": {
-                "pack_format": 34,
-                "description": "LuaTweaker Virtual DataPack (KubeJS-style)"
-              }
-            }
-            """;
+{
+"pack": {
+"pack_format": %d,
+"description": "LuaTweaker Virtual DataPack (KubeJS-style)"
+}
+}
+""";
+    /** 1.21.1 data pack format. */
+    private static final int DATA_PACK_FORMAT = 48;
+    /** 1.21.1 resource pack format. */
+    private static final int RESOURCE_PACK_FORMAT = 34;
 
     private final PackType packType;
     private final File luaDir;
@@ -71,8 +75,11 @@ public class LuaTweakerVirtualPackResources extends AbstractPackResources {
             if (metaFile.exists()) {
                 return () -> new FileInputStream(metaFile);
             }
-            // Serve dynamic in-memory mcmeta
-            return () -> new ByteArrayInputStream(PACK_MCMETA.getBytes(StandardCharsets.UTF_8));
+        // Serve dynamic in-memory mcmeta with the correct pack format for the
+        // served pack type (48 for data packs, 34 for resource packs).
+        int format = packType == PackType.SERVER_DATA ? DATA_PACK_FORMAT : RESOURCE_PACK_FORMAT;
+        String meta = String.format(PACK_MCMETA, format);
+        return () -> new ByteArrayInputStream(meta.getBytes(StandardCharsets.UTF_8));
         }
         return null;
     }
@@ -121,7 +128,10 @@ public class LuaTweakerVirtualPackResources extends AbstractPackResources {
                 String key = entry.getKey();
                 if (key.startsWith(dirPrefix)) {
                     String relativePath = key.substring(dirPrefix.length()); // e.g. "loot_table/blocks/ruby_ore.json"
-                    if (relativePath.startsWith(prefix)) {
+                    // Directory-segment prefix match: "dimension" must NOT match
+                    // "dimension_type/..." (RegistryDataLoader would decode the
+                    // dimension type file with the LevelStem codec and crash).
+                    if (matchesPrefix(relativePath, prefix)) {
                         ResourceLocation rl = safeResourceLocation(namespace, relativePath);
                         if (rl != null) {
                             String content = entry.getValue();
@@ -248,6 +258,21 @@ public class LuaTweakerVirtualPackResources extends AbstractPackResources {
 
         return direct;
     }
+
+    /**
+     * Directory-segment prefix match: {@code relativePath} is under the
+     * {@code prefix} directory (or {@code prefix} is empty). "dimension" must
+     * NOT match "dimension_type/...".
+     */
+    static boolean matchesPrefix(String relativePath, String prefix) {
+        return prefix == null || prefix.isEmpty()
+                || relativePath.equals(prefix)
+                || relativePath.startsWith(prefix + "/");
+    }
+
+    // -------------------------------------------------------------------------
+    // Resource listing helper
+    // -------------------------------------------------------------------------
 
     private static void collectPhysicalResources(File dir, Path nsRoot, String namespace,
                                                   ResourceOutput output,

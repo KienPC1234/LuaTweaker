@@ -150,6 +150,7 @@ public class ItemBuilderImpl implements IItemBuilder {
     private String armorTexture;
     private String creativeTab;
     private BiConsumer<Object, Object> onHitEntityHandler;
+    private java.util.function.BiFunction<Object, Object, Boolean> onUseOnBlockHandler;
 
 
     @Override
@@ -167,6 +168,12 @@ public class ItemBuilderImpl implements IItemBuilder {
     @Override
     public IItemBuilder onRightClick(BiConsumer<Object, Object> handler) {
         this.rightClickHandler = handler;
+        return this;
+    }
+
+    @Override
+    public IItemBuilder onUseOnBlock(java.util.function.BiFunction<Object, Object, Boolean> handler) {
+        this.onUseOnBlockHandler = handler;
         return this;
     }
 
@@ -248,6 +255,7 @@ public class ItemBuilderImpl implements IItemBuilder {
     @Override public java.util.List<String> getTags() { return tags; }
     @Override public String getCreativeTab() { return creativeTab; }
     @Override public BiConsumer<Object, Object> getRightClickHandler() { return rightClickHandler; }
+    @Override public java.util.function.BiFunction<Object, Object, Boolean> getOnUseOnBlockHandler() { return onUseOnBlockHandler; }
     @Override public BiConsumer<Object, Object> getOnHitEntityHandler() { return onHitEntityHandler; }
 
     @Override public int getFoodHunger() { return foodHunger; }

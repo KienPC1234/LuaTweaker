@@ -513,6 +513,11 @@ public class CobaltLuaEngine implements ILuaEngine {
             case "LuaTweaker.AIGoals", "AIGoals" -> globals.rawget("AIGoals");
             case "LuaTweaker.Loot", "Loot" -> globals.rawget("Loot");
             case "LuaTweaker.Worldgen", "Worldgen" -> globals.rawget("Worldgen");
+            case "LuaTweaker.Noise", "Noise" -> globals.rawget("Noise");
+            case "LuaTweaker.Dimensions", "Dimensions" -> globals.rawget("Dimensions");
+            case "LuaTweaker.SpawnRules", "SpawnRules" -> globals.rawget("SpawnRules");
+            case "LuaTweaker.Structures", "Structures" -> globals.rawget("Structures");
+            case "LuaTweaker.Biomes", "Biomes" -> globals.rawget("Biomes");
             case "LuaTweaker.Storage", "Storage", "storage" -> {
                 LuaValue val = globals.rawget("Storage");
                 if (val == null || val.isNil()) {
@@ -747,6 +752,12 @@ public class CobaltLuaEngine implements ILuaEngine {
 
     @Override
     public synchronized ILuaValue callFunction(ILuaValue function, ILuaValue... args) {
+        ILuaValue[] results = callFunctionMulti(function, args);
+        return results.length > 0 ? results[0] : nilValue();
+    }
+
+    @Override
+    public synchronized ILuaValue[] callFunctionMulti(ILuaValue function, ILuaValue... args) {
         if (function != null && !function.isNil()) {
             try {
                 LuaValue cobaltFunc = toCobaltValue(function);
@@ -755,7 +766,12 @@ public class CobaltLuaEngine implements ILuaEngine {
                     cobaltArgs[i] = toCobaltValue(args[i]);
                 }
                 Varargs result = org.squiddev.cobalt.function.Dispatch.invoke(state, cobaltFunc, ValueFactory.varargsOf(cobaltArgs));
-                return new CobaltLuaValue(result.arg(1));
+                int count = result.count();
+                ILuaValue[] wrapped = new ILuaValue[count];
+                for (int i = 0; i < count; i++) {
+                    wrapped[i] = new CobaltLuaValue(result.arg(i + 1));
+                }
+                return wrapped;
             } catch (org.squiddev.cobalt.UnwindThrowable e) {
                 // Control-flow exception used internally by the Cobalt VM for coroutine yields
                 // and thread resumptions. It is NOT a script error and carries no message.
@@ -771,7 +787,7 @@ public class CobaltLuaEngine implements ILuaEngine {
                 AsyncFileLogger.get().error("FUNCTION_CALL", "Lua error executing callback: " + msg, state);
             }
         }
-        return nilValue();
+        return new ILuaValue[0];
     }
 
     @Override

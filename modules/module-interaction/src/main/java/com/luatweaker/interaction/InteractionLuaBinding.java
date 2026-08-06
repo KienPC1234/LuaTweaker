@@ -223,6 +223,35 @@ public class InteractionLuaBinding {
         });
         workspaceTable.rawset("replaceBlocks", workspaceTable.rawget("ReplaceBlocks"));
 
+        // ===== NBT structure placement (PlaceStructure) =====
+        // PlaceStructure(templateId, x, y, z, [rotationDegrees]) or with a
+        // dimension prefix. Loads the NBT template (data/<ns>/structures/*.nbt)
+        // from the datapack and places it; the Lua mod decides when/where.
+        workspaceTable.rawset("PlaceStructure", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            // The first argument is always a string (template id); the prefix
+            // form has ANOTHER string as the second argument (the dimension).
+            int dimOff = -1;
+            // The first argument is always a string (template id); the prefix
+            // form has ANOTHER string as the second argument (the dimension).
+            // NOTE: Lua 5.2 isstring() is true for numbers too, so the strict
+            // Java instanceof check is required here (same as FillBlocks).
+            if (args.length - off >= 2 && args[off + 1].toJavaObject() instanceof String) {
+                dimOff = off;
+                off = off + 1;
+            }
+            if (args.length - off < 4) return engine.wrapBoolean(false);
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : "minecraft:overworld";
+            String templateId = args[off].asString();
+            int x = args[off + 1].asInt();
+            int y = args[off + 2].asInt();
+            int z = args[off + 3].asInt();
+            int rotation = args.length - off >= 5 ? args[off + 4].asInt() : 0;
+            return engine.wrapBoolean(com.luatweaker.api.pal.Platform.getInteraction()
+                    .placeStructure(dimension, templateId, x, y, z, rotation));
+        });
+        workspaceTable.rawset("placeStructure", workspaceTable.rawget("PlaceStructure"));
+
         // ===== Server console command (ExecuteCommand("give ...")) =====
         workspaceTable.rawset("ExecuteCommand", args -> {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);

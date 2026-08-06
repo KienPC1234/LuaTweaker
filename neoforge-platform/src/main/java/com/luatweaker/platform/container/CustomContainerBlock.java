@@ -1,10 +1,13 @@
 package com.luatweaker.platform.container;
 
+import com.luatweaker.api.content.BooleanStateSpec;
 import com.luatweaker.api.event.EventNames;
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.platform.entity.NeoForgePlayerWrapper;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -24,8 +27,9 @@ import org.jetbrains.annotations.Nullable;
 import java.util.function.BiConsumer;
 
 /**
- * Generic Lua-configured container block. The row/column count, display title
- * and drop behaviour all come from the {@code Content.NewBlock(...):Container(..)}
+ * Generic Lua-configured container block. The grid geometry, drop behaviour,
+ * per-slot customization and machine features (FE energy, fluid tank, GUI bars,
+ * block-state variants) all come from the {@code Content.NewBlock(...):Container(..)}
  * builder. Right-click opens the container GUI (after the optional Lua handler);
  * breaking the block follows the configured drop mode:
  * <ul>
@@ -34,37 +38,46 @@ import java.util.function.BiConsumer;
  *   <li>{@code spill}: contents drop like a vanilla chest</li>
  *   <li>{@code none}: nothing drops</li>
  * </ul>
+ *
+ * <p>Optional block states (all JSON-free, auto-generated):
+ * <ul>
+ *   <li>{@code booleanState} — one {@code BooleanProperty} (e.g. "running"), toggled
+ *       from Lua via {@code World:SetBlockState(..., { running = true })};</li>
+ *   <li>{@code connectionState} — six connection properties (north/east/south/west/up/down)
+ *       recomputed automatically when neighbors of the same block are placed or removed,
+ *       so pipes visually connect without any Lua.</li>
+ * </ul>
  */
 public class CustomContainerBlock extends Block implements EntityBlock {
 
-    public static final BooleanProperty OPENED = BlockStateProperties.OPEN;
+    private static final Direction[] ALL_DIRECTIONS = Direction.values();
+    public static final BooleanProperty[] CONNECTION_PROPS = {
+            BlockStateProperties.NORTH, BlockStateProperties.EAST, BlockStateProperties.SOUTH,
+            BlockStateProperties.WEST, BlockStateProperties.UP, BlockStateProperties.DOWN
+    };
 
     private final String crateId;
     private final String crateTitle;
-    private final int rows;
-    private final int cols;
-    private final String dropMode;
-    private final String texturePath;
-    private final double useDistance;
+    private final ContainerSpec spec;
     private final BiConsumer<Object, Object> rightClickHandler;
     private final java.util.function.BiFunction<Object, Object, Boolean> itemFilter;
+    @Nullable
+    private final BooleanProperty stateProperty;
 
     public CustomContainerBlock(Properties properties, String crateId, String crateTitle,
-                               int rows, int cols, String dropMode, @Nullable String texturePath,
-                               double useDistance,
+                               ContainerSpec spec,
                                @Nullable BiConsumer<Object, Object> rightClickHandler,
                                @Nullable java.util.function.BiFunction<Object, Object, Boolean> itemFilter) {
         super(properties);
         this.crateId = crateId;
         this.crateTitle = crateTitle;
-        this.rows = rows;
-        this.cols = cols;
-        this.dropMode = dropMode;
-        this.texturePath = texturePath;
-        this.useDistance = Math.max(1.0, useDistance);
+        this.spec = spec;
         this.rightClickHandler = rightClickHandler;
         this.itemFilter = itemFilter;
-        registerDefaultState(defaultBlockState().setValue(OPENED, false));
+        BooleanStateSpec stateSpec = spec.booleanState();
+        this.stateProperty = stateSpec != null && stateSpec.property() != null
+                ? BooleanProperty.create(stateSpec.property()) : null;
+        registerDefaultState(defaultBlockState());
     }
 
     public String getContainerId() {
@@ -75,30 +88,30 @@ public class CustomContainerBlock extends Block implements EntityBlock {
         return crateTitle;
     }
 
-    @Nullable
-    public String getTexturePath() {
-        return texturePath;
+    @NotNull
+    public ContainerSpec getSpec() {
+        return spec;
     }
 
     public int getSlotCount() {
-        return rows * cols;
+        return spec.rows() * spec.cols();
     }
 
     public int getRows() {
-        return rows;
+        return spec.rows();
     }
 
     public int getCols() {
-        return cols;
+        return spec.cols();
     }
 
     public String getDropMode() {
-        return dropMode;
+        return spec.dropMode();
     }
 
     /** Max distance (blocks) a player may stand from this container to use it (Lua-configurable). */
     public double getUseDistance() {
-        return useDistance;
+        return spec.useDistance();
     }
 
     /** Lua-defined container rule: true = the item may enter a slot. */
@@ -113,9 +126,19 @@ public class CustomContainerBlock extends Block implements EntityBlock {
         }
     }
 
+    @Nullable
+    public BooleanProperty getStateProperty() {
+        return stateProperty;
+    }
+
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
-        builder.add(OPENED);
+        if (stateProperty != null) {
+            builder.add(stateProperty);
+        }
+        if (spec.connections()) {
+            builder.add(CONNECTION_PROPS);
+        }
     }
 
     @Nullable
@@ -125,18 +148,86 @@ public class CustomContainerBlock extends Block implements EntityBlock {
     }
 
     @Override
+    @Nullable
+    public <T extends net.minecraft.world.level.block.entity.BlockEntity> net.minecraft.world.level.block.entity.BlockEntityTicker<T> getTicker(
+            net.minecraft.world.level.Level level, BlockState state, net.minecraft.world.level.block.entity.BlockEntityType<T> type) {
+        if (level.isClientSide() || spec.tickHandler() == null) {
+            return null;
+        }
+        net.minecraft.world.level.block.entity.BlockEntityType<?> ownType = CustomContainerRegistry.TYPE_BY_BLOCK.get(this);
+        if (ownType == null || ownType != type) {
+            return null;
+        }
+        return (level1, pos, state1, be) -> CustomContainerBlockEntity.machineTick(level1, pos, state1,
+                (CustomContainerBlockEntity) be);
+    }
+
+    // ===== Pipe connection maintenance =====
+
+    @Override
+    protected void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean movedByPiston) {
+        if (!oldState.is(state.getBlock()) && !level.isClientSide()) {
+            updateConnections(level, pos, state);
+        }
+    }
+
+    @Override
+    protected void neighborChanged(BlockState state, Level level, BlockPos pos, Block neighborBlock,
+                                   BlockPos neighborPos, boolean isMoving) {
+        if (!level.isClientSide() && spec.connections()) {
+            updateConnections(level, pos, state);
+        }
+    }
+
+    @Override
+    protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean isMoving) {
+        if (!newState.is(state.getBlock()) && spec.connections() && !level.isClientSide()) {
+            // Neighbors still think they connect to this pipe - recompute them.
+            for (Direction dir : ALL_DIRECTIONS) {
+                BlockPos neighbor = pos.relative(dir);
+                BlockState neighborState = level.getBlockState(neighbor);
+                if (neighborState.getBlock() == this && neighborState.getValue(CONNECTION_PROPS[dir.get3DDataValue()])) {
+                    updateConnections(level, neighbor, neighborState);
+                }
+            }
+        }
+        super.onRemove(state, level, pos, newState, isMoving);
+    }
+
+    private void updateConnections(Level level, BlockPos pos, BlockState state) {
+        BlockState updated = state;
+        for (int i = 0; i < ALL_DIRECTIONS.length; i++) {
+            Direction dir = ALL_DIRECTIONS[i];
+            boolean connected = level.getBlockState(pos.relative(dir)).getBlock() == this;
+            updated = updated.setValue(CONNECTION_PROPS[i], connected);
+        }
+        if (updated != state) {
+            level.setBlock(pos, updated, Block.UPDATE_ALL);
+        }
+    }
+
+    // ===== Interaction =====
+
+    @Override
     @NotNull
     public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
         if (!level.isClientSide() && level.getBlockEntity(pos) instanceof CustomContainerBlockEntity container) {
             if (rightClickHandler != null) {
                 try {
-                    rightClickHandler.accept(new NeoForgePlayerWrapper(player), null);
+                    rightClickHandler.accept(new NeoForgePlayerWrapper(player), state);
                 } catch (Exception e) {
                     LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed container right-click handler for " + crateId + ": " + e.getMessage());
                 }
             }
-            level.setBlock(pos, state.setValue(OPENED, !state.getValue(OPENED)), 3);
-            player.openMenu(container);
+            if (!container.stillValid(player)) {
+                player.displayClientMessage(Component.translatable("container.luatweaker.locked"), true);
+                return InteractionResult.FAIL;
+            }
+            java.util.OptionalInt menuId = player.openMenu(container);
+            if (menuId.isEmpty()) {
+                player.displayClientMessage(Component.translatable("container.luatweaker.locked"), true);
+                return InteractionResult.FAIL;
+            }
             final int fx = pos.getX();
             final int fy = pos.getY();
             final int fz = pos.getZ();
@@ -153,7 +244,7 @@ public class CustomContainerBlock extends Block implements EntityBlock {
     @Override
     public boolean onDestroyedByPlayer(BlockState state, Level level, BlockPos pos, Player player, boolean willHarvest, FluidState fluid) {
         if (!level.isClientSide() && level.getBlockEntity(pos) instanceof CustomContainerBlockEntity container) {
-            switch (dropMode) {
+            switch (spec.dropMode()) {
                 case "packed" -> {
                     ItemStack packed = new ItemStack(this);
                     container.saveToItem(packed, level.registryAccess());

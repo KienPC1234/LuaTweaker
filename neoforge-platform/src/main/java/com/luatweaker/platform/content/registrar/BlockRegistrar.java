@@ -28,6 +28,11 @@ import java.util.Map;
 import java.util.function.Function;
 
 public final class BlockRegistrar {
+    /** Default pipe geometry when :ConnectionState(true) is used without :Container(...). */
+    private static final int PIPE_DEFAULT_ROWS = 1;
+    private static final int PIPE_DEFAULT_COLS = 1;
+    private static final String PIPE_DEFAULT_DROP = "none";
+
     private final IContentService contentService;
     private final Map<ResourceLocation, Block> createdBlocks;
     private final Map<ResourceLocation, Item> createdItems;
@@ -57,6 +62,48 @@ public final class BlockRegistrar {
                 if (builder.getRequiresTool() || builder.getMiningLevel() > 0 || builder.getMineableWith() != null) {
                     props.requiresCorrectToolForDrops();
                 }
+                if (builder.getMapColor() != null) {
+                    net.minecraft.world.level.material.MapColor parsedColor =
+                            com.luatweaker.platform.content.BlockPropertyParser.parseMapColor(builder.getMapColor());
+                    if (parsedColor != null) {
+                        props.mapColor(parsedColor);
+                    }
+                }
+                props.jumpFactor(builder.getJumpFactor())
+                        .speedFactor(builder.getSpeedFactor());
+                if (builder.isNoCollision()) {
+                    props.noCollission();
+                }
+                if (builder.isNoOcclusion()) {
+                    props.noOcclusion();
+                }
+                if (builder.getPushReaction() != null) {
+                    net.minecraft.world.level.material.PushReaction reaction =
+                            com.luatweaker.platform.content.BlockPropertyParser.parsePushReaction(builder.getPushReaction());
+                    if (reaction != null) {
+                        props.pushReaction(reaction);
+                    }
+                }
+                if (builder.isReplaceable()) {
+                    props.replaceable();
+                }
+                if (builder.isIgnitedByLava()) {
+                    props.ignitedByLava();
+                }
+                if (builder.isLiquid()) {
+                    props.liquid();
+                }
+                if (builder.getOffsetType() != null) {
+                    net.minecraft.world.level.block.state.BlockBehaviour.OffsetType offset =
+                            com.luatweaker.platform.content.BlockPropertyParser.parseOffsetType(builder.getOffsetType());
+                    if (offset != null) {
+                        props.offsetType(offset);
+                    }
+                }
+                if (builder.getRedstoneConductor() != null) {
+                    boolean conductor = builder.getRedstoneConductor();
+                    props.isRedstoneConductor((state, level, pos) -> conductor);
+                }
 
                 String id = builder.getId().toLowerCase();
 
@@ -64,19 +111,38 @@ public final class BlockRegistrar {
                 // MUST be decided before the plain-block branch: every Block
                 // constructor creates an intrusive registry holder, and any
                 // instance that never gets registered crashes registry freeze.
+                // ConnectionState blocks (pipes) are containers too: a 1x1 buffer
+                // with "none" drops unless :Container(...) was configured.
+                boolean containerBlock = builder.isContainer() || builder.isConnectionState();
                 Block block;
-                if (builder.isContainer()) {
+                if (containerBlock) {
+                    int rows = builder.isContainer() ? builder.getContainerRows() : PIPE_DEFAULT_ROWS;
+                    int cols = builder.isContainer() ? builder.getContainerCols() : PIPE_DEFAULT_COLS;
+                    String dropMode = builder.isContainer() ? builder.getContainerDropMode() : PIPE_DEFAULT_DROP;
                     String crateTitle = builder.getContainerTitle() != null && !builder.getContainerTitle().isBlank()
                             ? builder.getContainerTitle() : toTitle(rl.getPath());
-                    block = new com.luatweaker.platform.container.CustomContainerBlock(
-                            props, rl.toString(), crateTitle, builder.getContainerRows(), builder.getContainerCols(),
-                            builder.getContainerDropMode(), builder.getContainerTexture(),
+                    com.luatweaker.platform.container.ContainerSpec spec = new com.luatweaker.platform.container.ContainerSpec(
+                            rows, cols, dropMode, builder.getContainerTexture(),
                             builder.getContainerUseDistance(),
+                            builder.getSlotPositions(), builder.getLockedSlots(), builder.getSlotTexture(),
+                            builder.getEnergyCapacity(), builder.getEnergyMaxReceive(), builder.getEnergyMaxExtract(),
+                            builder.getFluidCapacity(), builder.getGuiBars(), builder.getBooleanState(),
+                            builder.isConnectionState(), builder.getTickHandler());
+                    block = new com.luatweaker.platform.container.CustomContainerBlock(
+                            props, rl.toString(), crateTitle, spec,
                             builder.getRightClickHandler(), builder.getItemFilter());
                     LuaTweakerLog.get().info(LogStage.SYSTEM,
-                            "Registered container block '" + id + "' (" + builder.getContainerRows() + "x"
-                                    + builder.getContainerCols() + ", drop=" + builder.getContainerDropMode()
-                                    + ", useDistance=" + builder.getContainerUseDistance() + ")");
+                            "Registered container block '" + id + "' (" + rows + "x"
+                                    + cols + ", drop=" + dropMode
+                                    + ", useDistance=" + builder.getContainerUseDistance()
+                                    + ", lockedSlots=" + builder.getLockedSlots().size()
+                                    + ", customSlots=" + builder.getSlotPositions().size()
+                                    + ", energy=" + builder.getEnergyCapacity()
+                                    + ", fluid=" + builder.getFluidCapacity()
+                                    + ", bars=" + builder.getGuiBars().size()
+                                    + ", state=" + (builder.getBooleanState() != null ? builder.getBooleanState().property() : "none")
+                                    + ", connections=" + builder.isConnectionState()
+                                    + ", tick=" + (builder.getTickHandler() != null) + ")");
                 } else if (id.endsWith("_stairs") || id.contains("stairs")) {
                     block = new StairBlock(Blocks.STONE.defaultBlockState(), props) {
                         @Override public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
@@ -164,7 +230,7 @@ public final class BlockRegistrar {
 
     public void registerContainerBlockEntities(RegisterEvent event) {
         for (IBlockBuilder builder : contentService.getRegisteredBlocks()) {
-            if (!builder.isContainer()) continue;
+            if (!builder.isContainer() && !builder.isConnectionState()) continue;
             ResourceLocation rl = locationParser.apply(builder.getId());
             Block block = createdBlocks.get(rl);
             if (block == null) block = BuiltInRegistries.BLOCK.get(rl);
@@ -181,10 +247,10 @@ public final class BlockRegistrar {
 
     public void registerContainerMenus(RegisterEvent event) {
         for (IBlockBuilder builder : contentService.getRegisteredBlocks()) {
-            if (!builder.isContainer()) continue;
+            if (!builder.isContainer() && !builder.isConnectionState()) continue;
             ResourceLocation rl = locationParser.apply(builder.getId());
-            int rows = builder.getContainerRows();
-            int cols = builder.getContainerCols();
+            int rows = builder.isContainer() ? builder.getContainerRows() : 1;
+            int cols = builder.isContainer() ? builder.getContainerCols() : 1;
             int slotCount = rows * cols;
             net.minecraft.world.inventory.MenuType<com.luatweaker.platform.container.CustomContainerMenu>[] ref =
                     new net.minecraft.world.inventory.MenuType[1];
@@ -198,6 +264,15 @@ public final class BlockRegistrar {
             if (containerTexture != null) {
                 com.luatweaker.platform.container.CustomContainerRegistry.CONTAINER_TEXTURES.put(
                         menuType, containerTexture);
+            }
+            String slotTexture = builder.getSlotTexture();
+            if (slotTexture != null) {
+                com.luatweaker.platform.container.CustomContainerRegistry.CONTAINER_SLOT_TEXTURES.put(
+                        menuType, slotTexture);
+            }
+            if (!builder.getGuiBars().isEmpty()) {
+                com.luatweaker.platform.container.CustomContainerRegistry.CONTAINER_BARS.put(
+                        menuType, builder.getGuiBars());
             }
             event.register(Registries.MENU, rl, () -> menuType);
         }

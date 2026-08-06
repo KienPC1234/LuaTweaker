@@ -14,6 +14,10 @@ public final class CustomContainerRegistry {
     public static final Map<ResourceLocation, net.minecraft.world.level.block.entity.BlockEntityType<CustomContainerBlockEntity>> CONTAINER_BE_TYPES = new ConcurrentHashMap<>();
     /** Custom GUI background texture per menu type (null = default container panel). */
     public static final Map<MenuType<CustomContainerMenu>, String> CONTAINER_TEXTURES = new ConcurrentHashMap<>();
+    /** Custom slot cell texture per menu type (null = default slot.png). */
+    public static final Map<MenuType<CustomContainerMenu>, String> CONTAINER_SLOT_TEXTURES = new ConcurrentHashMap<>();
+    /** GUI bar elements per menu type (energy/fluid/progress), rendered on top of the panel. */
+    public static final Map<MenuType<CustomContainerMenu>, java.util.List<com.luatweaker.api.content.MachineBarSpec>> CONTAINER_BARS = new ConcurrentHashMap<>();
 
     private CustomContainerRegistry() {}
 }

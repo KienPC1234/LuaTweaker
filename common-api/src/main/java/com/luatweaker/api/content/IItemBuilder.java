@@ -69,6 +69,9 @@ public interface IItemBuilder {
     @LuaDoc(description = "Registers a right-click action handler callback.", params = {"handler: function(player, itemStack)"}, returnType = "IItemBuilder")
     IItemBuilder onRightClick(BiConsumer<Object, Object> handler);
 
+    @LuaDoc(description = "Registers a callback when the player right-clicks this item ON a block. handler(player, hit) receives a table {X, Y, Z, Face} of the clicked face; return true to consume the click (block interaction is skipped), false to let the block handle it. This is how Lua-defined tools (wrenches, hammers, wands) are built.", params = {"handler: function(player, hit) -> boolean"}, returnType = "IItemBuilder")
+    IItemBuilder onUseOnBlock(java.util.function.BiFunction<Object, Object, Boolean> handler);
+
     @LuaDoc(description = "Registers a callback when a ranged projectile shot by this item hits an entity.", params = {"handler: function(targetEntity, shooterPlayer)"}, returnType = "IItemBuilder")
     IItemBuilder onHitEntity(BiConsumer<Object, Object> handler);
 
@@ -112,6 +115,7 @@ public interface IItemBuilder {
     java.util.List<String> getTags();
     String getCreativeTab();
     BiConsumer<Object, Object> getRightClickHandler();
+    java.util.function.BiFunction<Object, Object, Boolean> getOnUseOnBlockHandler();
     BiConsumer<Object, Object> getOnHitEntityHandler();
 
     int getFoodHunger();

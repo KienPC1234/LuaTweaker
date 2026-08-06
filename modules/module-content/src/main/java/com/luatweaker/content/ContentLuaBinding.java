@@ -456,6 +456,20 @@ public class ContentLuaBinding {
 
 
         env.rawset("datapack", datapackTable);
+        // PascalCase aliases (AddData, AddLootTable, ...) so the Datapack API
+        // follows the service naming convention; both styles work in Lua.
+        for (String method : new String[]{"addJsonRecipe", "addLootTable", "addAdvancement",
+                "addFunction", "addData", "addTag"}) {
+            ILuaValue fn = datapackTable.rawget(method);
+            if (fn != null && fn.isFunction()) {
+                datapackTable.rawset(Character.toUpperCase(method.charAt(0)) + method.substring(1), fn);
+            }
+        }
+        // Datapack is ALSO the Lua require target ("LuaTweaker.Datapack") and a
+        // Java-visible service (consumed by the worldgen/loot/dimension/biomes
+        // providers) - the Java side must get the impl, not the Lua table.
+        env.rawset("Datapack", datapackTable);
+        engine.registerService("Datapack", datapackService);
 
         // Convenient global 'tag' shortcut API:
         //   tag.item("c:gems", "luatweaker:custom_ruby")
@@ -506,9 +520,6 @@ public class ContentLuaBinding {
         tagTable.setMetatable(tagMeta);
 
         env.rawset("tag", tagTable);
-
-
-        engine.registerService("Datapack", datapackService);
     }
 
     private static void addTagFromLua(IDatapackService service, String type, String tagId, ILuaValue val) {
@@ -639,6 +650,34 @@ public class ContentLuaBinding {
             return table;
         });
 
+        bindMethod(table, "onUseOnBlock", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.onUseOnBlock((player, hit) -> {
+                    try {
+                        ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
+                                ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
+                                : engine.toLuaValue(player);
+                        ILuaTable hitTable = engine.createTable();
+                        if (hit instanceof java.util.Map<?, ?> hitMap) {
+                            hitTable.rawset("X", engine.wrapNumber(((Number) hitMap.get("X")).intValue()));
+                            hitTable.rawset("Y", engine.wrapNumber(((Number) hitMap.get("Y")).intValue()));
+                            hitTable.rawset("Z", engine.wrapNumber(((Number) hitMap.get("Z")).intValue()));
+                            Object face = hitMap.get("Face");
+                            hitTable.rawset("Face", engine.wrapString(face != null ? face.toString() : ""));
+                        }
+                        ILuaValue consumed = engine.callFunction(func, playerVal, hitTable);
+                        return consumed.isNil() || consumed.asBoolean();
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item onUseOnBlock callback: " + e.getMessage());
+                        return false;
+                    }
+                });
+            }
+            return table;
+        });
+
         bindMethod(table, "food", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.food(args[off].asInt(), (float) args[off + 1].asDouble()); return table; });
         bindMethod(table, "alwaysEdible", args -> { builder.alwaysEdible(); return table; });
         bindMethod(table, "onConsume", args -> {
@@ -738,6 +777,29 @@ public class ContentLuaBinding {
             return table;
         });
         bindMethod(table, "friction", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.friction((float) args[off].asDouble()); return table; });
+        bindMethod(table, "mapColor", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 1) {
+                Object obj = args[off].toJavaObject();
+                if (obj instanceof Number num) {
+                    builder.mapColor(String.valueOf(num.intValue()));
+                } else {
+                    builder.mapColor(args[off].asString());
+                }
+            }
+            return table;
+        });
+        bindMethod(table, "jumpFactor", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.jumpFactor((float) args[off].asDouble()); return table; });
+        bindMethod(table, "speedFactor", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.speedFactor((float) args[off].asDouble()); return table; });
+        bindMethod(table, "noCollision", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.noCollision(args[off].asBoolean()); return table; });
+        bindMethod(table, "noOcclusion", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.noOcclusion(args[off].asBoolean()); return table; });
+        bindMethod(table, "pushReaction", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.pushReaction(args[off].asString()); return table; });
+        bindMethod(table, "replaceable", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.replaceable(args[off].asBoolean()); return table; });
+        bindMethod(table, "ignitedByLava", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.ignitedByLava(args[off].asBoolean()); return table; });
+        bindMethod(table, "flammable", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.ignitedByLava(args[off].asBoolean()); return table; });
+        bindMethod(table, "liquid", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.liquid(args[off].asBoolean()); return table; });
+        bindMethod(table, "offsetType", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.offsetType(args[off].asString()); return table; });
+        bindMethod(table, "redstoneConductor", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.redstoneConductor(args[off].asBoolean()); return table; });
         bindMethod(table, "model", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.model(args[off].asString()); return table; });
 
         bindMethod(table, "drop", args -> {
@@ -806,6 +868,108 @@ public class ContentLuaBinding {
         bindMethod(table, "containerTitle", args -> {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) builder.containerTitle(args[off].asString());
+            return table;
+        });
+
+        bindMethod(table, "slotPosition", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 3) {
+                builder.slotPosition(args[off].asInt(), args[off + 1].asInt(), args[off + 2].asInt());
+            }
+            return table;
+        });
+
+        bindMethod(table, "slotTexture", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 1) builder.slotTexture(args[off].asString());
+            return table;
+        });
+
+        bindMethod(table, "lockSlot", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 1) {
+                int index = args[off].asInt();
+                boolean locked = args.length - off < 2 || args[off + 1].asBoolean();
+                builder.lockSlot(index, locked);
+            }
+            return table;
+        });
+
+        bindMethod(table, "lockedSlots", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 1 && args[off].isTable()) {
+                ILuaTable list = args[off].asTable();
+                for (int i = 1; ; i++) {
+                    ILuaValue entry = list.rawget(i);
+                    if (entry == null || entry.isNil()) break;
+                    builder.lockSlot(entry.asInt(), true);
+                }
+            }
+            return table;
+        });
+
+        bindMethod(table, "energyStorage", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 3) {
+                builder.energyStorage(args[off].asInt(), args[off + 1].asInt(), args[off + 2].asInt());
+            }
+            return table;
+        });
+
+        bindMethod(table, "fluidStorage", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 1) builder.fluidStorage(args[off].asInt());
+            return table;
+        });
+
+        bindMethod(table, "guiBar", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 7) {
+                builder.guiBar(args[off].asString(), args[off + 1].asInt(), args[off + 2].asInt(),
+                        args[off + 3].asInt(), args[off + 4].asInt(), args[off + 5].asString(), args[off + 6].asInt());
+            }
+            return table;
+        });
+
+        bindMethod(table, "booleanState", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 3) {
+                builder.booleanState(args[off].asString(), args[off + 1].asString(), args[off + 2].asString());
+            }
+            return table;
+        });
+
+        bindMethod(table, "connectionState", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            boolean enable = args.length - off < 1 || args[off].asBoolean();
+            builder.connectionState(enable);
+            return table;
+        });
+
+        bindMethod(table, "onTick", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.onTick((data, ignored) -> {
+                    try {
+                        ILuaTable dataTable = engine.createTable();
+                        if (data instanceof java.util.Map<?, ?> dataMap) {
+                            dataTable.rawset("X", engine.wrapNumber(((Number) dataMap.get("X")).intValue()));
+                            dataTable.rawset("Y", engine.wrapNumber(((Number) dataMap.get("Y")).intValue()));
+                            dataTable.rawset("Z", engine.wrapNumber(((Number) dataMap.get("Z")).intValue()));
+                            dataTable.rawset("Energy", engine.wrapNumber(((Number) dataMap.get("Energy")).intValue()));
+                            dataTable.rawset("EnergyCapacity", engine.wrapNumber(((Number) dataMap.get("EnergyCapacity")).intValue()));
+                            dataTable.rawset("FluidId", engine.wrapString(String.valueOf(dataMap.get("FluidId"))));
+                            dataTable.rawset("FluidAmount", engine.wrapNumber(((Number) dataMap.get("FluidAmount")).intValue()));
+                            dataTable.rawset("FluidCapacity", engine.wrapNumber(((Number) dataMap.get("FluidCapacity")).intValue()));
+                            dataTable.rawset("Progress", engine.wrapNumber(((Number) dataMap.get("Progress")).doubleValue()));
+                        }
+                        engine.callFunction(func, dataTable);
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing block onTick callback: " + e.getMessage());
+                    }
+                });
+            }
             return table;
         });
 

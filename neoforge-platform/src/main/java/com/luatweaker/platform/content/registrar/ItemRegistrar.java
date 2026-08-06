@@ -7,6 +7,7 @@ import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.platform.entity.NeoForgePlayerWrapper;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
@@ -29,6 +30,31 @@ public final class ItemRegistrar {
         this.contentService = contentService;
         this.createdItems = createdItems;
         this.locationParser = locationParser;
+    }
+
+    /**
+     * Lua-defined {@code OnUseOnBlock} hook shared by every item type. Returns
+     * {@code null} when the item has no handler (caller falls back to the item's
+     * default behavior), otherwise the interaction result of the Lua callback
+     * (SUCCESS = click consumed, PASS = block handles the click).
+     */
+    static InteractionResult handleUseOnBlock(net.minecraft.world.item.context.UseOnContext context, IItemBuilder builder) {
+        if (context.getLevel().isClientSide() || builder.getOnUseOnBlockHandler() == null) {
+            return null;
+        }
+        try {
+            net.minecraft.core.BlockPos pos = context.getClickedPos();
+            java.util.Map<String, Object> hit = java.util.Map.of(
+                    "X", pos.getX(), "Y", pos.getY(), "Z", pos.getZ(),
+                    "Face", context.getClickedFace().getName());
+            boolean consumed = Boolean.TRUE.equals(builder.getOnUseOnBlockHandler().apply(
+                    new NeoForgePlayerWrapper(context.getPlayer()), hit));
+            return consumed ? InteractionResult.SUCCESS : InteractionResult.PASS;
+        } catch (Exception e) {
+            LuaTweakerLog.get().error(LogStage.SYSTEM,
+                    "Failed onUseOnBlock handler for " + builder.getId() + ": " + e.getMessage());
+            return InteractionResult.PASS;
+        }
     }
 
     public void registerItems(RegisterEvent event) {
@@ -70,6 +96,10 @@ public final class ItemRegistrar {
                             }
                             return super.use(level, player, hand);
                         }
+                        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
+                            InteractionResult result = handleUseOnBlock(context, builder);
+                            return result != null ? result : super.useOn(context);
+                        }
                     };
                     case "PICKAXE" -> new PickaxeItem(Tiers.IRON, props) {
                         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
@@ -78,6 +108,10 @@ public final class ItemRegistrar {
                                 return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
                             }
                             return super.use(level, player, hand);
+                        }
+                        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
+                            InteractionResult result = handleUseOnBlock(context, builder);
+                            return result != null ? result : super.useOn(context);
                         }
                     };
                     case "AXE" -> new AxeItem(Tiers.IRON, props) {
@@ -88,6 +122,10 @@ public final class ItemRegistrar {
                             }
                             return super.use(level, player, hand);
                         }
+                        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
+                            InteractionResult result = handleUseOnBlock(context, builder);
+                            return result != null ? result : super.useOn(context);
+                        }
                     };
                     case "SHOVEL" -> new ShovelItem(Tiers.IRON, props) {
                         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
@@ -97,6 +135,10 @@ public final class ItemRegistrar {
                             }
                             return super.use(level, player, hand);
                         }
+                        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
+                            InteractionResult result = handleUseOnBlock(context, builder);
+                            return result != null ? result : super.useOn(context);
+                        }
                     };
                     case "HOE" -> new HoeItem(Tiers.IRON, props) {
                         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
@@ -105,6 +147,10 @@ public final class ItemRegistrar {
                                 return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
                             }
                             return super.use(level, player, hand);
+                        }
+                        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
+                            InteractionResult result = handleUseOnBlock(context, builder);
+                            return result != null ? result : super.useOn(context);
                         }
                     };
                     case "HELMET" -> new CustomArmorItem(ArmorMaterials.DIAMOND, ArmorItem.Type.HELMET, props, builder);
@@ -139,6 +185,11 @@ public final class ItemRegistrar {
                             }
                             return super.finishUsingItem(stack, level, entity);
                         }
+
+                        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
+                            InteractionResult result = handleUseOnBlock(context, builder);
+                            return result != null ? result : super.useOn(context);
+                        }
                     };
                 };
 
@@ -156,6 +207,12 @@ public final class ItemRegistrar {
         public CustomArmorItem(net.minecraft.core.Holder<ArmorMaterial> material, Type type, Properties properties, IItemBuilder builder) {
             super(material, type, properties);
             this.builder = builder;
+        }
+
+        @Override
+        public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
+            InteractionResult result = handleUseOnBlock(context, builder);
+            return result != null ? result : super.useOn(context);
         }
 
         @Override

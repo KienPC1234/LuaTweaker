@@ -122,4 +122,32 @@ public class NeoForgeWorldgenProviderTest {
         Map<String, String> files = apply(service);
         assertTrue(files.isEmpty(), "no datapack files may be generated for unsupported targets");
     }
+
+    @Test
+    public void everyGeneratedJsonMustBeValid() {
+        // Regression: the overworld ore targets once started with a stray '{'
+        // producing "{{"target" - MalformedJsonException at $.config.targets[0]
+        // which crashed world load in RegistryDataLoader.
+        WorldgenServiceImpl service = new WorldgenServiceImpl();
+        service.addOre("mymod:ruby_ore", "minecraft:overworld", -64, 32, 8, 10);
+        service.addOre("mymod:nether_ruby", "minecraft:the_nether", 0, 64, 6, 4);
+        service.addOre("mymod:end_ruby", "minecraft:the_end", 0, 64, 6, 4);
+        service.addVegetation("mymod:flower", 0.1, new String[]{"minecraft:plains"});
+        service.removeOre("minecraft:coal_ore", "minecraft:overworld");
+
+        Map<String, String> files = apply(service);
+        assertFalse(files.isEmpty());
+        for (Map.Entry<String, String> entry : files.entrySet()) {
+            assertDoesNotThrow(() -> com.google.gson.JsonParser.parseString(entry.getValue()),
+                    "generated JSON must parse: " + entry.getKey() + " = " + entry.getValue());
+        }
+
+        // The overworld targets array must have exactly 2 valid target objects.
+        String overworldOre = files.values().stream()
+                .filter(j -> j.contains("minecraft:stone_ore_replaceables"))
+                .findFirst().orElse(null);
+        assertNotNull(overworldOre);
+        var parsed = com.google.gson.JsonParser.parseString(overworldOre).getAsJsonObject();
+        assertEquals(2, parsed.getAsJsonObject("config").getAsJsonArray("targets").size());
+    }
 }

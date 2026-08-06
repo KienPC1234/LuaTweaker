@@ -2,50 +2,144 @@
   "mana": {
     "max_mana": 200,
     "regen_per_second": 5,
-    "start_mana": 50
+    "start_mana": 50,
+    "sync_interval_ticks": 20,
+    "potion_restore": 50
   },
+  "crystal_sword_slow_chance": 0.15,
+  "crystal_sword_slow_ticks": 40,
   "skills": {
     "crystal_bolt": {
       "cost": 15,
       "cooldown": 1.0,
       "damage": 8.0,
-      "projectile_speed": 2.5
+      "projectile_speed": 2.5,
+      "inaccuracy": 0.5
     },
     "frost_nova": {
       "cost": 40,
       "cooldown": 8.0,
       "radius": 6.0,
       "damage": 5.0,
-      "slow_duration": 60
+      "slow_duration": 60,
+      "slow_amplifier": 2
     },
     "arcane_shield": {
       "cost": 30,
       "cooldown": 12.0,
       "duration": 100,
-      "absorption": 10.0
+      "absorption": 10.0,
+      "absorption_amplifier": 2,
+      "resistance_amplifier": 0
     },
     "meteor_strike": {
       "cost": 80,
       "cooldown": 30.0,
       "damage": 25.0,
-      "explosion_power": 3
+      "explosion_power": 3,
+      "radius": 8.0,
+      "ignite_seconds": 5,
+      "delay_seconds": 0.5
     }
   },
   "boss": {
     "crystal_golem_health": 500.0,
     "crystal_golem_damage": 12.0,
     "crystal_golem_speed": 0.3,
-    "spawn_weight": 5
+    "spawn_weight": 5,
+    "scan_radius": 64.0,
+    "melee_speed": 1.2,
+    "phase2_hp_ratio": 0.5,
+    "phase3_hp_ratio": 0.25,
+    "enrage_speed_ticks": 999999,
+    "phase2_fireball_chance": 0.01,
+    "phase2_fireball_speed": 1.5,
+    "phase2_fireball_inaccuracy": 2.0,
+    "phase3_regen_ticks": 200,
+    "phase3_pulse_chance": 0.005,
+    "phase3_pulse_radius": 8.0,
+    "phase3_pulse_damage": 8.0,
+    "phase3_pulse_weakness_ticks": 60,
+    "phase3_title_fade_in": 10,
+    "phase3_title_stay": 40,
+    "phase3_title_fade_out": 20,
+    "death_title_fade_in": 10,
+    "death_title_stay": 60,
+    "death_title_fade_out": 20,
+    "death_xp": 500,
+    "death_fire_count": 8,
+    "death_fire_radius": 3.0
+  },
+  "crystal_realm": {
+    "dimension_id": "luatweaker:crystal_realm",
+    "sky_color": "0xFF88FF",
+    "fog_color": "0xAADDFF",
+    "ambient_light": 0.12,
+    "sea_level": 63,
+    "min_height": -64,
+    "max_height": 320,
+    "water_block": "minecraft:water",
+    "has_bedrock": true,
+    "biome_size": 8,
+    "spawn_x": 0,
+    "spawn_z": 0,
+    "continent_scale": 0.001,
+    "continent_amplitude": 50,
+    "ridge_scale": 0.005,
+    "ridge_amplitude": 35,
+    "ridge_octaves": 5,
+    "detail_scale": 0.02,
+    "detail_amplitude": 3,
+    "spire_threshold": 0.05,
+    "spire_height": 20,
+    "low_land_height": 70,
+    "high_land_height": 120,
+    "ore_frequency": 20,
+    "ore_size": 8,
+    "tree_count": 3,
+    "shrub_count": 12,
+    "water_lake_scale": 0.012,
+    "water_lake_threshold": 0.6,
+    "lava_lake_scale": 0.02,
+    "lava_lake_threshold": 0.62,
+    "shrine_count": 1,
+    "cave_scale": 0.03,
+    "cave_threshold": 0.35,
+    "cave_size": 4,
+    "vein_threshold": 0.25,
+    "lava_threshold": 0.5
+  },
+  "crystal_skylands": {
+    "dimension_id": "luatweaker:crystal_skylands",
+    "sky_color": "0xBDE0FF",
+    "fog_color": "0xE0F0FF",
+    "scale": 0.012,
+    "threshold": 0.55,
+    "base_y": 180,
+    "height_range": 90,
+    "thickness": 10,
+    "tree_count": 2,
+    "monolith_count": 1
   },
   "hud": {
+    "enabled": false,
     "mana_bar_x": 10,
     "mana_bar_y": 50,
     "mana_bar_width": 120,
     "mana_bar_height": 10,
-    "mana_bar_color": 0x4488FF,
-    "mana_bar_bg": 0x222244,
+    "mana_bar_color": "0x4488FF",
+    "mana_bar_bg": "0x222244",
     "skill_icon_size": 24,
     "skill_icon_spacing": 4,
-    "show_debug": false
+    "show_debug": false,
+    "cast_feedback_seconds": 2.0,
+    "cast_feedback_offset_y": -40,
+    "skill_icon_bottom_margin": 10,
+    "icon_text_y_offset": 6,
+    "mana_text_half_width": 10,
+    "mana_text_y_offset": 1,
+    "debug_text_x": 4,
+    "debug_text_y": 4,
+    "debug_mana_text_y": 14
   }
 }

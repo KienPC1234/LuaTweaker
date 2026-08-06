@@ -7,6 +7,7 @@ public class Platform {
     private static IPlatformContent content;
     private static IPlatformStorage storage;
     private static IPlatformClient client;
+    private static IPlatformDimension dimension;
 
     public static void setNetwork(IPlatformNetwork instance) { network = instance; }
     public static void setEntity(IPlatformEntity instance) { entity = instance; }
@@ -14,6 +15,7 @@ public class Platform {
     public static void setContent(IPlatformContent instance) { content = instance; }
     public static void setStorage(IPlatformStorage instance) { storage = instance; }
     public static void setClient(IPlatformClient instance) { client = instance; }
+    public static void setDimension(IPlatformDimension instance) { dimension = instance; }
 
     public static IPlatformNetwork getNetwork() {
         if (network == null) throw new IllegalStateException("Platform network helper is not initialized!");
@@ -43,6 +45,11 @@ public class Platform {
     public static IPlatformClient getClient() {
         if (client == null) throw new IllegalStateException("Platform client helper is not initialized!");
         return client;
+    }
+
+    public static IPlatformDimension getDimension() {
+        if (dimension == null) throw new IllegalStateException("Platform dimension helper is not initialized!");
+        return dimension;
     }
     
     public static boolean isInitialized() {

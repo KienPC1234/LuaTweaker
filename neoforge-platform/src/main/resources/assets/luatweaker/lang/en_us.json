@@ -2,5 +2,6 @@
   "itemGroup.luatweaker": "LuaTweaker",
   "luatweaker.configuration.title": "LuaTweaker Configs",
   "luatweaker.configuration.debug": "Enable Debug Logging",
-  "luatweaker.configuration.autoGenerateStubs": "Auto Generate Stubs"
+  "luatweaker.configuration.autoGenerateStubs": "Auto Generate Stubs",
+  "container.luatweaker.locked": "This container is locked!"
 }

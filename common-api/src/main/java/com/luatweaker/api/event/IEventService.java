@@ -8,6 +8,13 @@ public interface IEventService {
     void post(@NotNull String eventName, @NotNull ILuaTable payload);
     void fireEvent(@NotNull String eventName, @NotNull ILuaTable payload);
 
+    /**
+     * Fires an event where listeners may cancel it by returning Lua {@code false}
+     * ({@code function(event) -> boolean}). Returns true when no listener
+     * cancelled the event.
+     */
+    boolean fireCancellable(@NotNull String eventName, @NotNull ILuaTable payload);
+
     /** Engine that owns this service (used to build payload tables before posting). */
     @NotNull
     com.luatweaker.api.vm.ILuaEngine getEngine();

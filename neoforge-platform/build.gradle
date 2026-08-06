@@ -7,6 +7,9 @@ plugins {
 
 evaluationDependsOn ':modules:module-loot'
 evaluationDependsOn ':modules:module-worldgen'
+evaluationDependsOn ':modules:module-noise'
+evaluationDependsOn ':modules:module-dimensions'
+evaluationDependsOn ':modules:module-spawnrules'
 evaluationDependsOn ':modules:module-update'
 
 version = mod_version
@@ -83,8 +86,19 @@ neoForge {
  sourceSet(project(':modules:module-command').sourceSets.main)
  sourceSet(project(':modules:module-loot').sourceSets.main)
  sourceSet(project(':modules:module-worldgen').sourceSets.main)
- sourceSet(project(':modules:module-update').sourceSets.main)
+ sourceSet(project(':modules:module-noise').sourceSets.main)
+ sourceSet(project(':modules:module-dimensions').sourceSets.main)
+ sourceSet(project(':modules:module-spawnrules').sourceSets.main)
+  sourceSet(project(':modules:module-update').sourceSets.main)
         }
+    }
+
+    // JUnit tests get the Minecraft + NeoForge classpath (needed to test
+    // capability-adjacent logic like pipe conduction without booting the game).
+    // Declared after the mods block: testedMod references mods."${mod_id}".
+    unitTest {
+        enable()
+        testedMod = mods."${mod_id}"
     }
 }
 configurations {
@@ -112,6 +126,9 @@ dependencies {
  jarJar(project(':modules:module-command'))
  jarJar(project(':modules:module-loot'))
  jarJar(project(':modules:module-worldgen'))
+ jarJar(project(':modules:module-noise'))
+ jarJar(project(':modules:module-dimensions'))
+ jarJar(project(':modules:module-spawnrules'))
  jarJar(project(':modules:module-update'))
 
     // Also needed at compile time
@@ -131,6 +148,9 @@ dependencies {
  implementation project(':modules:module-command')
  implementation project(':modules:module-loot')
  implementation project(':modules:module-worldgen')
+ implementation project(':modules:module-noise')
+ implementation project(':modules:module-dimensions')
+ implementation project(':modules:module-spawnrules')
  implementation project(':modules:module-update')
 
     // JEI integration for checking recipes in-game easily
@@ -143,6 +163,7 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation 'com.google.code.gson:gson:2.10.1'
 }
 
 test {

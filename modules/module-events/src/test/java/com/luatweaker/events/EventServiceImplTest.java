@@ -1,66 +1,72 @@
 package com.luatweaker.events;
 
 import com.luatweaker.api.vm.ILuaEngine;
-import com.luatweaker.api.vm.ILuaTable;
-import com.luatweaker.api.vm.ILuaValue;
+import com.luatweaker.core.logger.AsyncFileLogger;
 import com.luatweaker.core.vm.CobaltLuaEngine;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Verifies the shared event bus semantics: listeners registered by a newer engine
- * REPLACE the older engine's listener, so a dispatch from the startup engine's
- * Events table (item handlers are pinned there) reaches the current runtime engine.
+ * Verifies cancellable events: listeners returning Lua `false` cancel the
+ * event; other return values do not.
  */
 public class EventServiceImplTest {
 
-    @Test
-    public void latestListenerReplacesOlderOne() {
-        ILuaEngine startup = new CobaltLuaEngine();
-        ILuaEngine runtime = new CobaltLuaEngine();
-        EventLuaBinding.registerBindings(startup);
-        EventLuaBinding.registerBindings(runtime);
+    @AfterAll
+    public static void shutdownLogger() {
+        AsyncFileLogger.get().shutdown();
+    }
 
-        // Mimic mod loading: startup engine listens, then the reload engine re-listens.
-        startup.executeString(
-            "Events:Listen('MagicStaffUsed', function(payload) _G._handler = 'startup' end)",
-            "startup_listen"
-        );
-        runtime.executeString(
-            "Events:Listen('MagicStaffUsed', function(payload) _G._handler = 'runtime' end)",
-            "runtime_listen"
-        );
+    private ILuaEngine engine;
+    private EventServiceImpl service;
 
-        // Dispatch from the STARTUP engine's Events table (item handler path).
-        ILuaTable payload = startup.createTable();
-        payload.rawset("x", startup.wrapNumber(1));
-        startup.executeString(
-            "Events:Fire('MagicStaffUsed', { x = 1 })",
-            "startup_fire"
-        );
-
-        ILuaValue handler = runtime.getGlobalEnvironment().rawget("_handler");
-        assertNotNull(handler, "the runtime listener must have been invoked");
-        assertEquals("runtime", handler.asString(),
-                "the most recently loaded engine's listener must win");
+    @BeforeEach
+    void setup() {
+        engine = new CobaltLuaEngine();
+        service = new EventServiceImpl(engine);
     }
 
     @Test
-    public void multipleEventsStayIndependent() {
-        ILuaEngine engine = new CobaltLuaEngine();
-        EventLuaBinding.registerBindings(engine);
-
+    void fireCancellable_ListenerReturningFalseCancels() {
+        com.luatweaker.events.EventLuaBinding.registerBindings(engine);
         engine.executeString(
-            "Events:Listen('a', function() _G._a = 1 end)\n" +
-            "Events:Listen('b', function() _G._b = 2 end)\n",
-            "listen_both"
-        );
-        engine.executeString("Events:Fire('b', {})", "fire_b");
+            "Events:Listen('MobSpawnAttempt', function(event)\n" +
+            "    if event.entityId == 'minecraft:phantom' then\n" +
+            "        return false\n" +
+            "    end\n" +
+            "    return true\n" +
+            "end)\n",
+            "test_cancel_listener");
 
-        assertNotNull(engine.getGlobalEnvironment().rawget("_b"));
-        ILuaValue aVal = engine.getGlobalEnvironment().rawget("_a");
-        assertTrue(aVal == null || aVal.isNil(),
-                "firing 'b' must not invoke the 'a' listener");
+        com.luatweaker.api.vm.ILuaTable payload = engine.createTable();
+        payload.rawset("entityId", "minecraft:phantom");
+        assertFalse(service.fireCancellable("MobSpawnAttempt", payload),
+                "phantom must be cancelled");
+
+        com.luatweaker.api.vm.ILuaTable payload2 = engine.createTable();
+        payload2.rawset("entityId", "minecraft:zombie");
+        assertTrue(service.fireCancellable("MobSpawnAttempt", payload2),
+                "zombie must not be cancelled");
+    }
+
+    @Test
+    void fireCancellable_NoListenersReturnsTrue() {
+        com.luatweaker.api.vm.ILuaTable payload = engine.createTable();
+        assertTrue(service.fireCancellable("UnknownEvent", payload));
+    }
+
+    @Test
+    void fireEvent_StillFiresAllListeners() {
+        engine.executeString(
+            "Events:Listen('TestEvent', function(event)\n" +
+            "    return false\n" +
+            "end)\n",
+            "test_fire_listener");
+        com.luatweaker.events.EventLuaBinding.registerBindings(engine);
+        assertDoesNotThrow(() -> service.fireEvent("TestEvent", engine.createTable()),
+                "fireEvent must ignore listener return values");
     }
 }

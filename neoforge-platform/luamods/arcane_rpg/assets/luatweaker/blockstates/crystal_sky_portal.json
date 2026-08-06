@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "luatweaker:block/crystal_sky_portal"
+    }
+  }
+}

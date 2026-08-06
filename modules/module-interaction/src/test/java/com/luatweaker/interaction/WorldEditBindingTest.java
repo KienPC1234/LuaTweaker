@@ -36,6 +36,12 @@ public class WorldEditBindingTest {
         long replaceResult = 7;
         int replaceCalls = 0;
 
+        String placeDimension;
+        String placeTemplateId;
+        int[] placeArgs;
+        boolean placeResult = true;
+        int placeCalls = 0;
+
         @Override
         public long fillBlocks(String dimension, int x1, int y1, int z1, int x2, int y2, int z2,
                                String blockId, Map<String, Object> properties) {
@@ -56,6 +62,16 @@ public class WorldEditBindingTest {
             replaceFromId = fromId;
             replaceToId = toId;
             return replaceResult;
+        }
+
+        @Override
+        public boolean placeStructure(String dimension, String templateId,
+                                      int x, int y, int z, int rotationDegrees) {
+            placeCalls++;
+            placeDimension = dimension;
+            placeTemplateId = templateId;
+            placeArgs = new int[] { x, y, z, rotationDegrees };
+            return placeResult;
         }
 
         // ---- unused PAL methods (trivial stubs for interface compliance) ----
@@ -187,6 +203,52 @@ public class WorldEditBindingTest {
     }
 
     @Test
+    public void placeStructurePassesArgs() {
+        interaction.placeResult = true;
+        ILuaEngine engine = new CobaltLuaEngine();
+        InteractionLuaBinding.registerBindings(engine);
+
+        executeLua(engine,
+                "local ok = World:PlaceStructure('mymod:shrine', 100, 64, -200, 90)\n" +
+                "assert(ok == true, 'placeStructure must round-trip the result')",
+                "place_struct_test");
+
+        assertEquals(1, interaction.placeCalls);
+        assertEquals("minecraft:overworld", interaction.placeDimension, "dimension must default to overworld");
+        assertEquals("mymod:shrine", interaction.placeTemplateId);
+        assertArrayEquals(new int[] { 100, 64, -200, 90 }, interaction.placeArgs);
+    }
+
+    @Test
+    public void placeStructureSupportsDimensionPrefixAndDefaultRotation() {
+        interaction.placeResult = false;
+        ILuaEngine engine = new CobaltLuaEngine();
+        InteractionLuaBinding.registerBindings(engine);
+
+        executeLua(engine,
+                "local ok = World:PlaceStructure('luatweaker:crystal_realm', 'mymod:shrine', 1, 2, 3)\n" +
+                "assert(ok == false, 'placeStructure must round-trip the result')",
+                "place_struct_dim_test");
+
+        assertEquals(1, interaction.placeCalls);
+        assertEquals("luatweaker:crystal_realm", interaction.placeDimension);
+        assertArrayEquals(new int[] { 1, 2, 3, 0 }, interaction.placeArgs, "rotation must default to 0");
+    }
+
+    @Test
+    public void missingArgumentsReturnFalse() {
+        ILuaEngine engine = new CobaltLuaEngine();
+        InteractionLuaBinding.registerBindings(engine);
+
+        executeLua(engine,
+                "assert(World:PlaceStructure() == false, 'too few args must return false')\n" +
+                "assert(World:PlaceStructure('mymod:shrine') == false, 'missing position must return false')",
+                "place_struct_missing_test");
+
+        assertEquals(0, interaction.placeCalls, "the platform must not be called for malformed input");
+    }
+
+    @Test
     public void camelCaseAliasesExist() {
         ILuaEngine engine = new CobaltLuaEngine();
         InteractionLuaBinding.registerBindings(engine);
@@ -198,5 +260,9 @@ public class WorldEditBindingTest {
         ILuaValue replace = engine.getGlobalEnvironment().rawget("World").asTable().rawget("replaceBlocks");
         assertNotNull(replace);
         assertTrue(replace.isFunction(), "World.replaceBlocks alias must exist");
+
+        ILuaValue place = engine.getGlobalEnvironment().rawget("World").asTable().rawget("placeStructure");
+        assertNotNull(place);
+        assertTrue(place.isFunction(), "World.placeStructure alias must exist");
     }
 }

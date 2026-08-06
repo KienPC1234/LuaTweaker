@@ -76,7 +76,7 @@ public final class LuaBinder {
             if (m.isSynthetic() || m.isBridge()) continue;
             if (Modifier.isStatic(m.getModifiers())) continue;
             if ("getRawEntity".equals(m.getName())) continue;
-            if (m.getParameterCount() > 8) continue;
+            if (m.getParameterCount() > 12) continue;
             methods.add(m);
         }
 

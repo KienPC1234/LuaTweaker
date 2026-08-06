@@ -116,6 +116,33 @@ public final class EntityRegistrar {
         }
     }
 
+    /**
+     * Spawn restrictions (docs: worldgen/biomemodifier.md): without a registered
+     * spawn placement, custom entities cannot spawn through the vanilla natural
+     * spawner. ON_GROUND + the standard mob predicate is used for every custom
+     * entity.
+     */
+    @SubscribeEvent
+    public void onRegisterSpawnPlacements(net.neoforged.neoforge.event.entity.RegisterSpawnPlacementsEvent event) {
+        for (IEntityBuilder builder : contentService.getRegisteredEntities()) {
+            try {
+                ResourceLocation rl = locationParser.apply(builder.getId());
+                @SuppressWarnings("unchecked")
+                EntityType<Mob> entityType = (EntityType<Mob>) createdEntityTypes.get(rl);
+                if (entityType == null) continue;
+                event.register(entityType,
+                        net.minecraft.world.entity.SpawnPlacementTypes.ON_GROUND,
+                        net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                        Mob::checkMobSpawnRules,
+                        net.neoforged.neoforge.event.entity.RegisterSpawnPlacementsEvent.Operation.REPLACE);
+                LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom Entity Spawn Placement: " + rl);
+            } catch (Exception e) {
+                LuaTweakerLog.get().error(LogStage.SYSTEM,
+                        "Failed to register spawn placement for " + builder.getId() + ": " + e.getMessage());
+            }
+        }
+    }
+
 
 
     private MobCategory parseCategory(String cat) {

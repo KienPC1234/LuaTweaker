@@ -69,17 +69,62 @@ public class LuaMod {
     }
 
     /**
-     * Ensures default_config.json is copied to config/luatweaker/<mod_id>.json if missing.
+     * Ensures the mod config exists and contains every key from
+     * {@code default_config.json}: the file is created when missing, and new
+     * default keys are deep-merged into an existing config (user values win).
      */
     public void ensureConfigFile(@Nullable String defaultConfigJson) {
-        if (!configFile.exists() && defaultConfigJson != null && !defaultConfigJson.isBlank()) {
-            try {
+        if (defaultConfigJson == null || defaultConfigJson.isBlank()) return;
+        try {
+            if (!configFile.exists()) {
                 Files.writeString(configFile.toPath(), defaultConfigJson, StandardCharsets.UTF_8);
                 LuaTweakerLog.get().info(LogStage.SYSTEM,
                         "[LuaMod][" + manifest.id() + "] Created default config: " + configFile.getAbsolutePath());
-            } catch (Exception e) {
-                LuaTweakerLog.get().error(LogStage.SYSTEM,
-                        "[LuaMod][" + manifest.id() + "] Failed to write default config: " + e.getMessage());
+                return;
+            }
+            String existing = Files.readString(configFile.toPath(), StandardCharsets.UTF_8);
+            String merged = mergeConfigs(existing, defaultConfigJson);
+            if (!merged.equals(existing)) {
+                Files.writeString(configFile.toPath(), merged, StandardCharsets.UTF_8);
+                LuaTweakerLog.get().info(LogStage.SYSTEM,
+                        "[LuaMod][" + manifest.id() + "] Merged new default config keys into: " + configFile.getAbsolutePath());
+            }
+        } catch (Exception e) {
+            LuaTweakerLog.get().error(LogStage.SYSTEM,
+                    "[LuaMod][" + manifest.id() + "] Failed to write default config: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Deep-merges the default config JSON into the existing user config JSON.
+     * User values always win; keys present only in the defaults are added.
+     * Malformed input falls back to the well-formed side.
+     */
+    public static String mergeConfigs(@NotNull String existingJson, @NotNull String defaultJson) {
+        JsonObject existing = tryParse(existingJson);
+        JsonObject defaults = tryParse(defaultJson);
+        if (existing == null) return defaultJson;
+        if (defaults == null) return existingJson;
+        deepMerge(defaults, existing);
+        return GSON.toJson(defaults);
+    }
+
+    private static JsonObject tryParse(String json) {
+        try {
+            return GSON.fromJson(json, JsonObject.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static void deepMerge(JsonObject base, JsonObject override) {
+        for (Map.Entry<String, com.google.gson.JsonElement> entry : override.entrySet()) {
+            com.google.gson.JsonElement value = entry.getValue();
+            if (value.isJsonObject() && base.has(entry.getKey())
+                    && base.get(entry.getKey()).isJsonObject()) {
+                deepMerge(base.getAsJsonObject(entry.getKey()), value.getAsJsonObject());
+            } else {
+                base.add(entry.getKey(), value);
             }
         }
     }

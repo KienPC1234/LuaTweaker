@@ -135,7 +135,7 @@ public class NeoForgeWorldgenProvider {
         return switch (ore.dimension()) {
             case "minecraft:overworld" ->
                     "{"
-                    + "{\"target\":{\"predicate_type\":\"minecraft:tag_match\",\"tag\":\"minecraft:stone_ore_replaceables\"},"
+                    + "\"target\":{\"predicate_type\":\"minecraft:tag_match\",\"tag\":\"minecraft:stone_ore_replaceables\"},"
                     + "\"state\":{\"Name\":\"" + escapeJson(ore.blockId()) + "\"}},"
                     + "{\"target\":{\"predicate_type\":\"minecraft:tag_match\",\"tag\":\"minecraft:deepslate_ore_replaceables\"},"
                     + "\"state\":{\"Name\":\"" + escapeJson(ore.blockId()) + "\"}}";

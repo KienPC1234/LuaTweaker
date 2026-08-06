@@ -89,6 +89,18 @@ public final class LuaServiceBootstrap {
         com.luatweaker.worldgen.WorldgenLuaBinding.registerBindings(engine, worldgenService);
         engine.registerService("WorldgenServiceImpl", worldgenService);
 
+        // 9b1. Noise Service (fBm, ridged, domain warp, voronoi, simplex for terrain generation)
+        com.luatweaker.noise.NoiseLuaBinding.registerBindings(engine);
+
+        // 9b2. Dimension Service (custom dimensions with Lua terrain generation)
+        com.luatweaker.dimension.DimensionLuaBinding.registerBindings(engine);
+
+        // 9b3. Biome customization (entity spawn entries inside biomes)
+        com.luatweaker.dimension.BiomesLuaBinding.registerBindings(engine);
+
+        // 9b4. Full-control spawn handlers (the Lua code decides every spawn)
+        com.luatweaker.spawn.SpawnRuleLuaBinding.registerBindings(engine);
+
         // 9b. Server-side command registration (Commands:Register for /lt sub-commands)
         com.luatweaker.command.CommandLuaBinding.registerBindings(engine);
 
