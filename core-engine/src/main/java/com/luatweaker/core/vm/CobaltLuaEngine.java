@@ -512,6 +512,7 @@ public class CobaltLuaEngine implements ILuaEngine {
             case "LuaTweaker.Players", "Players" -> globals.rawget("Players");
             case "LuaTweaker.AIGoals", "AIGoals" -> globals.rawget("AIGoals");
             case "LuaTweaker.Loot", "Loot" -> globals.rawget("Loot");
+            case "LuaTweaker.Worldgen", "Worldgen" -> globals.rawget("Worldgen");
             case "LuaTweaker.Storage", "Storage", "storage" -> {
                 LuaValue val = globals.rawget("Storage");
                 if (val == null || val.isNil()) {

@@ -6,12 +6,14 @@ local Network = require("LuaTweaker.Network")
 local ClientEffects = require("LuaTweaker.ClientEffects")
 local GuiService = require("LuaTweaker.GuiService")
 local RenderService = require("LuaTweaker.RenderService")
-
+local Constants = 
 print("[Client] Initializing Magic Staff Client Visual Effects & HUD Listener...")
 
 -- PLAYER STATE MIRROR (synced from the server via StaffManaSync)
-local currentMana = 100
-local maxMana = 100
+local cfg = mod and mod:GetConfig() or {}
+local defaultMana = tonumber(cfg.staff_max_mana) or 100
+local currentMana = defaultMana
+local maxMana = defaultMana
 local activeSkill = "Ruby Orb Fireball"
 local hudVisible = false
 local flashTicks = 0
@@ -20,15 +22,18 @@ local flashTicks = 0
 local markedTargetUuid = nil
 
 -- CONFIG-DRIVEN CLIENT TUNING
-local cfg = mod and mod:GetConfig() or {}
 local TARGET_OUTLINE_COLOR = tonumber(cfg.target_outline_color) or 4294902015
 
--- HUD GEOMETRY CONSTANTS
-local PANEL_WIDTH = 170
-local PANEL_HEIGHT = 64
-local BAR_WIDTH = 146
-local BAR_HEIGHT = 10
-local PADDING = 12
+-- HUD GEOMETRY (from luaconfig/ruby_mod.json)
+local PANEL_WIDTH = tonumber(cfg.staff_hud_panel_width) or 170
+local PANEL_HEIGHT = tonumber(cfg.staff_hud_panel_height) or 64
+local BAR_WIDTH = tonumber(cfg.staff_hud_bar_width) or 146
+local BAR_HEIGHT = tonumber(cfg.staff_hud_bar_height) or 10
+local PADDING = tonumber(cfg.staff_hud_padding) or 12
+local PANEL_Y = tonumber(cfg.staff_hud_panel_y) or 14
+local FLASH_DURATION = tonumber(cfg.staff_hud_flash_duration) or 10
+local OUTLINE_MARGIN = tonumber(cfg.staff_hud_outline_margin) or 0.12
+local LABEL_HEIGHT_OFFSET = tonumber(cfg.staff_hud_label_height_offset) or 0.6
 local PANEL_BG = 0xCC111827
 local PANEL_BORDER = 0xFF38BDF8
 local BAR_BG = 0xFF1E293B
@@ -36,7 +41,6 @@ local BAR_FILL = 0xFF0284C7
 local TEXT_COLOR = 0xFFFFFFFF
 local TITLE_COLOR = 0xFFFDE047
 local FLASH_COLOR = 0x88FFFFFF
-local FLASH_DURATION = 10
 
 -- PER-SKILL HUD ACCENTS
 local SKILL_ACCENTS = {
@@ -118,7 +122,7 @@ if GuiService and GuiService.OnRenderHUD then
         local size = GuiService:GetScreenSize()
         local screenWidth = size.Width or 0
         local startX = math.floor((screenWidth - PANEL_WIDTH) / 2)
-        local startY = 14
+        local startY = PANEL_Y
 
         -- Panel Background (Dark Glassmorphic Container)
         GuiService:DrawRect(startX, startY, PANEL_WIDTH, PANEL_HEIGHT, PANEL_BG)
@@ -164,7 +168,7 @@ local function drawTargetOutline(uuid, color)
         print("[Client] Outline entity found: " .. tostring(ent.Name) .. " (" .. tostring(ent.Type) .. ") @ " .. string.format("%.1f, %.1f, %.1f", ent.X, ent.Y, ent.Z))
         outlineDebugState = "ok"
     end
-    local margin = 0.12
+    local margin = OUTLINE_MARGIN
     local halfW = ent.Width / 2 + margin
     RenderService:DrawBox(
         ent.X - halfW, ent.Y - margin, ent.Z - halfW,
@@ -172,7 +176,7 @@ local function drawTargetOutline(uuid, color)
         color
     )
     -- Name label above the box (projected to screen space)
-    local labelPos = RenderService:WorldToScreen(ent.X, ent.Y + ent.Height + 0.6, ent.Z)
+    local labelPos = RenderService:WorldToScreen(ent.X, ent.Y + ent.Height + LABEL_HEIGHT_OFFSET, ent.Z)
     if labelPos and labelPos.Visible then
         GuiService:DrawTextCentered(ent.Name, math.floor(labelPos.X), math.floor(labelPos.Y), color, true)
     end

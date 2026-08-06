@@ -8,6 +8,8 @@ import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 public class NetworkServiceImplTest {
@@ -54,5 +56,37 @@ public class NetworkServiceImplTest {
 
         ILuaValue res = networkService.InvokeServer("TestFunc", new ILuaValue[]{engine.wrapNumber(10), engine.wrapNumber(20)});
         assertEquals(30.0, res.asDouble());
+    }
+
+    @Test
+    void remoteEventFireClientPreservesArgumentOrder() {
+        List<String[]> captured = new java.util.ArrayList<>();
+        Platform.setNetwork(new IPlatformNetwork() {
+            @Override
+            public void sendPayloadPacket(String playerUuid, String channelName, String dataJson) {
+                captured.add(new String[]{channelName, dataJson});
+            }
+
+            @Override
+            public void broadcastPayloadPacket(String channelName, String dataJson) {}
+
+            @Override
+            public void sendPayloadPacketToServer(String channelName, String dataJson) {}
+        });
+
+        CobaltLuaEngine engine = new CobaltLuaEngine(false);
+        NetworkServiceImpl networkService = new NetworkServiceImpl(engine);
+        NetworkLuaBinding.registerBindings(engine, networkService);
+
+        // Full Lua path: RemoteEvent:FireClient packs its varargs into a positional
+        // table; the order MUST survive the Java unpack (regression for the
+        // HashMap-scrambling asMap() bug that reordered mana/maxMana/skill...).
+        engine.executeString("local ev = NetworkService:GetOrCreateRemoteEvent('OrderTest')\n" +
+                "ev:FireClient('00000000-0000-0000-0000-000000000000', 100, 200, 'skill', true)\n", "TEST");
+
+        assertEquals(1, captured.size());
+        assertEquals("OrderTest", captured.get(0)[0]);
+        assertEquals("[100,200,\"skill\",true]", captured.get(0)[1],
+                "positional args must arrive at the packet in the fired order");
     }
 }

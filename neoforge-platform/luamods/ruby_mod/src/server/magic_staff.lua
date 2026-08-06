@@ -18,6 +18,16 @@ local playerStates = {}
 local cfg = mod and mod:GetConfig() or {}
 local MAX_MANA = tonumber(cfg.staff_max_mana) or 100
 local MANA_REGEN_PER_TICK = tonumber(cfg.staff_mana_regen_per_tick) or 4
+local REGEN_LOOP_INTERVAL = tonumber(cfg.staff_regen_loop_interval) or 0.4
+local EYE_HEIGHT = tonumber(cfg.staff_eye_height) or 1.6
+local TARGET_HEIGHT = tonumber(cfg.staff_target_height) or 1.0
+local FIREBALL_SPEED = tonumber(cfg.staff_fireball_speed) or 1.8
+local HOMING_STEER_INTERVAL = tonumber(cfg.staff_homing_steer_interval) or 0.05
+local HOMING_HIT_DISTANCE = tonumber(cfg.staff_homing_hit_distance) or 0.5
+local AEGIS_RESISTANCE_TICKS = tonumber(cfg.staff_aegis_resistance_ticks) or 160
+local AEGIS_REGENERATION_TICKS = tonumber(cfg.staff_aegis_regeneration_ticks) or 160
+local AEGIS_ABSORPTION_TICKS = tonumber(cfg.staff_aegis_absorption_ticks) or 600
+local SUMMON_OFFSET = cfg.staff_summon_offset or { x = 0, y = 1, z = 0 }
 
 local SKILLS = cfg.staff_skills or {
     { name = "Ruby Orb Fireball", cost = 20, cooldown = 1.5 },
@@ -130,13 +140,13 @@ end
 -- Pure-Lua raycast: nearest living entity inside a cone along the player's look direction.
 ---@param player Player
 local function raycastNearestVisible(player, maxDistance, radius)
-    local px, py, pz = player:getX(), player:getY() + 1.6, player:getZ()
+    local px, py, pz = player:getX(), player:getY() + EYE_HEIGHT, player:getZ()
     local dx, dy, dz = getLookVector(player)
     local entities = World:GetEntitiesInRadius(player, maxDistance)
     local best, bestT = nil, math.huge
     for _, ent in ipairs(entities or {}) do
         if ent ~= player and ent:isAlive() then
-            local ex, ey, ez = ent:getX(), ent:getY() + 1.0, ent:getZ()
+            local ex, ey, ez = ent:getX(), ent:getY() + TARGET_HEIGHT, ent:getZ()
             local t = (ex - px) * dx + (ey - py) * dy + (ez - pz) * dz
             if t > 0 and t < maxDistance and t < bestT then
                 local cx = px + dx * t
@@ -190,7 +200,7 @@ Task.spawn(function()
     print("[MagicStaffHUD] Successfully started Task.spawn coroutine!")
     print("[MagicStaffHUD] Starting Mana Regeneration & HUD loop coroutine...")
     while true do
-        Task.wait(0.4)
+        Task.wait(REGEN_LOOP_INTERVAL)
         local ok, err = pcall(function()
             local Players = require("LuaTweaker.Players")
             local online = Players and Players.GetPlayers and Players:GetPlayers()
@@ -243,13 +253,13 @@ local function fireHomingDart(player, state, target, speed)
             if lockedUuid ~= state.markedTargetUuid then dart:remove() break end
             local currentTarget = World and World.GetEntity and World:GetEntity(lockedUuid)
             if not currentTarget or not currentTarget:isAlive() then break end
-            local tx, ty, tz = currentTarget:getX(), currentTarget:getY() + 1.0, currentTarget:getZ()
+            local tx, ty, tz = currentTarget:getX(), currentTarget:getY() + TARGET_HEIGHT, currentTarget:getZ()
             local px, py, pz = dart:getX(), dart:getY(), dart:getZ()
             local dx, dy, dz = tx - px, ty - py, tz - pz
             local len = math.sqrt(dx * dx + dy * dy + dz * dz)
-            if len <= 0.5 then break end
+            if len <= HOMING_HIT_DISTANCE then break end
             dart:setMotion(dx / len * speed, dy / len * speed, dz / len * speed)
-            Task.wait(0.05)
+            Task.wait(HOMING_STEER_INTERVAL)
             homingTicks = homingTicks - 1
         end
     end)
@@ -307,7 +317,7 @@ local function handleStaffUse(player, itemStack)
             fireHomingDart(player, state, marked, HOMING_DART_SPEED)
             updateActionBar(player, state, "[Cast] Ruby Orb homing toward " .. marked:getName())
         else
-            player:shootProjectile("luatweaker:ruby_orb", 1.8)
+            player:shootProjectile("luatweaker:ruby_orb", FIREBALL_SPEED)
             updateActionBar(player, state, "[Cast] Ruby Orb Fireball launched!")
         end
         if skillEffectEvent then skillEffectEvent:FireClient(player, "fireball") end
@@ -316,7 +326,8 @@ local function handleStaffUse(player, itemStack)
         -- SKILL 2: SUMMON RUBY GUARDIAN MINION (follows owner; attacks only when ordered)
         player:playSound("minecraft:entity.evoker.prepare_summon", 1.0, 1.0)
         player:spawnParticle("minecraft:totem_of_undying", 30, 0.5)
-        local minion = player:spawnEntity("luatweaker:ruby_boss", 0, 1, 0)
+        local minion = player:spawnEntity("luatweaker:ruby_boss",
+            SUMMON_OFFSET.x or 0, SUMMON_OFFSET.y or 1, SUMMON_OFFSET.z or 0)
         if minion then
             local aliveMinions = {}
             for _, m in ipairs(state.minions or {}) do
@@ -355,9 +366,9 @@ local function handleStaffUse(player, itemStack)
         player:playSound("minecraft:entity.zombie_villager.cure", 1.0, 1.5)
         player:spawnParticle("minecraft:enchanted_hit", 40, 0.4)
 
-        player:addEffect("resistance", 160, 2) -- 8s Resistance III
-        player:addEffect("regeneration", 160, 1) -- 8s Regeneration II
-        player:addEffect("absorption", 600, 1)   -- Absorption II
+        player:addEffect("resistance", AEGIS_RESISTANCE_TICKS, 2) -- 8s Resistance III
+        player:addEffect("regeneration", AEGIS_REGENERATION_TICKS, 1) -- 8s Regeneration II
+        player:addEffect("absorption", AEGIS_ABSORPTION_TICKS, 1)   -- Absorption II
         if skillEffectEvent then skillEffectEvent:FireClient(player, "aegis") end
         updateActionBar(player, state, "[Aegis Barrier] Resistance III & Regeneration II Active!")
 

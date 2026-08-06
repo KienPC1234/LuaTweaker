@@ -3,7 +3,7 @@
 -- Items, Blocks, Entity Types, Creative Tabs
 -- ================================================================
 local Content = require("LuaTweaker.Content")
-
+local Constants = 
 -- ==== CREATIVE TAB ====
 Content.createTab("arcane_tab", function(tab)
     tab:title("Arcane RPG")
@@ -46,8 +46,11 @@ local CrystalSword = Content.NewItem("crystal_sword")
     :CreativeTab("arcane_tab")
     :Tooltip("§bA blade forged from pure crystal")
     :OnHitEntity(function(target, attacker)
-        if math.random() < 0.15 then
-            target:addEffect("slowness", 40, 1)
+        local swordCfg = mod and mod:GetConfig() or {}
+        local slowChance = tonumber(swordCfg.crystal_sword_slow_chance) or 0.15
+        local slowTicks = tonumber(swordCfg.crystal_sword_slow_ticks) or 40
+        if math.random() < slowChance then
+            target:addEffect("slowness", slowTicks, 1)
             attacker:sendActionBar("§bCrystal frost enchants your blade!")
         end
     end)
@@ -123,8 +126,10 @@ local ManaPotion = Content.NewItem("mana_potion")
     :Tooltip("§9Restores 50 mana instantly")
     :OnConsume(function(player, stack)
         local ManaSystem = require(".src.server.mana_system")
-        ManaSystem:RestoreMana(player, 50)
-        player:sendActionBar("§9+50 Mana restored!")
+        local potionCfg = mod and mod:GetConfig() or {}
+        local restore = tonumber(potionCfg.mana and potionCfg.mana.potion_restore) or 50
+        ManaSystem:RestoreMana(player, restore)
+        player:sendActionBar("§9+" .. tostring(restore) .. " Mana restored!")
         player:playSound("minecraft:item.honey_bottle.drink", 1.0, 1.5)
     end)
     :Register()

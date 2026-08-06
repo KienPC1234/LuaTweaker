@@ -75,8 +75,9 @@ public class NeoForgeLootProvider {
         List<LootServiceImpl.FishingLootEntry> entries = lootService.getPendingFishingLoot();
         if (entries.isEmpty()) return;
 
+        // Colon form required: 'minecraft:gameplay/fishing' -> data/minecraft/loot_table/gameplay/fishing.json
         String json = buildFishingLootTableJson(entries);
-        datapackService.addLootTable("minecraft/gameplay/fishing", json);
+        datapackService.addLootTable("minecraft:gameplay/fishing", json);
     }
 
     private void applyRemovals() {

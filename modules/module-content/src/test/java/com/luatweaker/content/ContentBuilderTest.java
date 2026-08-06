@@ -105,6 +105,39 @@ public class ContentBuilderTest {
     }
 
     @Test
+    public void testContainerUseDistanceFromLua() throws IOException {
+        String script = """
+            local Content = require("LuaTweaker.Content")
+            local crate = Content.NewBlock("test_crate")
+                :Container(4, 6, "packed")
+                :ContainerUseDistance(10)
+                :Register()
+            local defaultCrate = Content.NewBlock("default_crate")
+                :Container(2, 3, "spill")
+                :Register()
+        """;
+        File file = createTempScript(script);
+        engine.executeScript(file, "TEST");
+
+        assertEquals(2, contentService.getRegisteredBlocks().size());
+        boolean sawCustom = false;
+        boolean sawDefault = false;
+        for (IBlockBuilder builder : contentService.getRegisteredBlocks()) {
+            assertTrue(builder.isContainer());
+            if ("test_crate".equals(builder.getId())) {
+                assertEquals(10.0, builder.getContainerUseDistance());
+                sawCustom = true;
+            } else if ("default_crate".equals(builder.getId())) {
+                assertEquals(8.0, builder.getContainerUseDistance(),
+                        "use distance must default to vanilla reach (8 blocks)");
+                sawDefault = true;
+            }
+        }
+        assertTrue(sawCustom, "custom-distance container must have been registered");
+        assertTrue(sawDefault, "default-distance container must have been registered");
+    }
+
+    @Test
     public void testStorageFromLua() throws IOException {
         String script = """
             storage:set("test_key", "hello_world")
@@ -127,6 +160,19 @@ public class ContentBuilderTest {
 
         assertEquals(1, datapackService.getVirtualFiles().size());
         assertTrue(datapackService.getVirtualFiles().containsKey("data/luatweaker/recipe/custom_crafting.json"));
+    }
+
+    @Test
+    public void testDatapackClearWipesEverything() {
+        datapackService.addJsonRecipe("custom_crafting", "{}");
+        datapackService.addData("data/mymod/recipe/stale.json", "{}");
+        datapackService.addTag("block", "minecraft:mineable/pickaxe", java.util.List.of("mymod:test_block"));
+        assertFalse(datapackService.getVirtualFiles().isEmpty());
+
+        datapackService.clear();
+
+        assertTrue(datapackService.getVirtualFiles().isEmpty(),
+                "a reload must start from a clean virtual pack so stale files disappear");
     }
 
     @Test

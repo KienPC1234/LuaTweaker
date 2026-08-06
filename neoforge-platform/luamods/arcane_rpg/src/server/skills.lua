@@ -96,7 +96,7 @@ function Skills:CastSkill(player, skillName)
 end
 
 function Skills:_castCrystalBolt(player, cfg)
-    player:shootProjectile("luatweaker:crystal_bolt", cfg.projectile_speed, 0.5)
+    player:shootProjectile("luatweaker:crystal_bolt", cfg.projectile_speed, cfg.inaccuracy)
     player:playSound("minecraft:entity.blaze.shoot", 1.0, 1.5)
     player:sendActionBar("§bCrystal Bolt!")
 end
@@ -110,7 +110,7 @@ function Skills:_castFrostNova(player, cfg)
     for i = 1, #nearby do
         local entity = nearby[i]
         if entity:getUuid() ~= player:getUuid() and entity:isLiving() then
-            entity:addEffect("slowness", cfg.slow_duration, 2)
+            entity:addEffect("slowness", cfg.slow_duration, cfg.slow_amplifier)
             entity:damage(cfg.damage)
             entity:spawnParticle("minecraft:cloud", 5, 0.5)
             hitCount = hitCount + 1
@@ -122,8 +122,8 @@ function Skills:_castFrostNova(player, cfg)
 end
 
 function Skills:_castArcaneShield(player, cfg)
-    player:addEffect("absorption", cfg.duration, 2)
-    player:addEffect("resistance", cfg.duration, 0)
+    player:addEffect("absorption", cfg.duration, cfg.absorption_amplifier)
+    player:addEffect("resistance", cfg.duration, cfg.resistance_amplifier)
     player:spawnParticle("minecraft:enchant", 20, 0.3)
     player:playSound("minecraft:entity.ender_dragon.growl", 0.5, 2.0)
     player:sendActionBar("§bArcane Shield activated! (" .. cfg.duration / 20 .. "s)")
@@ -133,14 +133,14 @@ function Skills:_castMeteorStrike(player, cfg)
     local px = player:getX()
     local py = player:getY()
     local pz = player:getZ()
-    task.delay(0.5, function()
+    task.delay(cfg.delay_seconds, function()
         World:SetBlockState(px, py - 1, pz, "minecraft:fire")
-        local nearby = World:GetEntitiesInRadius(player, 8.0)
+        local nearby = World:GetEntitiesInRadius(player, cfg.radius)
         for i = 1, #nearby do
             local entity = nearby[i]
             if entity:getUuid() ~= player:getUuid() and entity:isLiving() then
                 entity:damage(cfg.damage)
-                entity:setIgniteSeconds(5)
+                entity:setIgniteSeconds(cfg.ignite_seconds)
             end
         end
     end)

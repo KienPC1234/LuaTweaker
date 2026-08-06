@@ -51,4 +51,7 @@ public interface IDatapackService {
 
     /** Returns a live, unmodifiable view of all registered virtual data paths → content. */
     Map<String, String> getVirtualFiles();
+
+    /** Wipes every virtual file; a reload must rebuild the pack from scratch so stale entries disappear. */
+    void clear();
 }

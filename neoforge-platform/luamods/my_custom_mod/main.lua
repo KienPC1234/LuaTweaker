@@ -24,15 +24,16 @@ if BossAI and BossAI.Initialize then
 end
 
 -- 3. GIAI DOAN STARTUP: DANG KY VAT PHAM
+local cfg = mod and mod:GetConfig() or {}
 local CustomSword = Content.NewItem("my_custom_mod:shadow_blade")
     :DisplayName("Lua Kiem Bong Dem")
-    :AttackDamage(12.0)
+    :AttackDamage(tonumber(cfg.shadow_blade_damage) or 12.0)
     :Register()
 
 -- 4. SERVER COMMAND PRIMITIVE (test qua mod nay, khong phai ruby_mod)
 -- Delayed: commands need an active world (during startup overworld is null).
 Task.spawn(function()
-    Task.wait(5)
+    Task.wait(tonumber(cfg.cmd_delay_seconds) or 5)
     local cmdOk = World:ExecuteCommand("say [MyCustomMod] ExecuteCommand works from Lua")
     print("[MyCustomMod] World:ExecuteCommand -> " .. tostring(cmdOk))
 end)
@@ -43,9 +44,9 @@ if Events and Events.OnEntityDamaged then
         local attacker = event.Attacker
         local target   = event.Target
         if attacker and attacker:GetHeldItem() and attacker:GetHeldItem().Id == "my_custom_mod:shadow_blade" then
-            Task:delay(0.5, function()
+            Task:delay(tonumber(cfg.bleed_delay_seconds) or 0.5, function()
                 if target and target:IsAlive() then
-                    target:TakeDamage(5.0, "magic")
+                    target:TakeDamage(tonumber(cfg.shadow_blade_bleed_damage) or 5.0, "magic")
                 end
             end)
         end
@@ -55,7 +56,8 @@ end
 -- 6. CROSS-MOD CONTAINER TEST: thao tac tren wood_crate CUA ruby_mod
 local CRATE_ID = "luatweaker:wood_crate"
 local TEST_ITEM = "minecraft:stick"
-local CHECK_INTERVAL = 5
+local CHECK_INTERVAL = tonumber(cfg.check_interval) or 5
+local SCAN_RADIUS = tonumber(cfg.scan_radius) or 1
 
 local function testCrate(dim, x, y, z)
     -- a) Doc blockstate tu mod khac
@@ -107,9 +109,9 @@ Task.spawn(function()
             for _, player in ipairs(online) do
                 local px, py, pz = player:getX(), player:getY(), player:getZ()
                 local dim = player:getDimension()
-                for dx = -1, 1 do
-                    for dy = -1, 1 do
-                        for dz = -1, 1 do
+                for dx = -SCAN_RADIUS, SCAN_RADIUS do
+                    for dy = -SCAN_RADIUS, SCAN_RADIUS do
+                        for dz = -SCAN_RADIUS, SCAN_RADIUS do
                             testCrate(dim, math.floor(px) + dx, math.floor(py) + dy, math.floor(pz) + dz)
                         end
                     end

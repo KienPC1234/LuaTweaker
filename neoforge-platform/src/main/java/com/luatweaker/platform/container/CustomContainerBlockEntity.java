@@ -1,5 +1,6 @@
 package com.luatweaker.platform.container;
 
+import com.luatweaker.api.event.EventNames;
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
 import net.minecraft.core.HolderLookup;
@@ -35,13 +36,21 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
     private static final String TAG_ITEMS = "Items";
     private static final String TAG_EXTRA = "LuaData";
 
+    /** Fallback size when the owning block could not be resolved (rare). */
+    private static final int DEFAULT_SLOT_COUNT = 24;
+    /** Fallback menu geometry when the owning block could not be resolved. */
+    private static final int DEFAULT_ROWS = 4;
+    private static final int DEFAULT_COLS = 6;
+    /** Fallback use reach (blocks) when the owning block could not be resolved. */
+    private static final double DEFAULT_USE_DISTANCE = 8.0;
+
     private final NonNullList<ItemStack> items;
     private CompoundTag extraNbt = new CompoundTag();
 
     public CustomContainerBlockEntity(net.minecraft.core.BlockPos pos, BlockState state) {
         super(resolveType(state), pos, state);
         CustomContainerBlock container = state.getBlock() instanceof CustomContainerBlock c ? c : null;
-        int size = container != null ? container.getSlotCount() : 24;
+        int size = container != null ? container.getSlotCount() : DEFAULT_SLOT_COUNT;
         this.items = NonNullList.withSize(size, ItemStack.EMPTY);
     }
 
@@ -139,7 +148,7 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
             final int fx = worldPosition.getX();
             final int fy = worldPosition.getY();
             final int fz = worldPosition.getZ();
-            ContainerEvents.post("ContainerItemRejected", engine -> {
+            ContainerEvents.post(EventNames.CONTAINER_ITEM_REJECTED, engine -> {
                 com.luatweaker.api.vm.ILuaTable payload = ContainerEvents.basePayload(engine, container, fx, fy, fz);
                 payload.rawset("ItemId", engine.wrapString(itemId));
                 payload.rawset("Count", engine.wrapNumber(stack.getCount()));
@@ -222,7 +231,11 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
         if (level == null || level.getBlockEntity(worldPosition) != this) {
             return false;
         }
-        return player.distanceToSqr(worldPosition.getX() + 0.5, worldPosition.getY() + 0.5, worldPosition.getZ() + 0.5) <= 64.0;
+        double distance = DEFAULT_USE_DISTANCE;
+        if (level.getBlockState(worldPosition).getBlock() instanceof CustomContainerBlock container) {
+            distance = container.getUseDistance();
+        }
+        return player.distanceToSqr(worldPosition.getX() + 0.5, worldPosition.getY() + 0.5, worldPosition.getZ() + 0.5) <= distance * distance;
     }
 
     @Override
@@ -243,8 +256,8 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
     @NotNull
     public AbstractContainerMenu createMenu(int containerId, @NotNull Inventory playerInventory, @NotNull Player player) {
         net.minecraft.world.inventory.MenuType<CustomContainerMenu> type = null;
-        int rows = 4;
-        int cols = 6;
+        int rows = DEFAULT_ROWS;
+        int cols = DEFAULT_COLS;
         if (level != null && level.getBlockState(worldPosition).getBlock() instanceof CustomContainerBlock container) {
             rows = container.getRows();
             cols = container.getCols();

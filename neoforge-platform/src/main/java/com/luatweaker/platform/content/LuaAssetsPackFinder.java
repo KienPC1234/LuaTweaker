@@ -18,6 +18,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.AddPackFindersEvent;
 
 import java.io.File;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -53,7 +54,6 @@ public class LuaAssetsPackFinder {
         if (event.getPackType() == PackType.CLIENT_RESOURCES) {
             // Generate all asset JSON files directly in RAM (Zero Write to Disk)
             injectVirtualAssetFiles();
-
             PackLocationInfo locationInfo = new PackLocationInfo(
                     "luatweaker_user_assets",
                     Component.literal("LuaTweaker User Assets"),
@@ -124,6 +124,19 @@ public class LuaAssetsPackFinder {
         }
     }
 
+    /**
+     * Re-generates every content-driven virtual file (block tags, models, lang, ...).
+     * Called after {@link IDatapackService#clear()} on reload, so content files are
+     * rebuilt from the SAME content service instead of being lost until the next
+     * pack scan.
+     */
+    public void rebuildVirtualFiles() {
+        injectBlockTagsToVirtualPack();
+        if (com.luatweaker.api.pal.Platform.isInitialized() && com.luatweaker.api.pal.Platform.getContent().isClient()) {
+            injectVirtualAssetFiles();
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Mining / tool tags → inject into virtualFiles (RAM)
     // -----------------------------------------------------------------------
@@ -131,41 +144,8 @@ public class LuaAssetsPackFinder {
     private void injectBlockTagsToVirtualPack() {
         if (contentService == null || datapackService == null) return;
 
-        java.util.Map<String, JsonArray> tagMap = new java.util.LinkedHashMap<>();
-
-        for (IBlockBuilder b : contentService.getRegisteredBlocks()) {
-            String[] parts = parseId(b.getId());
-            String fullId = parts[0] + ":" + parts[1];
-
-            if (b.getMineableWith() != null) {
-                String tool = b.getMineableWith().toLowerCase();
-                String tagPath = "tags/block/mineable/" + tool + ".json";
-                tagMap.computeIfAbsent(tagPath, k -> new JsonArray()).add(fullId);
-            }
-
-            if (b.getMiningLevel() > 0) {
-                String levelTag = switch (b.getMiningLevel()) {
-                    case 1 -> "tags/block/needs_stone_tool.json";
-                    case 2 -> "tags/block/needs_iron_tool.json";
-                    case 3 -> "tags/block/needs_diamond_tool.json";
-                    case 4 -> "tags/block/needs_netherite_tool.json";
-                    default -> "tags/block/needs_stone_tool.json";
-                };
-                tagMap.computeIfAbsent(levelTag, k -> new JsonArray()).add(fullId);
-            }
-
-            if (parts[1].endsWith("_wall")) {
-                tagMap.computeIfAbsent("tags/block/walls.json", k -> new JsonArray()).add(fullId);
-            }
-            if (parts[1].endsWith("_stairs")) {
-                tagMap.computeIfAbsent("tags/block/stairs.json", k -> new JsonArray()).add(fullId);
-            }
-            if (parts[1].endsWith("_slab")) {
-                tagMap.computeIfAbsent("tags/block/slabs.json", k -> new JsonArray()).add(fullId);
-            }
-        }
-
-        for (java.util.Map.Entry<String, JsonArray> entry : tagMap.entrySet()) {
+        for (java.util.Map.Entry<String, List<String>> entry
+                : ContentTagMapper.computeBlockTags(contentService).entrySet()) {
             String virtualKey = "data/minecraft/" + entry.getKey();
             String existing = datapackService.getVirtualFiles().get(virtualKey);
             JsonObject json = new JsonObject();
@@ -173,9 +153,9 @@ public class LuaAssetsPackFinder {
             JsonArray values = existing != null
                     ? com.google.gson.JsonParser.parseString(existing).getAsJsonObject().getAsJsonArray("values")
                     : new JsonArray();
-            for (var elem : entry.getValue()) {
+            for (String elem : entry.getValue()) {
                 boolean found = false;
-                for (var v : values) if (v.getAsString().equals(elem.getAsString())) { found = true; break; }
+                for (var v : values) if (v.getAsString().equals(elem)) { found = true; break; }
                 if (!found) values.add(elem);
             }
             json.add("values", values);

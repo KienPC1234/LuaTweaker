@@ -103,9 +103,11 @@ end
 local syncCounter = 0
 Events:Listen("ServerTick", function()
     ManaSystem:RegenTick()
-    -- Sync mana to clients once per second (every 20 ticks) to avoid packet spam.
+    -- Sync mana to clients once per sync interval (every 20 ticks by default)
+    -- to avoid packet spam; interval comes from config (mana.sync_interval_ticks).
+    local syncInterval = math.max(1, cfgValue({ "mana", "sync_interval_ticks" }, 20))
     syncCounter = syncCounter + 1
-    if syncCounter >= 20 then
+    if syncCounter >= syncInterval then
         syncCounter = 0
         local allPlayers = Players.GetPlayers()
         for i = 1, #allPlayers do

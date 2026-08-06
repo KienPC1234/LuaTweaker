@@ -54,7 +54,10 @@ public interface IBlockBuilder {
     @LuaDoc(description = "Turns this block into an inventory container opened on right-click. dropMode: 'packed' (drop the block with its NBT, contents never spill), 'spill' (drop contents like a chest), 'none' (no drops).", params = {"rows: integer (1-6, 6 columns each)", "cols: integer", "dropMode: string"}, returnType = "IBlockBuilder")
     IBlockBuilder container(int rows, int cols, String dropMode);
 
-    @LuaDoc(description = "Registers an item filter for container blocks: handler(itemId: string, count: integer) -> boolean. Return true to allow the item into a slot, false to reject it (item never enters the crate, 'CrateItemRejected' event fires).", params = {"handler: function(itemId, count)"}, returnType = "IBlockBuilder")
+    @LuaDoc(description = "Sets how far (in blocks) a player may stand from the container to open/use it (default 8.0 = vanilla reach).", params = {"distance: number"}, returnType = "IBlockBuilder")
+    IBlockBuilder containerUseDistance(double distance);
+
+    @LuaDoc(description = "Registers an item filter for container blocks: handler(itemId: string, count: integer) -> boolean. Return true to allow the item into a slot, false to reject it (item never enters the container, 'ContainerItemRejected' event fires).", params = {"handler: function(itemId, count)"}, returnType = "IBlockBuilder")
     IBlockBuilder itemFilter(java.util.function.BiFunction<Object, Object, Boolean> handler);
 
     @LuaDoc(description = "Sets a custom GUI background texture for this container block (e.g. 'ruby_mod:textures/gui/my_crate.png', 176x190 region, slots are drawn on top automatically).", params = {"texturePath: string"}, returnType = "IBlockBuilder")
@@ -89,6 +92,7 @@ public interface IBlockBuilder {
     int getContainerRows();
     int getContainerCols();
     String getContainerDropMode();
+    double getContainerUseDistance();
     java.util.function.BiFunction<Object, Object, Boolean> getItemFilter();
     String getContainerTexture();
     String getContainerTitle();

@@ -102,14 +102,14 @@ GuiService.OnRenderHUD:Connect(function(dt)
     else
         manaText = "Mana"
     end
-    GuiService:DrawText(manaText, barX + barW / 2 - 10, barY + 1, 0xFFFFFF, true)
+    GuiService:DrawText(manaText, barX + barW / 2 - (hudCfg.mana_text_half_width or 10), barY + (hudCfg.mana_text_y_offset or 1), 0xFFFFFF, true)
 
     -- ==== SKILL COOLDOWN ICONS ====
     local iconSize = hudCfg.skill_icon_size
     local spacing = hudCfg.skill_icon_spacing
     local totalWidth = #skillOrder * iconSize + (#skillOrder - 1) * spacing
     local startX = (screenWidth - totalWidth) / 2
-    local iconY = screenHeight - iconSize - 10
+    local iconY = screenHeight - iconSize - (hudCfg.skill_icon_bottom_margin or 10)
 
     for i = 1, #skillOrder do
         local skillName = skillOrder[i]
@@ -120,17 +120,17 @@ GuiService.OnRenderHUD:Connect(function(dt)
         GuiService:DrawRect(iconX, iconY, iconSize, iconSize, color)
 
         local displayName = skillDisplayNames[skillName] or "?"
-        GuiService:DrawTextCentered(displayName, iconX + iconSize / 2, iconY + 6, 0xFFFFFF, true)
+        GuiService:DrawTextCentered(displayName, iconX + iconSize / 2, iconY + (hudCfg.icon_text_y_offset or 6), 0xFFFFFF, true)
     end
 
     -- ==== CAST FEEDBACK ====
-    if lastCastSkill ~= nil and task.getTimeClock() - lastCastTime < 2.0 then
+    if lastCastSkill ~= nil and task.getTimeClock() - lastCastTime < (hudCfg.cast_feedback_seconds or 2.0) then
         local name = lastCastSkill:gsub("_", " ")
         name = name:gsub("^%l", string.upper)
         GuiService:DrawTextCentered(
             name .. "!",
             screenWidth / 2,
-            screenHeight / 2 - 40,
+            screenHeight / 2 + (hudCfg.cast_feedback_offset_y or -40),
             0xFFFFFF,
             true
         )
@@ -138,10 +138,10 @@ GuiService.OnRenderHUD:Connect(function(dt)
 
     -- ==== DEBUG INFO ====
     if hudCfg.show_debug then
-        GuiService:DrawText("Arcane RPG v1.0 | Skills: 4", 4, 4, 0xAAAAAA, false)
+        GuiService:DrawText("Arcane RPG v1.0 | Skills: 4", hudCfg.debug_text_x or 4, hudCfg.debug_text_y or 4, 0xAAAAAA, false)
         GuiService:DrawText(
             string.format("Mana: %.0f%%", manaPercent * 100),
-            4, 14, 0x4488FF, false
+            hudCfg.debug_text_x or 4, hudCfg.debug_mana_text_y or 14, 0x4488FF, false
         )
     end
 end)

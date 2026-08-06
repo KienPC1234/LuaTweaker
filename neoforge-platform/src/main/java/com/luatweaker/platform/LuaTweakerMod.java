@@ -103,6 +103,7 @@ public class LuaTweakerMod {
     private final com.luatweaker.content.ContentServiceImpl contentService;
     private final com.luatweaker.content.StorageServiceImpl storageService;
     private final com.luatweaker.content.DatapackServiceImpl datapackService;
+    private final com.luatweaker.platform.content.LuaAssetsPackFinder luaAssetsPackFinder;
 
     private static LuaTweakerMod INSTANCE;
 
@@ -146,6 +147,7 @@ public class LuaTweakerMod {
         this.contentService = new com.luatweaker.content.ContentServiceImpl();
         this.storageService = new com.luatweaker.content.StorageServiceImpl(new File(luaDir, "storage.json"));
         this.datapackService = new com.luatweaker.content.DatapackServiceImpl();
+        this.luaAssetsPackFinder = new com.luatweaker.platform.content.LuaAssetsPackFinder(luaDir, datapackService, contentService);
 
         // Load Autonomous LuaMods for Mod Construction Phase (Content & Registrations)
         loadStartupLuaMods(luaDir);
@@ -156,9 +158,7 @@ public class LuaTweakerMod {
         if (Platform.getContent().isClient()) {
             modEventBus.register(new com.luatweaker.platform.content.NeoForgeContentRegistry.ClientModEvents(contentRegistry));
         }
-        modEventBus.register(
-                new com.luatweaker.platform.content.LuaAssetsPackFinder(luaDir, datapackService, contentService));
-        modEventBus.addListener(LuaTweakerMod::registerPayloads);
+        modEventBus.register(luaAssetsPackFinder);        modEventBus.addListener(LuaTweakerMod::registerPayloads);
         modEventBus.addListener(this::onClientSetup);
 
         // Register Game Event Bus listeners (gameplay events)
@@ -192,8 +192,30 @@ public class LuaTweakerMod {
         String dist = net.neoforged.fml.loading.FMLEnvironment.dist.isClient() ? "universal" : "server";
         com.luatweaker.core.mod.LuaModManager.loadLuaMods(luaDir, startupEngine, dist);
 
+        // Loud warning for keybind payloads that have no matching server RemoteEvent
+        // (typo'd names would otherwise silently drop every key press).
+        com.luatweaker.platform.bootstrap.KeyBindPayloadValidator.validate();
+
+        // Materialize Lua-registered worldgen + loot entries into datapack files.
+        applyLuaDatapackProviders();
+
         // Kick off declarative update checks for mods that declare update_url.
         com.luatweaker.update.UpdateServiceImpl.checkAll();
+    }
+
+    /**
+     * The Loot/Worldgen Lua services collect entries during mod load; nothing
+     * consumes them unless a provider turns them into virtual datapack files.
+     */
+    private void applyLuaDatapackProviders() {
+        Object worldgenObj = com.luatweaker.core.service.LuaServiceRegistry.get("WorldgenServiceImpl");
+        if (worldgenObj instanceof com.luatweaker.worldgen.WorldgenServiceImpl worldgenService) {
+            new com.luatweaker.platform.worldgen.NeoForgeWorldgenProvider(worldgenService, datapackService).applyAll();
+        }
+        Object lootObj = com.luatweaker.core.service.LuaServiceRegistry.get("LootServiceImpl");
+        if (lootObj instanceof com.luatweaker.loot.LootServiceImpl lootService) {
+            new com.luatweaker.platform.loot.NeoForgeLootProvider(lootService, datapackService).applyAll();
+        }
     }
 
     private void onClientSetup(final net.neoforged.fml.event.lifecycle.FMLClientSetupEvent event) {
@@ -389,6 +411,13 @@ public class LuaTweakerMod {
         // Clear pending Anvil/Brewing/Trade from previous reload cycle
         InterceptionHelper.clearPending();
 
+        // Rebuild the virtual datapack from scratch: files from disabled/edited mods
+        // or removed worldgen/loot entries must not survive a reload. Content-driven
+        // files (tags/models/lang) are regenerated right away from the same
+        // contentService; Lua-driven files are re-added by the script re-run below.
+        datapackService.clear();
+        luaAssetsPackFinder.rebuildVirtualFiles();
+
         if (isAutoStubsEnabled()) {
             generateStubs();
         }
@@ -409,6 +438,13 @@ public class LuaTweakerMod {
         // Load Autonomous LuaMods from luamods/
         String dist = net.neoforged.fml.loading.FMLEnvironment.dist.isClient() ? "universal" : "server";
         com.luatweaker.core.mod.LuaModManager.loadLuaMods(getLuaDirectory(), engine, dist);
+
+        // Loud warning for keybind payloads that have no matching server RemoteEvent
+        // (typo'd names would otherwise silently drop every key press).
+        com.luatweaker.platform.bootstrap.KeyBindPayloadValidator.validate();
+
+        // Materialize Lua-registered worldgen + loot entries into datapack files.
+        applyLuaDatapackProviders();
 
         // Kick off declarative update checks for mods that declare update_url.
         com.luatweaker.update.UpdateServiceImpl.checkAll();

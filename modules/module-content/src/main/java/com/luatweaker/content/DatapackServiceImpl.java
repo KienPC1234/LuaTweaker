@@ -88,6 +88,11 @@ public class DatapackServiceImpl implements IDatapackService {
         return Collections.unmodifiableMap(virtualFiles);
     }
 
+    @Override
+    public void clear() {
+        virtualFiles.clear();
+    }
+
     /** Parses "namespace:path" → ["namespace", "path"]; defaults namespace to "luatweaker". */
     private String[] parseRL(String raw) {
         if (raw == null) return new String[]{"luatweaker", "unknown"};

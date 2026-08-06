@@ -772,6 +772,12 @@ public class ContentLuaBinding {
             return table;
         });
 
+        bindMethod(table, "containerUseDistance", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 1) builder.containerUseDistance(args[off].asDouble());
+            return table;
+        });
+
         bindMethod(table, "itemFilter", args -> {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             ILuaValue func = args[off];

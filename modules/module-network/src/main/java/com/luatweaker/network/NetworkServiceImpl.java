@@ -51,14 +51,18 @@ public class NetworkServiceImpl implements IRocketNetworkService {
         return table;
     }
 
+    /**
+     * Unpacks a Lua vararg-style table into a positional array, preserving order.
+     * (asMap() is a HashMap whose iteration order scrambles positional args.)
+     */
     private ILuaValue[] unpackTable(ILuaTable tbl) {
-        Map<ILuaValue, ILuaValue> map = tbl.asMap();
-        ILuaValue[] arr = new ILuaValue[map.size()];
-        int idx = 0;
-        for (ILuaValue val : map.values()) {
-            arr[idx++] = val;
+        java.util.ArrayList<ILuaValue> list = new java.util.ArrayList<>();
+        for (int i = 1; i <= tbl.length(); i++) {
+            ILuaValue val = tbl.rawget(i);
+            if (val == null || val.isNil()) break;
+            list.add(val);
         }
-        return arr;
+        return list.toArray(new ILuaValue[0]);
     }
 
     @Override
@@ -90,6 +94,11 @@ public class NetworkServiceImpl implements IRocketNetworkService {
             ILuaValue res = engine.callFunction(newFn, remoteFnClass, engine.wrapString(name), createServiceTable());
             return res.asTable();
         });
+    }
+
+    /** Java-side diagnostic only: names of all registered remote event channels. */
+    public java.util.Set<String> getRegisteredRemoteEventNames() {
+        return java.util.Set.copyOf(remoteEvents.keySet());
     }
 
     @Override

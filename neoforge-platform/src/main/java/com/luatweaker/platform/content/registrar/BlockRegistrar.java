@@ -71,10 +71,12 @@ public final class BlockRegistrar {
                     block = new com.luatweaker.platform.container.CustomContainerBlock(
                             props, rl.toString(), crateTitle, builder.getContainerRows(), builder.getContainerCols(),
                             builder.getContainerDropMode(), builder.getContainerTexture(),
+                            builder.getContainerUseDistance(),
                             builder.getRightClickHandler(), builder.getItemFilter());
                     LuaTweakerLog.get().info(LogStage.SYSTEM,
                             "Registered container block '" + id + "' (" + builder.getContainerRows() + "x"
-                                    + builder.getContainerCols() + ", drop=" + builder.getContainerDropMode() + ")");
+                                    + builder.getContainerCols() + ", drop=" + builder.getContainerDropMode()
+                                    + ", useDistance=" + builder.getContainerUseDistance() + ")");
                 } else if (id.endsWith("_stairs") || id.contains("stairs")) {
                     block = new StairBlock(Blocks.STONE.defaultBlockState(), props) {
                         @Override public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {

@@ -194,6 +194,9 @@ Recipe.Shaped("ruby_block_craft")
 local Events = require("LuaTweaker.Events")
 local Task = require("LuaTweaker.Task")
 
+-- Event names are plain strings, but they are an API contract: every
+-- Java-posted event has ONE canonical name (see Java EventNames), e.g.
+-- 'ContainerOpened' / 'ContainerItemRejected' for container blocks.
 Events:Listen("MagicStaffUsed", function(payload)
     local player = payload.player
     -- unified entity API: method style AND property style

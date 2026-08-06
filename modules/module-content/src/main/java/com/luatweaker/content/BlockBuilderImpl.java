@@ -151,6 +151,7 @@ public class BlockBuilderImpl implements IBlockBuilder {
     private int containerRows = 0;
     private int containerCols = 6;
     private String containerDropMode = "packed";
+    private double containerUseDistance = 8.0;
 
     @Override
     public IBlockBuilder container(int rows, int cols, String dropMode) {
@@ -165,6 +166,12 @@ public class BlockBuilderImpl implements IBlockBuilder {
     }
 
     private java.util.function.BiFunction<Object, Object, Boolean> itemFilter;
+
+    @Override
+    public IBlockBuilder containerUseDistance(double distance) {
+        this.containerUseDistance = Math.max(1.0, distance);
+        return this;
+    }
 
     @Override
     public IBlockBuilder itemFilter(java.util.function.BiFunction<Object, Object, Boolean> handler) {
@@ -218,6 +225,7 @@ public class BlockBuilderImpl implements IBlockBuilder {
     @Override public int getContainerRows() { return containerRows; }
     @Override public int getContainerCols() { return containerCols; }
     @Override public String getContainerDropMode() { return containerDropMode; }
+    @Override public double getContainerUseDistance() { return containerUseDistance; }
     @Override public java.util.function.BiFunction<Object, Object, Boolean> getItemFilter() { return itemFilter; }
     @Override public String getContainerTexture() { return containerTexture; }
     @Override public String getContainerTitle() { return containerTitle; }

@@ -3,6 +3,8 @@
 -- ===================================================================
 local Content = require("LuaTweaker.Content")
 
+local cfg = mod and mod:GetConfig() or {}
+
 -- 0. Explicit Custom Creative Tabs
 Content.createTab("ruby_tab", function(tab)
     tab:title("Ruby Treasures")
@@ -39,13 +41,20 @@ local RubyApple = Content.NewItem("ruby_apple")
     :CreativeTab("ruby_tab")
     :OnConsume(function(player, stack)
         player:sendActionBar("§dYou feel radiant Ruby magic surging through you!")
-        player:addEffect("regeneration", 200, 1)
-        player:addEffect("resistance", 6000, 0)
+        player:addEffect("regeneration", tonumber(cfg.ruby_apple_regeneration_ticks) or 200, 1)
+        player:addEffect("resistance", tonumber(cfg.ruby_apple_resistance_ticks) or 6000, 0)
         player:playSound("minecraft:entity.player.burp", 1.0, 1.0)
     end)
     :Register()
 
 -- 2. Ruby Blocks (kèm Inline Block Drops & EXP Drops)
+-- Ruby ore also generates in the overworld: consumed by the Java
+-- NeoForgeWorldgenProvider (virtual datapack), not a silent stub.
+local Worldgen = require("LuaTweaker.Worldgen") or _G.Worldgen
+if Worldgen then
+    Worldgen:AddOre("luatweaker:ruby_ore", "minecraft:overworld", -64, 32, 8, 10)
+end
+
 local RubyOre = Content.NewBlock("ruby_ore")
     :Hardness(4.5)
     :Resistance(15.0)
@@ -122,15 +131,15 @@ local RubyWall = Content.NewBlock("ruby_wall")
 --   "spill"  = contents drop like a chest
 --   "none"   = nothing drops
 -- :ItemFilter(fn) — pure-Lua container rule: return true to allow the item in,
---                  false to reject it (fires 'CrateItemRejected' event).
-local crateCfg = mod and mod:GetConfig() or {}
-local crateBlacklist = crateCfg.woodcrate_blacklist or {}
+--                  false to reject it (fires 'ContainerItemRejected' event).
+local crateBlacklist = cfg.woodcrate_blacklist or {}
 local WoodCrate = Content.NewBlock("wood_crate")
     :Hardness(2.0)
     :Resistance(5.0)
     :SoundType("WOOD")
     :MineableWith("axe")
     :Container(4, 6, "packed")
+    :ContainerUseDistance(10)
     :ContainerTitle("Wood Storage Crate")
     :ContainerTexture("luatweaker:textures/gui/wood_crate_custom.png")
     :ItemFilter(function(itemId, count)
@@ -151,11 +160,11 @@ local WoodCrate = Content.NewBlock("wood_crate")
 -- 3. Dynamic KeyMapping Registration (Controls Menu)
 -- Category is a plain display label used verbatim by the engine (no lang entry
 -- required). Each mod must declare its OWN category so multiple mods never
--- collide inside Minecraft's Controls screen.
+-- collide inside Minecraft's Controls screen. Default keys come from config.
 Content.NewKeyMapping("staff_swap_skill")
     :DisplayName("Staff Skill Swap")
     :Category("Ruby Mod Controls")
-    :DefaultKey(90)
+    :DefaultKey(cfg.staff_swap_key or 90)
     :OnPress("StaffSwapSkill")
     :Register()
 
@@ -172,7 +181,7 @@ local RawRuby = Content.NewItem("raw_ruby")
 local RubySword = Content.NewItem("ruby_sword")
     :Type("sword")
     :DisplayName("Ruby Sword")
-    :AttackDamage(8.5)
+    :AttackDamage(tonumber(cfg.ruby_sword_damage) or 8.5)
     :AttackSpeed(-2.4)
     :Durability(1800)
     :CreativeTab("ruby_tab")
@@ -318,22 +327,21 @@ local MagicStaff = Content.NewItem("magic_staff")
 Content.NewKeyMapping("magic_staff_cast")
     :displayName("Magic Staff: Cast Selected Skill")
     :category("Ruby Mod Controls")
-    :defaultKey(71)
+    :defaultKey(cfg.magic_staff_cast_key or 71)
     :onPress("StaffCastSkill")
     :register()
 
 Content.NewKeyMapping("magic_staff_switch")
     :displayName("Magic Staff: Switch Active Skill")
     :category("Ruby Mod Controls")
-    :defaultKey(82)
+    :defaultKey(cfg.magic_staff_switch_key or 82)
     :onPress("StaffSwapSkill")
     :register()
 
 -- 8. KeyBinding: Mark Target (X) — raycast the entity in front, draw a client-only outline
-local markCfg = mod and mod:GetConfig() or {}
 Content.NewKeyMapping("magic_staff_mark_target")
     :displayName("Magic Staff: Mark Target")
     :category("Ruby Mod Controls")
-    :defaultKey(markCfg.mark_target_key or 88)
+    :defaultKey(cfg.mark_target_key or 88)
     :onPress("TargetMark")
     :register()

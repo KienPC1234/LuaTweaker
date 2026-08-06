@@ -8,6 +8,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class WorldgenServiceImpl implements IWorldgenService {
 
+    /** Minecraft resource-location charset: [a-z0-9_.-] for path, optional [a-z0-9_.-] namespace. */
+    private static final java.util.regex.Pattern RESOURCE_LOCATION =
+            java.util.regex.Pattern.compile("^[a-z0-9_.-]+(:[a-z0-9_./-]+)?$");
+
     public record OreEntry(String blockId, String dimension, int minHeight, int maxHeight,
                            int clusterSize, int frequency, List<String> biomes) {}
 
@@ -39,20 +43,30 @@ public class WorldgenServiceImpl implements IWorldgenService {
 
     @Override
     public void addVegetation(@NotNull String blockId, double chance, @NotNull String[] biomes) {
-        if (blockId.isBlank()) throw new IllegalArgumentException("blockId must not be blank");
+        if (!RESOURCE_LOCATION.matcher(blockId).matches()) {
+            throw new IllegalArgumentException("blockId must be a valid resource location (e.g. 'mymod:ruby_flower'), got: " + blockId);
+        }
         if (chance < 0.0 || chance > 1.0) {
             throw new IllegalArgumentException("chance must be between 0.0 and 1.0, got: " + chance);
         }
         if (biomes.length == 0) {
             throw new IllegalArgumentException("biomes must not be empty");
         }
+        for (String biome : biomes) {
+            if (!RESOURCE_LOCATION.matcher(biome).matches()) {
+                throw new IllegalArgumentException("biome must be a valid resource location (e.g. 'minecraft:plains'), got: " + biome);
+            }
+        }
         pendingVegetation.add(new VegetationEntry(blockId, chance, List.of(biomes)));
     }
 
     @Override
     public boolean removeOre(@NotNull String blockId, @NotNull String dimension) {
-        if (blockId.isBlank() || dimension.isBlank()) {
-            throw new IllegalArgumentException("blockId and dimension must not be blank");
+        if (!RESOURCE_LOCATION.matcher(blockId).matches()) {
+            throw new IllegalArgumentException("blockId must be a valid resource location, got: " + blockId);
+        }
+        if (!RESOURCE_LOCATION.matcher(dimension).matches()) {
+            throw new IllegalArgumentException("dimension must be a valid resource location, got: " + dimension);
         }
         pendingRemovals.add(new OreRemovalEntry(blockId, dimension));
         return true;
@@ -89,8 +103,12 @@ public class WorldgenServiceImpl implements IWorldgenService {
 
     private void validate(String blockId, String dimension, int minHeight, int maxHeight,
                           int clusterSize, int frequency) {
-        if (blockId.isBlank()) throw new IllegalArgumentException("blockId must not be blank");
-        if (dimension.isBlank()) throw new IllegalArgumentException("dimension must not be blank");
+        if (!RESOURCE_LOCATION.matcher(blockId).matches()) {
+            throw new IllegalArgumentException("blockId must be a valid resource location (e.g. 'mymod:ruby_ore'), got: " + blockId);
+        }
+        if (!RESOURCE_LOCATION.matcher(dimension).matches()) {
+            throw new IllegalArgumentException("dimension must be a valid resource location (e.g. 'minecraft:overworld'), got: " + dimension);
+        }
         if (minHeight > maxHeight) {
             throw new IllegalArgumentException("minHeight (" + minHeight + ") > maxHeight (" + maxHeight + ")");
         }

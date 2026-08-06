@@ -1,5 +1,6 @@
 package com.luatweaker.platform.container;
 
+import com.luatweaker.api.event.EventNames;
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.platform.entity.NeoForgePlayerWrapper;
@@ -44,11 +45,13 @@ public class CustomContainerBlock extends Block implements EntityBlock {
     private final int cols;
     private final String dropMode;
     private final String texturePath;
+    private final double useDistance;
     private final BiConsumer<Object, Object> rightClickHandler;
     private final java.util.function.BiFunction<Object, Object, Boolean> itemFilter;
 
     public CustomContainerBlock(Properties properties, String crateId, String crateTitle,
                                int rows, int cols, String dropMode, @Nullable String texturePath,
+                               double useDistance,
                                @Nullable BiConsumer<Object, Object> rightClickHandler,
                                @Nullable java.util.function.BiFunction<Object, Object, Boolean> itemFilter) {
         super(properties);
@@ -58,6 +61,7 @@ public class CustomContainerBlock extends Block implements EntityBlock {
         this.cols = cols;
         this.dropMode = dropMode;
         this.texturePath = texturePath;
+        this.useDistance = Math.max(1.0, useDistance);
         this.rightClickHandler = rightClickHandler;
         this.itemFilter = itemFilter;
         registerDefaultState(defaultBlockState().setValue(OPENED, false));
@@ -90,6 +94,11 @@ public class CustomContainerBlock extends Block implements EntityBlock {
 
     public String getDropMode() {
         return dropMode;
+    }
+
+    /** Max distance (blocks) a player may stand from this container to use it (Lua-configurable). */
+    public double getUseDistance() {
+        return useDistance;
     }
 
     /** Lua-defined container rule: true = the item may enter a slot. */
@@ -131,7 +140,7 @@ public class CustomContainerBlock extends Block implements EntityBlock {
             final int fx = pos.getX();
             final int fy = pos.getY();
             final int fz = pos.getZ();
-            ContainerEvents.post("CrateOpened", engine -> {
+            ContainerEvents.post(EventNames.CONTAINER_OPENED, engine -> {
                 com.luatweaker.api.vm.ILuaTable payload = ContainerEvents.basePayload(engine, this, fx, fy, fz);
                 payload.rawset("Player", engine.wrapString(player.getName().getString()));
                 return payload;

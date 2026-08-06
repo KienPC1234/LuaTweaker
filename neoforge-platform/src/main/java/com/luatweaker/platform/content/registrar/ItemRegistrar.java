@@ -18,6 +18,9 @@ import java.util.Map;
 import java.util.function.Function;
 
 public final class ItemRegistrar {
+    /** Vanilla sword attack speed when the Lua builder does not set one. */
+    private static final float DEFAULT_ATTACK_SPEED = -2.4f;
+
     private final IContentService contentService;
     private final Map<ResourceLocation, Item> createdItems;
     private final Function<String, ResourceLocation> locationParser;
@@ -47,9 +50,13 @@ public final class ItemRegistrar {
                 }
 
                 float dmg = builder.getAttackDamage();
-                float spd = builder.getAttackSpeed() != 0 ? builder.getAttackSpeed() : -2.4f;
+                float spd = builder.getAttackSpeed() != 0 ? builder.getAttackSpeed() : DEFAULT_ATTACK_SPEED;
                 if (dmg > 0) {
-                    props.attributes(SwordItem.createAttributes(Tiers.DIAMOND, Math.max(0, (int) dmg - 3), spd));
+                    // createAttributes(attackDamageModifier, ...) ADDS the tier's base
+                    // attack bonus, so the modifier must be (requestedDamage - baseBonus)
+                    // to honor the Lua value exactly - including fractional damage.
+                    float baseBonus = Tiers.DIAMOND.getAttackDamageBonus();
+                    props.attributes(SwordItem.createAttributes(Tiers.DIAMOND, Math.max(-baseBonus, dmg - baseBonus), spd));
                 }
 
                 String type = builder.getType() != null ? builder.getType().toUpperCase() : "SIMPLE";

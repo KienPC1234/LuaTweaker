@@ -22,6 +22,12 @@ import java.util.List;
 public final class BlockInteractionHelper {
     private BlockInteractionHelper() {}
 
+    /**
+     * Above this radius the block scan becomes a performance hazard; the radius is
+     * still honored, only a loud warning is logged (the Lua caller decides).
+     */
+    private static final int PERFORMANCE_WARNING_RADIUS = 32;
+
     public static boolean performBlockBreak(@NotNull IEntity actor, int x, int y, int z) {
         if (actor.getRawEntity() instanceof Entity entity) {
             ServerLevel level = (ServerLevel) entity.level();
@@ -73,12 +79,17 @@ public final class BlockInteractionHelper {
     public static List<IWorldBlock> getNearbyBlocks(@NotNull IEntity entity, int radius) {
         List<IWorldBlock> list = new ArrayList<>();
         if (entity.getRawEntity() instanceof Entity mcEntity) {
+            if (radius > PERFORMANCE_WARNING_RADIUS) {
+                com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                        "getNearbyBlocks called with radius " + radius + " (over " + PERFORMANCE_WARNING_RADIUS
+                        + "); this scans up to " + (2L * radius + 1) * (2L * radius + 1) * (2L * radius + 1)
+                        + " blocks and may lag the server.");
+            }
             ServerLevel level = (ServerLevel) mcEntity.level();
             BlockPos center = mcEntity.blockPosition();
-            int r = Math.min(8, radius);
-            for (int dx = -r; dx <= r; dx++) {
-                for (int dy = -r; dy <= r; dy++) {
-                    for (int dz = -r; dz <= r; dz++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dy = -radius; dy <= radius; dy++) {
+                    for (int dz = -radius; dz <= radius; dz++) {
                         BlockPos pos = center.offset(dx, dy, dz);
                         BlockState state = level.getBlockState(pos);
                         String blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
