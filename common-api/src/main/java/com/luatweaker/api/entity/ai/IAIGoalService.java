@@ -20,9 +20,6 @@ public interface IAIGoalService {
     @LuaDoc(description = "Clears all custom goals registered on the entity.", params = {"entity: table"})
     void clearGoals(@NotNull IEntity entity);
 
-    default void addSkillGoal(@NotNull IEntity entity, int priority, @NotNull String skillName, double cooldownSeconds, double range, @LuaDefault("nil") @NotNull Object castCallback) {}
-    default void addDashGoal(@NotNull IEntity entity, int priority, double cooldownSeconds, double speed) {}
-
     @LuaDoc(description = "Adds a target selection goal targeting nearest players, monsters, or living entities.", params = {"entity: table", "priority: integer", "targetType: string ('player' | 'monster' | 'animal' | 'living')"})
     default void addNearestAttackableTargetGoal(@NotNull IEntity entity, int priority, @NotNull String targetType) {}
 

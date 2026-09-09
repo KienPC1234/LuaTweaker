@@ -13,6 +13,7 @@ import java.util.regex.Pattern;
 
 public class LuaLinter {
     private static final Pattern COMPILE_ERROR_PATTERN = Pattern.compile("^(?:.*?:)?(\\d+): (.*)$");
+    private static final Pattern RUNTIME_ERROR_PATTERN = Pattern.compile("(?:[a-zA-Z]:)?[^:\\r\\n]+:(\\d+):");
 
     public static void logFancyCompileError(String context, String sourceName, File file, CompileException e) {
         String msg = e.getMessage();
@@ -37,8 +38,7 @@ public class LuaLinter {
         String errDetail = e.getValue().toString();
 
         // Extract line info from traceback (e.g. "my_script.lua:10:" or "C:\path\script.lua:10:")
-        Pattern runtimePattern = Pattern.compile("(?:[a-zA-Z]:)?[^:\\r\\n]+:(\\d+):");
-        Matcher matcher = runtimePattern.matcher(msg != null ? msg : "");
+        Matcher matcher = RUNTIME_ERROR_PATTERN.matcher(msg != null ? msg : "");
         if (matcher.find()) {
             try {
                 errLineNum = Integer.parseInt(matcher.group(1));

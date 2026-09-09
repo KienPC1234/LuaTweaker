@@ -165,7 +165,6 @@ public final class EntityInteractionHelper {
     public static void playAnimation(@NotNull IEntity entity, @NotNull String animName, double speed, double transition) {
         if (entity.getRawEntity() instanceof net.minecraft.world.entity.LivingEntity living) {
             living.swing(net.minecraft.world.InteractionHand.MAIN_HAND, true);
-            living.getPersistentData().putString("CurrentAnimation", animName);
         }
     }
 

@@ -39,6 +39,13 @@ repo/
 
 neoforge-docs/
 
+### LuaTweaker runtime state (regenerated from default_config.json) ###
+neoforge-platform/luaconfig/
+neoforge-platform/config/luatweaker/
+
+### Stray javac args (manual verification leftovers) ###
+javac.*.args
+
 ### Logs ###
 *.log
 logs/

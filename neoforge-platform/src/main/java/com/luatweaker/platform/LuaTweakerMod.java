@@ -33,17 +33,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.List;
 
 @Mod(LuaTweakerMod.MODID)
 public class LuaTweakerMod {
     public static final String MODID = "luatweaker";
-
-    static {
-    }
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LuaTweakerMod.class);
 
@@ -90,10 +83,6 @@ public class LuaTweakerMod {
         return serverNetworkService;
     }
 
-    public static com.luatweaker.network.NetworkServiceImpl getClientNetworkService() {
-        return clientNetworkService;
-    }
-
     /**
      * The command registry; held as a field so external modules can register
      * commands before build().
@@ -105,18 +94,11 @@ public class LuaTweakerMod {
     private final com.luatweaker.content.DatapackServiceImpl datapackService;
     private final com.luatweaker.platform.content.LuaAssetsPackFinder luaAssetsPackFinder;
 
-    private static LuaTweakerMod INSTANCE;
-
-    public static LuaTweakerMod getInstance() {
-        return INSTANCE;
-    }
-
     private void initClientPlatform() {
         Platform.setClient(new com.luatweaker.platform.client.NeoForgeClientPlatform());
     }
 
     public LuaTweakerMod(IEventBus modEventBus, ModContainer modContainer) {
-        INSTANCE = this;
         LOGGER.info("LuaTweaker constructor starting");
         LOGGER.info("CWD: {}", new File(".").getAbsolutePath());
 
@@ -252,14 +234,6 @@ public class LuaTweakerMod {
         com.luatweaker.interaction.InteractionLuaBinding.registerBindings(engine);
     }
 
-    /**
-     * Expose the registry so addon modules can call commandRegistry.register(myCmd)
-     * during setup.
-     */
-    public LuaTweakerCommandRegistry getCommandRegistry() {
-        return commandRegistry;
-    }
-
     private void initializeUserDirectories() {
         File luaDir = getLuaDirectory();
         if (!luaDir.exists()) {
@@ -360,7 +334,7 @@ public class LuaTweakerMod {
             payload.rawset("fromDimensionId", event.getFrom().location().toString());
             eventService.fireEvent("DimensionEntered", payload);
         } catch (Exception e) {
-            // A Lua listener error must never break the dimension-change flow.
+            LOGGER.warn("DimensionEntered event dispatch failed: {}", e.getMessage());
         }
     }
 
@@ -409,9 +383,12 @@ public class LuaTweakerMod {
 
     private long lastReloadTime = 0;
 
+    /** Minimum gap between reloadServerRecipes calls to dedupe redundant reloads. */
+    private static final long MIN_RELOAD_INTERVAL_MS = 500;
+
     public synchronized void reloadServerRecipes(MinecraftServer server) {
         long now = System.currentTimeMillis();
-        if (now - lastReloadTime < 500) {
+        if (now - lastReloadTime < MIN_RELOAD_INTERVAL_MS) {
             LOGGER.info("Skipping redundant reloadServerRecipes call (reloaded {}ms ago)", now - lastReloadTime);
             return;
         }
@@ -565,6 +542,14 @@ public class LuaTweakerMod {
             }
             return table;
         }
+        if (el.isJsonArray()) {
+            ILuaTable table = engine.createTable();
+            com.google.gson.JsonArray arr = el.getAsJsonArray();
+            for (int i = 0; i < arr.size(); i++) {
+                table.rawset(i + 1, parseElement(engine, arr.get(i)));
+            }
+            return table;
+        }
         return engine.nilValue();
     }
 
@@ -582,7 +567,6 @@ public class LuaTweakerMod {
         stubGen.registerService("Datapack", com.luatweaker.api.content.IDatapackService.class);
         stubGen.registerService("Network", com.luatweaker.api.network.IRocketNetworkService.class);
         stubGen.registerService("AIGoals", com.luatweaker.api.entity.ai.IAIGoalService.class);
-        stubGen.registerService("WorldAction", com.luatweaker.api.entity.ai.IWorldActionService.class);
         stubGen.registerService("Interaction", com.luatweaker.api.interaction.IInteractionService.class);
         stubGen.registerService("GuiService", com.luatweaker.api.client.IGuiService.class);
         stubGen.registerService("Commands", com.luatweaker.api.command.ICommandService.class);

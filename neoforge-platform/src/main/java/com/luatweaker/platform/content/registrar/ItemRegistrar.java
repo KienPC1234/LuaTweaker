@@ -21,6 +21,10 @@ import java.util.function.Function;
 public final class ItemRegistrar {
     /** Vanilla sword attack speed when the Lua builder does not set one. */
     private static final float DEFAULT_ATTACK_SPEED = -2.4f;
+    /** Default namespace for armor textures when the Lua builder omits one. */
+    private static final String DEFAULT_NAMESPACE = "luatweaker";
+    /** Relative resource path prefix for custom armor layer textures. */
+    private static final String ARMOR_TEXTURE_DIR = "textures/models/armor/";
 
     private final IContentService contentService;
     private final Map<ResourceLocation, Item> createdItems;
@@ -57,6 +61,33 @@ public final class ItemRegistrar {
         }
     }
 
+    /**
+     * Lua-defined {@code OnRightClick} hook shared by every tool item. Returns
+     * {@code null} when the item has no handler (caller falls back to the item's
+     * default behavior), otherwise the interaction result holder.
+     */
+    private static InteractionResultHolder<ItemStack> handleToolUse(Level level, Player player, ItemStack stack, IItemBuilder builder) {
+        if (!level.isClientSide() && builder.getRightClickHandler() != null) {
+            builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), stack);
+            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
+        }
+        return null;
+    }
+
+    /**
+     * Wraps a tool item with the shared Lua right-click + use-on-block hooks.
+     * The tool class (SwordItem/PickaxeItem/...) is supplied by the caller so
+     * vanilla tool behavior (mining speed, attack reach) is preserved.
+     */
+    private static Item createToolItem(IItemBuilder builder, Item.Properties props, ToolFactory factory) {
+        return factory.create(props, builder);
+    }
+
+    @FunctionalInterface
+    private interface ToolFactory {
+        Item create(Item.Properties props, IItemBuilder builder);
+    }
+
     public void registerItems(RegisterEvent event) {
         for (IItemBuilder builder : contentService.getRegisteredItems()) {
             try {
@@ -81,78 +112,65 @@ public final class ItemRegistrar {
                     // createAttributes(attackDamageModifier, ...) ADDS the tier's base
                     // attack bonus, so the modifier must be (requestedDamage - baseBonus)
                     // to honor the Lua value exactly - including fractional damage.
-                    float baseBonus = Tiers.DIAMOND.getAttackDamageBonus();
-                    props.attributes(SwordItem.createAttributes(Tiers.DIAMOND, Math.max(-baseBonus, dmg - baseBonus), spd));
+                    // Tiers.IRON matches the tool tier used below (was DIAMOND, which
+                    // shifted the base bonus by +1 and made the damage wrong).
+                    float baseBonus = Tiers.IRON.getAttackDamageBonus();
+                    props.attributes(SwordItem.createAttributes(Tiers.IRON, Math.max(-baseBonus, dmg - baseBonus), spd));
                 }
 
                 String type = builder.getType() != null ? builder.getType().toUpperCase() : "SIMPLE";
 
                 Item item = switch (type) {
-                    case "SWORD" -> new SwordItem(Tiers.IRON, props) {
+                    case "SWORD" -> createToolItem(builder, props, (p, b) -> new SwordItem(Tiers.IRON, p) {
                         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
-                                builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), player.getItemInHand(hand));
-                                return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
-                            }
-                            return super.use(level, player, hand);
+                            InteractionResultHolder<ItemStack> r = handleToolUse(level, player, player.getItemInHand(hand), b);
+                            return r != null ? r : super.use(level, player, hand);
                         }
                         @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
-                            InteractionResult result = handleUseOnBlock(context, builder);
-                            return result != null ? result : super.useOn(context);
+                            InteractionResult r = handleUseOnBlock(context, b);
+                            return r != null ? r : super.useOn(context);
                         }
-                    };
-                    case "PICKAXE" -> new PickaxeItem(Tiers.IRON, props) {
+                    });
+                    case "PICKAXE" -> createToolItem(builder, props, (p, b) -> new PickaxeItem(Tiers.IRON, p) {
                         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
-                                builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), player.getItemInHand(hand));
-                                return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
-                            }
-                            return super.use(level, player, hand);
+                            InteractionResultHolder<ItemStack> r = handleToolUse(level, player, player.getItemInHand(hand), b);
+                            return r != null ? r : super.use(level, player, hand);
                         }
                         @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
-                            InteractionResult result = handleUseOnBlock(context, builder);
-                            return result != null ? result : super.useOn(context);
+                            InteractionResult r = handleUseOnBlock(context, b);
+                            return r != null ? r : super.useOn(context);
                         }
-                    };
-                    case "AXE" -> new AxeItem(Tiers.IRON, props) {
+                    });
+                    case "AXE" -> createToolItem(builder, props, (p, b) -> new AxeItem(Tiers.IRON, p) {
                         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
-                                builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), player.getItemInHand(hand));
-                                return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
-                            }
-                            return super.use(level, player, hand);
+                            InteractionResultHolder<ItemStack> r = handleToolUse(level, player, player.getItemInHand(hand), b);
+                            return r != null ? r : super.use(level, player, hand);
                         }
                         @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
-                            InteractionResult result = handleUseOnBlock(context, builder);
-                            return result != null ? result : super.useOn(context);
+                            InteractionResult r = handleUseOnBlock(context, b);
+                            return r != null ? r : super.useOn(context);
                         }
-                    };
-                    case "SHOVEL" -> new ShovelItem(Tiers.IRON, props) {
+                    });
+                    case "SHOVEL" -> createToolItem(builder, props, (p, b) -> new ShovelItem(Tiers.IRON, p) {
                         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
-                                builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), player.getItemInHand(hand));
-                                return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
-                            }
-                            return super.use(level, player, hand);
+                            InteractionResultHolder<ItemStack> r = handleToolUse(level, player, player.getItemInHand(hand), b);
+                            return r != null ? r : super.use(level, player, hand);
                         }
                         @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
-                            InteractionResult result = handleUseOnBlock(context, builder);
-                            return result != null ? result : super.useOn(context);
+                            InteractionResult r = handleUseOnBlock(context, b);
+                            return r != null ? r : super.useOn(context);
                         }
-                    };
-                    case "HOE" -> new HoeItem(Tiers.IRON, props) {
+                    });
+                    case "HOE" -> createToolItem(builder, props, (p, b) -> new HoeItem(Tiers.IRON, p) {
                         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
-                                builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), player.getItemInHand(hand));
-                                return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
-                            }
-                            return super.use(level, player, hand);
+                            InteractionResultHolder<ItemStack> r = handleToolUse(level, player, player.getItemInHand(hand), b);
+                            return r != null ? r : super.use(level, player, hand);
                         }
                         @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
-                            InteractionResult result = handleUseOnBlock(context, builder);
-                            return result != null ? result : super.useOn(context);
+                            InteractionResult r = handleUseOnBlock(context, b);
+                            return r != null ? r : super.useOn(context);
                         }
-                    };
+                    });
                     case "HELMET" -> new CustomArmorItem(ArmorMaterials.DIAMOND, ArmorItem.Type.HELMET, props, builder);
                     case "CHESTPLATE" -> new CustomArmorItem(ArmorMaterials.DIAMOND, ArmorItem.Type.CHESTPLATE, props, builder);
                     case "LEGGINGS" -> new CustomArmorItem(ArmorMaterials.DIAMOND, ArmorItem.Type.LEGGINGS, props, builder);
@@ -222,7 +240,7 @@ public final class ItemRegistrar {
                 customTex = builder.getArmorMaterial();
             }
             if (customTex != null && !customTex.isEmpty()) {
-                String domain = "luatweaker";
+                String domain = DEFAULT_NAMESPACE;
                 String name = customTex;
                 if (customTex.contains(":")) {
                     String[] parts = customTex.split(":", 2);
@@ -231,7 +249,7 @@ public final class ItemRegistrar {
                 }
                 String layerSuffix = (slot == net.minecraft.world.entity.EquipmentSlot.LEGS || getType() == Type.LEGGINGS) ? "layer_2" : "layer_1";
                 if (!name.startsWith("textures/")) {
-                    name = "textures/models/armor/" + name + "_" + layerSuffix + ".png";
+                    name = ARMOR_TEXTURE_DIR + name + "_" + layerSuffix + ".png";
                 }
                 return ResourceLocation.fromNamespaceAndPath(domain, name);
             }

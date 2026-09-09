@@ -145,13 +145,21 @@ public class SignalCallbackTest {
     @Test
     public void modifiedLuaScriptsAreSyntacticallyValid() throws Exception {
         String[] relativePaths = {
-            "neoforge-platform/luamods/ruby_mod/src/client/magic_staff_client.lua",
-            "neoforge-platform/luamods/ruby_mod/src/server/magic_staff.lua",
-            "neoforge-platform/luamods/ruby_mod/src/server/ruby_boss.lua",
-            "neoforge-platform/luamods/ruby_mod/src/startup/ruby_content.lua",
-            "neoforge-platform/luamods/ruby_mod/main.lua",
-            "neoforge-platform/luamods/my_custom_mod/main.lua",
-            "neoforge-platform/luamods/my_custom_mod/src/server/boss_ai.lua"
+            "neoforge-platform/luamods/luatweaker_test/src/client/hud.lua",
+            "neoforge-platform/luamods/luatweaker_test/src/server/network_test.lua",
+            "neoforge-platform/luamods/luatweaker_test/src/server/storage_test.lua",
+            "neoforge-platform/luamods/luatweaker_test/src/server/events_test.lua",
+            "neoforge-platform/luamods/luatweaker_test/src/server/math_test.lua",
+            "neoforge-platform/luamods/luatweaker_test/src/server/world_test.lua",
+            "neoforge-platform/luamods/luatweaker_test/src/server/dynamic_bridge.lua",
+            "neoforge-platform/luamods/luatweaker_test/src/server/skills.lua",
+            "neoforge-platform/luamods/luatweaker_test/src/server/boss_ai.lua",
+            "neoforge-platform/luamods/luatweaker_test/src/server/recipes.lua",
+            "neoforge-platform/luamods/luatweaker_test/src/server/commands.lua",
+            "neoforge-platform/luamods/luatweaker_test/src/server/mana_system.lua",
+            "neoforge-platform/luamods/luatweaker_test/src/startup/content.lua",
+            "neoforge-platform/luamods/luatweaker_test/src/startup/dimension.lua",
+            "neoforge-platform/luamods/luatweaker_test/main.lua"
         };
         for (String rel : relativePaths) {
             java.io.File candidate = new java.io.File("../../" + rel);

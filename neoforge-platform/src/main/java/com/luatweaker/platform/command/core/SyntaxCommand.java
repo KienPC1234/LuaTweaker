@@ -16,7 +16,7 @@ import java.nio.file.Files;
  *
  * Usage examples:
  *   /luatweaker syntax server/myrecipe.lua
- *   /luatweaker syntax               → checks all files in lua/server/
+ *   /luatweaker syntax               -> checks all files in lua/server/
  */
 public class SyntaxCommand implements ILuaTweakerCommand {
 
@@ -76,10 +76,10 @@ public class SyntaxCommand implements ILuaTweakerCommand {
             String source = Files.readString(file.toPath());
             String error = LuaEngine.checkSyntax(file.getName(), source);
             if (error == null) {
-                sender.sendSuccess("§a✔ §f" + file.getName());
+                sender.sendSuccess("§a[OK] §f" + file.getName());
                 return 1;
             } else {
-                sender.sendError("§c✘ §f" + file.getName() + " §8→ §c" + error);
+                sender.sendError("§c[FAIL] §f" + file.getName() + " §8-> §c" + error);
                 return 0;
             }
         } catch (IOException e) {

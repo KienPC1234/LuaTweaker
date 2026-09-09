@@ -32,6 +32,8 @@ public final class BlockRegistrar {
     private static final int PIPE_DEFAULT_ROWS = 1;
     private static final int PIPE_DEFAULT_COLS = 1;
     private static final String PIPE_DEFAULT_DROP = "none";
+    /** Vanilla default block friction; only applied when the Lua builder overrides it. */
+    private static final float DEFAULT_BLOCK_FRICTION = 0.6f;
 
     private final IContentService contentService;
     private final Map<ResourceLocation, Block> createdBlocks;
@@ -45,6 +47,37 @@ public final class BlockRegistrar {
         this.locationParser = locationParser;
     }
 
+    /**
+     * Lua-defined {@code OnRightClick} hook shared by every block type. Returns
+     * {@code null} when the item has no handler (caller falls back to the block's
+     * default behavior), otherwise the interaction result.
+     */
+    private static InteractionResult handleBlockUse(Level level, BlockPos pos, Player player, IBlockBuilder builder) {
+        if (!level.isClientSide() && builder.getRightClickHandler() != null) {
+            try {
+                builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), null);
+            } catch (Exception e) {
+                LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed block right-click handler for " + builder.getId() + ": " + e.getMessage());
+            }
+            return InteractionResult.sidedSuccess(level.isClientSide());
+        }
+        return null;
+    }
+
+    /**
+     * Wraps a block with the shared Lua right-click hook. The block class
+     * (StairBlock/SlabBlock/WallBlock/Block) is supplied by the caller so
+     * vanilla block behavior is preserved.
+     */
+    private static Block createBlockWithHook(IBlockBuilder builder, BlockBehaviour.Properties props, BlockFactory factory) {
+        return factory.create(props, builder);
+    }
+
+    @FunctionalInterface
+    private interface BlockFactory {
+        Block create(BlockBehaviour.Properties props, IBlockBuilder builder);
+    }
+
     public void registerBlocks(RegisterEvent event) {
         for (IBlockBuilder builder : contentService.getRegisteredBlocks()) {
             try {
@@ -56,7 +89,7 @@ public final class BlockRegistrar {
                 if (builder.getSoundType() != null) {
                     props.sound(parseSoundType(builder.getSoundType()));
                 }
-                if (builder.getFriction() != 0.6f) {
+                if (builder.getFriction() != DEFAULT_BLOCK_FRICTION) {
                     props.friction(builder.getFriction());
                 }
                 if (builder.getRequiresTool() || builder.getMiningLevel() > 0 || builder.getMineableWith() != null) {
@@ -144,61 +177,33 @@ public final class BlockRegistrar {
                                     + ", connections=" + builder.isConnectionState()
                                     + ", tick=" + (builder.getTickHandler() != null) + ")");
                 } else if (id.endsWith("_stairs") || id.contains("stairs")) {
-                    block = new StairBlock(Blocks.STONE.defaultBlockState(), props) {
+                    block = createBlockWithHook(builder, props, (p, b) -> new StairBlock(Blocks.STONE.defaultBlockState(), p) {
                         @Override public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
-                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
-                                try {
-                                    builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), null);
-                                } catch (Exception e) {
-                                    LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed block right-click handler for " + builder.getId() + ": " + e.getMessage());
-                                }
-                                return InteractionResult.sidedSuccess(level.isClientSide());
-                            }
-                            return super.useWithoutItem(state, level, pos, player, hitResult);
+                            InteractionResult r = handleBlockUse(level, pos, player, b);
+                            return r != null ? r : super.useWithoutItem(state, level, pos, player, hitResult);
                         }
-                    };
+                    });
                 } else if (id.endsWith("_slab") || id.contains("slab")) {
-                    block = new SlabBlock(props) {
+                    block = createBlockWithHook(builder, props, (p, b) -> new SlabBlock(p) {
                         @Override public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
-                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
-                                try {
-                                    builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), null);
-                                } catch (Exception e) {
-                                    LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed block right-click handler for " + builder.getId() + ": " + e.getMessage());
-                                }
-                                return InteractionResult.sidedSuccess(level.isClientSide());
-                            }
-                            return super.useWithoutItem(state, level, pos, player, hitResult);
+                            InteractionResult r = handleBlockUse(level, pos, player, b);
+                            return r != null ? r : super.useWithoutItem(state, level, pos, player, hitResult);
                         }
-                    };
+                    });
                 } else if (id.endsWith("_wall") || id.contains("wall")) {
-                    block = new WallBlock(props) {
+                    block = createBlockWithHook(builder, props, (p, b) -> new WallBlock(p) {
                         @Override public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
-                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
-                                try {
-                                    builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), null);
-                                } catch (Exception e) {
-                                    LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed block right-click handler for " + builder.getId() + ": " + e.getMessage());
-                                }
-                                return InteractionResult.sidedSuccess(level.isClientSide());
-                            }
-                            return super.useWithoutItem(state, level, pos, player, hitResult);
+                            InteractionResult r = handleBlockUse(level, pos, player, b);
+                            return r != null ? r : super.useWithoutItem(state, level, pos, player, hitResult);
                         }
-                    };
+                    });
                 } else {
-                    block = new Block(props) {
+                    block = createBlockWithHook(builder, props, (p, b) -> new Block(p) {
                         @Override public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
-                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
-                                try {
-                                    builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), null);
-                                } catch (Exception e) {
-                                    LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed block right-click handler for " + builder.getId() + ": " + e.getMessage());
-                                }
-                                return InteractionResult.sidedSuccess(level.isClientSide());
-                            }
-                            return super.useWithoutItem(state, level, pos, player, hitResult);
+                            InteractionResult r = handleBlockUse(level, pos, player, b);
+                            return r != null ? r : super.useWithoutItem(state, level, pos, player, hitResult);
                         }
-                    };
+                    });
                 }
 
                 Block finalBlock = block;
@@ -249,8 +254,8 @@ public final class BlockRegistrar {
         for (IBlockBuilder builder : contentService.getRegisteredBlocks()) {
             if (!builder.isContainer() && !builder.isConnectionState()) continue;
             ResourceLocation rl = locationParser.apply(builder.getId());
-            int rows = builder.isContainer() ? builder.getContainerRows() : 1;
-            int cols = builder.isContainer() ? builder.getContainerCols() : 1;
+            int rows = builder.isContainer() ? builder.getContainerRows() : PIPE_DEFAULT_ROWS;
+            int cols = builder.isContainer() ? builder.getContainerCols() : PIPE_DEFAULT_COLS;
             int slotCount = rows * cols;
             net.minecraft.world.inventory.MenuType<com.luatweaker.platform.container.CustomContainerMenu>[] ref =
                     new net.minecraft.world.inventory.MenuType[1];

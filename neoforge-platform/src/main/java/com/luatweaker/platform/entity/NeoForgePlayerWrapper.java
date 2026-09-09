@@ -158,7 +158,8 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
                 );
             }
         } catch (Exception e) {
-            // Silently ignore invalid sound IDs
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                    "playSound failed for '" + soundId + "': " + e.getMessage());
         }
     }
 

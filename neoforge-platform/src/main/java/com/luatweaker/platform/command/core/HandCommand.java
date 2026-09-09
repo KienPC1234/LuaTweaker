@@ -102,7 +102,7 @@ public class HandCommand implements ILuaTweakerCommand {
                 for (TagKey<Item> tagKey : tags) {
                     String tagStr = "#" + tagKey.location().toString();
                     String tagFuncLua = String.format("tag(\"%s\")", tagStr);
-                    MutableComponent tagComp = Component.literal("    • ").withStyle(ChatFormatting.YELLOW)
+                    MutableComponent tagComp = Component.literal("    - ").withStyle(ChatFormatting.YELLOW)
                         .append(createClickableText(tagFuncLua, tagFuncLua, "Click to copy Lua tag function: " + tagFuncLua, ChatFormatting.LIGHT_PURPLE));
                     player.sendSystemMessage(tagComp);
                 }
@@ -153,7 +153,7 @@ public class HandCommand implements ILuaTweakerCommand {
                 for (TagKey<Block> tagKey : blockTags) {
                     String tagStr = "#" + tagKey.location().toString();
                     String tagFuncLua = String.format("tag(\"%s\")", tagStr);
-                    MutableComponent tagComp = Component.literal("    • ").withStyle(ChatFormatting.YELLOW)
+                    MutableComponent tagComp = Component.literal("    - ").withStyle(ChatFormatting.YELLOW)
                         .append(createClickableText(tagFuncLua, tagFuncLua, "Click to copy Lua tag function: " + tagFuncLua, ChatFormatting.LIGHT_PURPLE));
                     player.sendSystemMessage(tagComp);
                 }

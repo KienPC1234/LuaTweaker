@@ -18,9 +18,10 @@ public class MathLuaBinding {
         // 1. Vector3 Constructor
         ILuaTable v3Table = engine.createTable();
         v3Table.rawset("new", args -> {
-            double x = args.length >= 2 ? args[1].asDouble() : 0;
-            double y = args.length >= 3 ? args[2].asDouble() : 0;
-            double z = args.length >= 4 ? args[3].asDouble() : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            double x = args.length - off >= 1 ? args[off].asDouble() : 0;
+            double y = args.length - off >= 2 ? args[off + 1].asDouble() : 0;
+            double z = args.length - off >= 3 ? args[off + 2].asDouble() : 0;
             return createVector3(engine, x, y, z);
         });
         v3Table.rawset("zero", createVector3(engine, 0, 0, 0));
@@ -30,8 +31,9 @@ public class MathLuaBinding {
         // 2. Vector2 Constructor
         ILuaTable v2Table = engine.createTable();
         v2Table.rawset("new", args -> {
-            double x = args.length >= 2 ? args[1].asDouble() : 0;
-            double y = args.length >= 3 ? args[2].asDouble() : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            double x = args.length - off >= 1 ? args[off].asDouble() : 0;
+            double y = args.length - off >= 2 ? args[off + 1].asDouble() : 0;
             return createVector2(engine, x, y);
         });
         v2Table.rawset("zero", createVector2(engine, 0, 0));
@@ -41,20 +43,23 @@ public class MathLuaBinding {
         // 3. Color3 Constructor
         ILuaTable c3Table = engine.createTable();
         c3Table.rawset("new", args -> {
-            double r = args.length >= 2 ? args[1].asDouble() : 0;
-            double g = args.length >= 3 ? args[2].asDouble() : 0;
-            double b = args.length >= 4 ? args[3].asDouble() : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            double r = args.length - off >= 1 ? args[off].asDouble() : 0;
+            double g = args.length - off >= 2 ? args[off + 1].asDouble() : 0;
+            double b = args.length - off >= 3 ? args[off + 2].asDouble() : 0;
             return createColor3(engine, r, g, b);
         });
         c3Table.rawset("fromRGB", args -> {
-            double r = args.length >= 2 ? args[1].asDouble() : 0;
-            double g = args.length >= 3 ? args[2].asDouble() : 0;
-            double b = args.length >= 4 ? args[3].asDouble() : 0;
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            double r = args.length - off >= 1 ? args[off].asDouble() : 0;
+            double g = args.length - off >= 2 ? args[off + 1].asDouble() : 0;
+            double b = args.length - off >= 3 ? args[off + 2].asDouble() : 0;
             return createColor3(engine, r / 255.0, g / 255.0, b / 255.0);
         });
         c3Table.rawset("fromHex", args -> {
-            if (args.length < 2) return createColor3(engine, 0, 0, 0);
-            Color3 color = Color3.fromHex(args[1].asString());
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 1) return createColor3(engine, 0, 0, 0);
+            Color3 color = Color3.fromHex(args[off].asString());
             return createColor3(engine, color.r(), color.g(), color.b());
         });
         c3Table.rawset("black", createColor3(engine, 0, 0, 0));

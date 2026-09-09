@@ -10,7 +10,6 @@ import com.luatweaker.content.ContentServiceImpl;
 import com.luatweaker.content.DatapackServiceImpl;
 import com.luatweaker.content.StorageServiceImpl;
 import com.luatweaker.entities.AIGoalLuaBinding;
-import com.luatweaker.entities.WorldActionLuaBinding;
 import com.luatweaker.events.EventLuaBinding;
 import com.luatweaker.interaction.InteractionLuaBinding;
 import com.luatweaker.interception.InterceptionLuaBinding;
@@ -47,7 +46,6 @@ public final class LuaServiceBootstrap {
         // 2. Entities & AI Goals
         com.luatweaker.entities.EntitiesLuaBinding.registerBindings(engine);
         AIGoalLuaBinding.registerBindings(engine);
-        WorldActionLuaBinding.registerBindings(engine);
 
         // 3. Interaction & Workspace
         InteractionLuaBinding.registerBindings(engine);
@@ -66,8 +64,9 @@ public final class LuaServiceBootstrap {
         NetworkServiceImpl networkService = new NetworkServiceImpl(engine);
         try {
             com.luatweaker.platform.LuaTweakerMod.setServerNetworkService(networkService);
-        } catch (Throwable ignored) {
-            // Unit test environment without NeoForge FML
+        } catch (Throwable t) {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                    "setServerNetworkService failed (unit test environment?): " + t.getMessage());
         }
         NetworkLuaBinding.registerBindings(engine, networkService);
 
@@ -119,8 +118,11 @@ public final class LuaServiceBootstrap {
         
         if (!isDedicatedServer) {
             try {
-                guiService = (com.luatweaker.api.client.IGuiService) Class.forName("com.luatweaker.platform.client.NeoForgeGuiService").getDeclaredConstructor().newInstance();
-            } catch (Exception ignored) {}
+                guiService = (com.luatweaker.api.client.IGuiService) com.luatweaker.platform.client.NeoForgeGuiService.class.getDeclaredConstructor().newInstance();
+            } catch (Exception e) {
+                com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                        "NeoForgeGuiService not available: " + e.getMessage());
+            }
         }
         
         ClientLuaBinding.registerBindings(engine, clientService, keyBindService, guiService);
@@ -131,9 +133,12 @@ public final class LuaServiceBootstrap {
         ILuaValue clientVal = engine.getGlobalEnvironment().rawget("Client");
         if (clientVal != null && clientVal.isTable() && !isDedicatedServer) {
             try {
-                Class<?> clazz = Class.forName("com.luatweaker.platform.client.NeoForgeWorldRenderEventListener");
+                Class<?> clazz = com.luatweaker.platform.client.NeoForgeWorldRenderEventListener.class;
                 clazz.getMethod("registerRenderService", ILuaEngine.class, ILuaTable.class).invoke(null, engine, clientVal.asTable());
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                        "NeoForgeWorldRenderEventListener not available: " + e.getMessage());
+            }
         }
 
         // 11. Recipe Manager Table

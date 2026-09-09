@@ -105,6 +105,7 @@ public class LuaScriptsIntegrationTest {
             public boolean ejectContainerItem(String d, int x, int y, int z, int slot, int count) { return false; }
             public long fillBlocks(String d, int x1, int y1, int z1, int x2, int y2, int z2, String b, java.util.Map<String, Object> p) { return 0; }
             public long replaceBlocks(String d, int x1, int y1, int z1, int x2, int y2, int z2, String f, String t) { return 0; }
+            public boolean placeStructure(String d, String t, int x, int y, int z, int r) { return false; }
             public boolean executeCommand(String c) { return false; }
         });
 
@@ -192,17 +193,6 @@ public class LuaScriptsIntegrationTest {
     }
 
     private File findLuamodsDir() {
-        File[] candidates = new File[] {
-                new File("neoforge-platform/luamods"),
-                new File("luamods"),
-                new File("../../neoforge-platform/luamods"),
-                new File("../../luamods")
-        };
-        for (File candidate : candidates) {
-            if (candidate.exists() && candidate.isDirectory()) {
-                return candidate;
-            }
-        }
-        return candidates[0];
+        return com.luatweaker.platform.TestPaths.findLuamodsDir();
     }
 }

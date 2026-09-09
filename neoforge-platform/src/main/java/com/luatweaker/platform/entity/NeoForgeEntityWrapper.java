@@ -19,7 +19,7 @@ import net.minecraft.world.entity.player.Player;
 
 public class NeoForgeEntityWrapper implements IEntity {
 
-    private final Entity entity;
+    protected final Entity entity;
 
     public NeoForgeEntityWrapper(Entity entity) {
         this.entity = entity;

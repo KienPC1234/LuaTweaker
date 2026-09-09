@@ -12,7 +12,7 @@ import org.jetbrains.annotations.Nullable;
 
 /**
  * Adapts NeoForge's {@link CommandSourceStack} to {@link ICommandSender}.
- * This is the only NeoForge-specific class in the command pipeline —
+ * This is the only NeoForge-specific class in the command pipeline -
  * all command logic above this layer is platform-agnostic.
  */
 public class NeoForgeCommandSender implements ICommandSender {

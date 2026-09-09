@@ -93,7 +93,7 @@ public interface IBlockBuilder {
     @LuaDoc(description = "Registers an item filter for container blocks: handler(itemId: string, count: integer) -> boolean. Return true to allow the item into a slot, false to reject it (item never enters the container, 'ContainerItemRejected' event fires).", params = {"handler: function(itemId, count)"}, returnType = "IBlockBuilder")
     IBlockBuilder itemFilter(java.util.function.BiFunction<Object, Object, Boolean> handler);
 
-    @LuaDoc(description = "Sets a custom GUI background texture for this container block (e.g. 'ruby_mod:textures/gui/my_crate.png'). The texture is a 176 x (114 + rows*18) panel drawn from its top-left corner, matching the vanilla chest layout; slot cells are drawn on top automatically.", params = {"texturePath: string"}, returnType = "IBlockBuilder")
+    @LuaDoc(description = "Sets a custom GUI background texture for this container block (e.g. 'luatweaker_test:textures/gui/my_crate.png'). The texture is a 176 x (114 + rows*18) panel drawn from its top-left corner, matching the vanilla chest layout; slot cells are drawn on top automatically.", params = {"texturePath: string"}, returnType = "IBlockBuilder")
     IBlockBuilder containerTexture(String texturePath);
 
     @LuaDoc(description = "Sets the display title shown above the container GUI (defaults to the block name).", params = {"title: string"}, returnType = "IBlockBuilder")
@@ -102,7 +102,7 @@ public interface IBlockBuilder {
     @LuaDoc(description = "Moves a container slot to an absolute GUI position (x, y in the 176-wide panel). Useful for custom layouts; slots without an override keep the automatic centered grid.", params = {"slotIndex: integer (0-based)", "x: integer", "y: integer"}, returnType = "IBlockBuilder")
     IBlockBuilder slotPosition(int slotIndex, int x, int y);
 
-    @LuaDoc(description = "Sets a custom slot cell texture for every slot of this container (e.g. 'ruby_mod:textures/gui/my_slot.png', 18x18 cell).", params = {"texturePath: string"}, returnType = "IBlockBuilder")
+    @LuaDoc(description = "Sets a custom slot cell texture for every slot of this container (e.g. 'luatweaker_test:textures/gui/my_slot.png', 18x18 cell).", params = {"texturePath: string"}, returnType = "IBlockBuilder")
     IBlockBuilder slotTexture(String texturePath);
 
     @LuaDoc(description = "Locks a container slot so items can neither be placed into it nor taken from it (read-only storage).", params = {"slotIndex: integer (0-based)", "locked: boolean"}, returnType = "IBlockBuilder")

@@ -11,7 +11,7 @@ package com.luatweaker.api.log;
  * </pre>
  */
 public enum LogStage {
-    // ── Startup ────────────────────────────────────────────────────────────
+    // -- Startup ---
     /** Mod constructor running. Platform PAL / config init. */
     MOD_INIT,
     /** Cobalt VM / engine startup. */
@@ -19,7 +19,7 @@ public enum LogStage {
     /** LSP stub generation. */
     STUB_GEN,
 
-    // ── Script execution ───────────────────────────────────────────────────
+    // -- Script execution ---
     /** A Lua script file is being loaded and executed. */
     SCRIPT_LOAD,
     /** A Lua syntax error was detected (via /lt syntax or during load). */
@@ -27,7 +27,7 @@ public enum LogStage {
     /** A Lua runtime error was thrown. */
     RUNTIME_ERROR,
 
-    // ── Recipe pipeline ────────────────────────────────────────────────────
+    // -- Recipe pipeline ---
     /** A recipe was removed by output, input, or ID. */
     RECIPE_REMOVE,
     /** A shaped or shapeless recipe was added. */
@@ -37,11 +37,11 @@ public enum LogStage {
     /** Recipe modifications are being applied to the Minecraft RecipeManager. */
     RECIPE_APPLY,
 
-    // ── Commands ───────────────────────────────────────────────────────────
+    // -- Commands ---
     /** A /luatweaker command was executed. */
     COMMAND,
 
-    // ── General ───────────────────────────────────────────────────────────
+    // -- General ---
     /** Server reload triggered. */
     RELOAD,
     /** Miscellaneous system message not tied to a specific stage. */

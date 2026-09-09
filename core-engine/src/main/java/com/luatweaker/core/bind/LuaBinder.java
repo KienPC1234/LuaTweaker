@@ -64,7 +64,7 @@ public final class LuaBinder {
      * Replaces the banned manual 'int off = (args.length > 0 && args[0].isTable()) ? 1 : 0' anti-pattern.
      */
     public static int getOffset(ILuaValue[] args) {
-        return (args.length > 0 && args != null && args[0] != null && args[0].isTable()) ? 1 : 0;
+        return (args != null && args.length > 0 && args[0] != null && args[0].isTable()) ? 1 : 0;
     }
 
     /** Binds the interface to a fresh Lua table without registering any service or global. */
@@ -139,6 +139,20 @@ public final class LuaBinder {
         if (type == Object.class) return arg;
         if (IEntity.class.isAssignableFrom(type)) return unwrapEntity(arg);
 
+        // Array parameters (e.g. String[] biomes) arrive as Lua tables.
+        if (type.isArray() && arg.isTable()) {
+            ILuaTable tbl = arg.asTable();
+            int len = tbl.length();
+            Class<?> comp = type.getComponentType();
+            Object array = java.lang.reflect.Array.newInstance(comp, len);
+            for (int i = 1; i <= len; i++) {
+                ILuaValue item = tbl.rawget(i);
+                if (item == null || item.isNil()) break;
+                java.lang.reflect.Array.set(array, i - 1, convertArg(comp, item));
+            }
+            return array;
+        }
+
         Object raw = arg.toJavaObject();
         if (raw != null && type.isAssignableFrom(raw.getClass())) return raw;
         return raw;
@@ -181,6 +195,24 @@ public final class LuaBinder {
         if (result instanceof String s) return engine.wrapString(s);
         if (result instanceof Boolean b) return engine.wrapBoolean(b);
         if (result instanceof Number n) return engine.wrapNumber(n.doubleValue());
+
+        // Maps and Lists must arrive as Lua tables (not userdata) so scripts
+        // can index them directly (e.g. Loot:GetModifications()["mob"]).
+        if (result instanceof java.util.Map<?, ?> map) {
+            ILuaTable table = engine.createTable();
+            for (java.util.Map.Entry<?, ?> entry : map.entrySet()) {
+                table.rawset(String.valueOf(entry.getKey()), toLua(engine, entry.getValue() == null ? Object.class : entry.getValue().getClass(), entry.getValue()));
+            }
+            return table;
+        }
+        if (result instanceof java.util.List<?> list) {
+            ILuaTable table = engine.createTable();
+            int i = 1;
+            for (Object item : list) {
+                table.rawset(i++, toLua(engine, item == null ? Object.class : item.getClass(), item));
+            }
+            return table;
+        }
 
         ValueConverter converter = RETURN_CONVERTERS.get(returnType);
         if (converter != null) {

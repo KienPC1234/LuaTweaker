@@ -4,7 +4,7 @@ package com.luatweaker.api.log;
  * Global accessor for the active {@link ILuaTweakerLog} implementation.
  *
  * <p>Platform modules (neoforge-platform, etc.) call {@link #set(ILuaTweakerLog)}
- * during mod init. All subsystems then call {@link #get()} freely — never
+ * during mod init. All subsystems then call {@link #get()} freely - never
  * importing a concrete class.</p>
  *
  * <p>If no implementation has been registered, a {@link NoOpLog} is returned
@@ -24,7 +24,7 @@ public class LuaTweakerLog {
         return instance;
     }
 
-    // ── No-op fallback ────────────────────────────────────────────────────
+    // -- No-op fallback ---
 
     /** Silent logger used before the real one is installed. */
     private static final class NoOpLog implements ILuaTweakerLog {

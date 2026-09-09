@@ -26,7 +26,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Loads the real arcane_rpg mod (Crystal Realm dimension) through the engine
+ * Loads the real luatweaker_test mod (Crystal Realm dimension) through the engine
  * and verifies the full pipeline: config parsing, terrain/biome callbacks,
  * portal mapping and virtual datapack biomes.
  */
@@ -122,7 +122,7 @@ public class CrystalRealmDimensionTest {
                 new NeoForgeRecipeManager());
 
         assertDoesNotThrow(() -> LuaModManager.loadLuaMods(baseDir, engine, "universal"),
-                "Failed executing autonomous LuaMods (incl. arcane_rpg Crystal Realm)");
+                "Failed executing autonomous LuaMods (incl. luatweaker_test Crystal Realm)");
 
         Object serviceObj = LuaServiceRegistry.get("DimensionServiceImpl");
         assertTrue(serviceObj instanceof DimensionServiceImpl, "DimensionServiceImpl must be registered");
@@ -185,7 +185,8 @@ public class CrystalRealmDimensionTest {
         assertNotNull(service.getBlockPicker(DIMENSION_ID), "block picker must be set");
         Set<String> validBlockIds = Set.of("minecraft:air", "minecraft:lava",
                 "luatweaker:crystal_ore", "luatweaker:crystal_grass",
-                "luatweaker:crystal_dirt", "luatweaker:crystal_stone", "luatweaker:crystal_peak");
+                "luatweaker:crystal_dirt", "luatweaker:crystal_stone", "luatweaker:crystal_peak",
+                "luatweaker:crystal_log", "luatweaker:crystal_leaves");
         boolean foundOverride = false;
         for (int i = 0; i < 128; i++) {
             Map<Integer, String> overrides = service.computeBlockOverrides(
@@ -239,9 +240,9 @@ public class CrystalRealmDimensionTest {
                 "missing dimension blocks in: " + registeredBlocks);
 
         // 8. NBT structure templates present for World:PlaceStructure
-        File monolithNbt = findModFile(baseDir, "data/arcane_rpg/structures/sky_monolith.nbt");
+        File monolithNbt = findModFile(baseDir, "data/luatweaker_test/structures/sky_monolith.nbt");
         assertTrue(monolithNbt.exists(), "sky_monolith.nbt must exist for World:PlaceStructure");
-        File outpostNbt = findModFile(baseDir, "data/arcane_rpg/structures/crystal_outpost.nbt");
+        File outpostNbt = findModFile(baseDir, "data/luatweaker_test/structures/crystal_outpost.nbt");
         assertTrue(outpostNbt.exists(), "crystal_outpost.nbt must exist for World:PlaceStructure");
         assertTrue(outpostNbt.length() > 100, "crystal_outpost.nbt must not be empty");
     }
@@ -319,18 +320,7 @@ public class CrystalRealmDimensionTest {
     }
 
     private File findLuamodsDir() {
-        File[] candidates = new File[] {
-                new File("neoforge-platform/luamods"),
-                new File("luamods"),
-                new File("../../neoforge-platform/luamods"),
-                new File("../../luamods")
-        };
-        for (File candidate : candidates) {
-            if (candidate.exists() && candidate.isDirectory()) {
-                return candidate;
-            }
-        }
-        return candidates[0];
+        return com.luatweaker.platform.TestPaths.findLuamodsDir();
     }
 }
 

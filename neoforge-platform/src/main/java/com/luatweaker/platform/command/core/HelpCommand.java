@@ -9,7 +9,7 @@ import java.util.List;
  * /luatweaker help
  *
  * Lists all registered LuaTweaker commands with their descriptions.
- * Automatically populated from the command registry — no manual updates needed.
+ * Automatically populated from the command registry - no manual updates needed.
  */
 public class HelpCommand implements ILuaTweakerCommand {
 
@@ -30,7 +30,7 @@ public class HelpCommand implements ILuaTweakerCommand {
 
     @Override
     public int execute(ICommandSender sender, String[] args) {
-        sender.sendMessage("§6╔══ §eLuaTweaker Commands §6══╗");
+        sender.sendMessage("§6===== §eLuaTweaker Commands §6=====");
         for (ILuaTweakerCommand cmd : allCommands) {
             sender.sendMessage("§6  /lt §e" + cmd.getName()
                     + " §7- " + cmd.getDescription()
@@ -46,7 +46,7 @@ public class HelpCommand implements ILuaTweakerCommand {
                         + " §8(op:" + def.permissionLevel() + ", mod:" + def.modId() + ")");
             }
         }
-        sender.sendMessage("§6╚══════════════════════════╝");
+        sender.sendMessage("§6=================================");
         return 1;
     }
 }

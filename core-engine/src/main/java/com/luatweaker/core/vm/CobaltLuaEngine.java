@@ -1,6 +1,5 @@
 package com.luatweaker.core.vm;
 
-import com.luatweaker.api.objects.IItem;
 import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.vm.*;
 import com.luatweaker.core.engine.LuaEngine;
@@ -24,6 +23,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class CobaltLuaEngine implements ILuaEngine {
+    /** Fallback module roots used when no luaDirectory is configured. */
+    private static final String DEFAULT_LUAMODS_DIR = "luamods";
+    private static final String DEFAULT_LUA_DIR = "lua";
+
     private final LuaState state;
     private final LuaEngine rawEngine;
     private boolean debugMode = false;
@@ -48,15 +51,6 @@ public class CobaltLuaEngine implements ILuaEngine {
         this.rawEngine = new LuaEngine();
         this.state = rawEngine.getState();
         setupGlobalBindings();
-    }
-
-    public void setDebugMode(boolean debugMode) {
-        this.debugMode = debugMode;
-        state.globals().rawset("DEBUG", ValueFactory.valueOf(debugMode));
-    }
-
-    public boolean isDebugMode() {
-        return debugMode;
     }
 
     public LuaState getCobaltState() {
@@ -139,6 +133,9 @@ public class CobaltLuaEngine implements ILuaEngine {
         osTable.rawset("clock", new VarArgFunction() {
             @Override
             public Varargs invoke(LuaState state, Varargs args) {
+                // Wall-clock seconds. The bootstrap task scheduler falls back to
+                // os.clock() when task.getTimeClock is unavailable (e.g. unit
+                // tests without the Task module), so it must stay wall-clock.
                 return ValueFactory.valueOf(System.currentTimeMillis() / 1000.0);
             }
         });
@@ -329,8 +326,8 @@ public class CobaltLuaEngine implements ILuaEngine {
 
     /**
      * Resolves the owning mod id for the currently executing Lua code. Falls back
-     * to parsing the chunk name (e.g. "ruby_mod/main.lua") when the call happens
-     * on a coroutine thread that never pushed onto the module stack — so per-mod
+     * to parsing the chunk name (e.g. "luatweaker_test/main.lua") when the call happens
+     * on a coroutine thread that never pushed onto the module stack - so per-mod
      * log files receive coroutine output too.
      */
     private String resolveModId(LuaState state) {
@@ -414,10 +411,10 @@ public class CobaltLuaEngine implements ILuaEngine {
     private LuaValue resolveFileModule(String modName) {
         File dir = luaDirectory;
         if (dir == null || !dir.exists()) {
-            dir = new File("luamods");
+            dir = new File(DEFAULT_LUAMODS_DIR);
         }
         if (!dir.exists()) {
-            dir = new File("lua");
+            dir = new File(DEFAULT_LUA_DIR);
         }
         if (!dir.exists()) return Constants.NIL;
 
@@ -452,7 +449,7 @@ public class CobaltLuaEngine implements ILuaEngine {
             }
         }
 
-        // Search sub-directories of luamods/ (e.g. luamods/my_custom_mod/src/server/boss_ai.lua)
+        // Search sub-directories of luamods/ (e.g. luamods/luatweaker_test/src/server/boss_ai.lua)
         File[] subMods = dir.listFiles();
         if (subMods != null) {
             for (File modFolder : subMods) {
@@ -484,75 +481,7 @@ public class CobaltLuaEngine implements ILuaEngine {
     }
 
     private LuaValue resolveNativeModule(LuaTable globals, String modName) {
-        return switch (modName) {
-            case "LuaTweaker.Content", "Content", "startup" -> {
-                LuaValue val = globals.rawget("Content");
-                yield (val != null && !val.isNil()) ? val : globals.rawget("startup");
-            }
-            case "LuaTweaker.Recipe", "Recipe", "Recipes", "recipes" -> {
-                LuaValue val = globals.rawget("Recipe");
-                yield (val != null && !val.isNil()) ? val : globals.rawget("recipes");
-            }
-            case "LuaTweaker.Events", "Events", "events" -> {
-                LuaValue val = globals.rawget("Events");
-                yield (val != null && !val.isNil()) ? val : globals.rawget("events");
-            }
-            case "LuaTweaker.World", "World", "Workspace", "workspace" -> {
-                LuaValue val = globals.rawget("World");
-                yield (val != null && !val.isNil()) ? val : globals.rawget("Workspace");
-            }
-            case "LuaTweaker.Task", "Task", "task" -> {
-                LuaValue val = globals.rawget("Task");
-                yield (val != null && !val.isNil()) ? val : globals.rawget("task");
-            }
-            case "LuaTweaker.Entities", "Entities", "EntityService" -> {
-                LuaValue val = globals.rawget("Entities");
-                yield (val != null && !val.isNil()) ? val : globals.rawget("EntityService");
-            }
-            case "LuaTweaker.Players", "Players" -> globals.rawget("Players");
-            case "LuaTweaker.AIGoals", "AIGoals" -> globals.rawget("AIGoals");
-            case "LuaTweaker.Loot", "Loot" -> globals.rawget("Loot");
-            case "LuaTweaker.Worldgen", "Worldgen" -> globals.rawget("Worldgen");
-            case "LuaTweaker.Noise", "Noise" -> globals.rawget("Noise");
-            case "LuaTweaker.Dimensions", "Dimensions" -> globals.rawget("Dimensions");
-            case "LuaTweaker.SpawnRules", "SpawnRules" -> globals.rawget("SpawnRules");
-            case "LuaTweaker.Structures", "Structures" -> globals.rawget("Structures");
-            case "LuaTweaker.Biomes", "Biomes" -> globals.rawget("Biomes");
-            case "LuaTweaker.Storage", "Storage", "storage" -> {
-                LuaValue val = globals.rawget("Storage");
-                if (val == null || val.isNil()) {
-                    val = globals.rawget("storage");
-                }
-                yield val;
-            }
-            case "LuaTweaker.WorldStorage", "WorldStorage" -> globals.rawget("WorldStorage");
-            case "LuaTweaker.PlayerStorage" -> globals.rawget("PlayerStorage");
-            case "LuaTweaker.SessionStorage" -> globals.rawget("SessionStorage");
-            case "LuaTweaker.Datapack", "Datapack", "datapack" -> globals.rawget("Datapack");
-            case "LuaTweaker.Network", "Network", "NetworkService" -> globals.rawget("NetworkService");
-            case "LuaTweaker.Interception", "Interception", "InterceptionService" -> {
-                LuaValue val = globals.rawget("Interception");
-                yield (val != null && !val.isNil()) ? val : globals.rawget("InterceptionService");
-            }
-            case "LuaTweaker.Commands", "Commands" -> globals.rawget("Commands");
-            case "LuaTweaker.Camera", "Camera" -> globals.rawget("Camera");
-            case "LuaTweaker.Client", "LuaTweaker.ClientService", "Client", "ClientService" -> {
-                LuaValue val = globals.rawget("Client");
-                yield (val != null && !val.isNil()) ? val : globals.rawget("ClientService");
-            }
-            case "LuaTweaker.ClientEffects", "ClientEffects" -> globals.rawget("ClientEffects");
-            case "LuaTweaker.GuiService", "GuiService" -> globals.rawget("GuiService");
-            case "LuaTweaker.RenderService", "RenderService" -> globals.rawget("RenderService");
-            case "LuaTweaker.RunService", "RunService" -> globals.rawget("RunService");
-            case "LuaTweaker.KeyBindService", "KeyBindService" -> globals.rawget("KeyBindService");
-            case "LuaTweaker.Signal", "Signal" -> globals.rawget("Signal");
-            case "LuaTweaker.Utils", "Utils" -> globals.rawget("Utils");
-            case "LuaTweaker.TweenService", "TweenService" -> globals.rawget("TweenService");
-            case "LuaTweaker.Math.Vector3", "Vector3" -> globals.rawget("Vector3");
-            case "LuaTweaker.Math.Vector2", "Vector2" -> globals.rawget("Vector2");
-            case "LuaTweaker.Math.Color3", "Color3" -> globals.rawget("Color3");
-            default -> Constants.NIL;
-        };
+        return NativeModuleResolver.resolve(globals, modName);
     }
 
     @Override
@@ -573,127 +502,11 @@ public class CobaltLuaEngine implements ILuaEngine {
     }
 
     private LuaUserdata createItemUserdata(ItemCount ic) {
-        LuaTable meta = new LuaTable();
-
-        VarArgFunction withCount = new VarArgFunction() {
-            @Override
-            public Varargs invoke(LuaState state, Varargs args) throws LuaError {
-                LuaUserdata ud = (LuaUserdata) args.arg(1);
-                ItemCount current = (ItemCount) ud.instance;
-                int count = args.arg(2).checkInteger();
-                return createItemUserdata(current.withCount(count));
-            }
-        };
-        VarArgFunction withDamage = new VarArgFunction() {
-            @Override
-            public Varargs invoke(LuaState state, Varargs args) throws LuaError {
-                LuaUserdata ud = (LuaUserdata) args.arg(1);
-                ItemCount current = (ItemCount) ud.instance;
-                int dmg = args.arg(2).checkInteger();
-                return createItemUserdata(current.withDamage(dmg));
-            }
-        };
-        VarArgFunction withName = new VarArgFunction() {
-            @Override
-            public Varargs invoke(LuaState state, Varargs args) throws LuaError {
-                LuaUserdata ud = (LuaUserdata) args.arg(1);
-                ItemCount current = (ItemCount) ud.instance;
-                String name = args.arg(2).checkLuaString().toString();
-                return createItemUserdata(current.withName(name));
-            }
-        };
-        VarArgFunction withLore = new VarArgFunction() {
-            @Override
-            public Varargs invoke(LuaState state, Varargs args) throws LuaError {
-                LuaUserdata ud = (LuaUserdata) args.arg(1);
-                ItemCount current = (ItemCount) ud.instance;
-                List<String> loreList = new ArrayList<>();
-                if (args.arg(2) instanceof LuaTable tbl) {
-                    int len = tbl.length();
-                    for (int i = 1; i <= len; i++) {
-                        loreList.add(tbl.rawget(i).toString());
-                    }
-                } else {
-                    loreList.add(args.arg(2).toString());
-                }
-                return createItemUserdata(current.withLore(loreList));
-            }
-        };
-        VarArgFunction withEnchantment = new VarArgFunction() {
-            @Override
-            public Varargs invoke(LuaState state, Varargs args) throws LuaError {
-                LuaUserdata ud = (LuaUserdata) args.arg(1);
-                ItemCount current = (ItemCount) ud.instance;
-                String ench = args.arg(2).checkLuaString().toString();
-                int level = args.arg(3).isNil() ? 1 : args.arg(3).checkInteger();
-                return createItemUserdata(current.withEnchantment(ench, level));
-            }
-        };
-        VarArgFunction withNbt = new VarArgFunction() {
-            @Override
-            public Varargs invoke(LuaState state, Varargs args) throws LuaError {
-                LuaUserdata ud = (LuaUserdata) args.arg(1);
-                ItemCount current = (ItemCount) ud.instance;
-                String nbt = args.arg(2).toString();
-                return createItemUserdata(current.withNbt(nbt));
-            }
-        };
-
-        try {
-            meta.rawset("withCount", withCount);       meta.rawset("count", withCount);
-            meta.rawset("withDamage", withDamage);     meta.rawset("damage", withDamage);
-            meta.rawset("withName", withName);         meta.rawset("name", withName);
-            meta.rawset("withLore", withLore);         meta.rawset("lore", withLore);
-            meta.rawset("withEnchantment", withEnchantment); meta.rawset("enchant", withEnchantment);
-            meta.rawset("withNbt", withNbt);           meta.rawset("nbt", withNbt);
-
-            LuaTable indexTable = new LuaTable();
-            indexTable.rawset("id", ValueFactory.valueOf(ic.itemId()));
-            indexTable.rawset("count", ValueFactory.valueOf(ic.count()));
-            indexTable.rawset("damage", ValueFactory.valueOf(ic.damage()));
-
-            meta.rawset(Constants.INDEX, new VarArgFunction() {
-                @Override
-                public Varargs invoke(LuaState state, Varargs args) throws LuaError {
-                    LuaValue key = args.arg(2);
-                    LuaValue val = meta.rawget(key);
-                    if (!val.isNil()) return val;
-                    return indexTable.rawget(key);
-                }
-            });
-        } catch (LuaError e) { com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RUNTIME_ERROR, "LuaError ignored: " + e.getMessage()); }
-
-        LuaUserdata ud = new LuaUserdata(ic);
-        ud.setMetatable(state, meta);
-        return ud;
+        return ItemUserdataFactory.createItemUserdata(state, ic);
     }
 
     private LuaUserdata createIngredientUserdata(IngredientWrapper ing) {
-        LuaTable meta = new LuaTable();
-        VarArgFunction orFunc = new VarArgFunction() {
-            @Override
-            public Varargs invoke(LuaState state, Varargs args) throws LuaError {
-                LuaUserdata ud = (LuaUserdata) args.arg(1);
-                IngredientWrapper current = (IngredientWrapper) ud.instance;
-                LuaValue otherArg = args.arg(2);
-                if (otherArg instanceof LuaUserdata otherUd && otherUd.instance instanceof IngredientWrapper otherIng) {
-                    return createIngredientUserdata(current.or(otherIng));
-                }
-                return createIngredientUserdata(current.or(otherArg.toString()));
-            }
-        };
-
-        try {
-            meta.rawset("orIngredient", orFunc);
-            meta.rawset("alt", orFunc);
-            meta.rawset("otherwise", orFunc);
-            meta.rawset("or", orFunc);
-            meta.rawset(Constants.INDEX, meta);
-        } catch (LuaError e) { com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RUNTIME_ERROR, "LuaError ignored: " + e.getMessage()); }
-
-        LuaUserdata ud = new LuaUserdata(ing);
-        ud.setMetatable(state, meta);
-        return ud;
+        return ItemUserdataFactory.createIngredientUserdata(state, ing);
     }
 
     @Override

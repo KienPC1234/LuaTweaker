@@ -33,6 +33,8 @@ public class LuaMod {
 
     private final String environment;
 
+    private volatile ILuaTable modTable;
+
     public LuaMod(@NotNull LuaModManifest manifest,
                   @NotNull File modFileOrDir,
                   @NotNull String environment,
@@ -56,12 +58,10 @@ public class LuaMod {
         return manifest;
     }
 
-    public @NotNull File getModFileOrDir() {
-        return modFileOrDir;
-    }
-
-    public @NotNull File getConfigFile() {
-        return configFile;
+    /** Returns the mod table bound into the Lua environment, or null before createModTable(). */
+    @Nullable
+    public ILuaTable getModTable() {
+        return modTable;
     }
 
     public @NotNull Map<String, ILuaTable> getExportedApis() {
@@ -134,6 +134,7 @@ public class LuaMod {
      */
     public ILuaTable createModTable(@NotNull ILuaEngine engine) {
         ILuaTable table = engine.createTable();
+        this.modTable = table;
 
         table.rawset("ID", engine.wrapString(manifest.id()));
         table.rawset("Name", engine.wrapString(manifest.name()));

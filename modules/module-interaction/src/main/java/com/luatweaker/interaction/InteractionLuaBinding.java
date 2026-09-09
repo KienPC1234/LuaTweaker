@@ -264,11 +264,13 @@ public class InteractionLuaBinding {
         // 2. EntityService Service
         ILuaTable entityServiceTable = engine.createTable();
         ILuaValue sigClass = engine.getGlobalEnvironment().rawget("Signal");
+        ILuaValue entitySpawnedSignal = engine.nilValue();
         if (sigClass != null && !sigClass.isNil()) {
             ILuaValue sigNew = sigClass.asTable().rawget("new");
-            ILuaValue entitySpawnedSignal = engine.callFunction(sigNew, sigClass);
+            entitySpawnedSignal = engine.callFunction(sigNew, sigClass);
             entityServiceTable.rawset("EntitySpawned", entitySpawnedSignal);
         }
+        final ILuaValue finalSpawnedSignal = entitySpawnedSignal;
         entityServiceTable.rawset("spawnEntity", args -> {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 4) return engine.nilValue();
@@ -277,7 +279,15 @@ public class InteractionLuaBinding {
             double y = args[off + 2].asDouble();
             double z = args[off + 3].asDouble();
             Object spawned = com.luatweaker.api.pal.Platform.getEntity().spawnEntity(type, x, y, z);
-            return spawned != null ? getWrappedEntity(engine, spawned) : engine.nilValue();
+            if (spawned == null) return engine.nilValue();
+            ILuaValue wrapped = getWrappedEntity(engine, spawned);
+            if (finalSpawnedSignal != null && !finalSpawnedSignal.isNil()) {
+                ILuaValue fireFn = finalSpawnedSignal.asTable().rawget("Fire");
+                if (fireFn != null && !fireFn.isNil()) {
+                    engine.callFunction(fireFn, finalSpawnedSignal, wrapped);
+                }
+            }
+            return wrapped;
         });
         entityServiceTable.rawset("GetEntity", workspaceTable.rawget("GetEntity"));
         entityServiceTable.rawset("getEntity", workspaceTable.rawget("GetEntity"));
@@ -324,10 +334,6 @@ public class InteractionLuaBinding {
                 return val != null ? engine.wrapString(val) : engine.nilValue();
             }
             return engine.nilValue();
-        });
-        methods.rawset("GetAttributes", args -> {
-            ILuaTable attrs = engine.createTable();
-            return attrs;
         });
         methods.rawset("SetAttribute", args -> {
             if (args.length >= 3) {
@@ -484,10 +490,6 @@ public class InteractionLuaBinding {
                 return val != null ? engine.wrapString(val) : engine.nilValue();
             }
             return engine.nilValue();
-        });
-        methods.rawset("GetAttributes", args -> {
-            ILuaTable attrs = engine.createTable();
-            return attrs;
         });
         methods.rawset("SetAttribute", args -> {
             if (args.length >= 3) {

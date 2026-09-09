@@ -9,9 +9,9 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.text.SimpleDateFormat;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -25,7 +25,7 @@ import java.util.concurrent.LinkedBlockingQueue;
  */
 public class AsyncFileLogger implements ILuaTweakerLog {
 
-    // ── Singleton ─────────────────────────────────────────────────────────
+    // -- Singleton ---
     private static AsyncFileLogger instance;
 
     public static synchronized AsyncFileLogger get() {
@@ -33,25 +33,28 @@ public class AsyncFileLogger implements ILuaTweakerLog {
         return instance;
     }
 
-    // ── Internals ─────────────────────────────────────────────────────────
+    // -- Internals ---
     private final BlockingQueue<String> queue = new LinkedBlockingQueue<>();
     private final Thread workerThread;
     private volatile boolean running = true;
     private volatile boolean debugEnabled = false;
 
-    private static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm:ss");
-    private static final SimpleDateFormat HEADER_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
+    private static final DateTimeFormatter HEADER_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final String SEPARATOR = "=".repeat(72);
     private static final int MAX_BATCH_SIZE = 100;
+    private static final String LOG_DIR = "logs/luatweaker";
+    private static final String LATEST_LOG = "latest.log";
+    private static final String MODS_LOG_DIR = "logs/luatweaker/mods";
 
     private final File logFile;
 
     private AsyncFileLogger() {
-        this.logFile = new File("logs/luatweaker/latest.log");
+        this.logFile = new File(LOG_DIR, LATEST_LOG);
         ensureParentDir();
         try (PrintWriter writer = new PrintWriter(new FileWriter(logFile, false))) {
             writer.println(SEPARATOR);
-            writer.println("  LuaTweaker Log - " + HEADER_DATE_FORMAT.format(new Date()));
+            writer.println("  LuaTweaker Log - " + HEADER_DATE_FORMAT.format(LocalDateTime.now()));
             writer.println(SEPARATOR);
         } catch (Exception e) { System.err.println("AsyncFileLogger error: " + e.getMessage()); e.printStackTrace(); }
 
@@ -73,28 +76,28 @@ public class AsyncFileLogger implements ILuaTweakerLog {
 
     public void initModLog(String modId) {
         if (modId == null || modId.isBlank()) return;
-        File modsLogDir = new File("logs/luatweaker/mods");
+        File modsLogDir = new File(MODS_LOG_DIR);
         if (!modsLogDir.exists()) modsLogDir.mkdirs();
         File modLogFile = new File(modsLogDir, modId + ".log");
         try (PrintWriter writer = new PrintWriter(new FileWriter(modLogFile, false))) {
             writer.println("========================================================================");
-            writer.println("  LuaMod Dedicated Log: " + modId + " - " + HEADER_DATE_FORMAT.format(new Date()));
+            writer.println("  LuaMod Dedicated Log: " + modId + " - " + HEADER_DATE_FORMAT.format(LocalDateTime.now()));
             writer.println("========================================================================");
         } catch (Exception e) { System.err.println("AsyncFileLogger error: " + e.getMessage()); e.printStackTrace(); }
     }
 
     public void logMod(String modId, String level, String message) {
         if (modId == null || modId.isBlank()) return;
-        File modsLogDir = new File("logs/luatweaker/mods");
+        File modsLogDir = new File(MODS_LOG_DIR);
         if (!modsLogDir.exists()) modsLogDir.mkdirs();
         File modLogFile = new File(modsLogDir, modId + ".log");
         try (PrintWriter writer = new PrintWriter(new FileWriter(modLogFile, true))) {
-            String ts = TIME_FORMAT.format(new Date());
+            String ts = TIME_FORMAT.format(LocalDateTime.now());
             writer.printf("%s [%s] %s%n", ts, level.trim(), message != null ? message : "");
         } catch (Exception e) { System.err.println("AsyncFileLogger error: " + e.getMessage()); e.printStackTrace(); }
     }
 
-    // ── ILuaTweakerLog implementation ─────────────────────────────────────
+    // -- ILuaTweakerLog implementation ---
 
     @Override
     public void info(LogStage stage, String message) {
@@ -149,7 +152,7 @@ public class AsyncFileLogger implements ILuaTweakerLog {
         System.out.println("[LuaTweaker] " + line);
     }
 
-    // ── Legacy raw API (backward-compat with old call sites) ──────────────
+    // -- Legacy raw API (backward-compat with old call sites) ---
 
     public void log(String context, String message, LuaState state) {
         String fileLine = resolveFileLine(state);
@@ -170,7 +173,7 @@ public class AsyncFileLogger implements ILuaTweakerLog {
         enqueueRaw(context, "ERROR", fileLine, message);
     }
 
-    // ── Internals ─────────────────────────────────────────────────────────
+    // -- Internals ---
 
     private void enqueue(LogStage stage, String level, String fileLine, int line, String message) {
         enqueueRaw(stage.name(), level, fileLine, message);
@@ -197,7 +200,7 @@ public class AsyncFileLogger implements ILuaTweakerLog {
     }
 
     private String formatLine(String stage, String level, String location, String message) {
-        String ts = TIME_FORMAT.format(new Date());
+        String ts = TIME_FORMAT.format(LocalDateTime.now());
         String stageCol = String.format("%-12s", stage);
         String locStr   = location != null ? String.format("(%s) ", location) : "";
         String lvlStr   = ("INFO ".equals(level) || "INFO".equals(level.trim())) ? "" : "[" + level.trim() + "] ";

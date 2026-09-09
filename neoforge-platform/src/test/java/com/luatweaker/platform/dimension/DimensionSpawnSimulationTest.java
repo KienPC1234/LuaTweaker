@@ -19,11 +19,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * SIMULATION of the real in-game scenarios with the actual arcane_rpg mods:
+ * SIMULATION of the real in-game scenarios with the actual luatweaker_test mods:
  * the spawn/teleport targets, land availability, underwater columns and
  * skyland island coverage around the spawn points. This is the same logic the
  * chunk generator and the teleport use, so it catches "player spawned

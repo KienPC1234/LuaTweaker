@@ -23,6 +23,12 @@ import java.util.zip.ZipFile;
  */
 public class LuaModManager {
 
+    private static final String LUAMODS_DIR_NAME = "luamods";
+    private static final String MANIFEST_FILE = "manifest.json";
+    private static final String DEFAULT_CONFIG_FILE = "default_config.json";
+    private static final String MODS_MANAGER_FILE = "mods_manager.json";
+    private static final String ZIP_SUFFIX = ".zip";
+
     private static final Map<String, LuaMod> LOADED_MODS = new ConcurrentHashMap<>();
     private static final Map<String, String> LOAD_ERRORS = new ConcurrentHashMap<>();
 
@@ -43,9 +49,10 @@ public class LuaModManager {
         LOADED_MODS.clear();
         LOAD_ERRORS.clear();
 
-        File luamodsDir = "luamods".equalsIgnoreCase(targetDir.getName()) ? targetDir : new File(targetDir, "luamods");
+        File luamodsDir = LUAMODS_DIR_NAME.equalsIgnoreCase(targetDir.getName()) ? targetDir : new File(targetDir, LUAMODS_DIR_NAME);
         if (!luamodsDir.exists()) {
-            luamodsDir.mkdirs();
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[LuaModManager] luamods directory not found: " + luamodsDir.getAbsolutePath());
             return;
         }
 
@@ -56,14 +63,14 @@ public class LuaModManager {
 
         for (File file : files) {
             if (file.isDirectory()) {
-                File manifestFile = new File(file, "manifest.json");
+                File manifestFile = new File(file, MANIFEST_FILE);
                 if (manifestFile.exists()) {
                     try {
                         String json = Files.readString(manifestFile.toPath(), StandardCharsets.UTF_8);
                         LuaModManifest manifest = LuaModManifest.parseJson(json);
                         if (manifest != null) {
                             String defaultConfig = null;
-                            File cfgFile = new File(file, "default_config.json");
+                            File cfgFile = new File(file, DEFAULT_CONFIG_FILE);
                             if (cfgFile.exists()) defaultConfig = Files.readString(cfgFile.toPath(), StandardCharsets.UTF_8);
                             discovered.add(new DiscoveredMod(manifest, file, defaultConfig));
                         }
@@ -72,16 +79,16 @@ public class LuaModManager {
                                 "[LuaModManager] Failed to read manifest from directory: " + file.getName() + " - " + e.getMessage());
                     }
                 }
-            } else if (file.getName().endsWith(".zip")) {
+            } else if (file.getName().endsWith(ZIP_SUFFIX)) {
                 try (ZipFile zip = new ZipFile(file)) {
-                    ZipEntry manifestEntry = zip.getEntry("manifest.json");
+                    ZipEntry manifestEntry = zip.getEntry(MANIFEST_FILE);
                     if (manifestEntry != null) {
                         try (InputStream is = zip.getInputStream(manifestEntry)) {
                             String json = new String(is.readAllBytes(), StandardCharsets.UTF_8);
                             LuaModManifest manifest = LuaModManifest.parseJson(json);
                             if (manifest != null) {
                                 String defaultConfig = null;
-                                ZipEntry cfgEntry = zip.getEntry("default_config.json");
+                                ZipEntry cfgEntry = zip.getEntry(DEFAULT_CONFIG_FILE);
                                 if (cfgEntry != null) {
                                     try (InputStream cfgIs = zip.getInputStream(cfgEntry)) {
                                         defaultConfig = new String(cfgIs.readAllBytes(), StandardCharsets.UTF_8);
@@ -101,7 +108,7 @@ public class LuaModManager {
         if (discovered.isEmpty()) return;
 
         // Manage mods_manager.json state
-        File modsManagerFile = new File(luamodsDir, "mods_manager.json");
+        File modsManagerFile = new File(luamodsDir, MODS_MANAGER_FILE);
         Map<String, Boolean> modsState = new LinkedHashMap<>();
         com.google.gson.Gson prettyGson = new com.google.gson.GsonBuilder().setPrettyPrinting().create();
 
@@ -114,7 +121,7 @@ public class LuaModManager {
                         modsState.put(e.getKey(), Boolean.TRUE.equals(e.getValue()));
                     }
                 }
-            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
+            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Failed to read mods_manager.json: " + e.getMessage()); }
         }
 
         boolean stateChanged = false;
@@ -130,7 +137,7 @@ public class LuaModManager {
             try {
                 Files.writeString(modsManagerFile.toPath(), prettyGson.toJson(modsState), StandardCharsets.UTF_8);
                 LuaTweakerLog.get().info(LogStage.SYSTEM, "[LuaModManager] Updated " + modsManagerFile.getAbsolutePath());
-            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
+            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Failed to write mods_manager.json: " + e.getMessage()); }
         }
 
         LuaTweakerLog.get().info(LogStage.SYSTEM,
@@ -231,7 +238,7 @@ public class LuaModManager {
         for (Map.Entry<String, LuaMod> entry : LOADED_MODS.entrySet()) {
             String modId = entry.getKey();
             LuaMod mod = entry.getValue();
-            ILuaTable modTable = engine.getGlobalEnvironment().rawget("mod") instanceof ILuaTable t ? t : null;
+            ILuaTable modTable = mod.getModTable();
             if (modTable == null) continue;
 
             ILuaValue onDisable = modTable.rawget("OnDisable");
@@ -257,7 +264,7 @@ public class LuaModManager {
             if (scriptFile.exists()) {
                 try {
                     return Files.readString(scriptFile.toPath(), StandardCharsets.UTF_8);
-                } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
+                } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Failed to read script '" + relPath + "': " + e.getMessage()); }
             }
         } else if (fileOrDir.getName().endsWith(".zip")) {
             try (ZipFile zip = new ZipFile(fileOrDir)) {
@@ -267,7 +274,7 @@ public class LuaModManager {
                         return new String(is.readAllBytes(), StandardCharsets.UTF_8);
                     }
                 }
-            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
+            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Failed to read script '" + relPath + "' from zip: " + e.getMessage()); }
         }
         return null;
     }

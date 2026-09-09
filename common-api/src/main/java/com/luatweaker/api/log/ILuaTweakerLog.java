@@ -5,7 +5,7 @@ package com.luatweaker.api.log;
  *
  * <h3>Extension guide</h3>
  * Replace {@link #get()} implementation with any backend (file, DB, network)
- * without touching call sites — every subsystem codes against this interface.
+ * without touching call sites - every subsystem codes against this interface.
  *
  * <h3>Usage</h3>
  * <pre>{@code
@@ -16,7 +16,7 @@ package com.luatweaker.api.log;
  */
 public interface ILuaTweakerLog {
 
-    // ── Basic log levels ──────────────────────────────────────────────────
+    // -- Basic log levels ---
 
     void info(LogStage stage, String message);
 
@@ -26,7 +26,7 @@ public interface ILuaTweakerLog {
 
     void debug(LogStage stage, String message);
 
-    // ── Script-aware variant (includes Lua file/line info) ────────────────
+    // -- Script-aware variant (includes Lua file/line info) ---
 
     /**
      * Log a message with Lua source location context.
@@ -38,7 +38,7 @@ public interface ILuaTweakerLog {
      */
     void script(LogStage stage, String message, String file, int line);
 
-    // ── Recipe-specific structured logging ────────────────────────────────
+    // -- Recipe-specific structured logging ---
 
     /**
      * Log a recipe operation with full before/after detail.
@@ -56,7 +56,7 @@ public interface ILuaTweakerLog {
      */
     void section(String title);
 
-    // ── Stage lifecycle helpers ────────────────────────────────────────────
+    // -- Stage lifecycle helpers ---
 
     /** Mark the beginning of a pipeline stage. */
     default void stageBegin(LogStage stage) {

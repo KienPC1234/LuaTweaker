@@ -11,13 +11,13 @@ import net.neoforged.neoforge.server.ServerLifecycleHooks;
  * /lt reload [data|resources|all]
  *
  * <ul>
- *   <li>{@code /lt reload} or {@code /lt reload data} — reloads DataPack only
+ *   <li>{@code /lt reload} or {@code /lt reload data} - reloads DataPack only
  *       (loot tables, recipes, advancements, tags). Uses Minecraft's native
  *       {@link MinecraftServer#reloadResources} which re-triggers
- *       {@code AddReloadListenerEvent} → LuaTweaker scripts re-execute.</li>
- *   <li>{@code /lt reload resources} — reloads CLIENT ResourcePack only
+ *       {@code AddReloadListenerEvent} -> LuaTweaker scripts re-execute.</li>
+ *   <li>{@code /lt reload resources} - reloads CLIENT ResourcePack only
  *       (textures, models, blockstates). Sends a reload packet to all clients.</li>
- *   <li>{@code /lt reload all} — reloads both DataPack and ResourcePack.</li>
+ *   <li>{@code /lt reload all} - reloads both DataPack and ResourcePack.</li>
  * </ul>
  */
 public class ReloadCommand implements ILuaTweakerCommand {
@@ -53,7 +53,7 @@ public class ReloadCommand implements ILuaTweakerCommand {
                 reloadDatapack(server, sender, () -> reloadClientResources(server, sender));
             }
             default -> {
-                // "data" or any unrecognized arg → DataPack only
+                // "data" or any unrecognized arg -> DataPack only
                 sender.sendSuccess("§eReloading LuaTweaker DataPack + scripts...");
                 AsyncFileLogger.get().info("CMD", "DataPack reload triggered by: " + sender.getName(), null);
                 reloadDatapack(server, sender, null);
@@ -62,11 +62,11 @@ public class ReloadCommand implements ILuaTweakerCommand {
         return 1;
     }
 
-    /** Reloads server DataPack (loot tables, recipes, tags). Triggers AddReloadListenerEvent → Lua re-executes. */
+    /** Reloads server DataPack (loot tables, recipes, tags). Triggers AddReloadListenerEvent -> Lua re-executes. */
     private void reloadDatapack(MinecraftServer server, ICommandSender sender, Runnable afterDatapack) {
         server.reloadResources(server.getPackRepository().getSelectedIds())
                 .thenRun(() -> {
-                    sender.sendSuccess("§a✅ DataPack reload complete.");
+                    sender.sendSuccess("§a[OK] DataPack reload complete.");
                     if (afterDatapack != null) afterDatapack.run();
                 })
                 .exceptionally(ex -> {
@@ -97,7 +97,7 @@ public class ReloadCommand implements ILuaTweakerCommand {
             // Attempt server-side pack reload by re-registering
             server.getPackRepository().reload();
 
-            sender.sendSuccess("§a✅ ResourcePack repository reloaded. Players notified to press F3+T.");
+            sender.sendSuccess("§a[OK] ResourcePack repository reloaded. Players notified to press F3+T.");
             AsyncFileLogger.get().info("CMD", "Client ResourcePack reload broadcast sent.", null);
         } catch (Exception e) {
             sender.sendError("ResourcePack reload error: " + e.getMessage());

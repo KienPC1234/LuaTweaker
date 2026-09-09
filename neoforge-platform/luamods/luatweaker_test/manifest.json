@@ -1,0 +1,10 @@
+{
+  "id": "luatweaker_test",
+  "name": "LuaTweaker Test Suite",
+  "author": "LuaTweaker",
+  "version": "1.0.0",
+  "main": "main.lua",
+  "dependencies": [],
+  "permissions": [],
+  "environment": "universal"
+}

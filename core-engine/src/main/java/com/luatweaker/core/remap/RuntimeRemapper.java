@@ -13,8 +13,6 @@ public class RuntimeRemapper implements IRemappingService {
 
     private static final RuntimeRemapper INSTANCE = new RuntimeRemapper();
 
-    private static final Pattern OBFUSCATED_MOJMAP = Pattern.compile("^m_\\d+_$");
-    private static final Pattern OBFUSCATED_INTERMEDIARY = Pattern.compile("^method_\\d+$");
     private static final Pattern OBFUSCATED_ANY = Pattern.compile("^(m_\\d+_$|method_\\d+|f_\\d+_$|field_\\d+)$");
 
     private final Map<String, Map<String, Method>> METHOD_CACHE = new ConcurrentHashMap<>();
@@ -86,6 +84,7 @@ public class RuntimeRemapper implements IRemappingService {
 
     @Nullable
     private Method resolveMethodImpl(@NotNull Class<?> clazz, @NotNull String methodName, @Nullable Class<?>[] paramHints) {
+        detectObfuscation(clazz);
         List<Method> candidates = new ArrayList<>();
 
         Class<?> current = clazz;
@@ -253,12 +252,6 @@ public class RuntimeRemapper implements IRemappingService {
         }
 
         return candidates.get(0);
-    }
-
-    @Override
-    @Nullable
-    public String remapMethodName(@NotNull String methodName) {
-        return methodName;
     }
 
     @Override

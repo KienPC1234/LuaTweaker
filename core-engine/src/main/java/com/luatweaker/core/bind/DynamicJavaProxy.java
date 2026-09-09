@@ -140,11 +140,20 @@ public class DynamicJavaProxy {
             return m; 
         }
 
+        // Prefer the overload with the fewest parameters (getters/setters are
+        // the common case); getMethods() order is not guaranteed, so caching
+        // the first hit would be non-deterministic across overloads.
+        Method best = null;
         for (Method m : clazz.getMethods()) {
             if (m.getName().equals(methodName)) {
-                classCache.put(methodName, m);
-                return m;
+                if (best == null || m.getParameterCount() < best.getParameterCount()) {
+                    best = m;
+                }
             }
+        }
+        if (best != null) {
+            classCache.put(methodName, best);
+            return best;
         }
         
         Method remapped = RuntimeRemapper.getInstance().resolveMethod(clazz, methodName);
@@ -187,7 +196,14 @@ public class DynamicJavaProxy {
         if (javaObject instanceof String) return ValueFactory.valueOf((String)javaObject);
         if (javaObject instanceof Number) return ValueFactory.valueOf(((Number)javaObject).doubleValue());
         if (javaObject instanceof Boolean) return ValueFactory.valueOf((Boolean)javaObject);
-        if (javaObject instanceof com.luatweaker.api.vm.ILuaValue) return ((com.luatweaker.core.vm.CobaltLuaValue)javaObject).getCobaltValue();
+        if (javaObject instanceof com.luatweaker.api.vm.ILuaValue luaValue) {
+            if (luaValue instanceof com.luatweaker.core.vm.CobaltLuaValue cobaltValue) {
+                return cobaltValue.getCobaltValue();
+            }
+            // Non-Cobalt ILuaValue impl: fall back to a dynamic proxy so the
+            // value stays usable instead of throwing a ClassCastException.
+            return create(state, luaValue);
+        }
         
         // Wrap complex objects dynamically
         return create(state, javaObject);

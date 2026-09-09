@@ -17,8 +17,5 @@ public interface IRemappingService {
             @Nullable Class<?> returnType
     );
 
-    @Nullable
-    String remapMethodName(@NotNull String methodName);
-
     boolean isObfuscatedEnvironment();
 }

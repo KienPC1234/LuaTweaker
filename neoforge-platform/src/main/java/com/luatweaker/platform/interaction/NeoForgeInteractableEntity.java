@@ -1,20 +1,22 @@
 package com.luatweaker.platform.interaction;
 
-import com.luatweaker.api.entity.IEntity;
 import com.luatweaker.api.interaction.IInteractableEntity;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.server.level.ServerLevel;
+import com.luatweaker.platform.entity.NeoForgeEntityWrapper;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
-import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 
-public class NeoForgeInteractableEntity implements IInteractableEntity, IEntity {
-    private final Entity entity;
+/**
+ * Single entity wrapper (AGENTS.md 5.2): extends {@link NeoForgeEntityWrapper}
+ * so the full {@link com.luatweaker.api.entity.IEntity} surface is inherited,
+ * and adds only the {@link IInteractableEntity}-specific operations (player
+ * messaging, titles, item giving, NBT, fire state, lookAt).
+ */
+public class NeoForgeInteractableEntity extends NeoForgeEntityWrapper implements IInteractableEntity {
 
     public NeoForgeInteractableEntity(@NotNull Entity entity) {
-        this.entity = entity;
+        super(entity);
     }
 
     @Override
@@ -24,52 +26,8 @@ public class NeoForgeInteractableEntity implements IInteractableEntity, IEntity 
     }
 
     @Override
-    @NotNull
-    public String getName() {
-        return entity.getName().getString();
-    }
-
-    @Override
-    @NotNull
-    public String getType() {
-        return BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
-    }
-
-    @Override
-    public String getUuid() {
-        return entity.getUUID().toString();
-    }
-
-    @Override
-    public double getX() {
-        return entity.getX();
-    }
-
-    @Override
-    public double getY() {
-        return entity.getY();
-    }
-
-    @Override
-    public double getZ() {
-        return entity.getZ();
-    }
-
-    @Override
     public void setPosition(double x, double y, double z) {
         entity.teleportTo(x, y, z);
-    }
-
-    @Override
-    public float getHealth() {
-        return (entity instanceof LivingEntity living) ? living.getHealth() : 0.0f;
-    }
-
-    @Override
-    public void setHealth(float health) {
-        if (entity instanceof LivingEntity living) {
-            living.setHealth(health);
-        }
     }
 
     @Override
@@ -135,26 +93,6 @@ public class NeoForgeInteractableEntity implements IInteractableEntity, IEntity 
     }
 
     @Override
-    public float getMaxHealth() {
-        return (entity instanceof LivingEntity living) ? living.getMaxHealth() : 0.0f;
-    }
-
-    @Override
-    public void setMaxHealth(float maxHealth) {
-        if (entity instanceof LivingEntity living) {
-            var attr = living.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH);
-            if (attr != null) {
-                attr.setBaseValue(maxHealth);
-            }
-        }
-    }
-
-    @Override
-    public boolean isAlive() {
-        return entity.isAlive();
-    }
-
-    @Override
     public boolean isOnFire() {
         return entity.isOnFire();
     }
@@ -166,60 +104,6 @@ public class NeoForgeInteractableEntity implements IInteractableEntity, IEntity 
         } else {
             entity.clearFire();
         }
-    }
-
-    @Override
-    public boolean isSneaking() {
-        return entity.isCrouching();
-    }
-
-    @Override
-    public void setSneaking(boolean sneaking) {
-        entity.setShiftKeyDown(sneaking);
-    }
-
-    @Override
-    public boolean isSprinting() {
-        return entity.isSprinting();
-    }
-
-    @Override
-    public void setSprinting(boolean sprinting) {
-        entity.setSprinting(sprinting);
-    }
-
-    @Override
-    @NotNull
-    public String getCustomName() {
-        return entity.hasCustomName() && entity.getCustomName() != null ?
-            entity.getCustomName().getString() : getName();
-    }
-
-    @Override
-    public void setCustomName(@NotNull String name) {
-        entity.setCustomName(net.minecraft.network.chat.Component.literal(name));
-        entity.setCustomNameVisible(true);
-    }
-
-    @Override
-    public double getVx() {
-        return entity.getDeltaMovement().x;
-    }
-
-    @Override
-    public double getVy() {
-        return entity.getDeltaMovement().y;
-    }
-
-    @Override
-    public double getVz() {
-        return entity.getDeltaMovement().z;
-    }
-
-    @Override
-    public void setVelocity(double vx, double vy, double vz) {
-        entity.setDeltaMovement(vx, vy, vz);
-        entity.hasImpulse = true;
     }
 
     @Override
@@ -242,139 +126,17 @@ public class NeoForgeInteractableEntity implements IInteractableEntity, IEntity 
     }
 
     @Override
-    public String getAttribute(@NotNull String key) {
-        if (entity.getPersistentData().contains(key)) {
-            return entity.getPersistentData().get(key).getAsString();
-        }
-        return null;
-    }
-
-    @Override
-    public void setAttribute(@NotNull String key, @NotNull String value) {
-        entity.getPersistentData().putString(key, value);
-    }
-
-
-
-    @Override
     public void PlayAnimation(@NotNull String animationName, double speed, double transitionLength) {
-        entity.getPersistentData().putString("PlayingAnimation", animationName);
-        entity.getPersistentData().putDouble("AnimSpeed", speed);
-        com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM, "[EntityAnimation] Played animation '" + animationName + "' on entity " + entity.getUUID() + " speed=" + speed);
+        EntityInteractionHelper.playAnimation(this, animationName, speed, transitionLength);
     }
 
     @Override
     public void StopAnimation(@NotNull String animationName) {
-        entity.getPersistentData().remove("PlayingAnimation");
-        com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM, "[EntityAnimation] Stopped animation '" + animationName + "' on entity " + entity.getUUID());
+        entity.getPersistentData().remove("CurrentAnimation");
     }
 
     @Override
     public void Destroy() {
         entity.discard();
-    }
-
-    @Override
-    public void remove() {
-        entity.discard();
-    }
-
-    @Override
-    public Object getRawEntity() {
-        return entity;
-    }
-
-    @Override
-    public void setTarget(IEntity target) {
-        if (entity instanceof Mob mob) {
-            mob.setTarget(target != null && target.getRawEntity() instanceof LivingEntity living ? living : null);
-        }
-    }
-
-    @Override
-    public IEntity getTarget() {
-        if (entity instanceof Mob mob && mob.getTarget() != null) {
-            return new NeoForgeInteractableEntity(mob.getTarget());
-        }
-        return null;
-    }
-
-    @Override
-    public void damage(float amount) {
-        if (entity instanceof LivingEntity living) {
-            living.hurt(living.damageSources().generic(), amount);
-        }
-    }
-
-    @Override
-    public void setMotion(double vx, double vy, double vz) {
-        entity.setDeltaMovement(vx, vy, vz);
-        entity.hasImpulse = true;
-    }
-
-    @Override
-    public boolean moveTo(double x, double y, double z, double speed) {
-        if (entity instanceof net.minecraft.world.entity.PathfinderMob mob) {
-            return mob.getNavigation().moveTo(x, y, z, speed);
-        }
-        return false;
-    }
-
-    @Override
-    public void addVelocity(double vx, double vy, double vz) {
-        entity.push(vx, vy, vz);
-        entity.hasImpulse = true;
-    }
-
-    @Override
-    public void teleport(double x, double y, double z) {
-        entity.teleportTo(x, y, z);
-    }
-
-    @Override
-    public double getMotionX() {
-        return entity.getDeltaMovement().x;
-    }
-
-    @Override
-    public double getMotionY() {
-        return entity.getDeltaMovement().y;
-    }
-
-    @Override
-    public double getMotionZ() {
-        return entity.getDeltaMovement().z;
-    }
-
-    @Override
-    public void swingArm() {
-        if (entity instanceof LivingEntity living) {
-            living.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
-        }
-    }
-
-    @Override
-    public void shootProjectile(String projectileType, double speed, double inaccuracy) {
-        EntityInteractionHelper.shootProjectile(this, projectileType, speed, inaccuracy);
-    }
-
-    @Override
-    public IEntity shootProjectileAt(String projectileType, IEntity target, double speed) {
-        return EntityInteractionHelper.shootProjectileAt(this, projectileType, target, speed);
-    }
-
-    @Override
-    public void playAnimation(String animName, double speed, double transition) {
-        entity.getPersistentData().putString("PlayingAnimation", animName);
-        entity.getPersistentData().putDouble("AnimSpeed", speed);
-        com.luatweaker.api.log.LuaTweakerLog.get().info(
-            com.luatweaker.api.log.LogStage.SYSTEM,
-            "[EntityAnimation] Played animation '" + animName + "' on entity " + entity.getUUID() + " speed=" + speed
-        );
-    }
-
-    @Override
-    public boolean isLiving() {
-        return entity instanceof LivingEntity;
     }
 }
