@@ -26,11 +26,11 @@ public record LuaModManifest(
     private static final Gson GSON = new Gson();
 
     public LuaModManifest {
-        if (id == null || id.isBlank()) throw new IllegalArgumentException("LuaMod manifest requires non-empty 'id'");
+        id = LuaModPathSecurity.validateModId(id);
         if (name == null || name.isBlank()) name = id;
         if (author == null) author = "Unknown";
         if (version == null) version = "1.0.0";
-        if (main == null || main.isBlank()) main = "main.lua";
+        main = LuaModPathSecurity.validateEntryPoint(main == null || main.isBlank() ? "main.lua" : main);
         if (environment == null || environment.isBlank()) throw new IllegalArgumentException("LuaMod manifest requires non-empty 'environment' (must be 'client', 'server', or 'universal')");
         if (!environment.equals("client") && !environment.equals("server") && !environment.equals("universal")) {
             throw new IllegalArgumentException("LuaMod manifest 'environment' must be 'client', 'server', or 'universal', found: " + environment);

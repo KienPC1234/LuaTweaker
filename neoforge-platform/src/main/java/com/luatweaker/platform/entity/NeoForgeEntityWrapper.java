@@ -294,6 +294,9 @@ public class NeoForgeEntityWrapper implements IEntity {
     @Override
     public String getAttribute(String key) {
         if (entity != null && key != null && entity.getPersistentData().contains(key)) {
+            if (entity.getPersistentData().contains(key, net.minecraft.nbt.Tag.TAG_STRING)) {
+                return entity.getPersistentData().getString(key);
+            }
             return entity.getPersistentData().get(key).getAsString();
         }
         return null;

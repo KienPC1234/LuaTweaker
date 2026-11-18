@@ -84,8 +84,13 @@ public class NeoForgeWorldgenProvider {
             // AND-ed (never spawn); a single placed feature per biome ORs correctly.
             for (int j = 0; j < veg.biomes().size(); j++) {
                 String placedId = baseFeatureId + "_" + j;
+                String biomeId = veg.biomes().get(j);
                 datapackService.addData("luatweaker/worldgen/placed_feature/" + placedId + ".json",
-                        buildPlacedFlowerFeature(configuredId, veg, veg.biomes().get(j)));
+                        buildPlacedFlowerFeature(configuredId, veg));
+                // Per-biome scoping lives here (bare minecraft:biome placement carries
+                // no parameters in vanilla) - one add_features modifier per placed feature.
+                datapackService.addData("luatweaker/neoforge/biome_modifier/veg_" + placedId + ".json",
+                        buildAddFeatureModifier(placedId, List.of(biomeId), "vegetal_decoration"));
                 emitted++;
             }
         }
@@ -179,6 +184,24 @@ public class NeoForgeWorldgenProvider {
             + "}";
     }
 
+    /**
+     * Add-features modifier for an explicit biome list (vegetation: one modifier
+     * per placed feature, no dimension-tag fallback involved).
+     */
+    private String buildAddFeatureModifier(String featureId, List<String> biomes, String step) {
+        StringBuilder list = new StringBuilder("[");
+        for (int i = 0; i < biomes.size(); i++) {
+            if (i > 0) list.append(",");
+            list.append("\"").append(escapeJson(biomes.get(i))).append("\"");
+        }
+        return "{"
+            + "\"type\":\"neoforge:add_features\","
+            + "\"biomes\":" + list + "],"
+            + "\"features\":[\"luatweaker:" + featureId + "\"],"
+            + "\"step\":\"" + step + "\""
+            + "}";
+    }
+
     private String buildRemoveFeaturesModifier(List<String> features, String dimension) {
         StringBuilder list = new StringBuilder();
         for (int i = 0; i < features.size(); i++) {
@@ -189,7 +212,7 @@ public class NeoForgeWorldgenProvider {
             + "\"type\":\"neoforge:remove_features\","
             + "\"biomes\":" + biomes(List.of(), dimension) + ","
             + "\"features\":[" + list + "],"
-            + "\"step\":\"underground_ores\""
+            + "\"steps\":[\"underground_ores\"]"
             + "}";
     }
 
@@ -230,7 +253,8 @@ public class NeoForgeWorldgenProvider {
             +   "\"feature\":{"
             +     "\"feature\":{"
             +       "\"type\":\"minecraft:simple_block\","
-            +       "\"config\":{\"to_place\":{\"Name\":\"" + escapeJson(veg.blockId()) + "\"}}"
+            +       "\"config\":{\"to_place\":{\"type\":\"minecraft:simple_state_provider\","
+            +       "\"state\":{\"Name\":\"" + escapeJson(veg.blockId()) + "\"}}}"
             +     "},"
             +     "\"placement\":[{\"type\":\"minecraft:block_predicate_filter\","
             +       "\"predicate\":{\"type\":\"minecraft:matching_blocks\",\"blocks\":\"minecraft:air\"}}]"
@@ -240,9 +264,12 @@ public class NeoForgeWorldgenProvider {
     }
 
     private String buildPlacedFlowerFeature(String configuredFeatureId,
-                                            WorldgenServiceImpl.VegetationEntry veg, String biomeId) {
+                                            WorldgenServiceImpl.VegetationEntry veg) {
         // chance -> rarity_filter: honor the Lua value exactly. chance <= 0 means
         // "never spawn" (a JSON-safe maximum rarity instead of dividing by zero).
+        // NOTE: minecraft:biome carries no parameters in vanilla (verified: 191
+        // placed features use the bare form) - per-biome scoping is done by the
+        // add_features biome modifier emitted alongside each placed feature.
         double chance = veg.chance();
         int rarity = chance <= 0 ? Integer.MAX_VALUE : Math.max(1, (int) (1.0 / chance));
         return "{"
@@ -251,7 +278,7 @@ public class NeoForgeWorldgenProvider {
             +   "{\"type\":\"minecraft:rarity_filter\",\"chance\":" + rarity + "},"
             +   "{\"type\":\"minecraft:in_square\"},"
             +   "{\"type\":\"minecraft:heightmap\",\"heightmap\":\"MOTION_BLOCKING\"},"
-            +   "{\"type\":\"minecraft:biome\",\"biome\":\"" + escapeJson(biomeId) + "\"}"
+            +   "{\"type\":\"minecraft:biome\"}"
             + "]"
             + "}";
     }

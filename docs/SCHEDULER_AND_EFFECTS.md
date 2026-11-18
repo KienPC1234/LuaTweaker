@@ -1,5 +1,7 @@
 # ⏱️ Scheduler, 🔊 Particles & Sound, 🐲 Entity, 🧙 Enchantments & Effects
 
+> ⚠️ **STALE (verified 2026-11-18):** predates the `Task` service and bootstrap conventions; the `scheduler` global and several APIs named here do not exist. Pending rewrite or removal — do not implement from this document.
+
 ## Scheduler / Timer API (`scheduler` & `task`)
 
 The `scheduler` global and `task` library provide tick-based delayed, repeating, and async task scheduling.

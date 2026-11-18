@@ -117,8 +117,12 @@ public class LuaBiomeSource extends BiomeSource {
 
     @Override
     public Holder<Biome> getNoiseBiome(int x, int y, int z, Climate.Sampler sampler) {
+        // x and z in getNoiseBiome are quart coordinates (1 quart = 4 blocks).
+        // Convert to world block coordinates so Lua scripts and cell sizing work in block space.
+        int blockX = x << 2;
+        int blockZ = z << 2;
         DimensionServiceImpl service = currentService();
-        String biomeId = service != null ? service.computeBiomeId(dimensionId, x, z) : null;
+        String biomeId = service != null ? service.computeBiomeId(dimensionId, blockX, blockZ) : null;
         if (biomeId != null) {
             for (BiomeHolderEntry entry : biomes) {
                 if (entry.id().equals(biomeId)) return entry.holder();
@@ -127,7 +131,7 @@ public class LuaBiomeSource extends BiomeSource {
                     "Biome decision '" + biomeId + "' for dimension '" + dimensionId
                             + "' is not in the resolved biome list; falling back to weighted pick");
         }
-        return weightedPick(x, z);
+        return weightedPick(blockX, blockZ);
     }
 
     /**

@@ -396,7 +396,7 @@ mod:Exists("manifest.json")        -- Check if file exists
 ### Safety Checks (Error Prevention)
 
 - ❌ **No `manifest.json`?** → ZIP is skipped with a warning log.
-- ❌ **Malformed JSON?** → Graceful fallback: mod ID derived from filename, version defaults to `1.0.0`.
+- ❌ **Malformed JSON?** → The package is skipped and the error is written to the LuaTweaker log; no guessed identity is loaded.
 - ❌ **Missing dependencies / permissions?** → Load aborted with a clear error. Other mods continue loading normally.
 - ❌ **Corrupt ZIP?** → Caught by `try-catch`, logged, and skipped. Other mods continue loading normally.
 - ❌ **Lua script error?** → Logged with filename and line number. The mod is disabled gracefully; other mods are unaffected.

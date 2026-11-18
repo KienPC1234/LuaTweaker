@@ -1,12 +1,13 @@
 package com.luatweaker.command;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.command.ICommandSender;
 import com.luatweaker.api.entity.IPlayer;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.core.logger.AsyncFileLogger;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -74,7 +75,7 @@ public class LuaCommandWrapperTest {
 
     @Test
     public void handlerReceivesSenderAndArgs() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         CommandLuaBinding.registerBindings(engine);
         setModGlobal(engine, "test_mod");
         engine.executeString(
@@ -111,7 +112,7 @@ public class LuaCommandWrapperTest {
 
     @Test
     public void handlerFalseMapsToFailure() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         CommandLuaBinding.registerBindings(engine);
         setModGlobal(engine, "test_mod");
         engine.executeString(
@@ -123,7 +124,7 @@ public class LuaCommandWrapperTest {
 
     @Test
     public void handlerNilMapsToSuccess() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         CommandLuaBinding.registerBindings(engine);
         setModGlobal(engine, "test_mod");
         engine.executeString(
@@ -135,7 +136,7 @@ public class LuaCommandWrapperTest {
 
     @Test
     public void handlerLuaErrorMapsToFailureAndIsLogged() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         CommandLuaBinding.registerBindings(engine);
         setModGlobal(engine, "test_mod");
         engine.executeString(
@@ -152,7 +153,7 @@ public class LuaCommandWrapperTest {
 
     @Test
     public void permissionDeniedBlocksExecution() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         CommandLuaBinding.registerBindings(engine);
         setModGlobal(engine, "test_mod");
         engine.executeString(
@@ -169,7 +170,7 @@ public class LuaCommandWrapperTest {
 
     @Test
     public void consoleDisallowedBlocksConsoleSender() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         CommandLuaBinding.registerBindings(engine);
         setModGlobal(engine, "test_mod");
         engine.executeString(
@@ -186,7 +187,7 @@ public class LuaCommandWrapperTest {
 
     @Test
     public void consoleDisallowedAllowsPlayerSender() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         CommandLuaBinding.registerBindings(engine);
         setModGlobal(engine, "test_mod");
         engine.executeString(
@@ -207,7 +208,7 @@ public class LuaCommandWrapperTest {
 
     @Test
     public void executeRawPreservesExactTypedText() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         CommandLuaBinding.registerBindings(engine);
         setModGlobal(engine, "test_mod");
         engine.executeString(
@@ -225,7 +226,7 @@ public class LuaCommandWrapperTest {
 
     @Test
     public void staticSuggestionsAreReturned() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         CommandLuaBinding.registerBindings(engine);
         setModGlobal(engine, "test_mod");
         engine.executeString(
@@ -239,7 +240,7 @@ public class LuaCommandWrapperTest {
 
     @Test
     public void functionSuggestionsReceiveSenderAndArgs() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         CommandLuaBinding.registerBindings(engine);
         setModGlobal(engine, "test_mod");
         engine.executeString(
@@ -263,7 +264,7 @@ public class LuaCommandWrapperTest {
 
     @Test
     public void commandWithoutSuggestionsReturnsEmptyList() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         CommandLuaBinding.registerBindings(engine);
         setModGlobal(engine, "test_mod");
         engine.executeString(
@@ -276,7 +277,7 @@ public class LuaCommandWrapperTest {
     @Test
     public void reloadReplacesHandlerLive() {
         // First engine registers the command (startup phase).
-        ILuaEngine engine1 = new CobaltLuaEngine();
+        ILuaEngine engine1 = LuaEngineFactory.create(false);
         CommandLuaBinding.registerBindings(engine1);
         setModGlobal(engine1, "test_mod");
         engine1.executeString(
@@ -289,7 +290,7 @@ public class LuaCommandWrapperTest {
         assertEquals("old", engine1.getGlobalEnvironment().rawget("_engine").asString());
 
         // /lt reload: new engine re-registers the same mod+name -> replace semantics.
-        ILuaEngine engine2 = new CobaltLuaEngine();
+        ILuaEngine engine2 = LuaEngineFactory.create(false);
         CommandLuaBinding.registerBindings(engine2);
         setModGlobal(engine2, "test_mod");
         engine2.executeString(

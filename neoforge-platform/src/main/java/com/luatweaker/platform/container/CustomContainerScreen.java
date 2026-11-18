@@ -21,17 +21,25 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
             ResourceLocation.fromNamespaceAndPath("luatweaker", "textures/gui/crate_panel.png");
     private static final ResourceLocation SLOT_TEXTURE =
             ResourceLocation.fromNamespaceAndPath("luatweaker", "textures/gui/slot.png");
-    /** Height of the 256x256 panel sheet below the top border (frame bottom strip). */
+    /** Height of the 256x256 panel sheet below the top border (frame bottom strip).
+     * Intentionally fixed engine default: matches the bundled crate_panel.png asset. */
     private static final int PANEL_SHEET_HEIGHT = 222;
+    /** Fixed top/bottom frame strips of the bundled panel asset (not per-mod config). */
     private static final int TOP_STRIP = 17;
     private static final int BOTTOM_STRIP = 9;
-    /** Semi-transparent dark background painted under every GUI bar. */
+    /** Vanilla GUI texture sheet size (every blit() source region is 256x256). */
+    private static final int TEXTURE_SHEET_SIZE = 256;
+    /** Vanilla inventory label color (ChestScreen convention, not tunable). */
+    private static final int LABEL_COLOR = 0x404040;
+    /** Slot cell texture overhang outside the slot bounds (vanilla 1px border overlap). */
+    private static final int SLOT_CELL_INSET = 1;
+    /** Semi-transparent dark background painted under every GUI bar (engine-fixed). */
     private static final int BAR_BACKGROUND = 0x7F101010;
     /** Default ARGB fill colors per bar source when the Lua config passes 0. */
     private static final int DEFAULT_ENERGY_COLOR = 0xFF00E676;
     private static final int DEFAULT_FLUID_COLOR = 0xFF2196F3;
     private static final int DEFAULT_PROGRESS_COLOR = 0xFFFFC107;
-    /** Overlay color for read-only (locked) slots. */
+    /** Overlay color for read-only (locked) slots (engine-fixed, no per-mod config path). */
     private static final int LOCKED_SLOT_OVERLAY = 0x7F1C1C1C;
     private static final Component PLAYER_INV_LABEL = Component.translatable("container.inventory");
 
@@ -61,7 +69,7 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
                 if (parsed != null) {
                     // A custom texture is a full panel for the configured row count
                     // (176 x imageHeight region from its top-left corner).
-                    guiGraphics.blit(parsed, x, y, 0, 0, imageWidth, imageHeight, 256, 256);
+                    guiGraphics.blit(parsed, x, y, 0, 0, imageWidth, imageHeight, TEXTURE_SHEET_SIZE, TEXTURE_SHEET_SIZE);
                     return;
                 }
             }
@@ -69,18 +77,18 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
         // Default crate frame: fixed top/bottom strips + stretchable side borders,
         // so any row count (1..6) renders with a complete frame.
         int middle = imageHeight - TOP_STRIP - BOTTOM_STRIP;
-        guiGraphics.blit(PANEL_TEXTURE, x, y, 0, 0, imageWidth, TOP_STRIP, 256, 256);
-        guiGraphics.blit(PANEL_TEXTURE, x, y + TOP_STRIP, 0, TOP_STRIP, 1, middle, 256, 256);
-        guiGraphics.blit(PANEL_TEXTURE, x + imageWidth - 1, y + TOP_STRIP, imageWidth - 1, TOP_STRIP, 1, middle, 256, 256);
-        guiGraphics.blit(PANEL_TEXTURE, x, y + imageHeight - BOTTOM_STRIP, 0, PANEL_SHEET_HEIGHT - BOTTOM_STRIP, imageWidth, BOTTOM_STRIP, 256, 256);
+        guiGraphics.blit(PANEL_TEXTURE, x, y, 0, 0, imageWidth, TOP_STRIP, TEXTURE_SHEET_SIZE, TEXTURE_SHEET_SIZE);
+        guiGraphics.blit(PANEL_TEXTURE, x, y + TOP_STRIP, 0, TOP_STRIP, 1, middle, TEXTURE_SHEET_SIZE, TEXTURE_SHEET_SIZE);
+        guiGraphics.blit(PANEL_TEXTURE, x + imageWidth - 1, y + TOP_STRIP, imageWidth - 1, TOP_STRIP, 1, middle, TEXTURE_SHEET_SIZE, TEXTURE_SHEET_SIZE);
+        guiGraphics.blit(PANEL_TEXTURE, x, y + imageHeight - BOTTOM_STRIP, 0, PANEL_SHEET_HEIGHT - BOTTOM_STRIP, imageWidth, BOTTOM_STRIP, TEXTURE_SHEET_SIZE, TEXTURE_SHEET_SIZE);
     }
 
     private void renderSlotCells(GuiGraphics guiGraphics, int x, int y) {
         ResourceLocation cell = resolveSlotTexture();
         int cellSize = ContainerLayout.CELL;
         for (Slot slot : menu.slots) {
-            int sx = x + slot.x - 1;
-            int sy = y + slot.y - 1;
+            int sx = x + slot.x - SLOT_CELL_INSET;
+            int sy = y + slot.y - SLOT_CELL_INSET;
             guiGraphics.blit(cell, sx, sy, 0, 0, cellSize, cellSize, cellSize, cellSize);
             if (slot instanceof ContainerFilteredSlot filtered && filtered.isLocked()) {
                 guiGraphics.fill(sx, sy, sx + cellSize, sy + cellSize, LOCKED_SLOT_OVERLAY);
@@ -148,7 +156,7 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
 
     @Override
     protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
-        guiGraphics.drawString(this.font, this.title, this.titleLabelX, this.titleLabelY, 0x404040, false);
-        guiGraphics.drawString(this.font, PLAYER_INV_LABEL, this.inventoryLabelX, this.inventoryLabelY, 0x404040, false);
+        guiGraphics.drawString(this.font, this.title, this.titleLabelX, this.titleLabelY, LABEL_COLOR, false);
+        guiGraphics.drawString(this.font, PLAYER_INV_LABEL, this.inventoryLabelX, this.inventoryLabelY, LABEL_COLOR, false);
     }
 }

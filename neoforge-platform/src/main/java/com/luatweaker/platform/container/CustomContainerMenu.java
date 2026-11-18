@@ -29,8 +29,12 @@ public class CustomContainerMenu extends AbstractContainerMenu {
     private final int containerRows;
     private final int containerCols;
     private final int startX;
-    /** Progress is synced as fixed-point (0..1000) through the vanilla data-slot pipeline. */
+    /** Progress is synced as fixed-point (0..1000) through the vanilla data-slot pipeline.
+     * Intentionally fixed protocol constant: menu and screen must agree, not per-mod config. */
     private static final int PROGRESS_SCALE = 1000;
+    /** Vanilla player inventory dimensions (fixed by Minecraft, not tunable). */
+    private static final int PLAYER_INV_ROWS = 3;
+    private static final int PLAYER_INV_COLS = 9;
 
     private int energyStored;
     private int energyCapacity;
@@ -68,15 +72,15 @@ public class CustomContainerMenu extends AbstractContainerMenu {
             }
         }
 
-        for (int row = 0; row < 3; row++) {
-            for (int col = 0; col < 9; col++) {
-                addSlot(new Slot(playerInventory, col + row * 9 + 9,
-                        ContainerLayout.LEFT_MARGIN + col * 18, ContainerLayout.playerY(row, containerRows)));
+        for (int row = 0; row < PLAYER_INV_ROWS; row++) {
+            for (int col = 0; col < PLAYER_INV_COLS; col++) {
+                addSlot(new Slot(playerInventory, col + row * PLAYER_INV_COLS + PLAYER_INV_COLS,
+                        ContainerLayout.LEFT_MARGIN + col * ContainerLayout.CELL, ContainerLayout.playerY(row, containerRows)));
             }
         }
 
-        for (int col = 0; col < 9; col++) {
-            addSlot(new Slot(playerInventory, col, ContainerLayout.LEFT_MARGIN + col * 18, ContainerLayout.hotbarY(containerRows)));
+        for (int col = 0; col < PLAYER_INV_COLS; col++) {
+            addSlot(new Slot(playerInventory, col, ContainerLayout.LEFT_MARGIN + col * ContainerLayout.CELL, ContainerLayout.hotbarY(containerRows)));
         }
 
         // Machine values synced to the client while the menu is open (bars).
@@ -124,7 +128,7 @@ public class CustomContainerMenu extends AbstractContainerMenu {
     }
 
     private int defaultX(int col) {
-        return startX + col * 18;
+        return startX + col * ContainerLayout.CELL;
     }
 
     public int getContainerRows() {

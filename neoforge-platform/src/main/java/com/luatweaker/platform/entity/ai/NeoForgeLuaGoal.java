@@ -24,8 +24,10 @@ public class NeoForgeLuaGoal extends Goal {
                 String fName = flagsTable.rawget(i).asString().toUpperCase();
                 try {
                     flags.add(Flag.valueOf(fName));
-                } catch (Exception e) {
-                    // Ignore unknown flags
+                } catch (IllegalArgumentException e) {
+                    com.luatweaker.api.log.LuaTweakerLog.get().debug(
+                            com.luatweaker.api.log.LogStage.SYSTEM,
+                            "Ignoring unknown AI goal flag '" + fName + "': " + e.getMessage());
                 }
             }
             this.setFlags(flags);
@@ -37,11 +39,24 @@ public class NeoForgeLuaGoal extends Goal {
         return goalTable;
     }
 
+    /**
+     * Calls a goal callback, tolerating an engine replaced by {@code /lt reload}. The closures in
+     * this goal belong to the old VM, so once that VM is shut down the goal must become inert
+     * instead of throwing from {@code canUse}/{@code tick} on the server thread.
+     */
+    private ILuaValue call(ILuaValue function) {
+        try {
+            return engine.callFunction(function, goalTable);
+        } catch (IllegalStateException e) {
+            return null;
+        }
+    }
+
     @Override
     public boolean canUse() {
         ILuaValue func = goalTable.rawget("canUse");
         if (func != null && func.isFunction()) {
-            ILuaValue res = engine.callFunction(func, goalTable);
+            ILuaValue res = call(func);
             return res != null && res.asBoolean();
         }
         return false;
@@ -51,7 +66,7 @@ public class NeoForgeLuaGoal extends Goal {
     public boolean canContinueToUse() {
         ILuaValue func = goalTable.rawget("canContinueToUse");
         if (func != null && func.isFunction()) {
-            ILuaValue res = engine.callFunction(func, goalTable);
+            ILuaValue res = call(func);
             return res != null && res.asBoolean();
         }
         return super.canContinueToUse();
@@ -64,7 +79,7 @@ public class NeoForgeLuaGoal extends Goal {
             func = goalTable.rawget("isInterruptible");
         }
         if (func != null && func.isFunction()) {
-            ILuaValue res = engine.callFunction(func, goalTable);
+            ILuaValue res = call(func);
             return res != null && res.asBoolean();
         }
         return super.isInterruptable();
@@ -74,7 +89,7 @@ public class NeoForgeLuaGoal extends Goal {
     public void start() {
         ILuaValue func = goalTable.rawget("start");
         if (func != null && func.isFunction()) {
-            engine.callFunction(func, goalTable);
+            call(func);
         }
     }
 
@@ -82,7 +97,7 @@ public class NeoForgeLuaGoal extends Goal {
     public void stop() {
         ILuaValue func = goalTable.rawget("stop");
         if (func != null && func.isFunction()) {
-            engine.callFunction(func, goalTable);
+            call(func);
         }
     }
 
@@ -90,7 +105,7 @@ public class NeoForgeLuaGoal extends Goal {
     public void tick() {
         ILuaValue func = goalTable.rawget("tick");
         if (func != null && func.isFunction()) {
-            engine.callFunction(func, goalTable);
+            call(func);
         }
     }
 }

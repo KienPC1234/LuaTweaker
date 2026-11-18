@@ -93,7 +93,7 @@ Never commit or embed API keys, tokens, passwords, database URLs — even "place
 
 - Read the surrounding code, dependencies, imports, and existing implementations before editing.
 - Respect existing patterns: module/builder architecture, Roblox-style Lua conventions, LuaBinder auto-binding (Section 5).
-- Check environment parity: Java 21, NeoForge 21.1.242, Cobalt 0.9.9, Luau-style Lua.
+- Check environment parity: Java 21, NeoForge 21.1.242, luava 0.2.5 (Lua 5.4), Luau-style Lua.
 
 ## 0.10 — NO Silent Errors — Loud, Honest Failure Reporting
 
@@ -290,9 +290,12 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 
 ## 5.5 — Thread Safety: VM entry points synchronized
 
-- `CobaltLuaEngine.executeString/executeScript/callFunction` là `synchronized` — VM Cobalt không thread-safe (render thread + server thread).
+- `LuavaEngine` dùng **execution gate** (`Semaphore`) thay cho `synchronized`: `executeString/executeScript/callFunctionMulti/registerGlobal` lấy gate khi gọi từ thread ngoài (server/render/reload).
+- Coroutine thread (do `task._run_deferred` tạo) **không lấy gate** — nó thuộc operation đã resume nó, và thread resume đang park chờ nó. Nhờ vậy binding Java gọi lại engine (vd `task.getTimeClock` → `engine.wrapNumber`) không deadlock.
+- **CẤM** đổi `wrapString/wrapNumber/wrapBoolean/nilValue/createTable` thành có gate/synchronized: đây là pure factory, gọi từ coroutine thread; thêm lock sẽ tái sinh deadlock.
 - Render callbacks (OnRenderHUD) phải dùng `Signal:FireSync` (đồng bộ, đúng render thread với GuiGraphics context) — **CẤM** async Fire cho render.
-- Coroutine/deferred: chạy qua `task._run_deferred` (Java, có Cobalt loop) — **CẤM** `coroutine.resume` trực tiếp trong `task._tick`.
+- Coroutine/deferred: chạy qua `task._run_deferred` (Java, tạo `LuaCoroutine` trên virtual thread, resume đồng bộ tới khi yield/chết) — **CẤM** `coroutine.resume` trực tiếp trong `task._tick`.
+- `ILuaEngine.shutdown()` dừng các coroutine đang treo trước khi thay engine khi reload.
 
 ## 5.6 — Network: clientbound → network service của ACTIVE engine
 
@@ -321,7 +324,7 @@ ExampleModule:ExecuteFeature("custom_id", 100)
   - Method call: `obj:teleport(0, 100, 0)` → exact method name match
 - **Security model - Smart Package Blacklist (CRITICAL):**
   - **3 Bức Tường Phòng Ngự:**
-    1. **Cobalt VM Isolation:** Tước bỏ `os.*`, `io.*`, `package.loadlib` khỏi Lua VM.
+    1. **Luava VM Isolation:** Tước bỏ `os.*`, `io.*`, `package.loadlib` khỏi Lua VM.
     2. **Method Blacklist:** Block `getClass`, `wait`, `notify`, `notifyAll`, `clone`, `finalize`, `hashCode`.
     3. **Smart Package Blacklist:** Block `java.lang.Runtime`, `java.lang.Process`, `java.lang.ProcessBuilder`, `java.lang.System`, `java.lang.Thread`, `java.lang.Class`, `java.lang.ClassLoader`, `java.lang.reflect.*`, `java.lang.invoke.*`, `java.io.*`, `java.nio.*`, `java.net.*`, `javax.net.*`, `sun.*`, `com.sun.*`, `jdk.*`.
   - **Cross-mod interop:** Mọi package KHÔNG nằm trong blacklist đều được phép (GregTech, Create, Mekanism...).
@@ -353,7 +356,7 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 | Module | Role | Depends On |
 |---|---|---|
 | `common-api/` | Pure Java 21: PAL, VM interfaces, `@LuaDoc`/`@LuaDefault`, object wrappers | *(none)* |
-| `core-engine/` | Cobalt wrapper, **LuaBinder**, **DynamicJavaProxy**, async logger (ASCII), linter, stub generator, LuaModManager | `common-api` |
+| `core-engine/` | Luava VM wrapper, **LuaBinder**, **DynamicJavaProxy**, async logger (ASCII), linter, stub generator, LuaModManager | `common-api` |
 | `modules/module-content/` | Content builders (items/blocks/fluids/entities/tabs/keybinds), ProjectileRegistry | `common-api`, `core-engine` |
 | `modules/module-recipes/` | Recipe manipulation + builder DSL | `common-api`, `core-engine` |
 | `modules/module-events/` | Shared event bus (replace semantics) | `common-api`, `core-engine` |
@@ -441,7 +444,7 @@ Dev workspace: `neoforge-platform/luamods/` → synced to `run/luamods/` by `syn
 - **LuaBinder** — auto-binding từ interface; interface là single source of truth (binding + stubs + docs).
 - **Event bus** — shared map, replace semantics, cross-engine dispatch.
 - **Item/Block handlers** — server-side only dispatch.
-- **`CobaltLuaEngine`** — synchronized VM entry points; `getAndClearLastExecutionError()` cho per-mod load error tracking; `task._run_deferred` chạy coroutine đúng Cobalt loop.
+- **`LuavaEngine`** — luava 0.2.5 (Lua 5.4) implementation của `ILuaEngine`; synchronized VM entry points; `getAndClearLastExecutionError()` cho per-mod load error tracking; `task._run_deferred` tạo `LuaCoroutine` trên virtual thread và chờ bounded (2s) để không treo tick.
 - **`Signal:FireSync`** — đồng bộ, dùng cho render; `Signal:Fire` — async qua task.
 - **Clientbound network** — dispatch qua network service của active engine.
 - **ProjectileRegistry** — custom projectile definitions thật (damage/explosionPower được áp dụng).

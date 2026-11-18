@@ -5,6 +5,7 @@ import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.core.bind.LuaBinder;
+import com.luatweaker.core.stub.StubCatalog;
 import org.jetbrains.annotations.NotNull;
 
 public class ClientLuaBinding {
@@ -49,13 +50,27 @@ public class ClientLuaBinding {
         clientTable.rawset("RegisterKeyBinding", clientTable.rawget("registerKeyBinding"));
 
         keyBindService.setKeyBindListener((id, payload) -> {
-            String script = String.format(
-                "if Client and Client.OnKeyBindPressed then Client.OnKeyBindPressed:Fire('%s', '%s') end",
-                id, payload != null ? payload : ""
-            );
+            // Call the signal directly. Building Lua source with String.format broke on quotes
+            // in the payload and was a self-inflicted source-injection path.
+            com.luatweaker.api.vm.ILuaValue clientValue = engine.getGlobalEnvironment().rawget("Client");
+            if (clientValue == null || !clientValue.isTable()) {
+                return;
+            }
+            com.luatweaker.api.vm.ILuaValue signal = clientValue.asTable().rawget("OnKeyBindPressed");
+            if (signal == null || !signal.isTable()) {
+                return;
+            }
+            com.luatweaker.api.vm.ILuaValue fire = signal.asTable().rawget("FireSync");
+            if (fire == null || !fire.isFunction()) {
+                fire = signal.asTable().rawget("Fire");
+            }
+            if (fire == null || !fire.isFunction()) {
+                return;
+            }
             try {
-                engine.executeString(script, "KeyBindTrigger");
-            } catch (Exception e) {
+                engine.callFunction(fire, signal, engine.wrapString(id),
+                        engine.wrapString(payload != null ? payload : ""));
+            } catch (RuntimeException e) {
                 com.luatweaker.api.log.LuaTweakerLog.get().error(
                     com.luatweaker.api.log.LogStage.SYSTEM,
                     "Failed to dispatch keybind Lua signal '" + id + "': " + e.getMessage()
@@ -100,8 +115,11 @@ public class ClientLuaBinding {
             engine.registerService("TweenService", dummyTween);
         } else {
             LuaBinder.bind(engine, "Camera", new com.luatweaker.client.CameraServiceImpl(), com.luatweaker.api.client.ICameraService.class);
+            StubCatalog.register("Camera", com.luatweaker.api.client.ICameraService.class);
             LuaBinder.bind(engine, "ClientEffects", new com.luatweaker.client.ClientEffectsServiceImpl(), com.luatweaker.api.client.IClientEffectsService.class);
+            StubCatalog.register("ClientEffects", com.luatweaker.api.client.IClientEffectsService.class);
             LuaBinder.bind(engine, "TweenService", new com.luatweaker.client.TweenServiceImpl(engine), com.luatweaker.api.client.ITweenService.class);
+            StubCatalog.register("TweenService", com.luatweaker.api.client.ITweenService.class);
         }
 
         // 5. Roblox RunService — merge into the bootstrap table (keeps IsServer/IsClient)
@@ -123,6 +141,7 @@ public class ClientLuaBinding {
         if (!isDedicatedServer) {
             // 6. Roblox GuiService — method bindings auto-generated from IGuiService
             ILuaTable guiServiceTable = LuaBinder.bind(engine, "GuiService", guiService, com.luatweaker.api.client.IGuiService.class);
+            StubCatalog.register("GuiService", com.luatweaker.api.client.IGuiService.class);
             if (signalClass != null && signalClass.isTable()) {
                 ILuaValue newSignalFn = signalClass.asTable().rawget("new");
                 if (newSignalFn != null && !newSignalFn.isNil()) {
@@ -147,15 +166,6 @@ public class ClientLuaBinding {
             engine.registerService("GuiService", guiServiceTable);
 
             engine.registerService("ClientService", clientService);
-
-            ILuaTable cameraServiceTable = LuaBinder.bind(engine, "CameraService", new CameraServiceImpl(), com.luatweaker.api.client.ICameraService.class);
-            engine.registerService("CameraService", cameraServiceTable);
-
-            ILuaTable clientEffectsServiceTable = LuaBinder.bind(engine, "ClientEffectsService", new ClientEffectsServiceImpl(), com.luatweaker.api.client.IClientEffectsService.class);
-            engine.registerService("ClientEffectsService", clientEffectsServiceTable);
-
-            ILuaTable tweenServiceTable = LuaBinder.bind(engine, "TweenService", new TweenServiceImpl(engine), com.luatweaker.api.client.ITweenService.class);
-            engine.registerService("TweenService", tweenServiceTable);
         } else {
             // Ensure GuiService is bound as a dummy
             ILuaTable dummyGui = engine.createTable();

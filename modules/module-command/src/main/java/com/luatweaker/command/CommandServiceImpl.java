@@ -44,6 +44,16 @@ public class CommandServiceImpl implements ICommandService {
      */
     private static final Map<String, CommandDefinition> COMMANDS = new ConcurrentHashMap<>();
 
+    private record Owner(ILuaEngine engine, ILuaValue table, String modId) {}
+
+    /**
+     * Owner of each registered path. On the same engine, ownership is checked by table identity,
+     * so a script that overwrites the {@code mod} global with {@code {ID="victim"}} cannot take
+     * over another mod's command. A new engine (reload) is matched by mod id instead, which keeps
+     * replace-on-reload working.
+     */
+    private static final Map<String, Owner> OWNERS = new ConcurrentHashMap<>();
+
     private static final int NAME_MAX_LENGTH = 32;
     private static final int PATH_MAX_DEPTH = 4;
     private static final int PATH_MAX_LENGTH = 64;
@@ -75,12 +85,40 @@ public class CommandServiceImpl implements ICommandService {
     /** Removes every Lua command registration (called at the start of each load cycle). */
     public static void clear() {
         COMMANDS.clear();
+        OWNERS.clear();
+    }
+
+    /** The live {@code mod}/{@code Mod} table object, used for non-spoofable ownership checks. */
+    private @Nullable ILuaValue currentModTable() {
+        ILuaValue value = engine.getGlobalEnvironment().rawget("mod");
+        if (value == null || value.isNil()) {
+            value = engine.getGlobalEnvironment().rawget("Mod");
+        }
+        return value != null && !value.isNil() && value.isTable() ? value : null;
+    }
+
+    private boolean sameOwner(@NotNull String path, @Nullable ILuaValue callerTable,
+                              @Nullable String callerModId) {
+        if (callerTable == null) {
+            return false;
+        }
+        Owner owner = OWNERS.get(path);
+        if (owner == null) {
+            return false;
+        }
+        if (owner.engine() == engine) {
+            // Same VM: only the exact table object that registered may replace/unregister.
+            return owner.table().equals(callerTable);
+        }
+        // Different VM: this is a reload; match the declarative mod id.
+        return callerModId != null && callerModId.equals(owner.modId());
     }
 
     @Override
     public boolean register(@NotNull String name, @NotNull ILuaTable definition) {
         String modId = resolveCurrentModId();
-        if (modId == null) {
+        ILuaValue ownerTable = currentModTable();
+        if (modId == null || ownerTable == null) {
             LuaTweakerLog.get().error(LogStage.COMMAND,
                     "Commands:Register('" + name + "') rejected: no owning mod context (mod global missing). Register commands from main.lua or mod.OnEnable().");
             return false;
@@ -106,10 +144,11 @@ public class CommandServiceImpl implements ICommandService {
             return false;
         }
 
-        // Check every claimed path (primary + aliases) against foreign owners.
+        // Check every claimed path (primary + aliases) against foreign owners. Ownership is
+        // decided by the mod table object, not by the spoofable ID string.
         for (String path : allPaths(parsed)) {
             CommandDefinition existing = COMMANDS.get(path);
-            if (existing != null && !existing.modId().equals(modId)) {
+            if (existing != null && !sameOwner(path, ownerTable, modId)) {
                 LuaTweakerLog.get().error(LogStage.COMMAND,
                         "Commands:Register('" + name + "') rejected by mod '" + modId + "': path '/" + path
                                 + "' is already registered by mod '" + existing.modId()
@@ -120,6 +159,7 @@ public class CommandServiceImpl implements ICommandService {
 
         for (String path : allPaths(parsed)) {
             COMMANDS.put(path, parsed);
+            OWNERS.put(path, new Owner(engine, ownerTable, modId));
         }
         LuaTweakerLog.get().info(LogStage.COMMAND,
                 "Commands:Register '/" + name + "' by mod '" + modId + "' (op:" + parsed.permissionLevel()
@@ -133,13 +173,14 @@ public class CommandServiceImpl implements ICommandService {
     @Override
     public boolean unregister(@NotNull String name) {
         String modId = resolveCurrentModId();
+        ILuaValue ownerTable = currentModTable();
         CommandDefinition existing = COMMANDS.get(name);
         if (existing == null) {
             LuaTweakerLog.get().warn(LogStage.COMMAND,
                     "Commands:Unregister('" + name + "') ignored: not registered.");
             return false;
         }
-        if (modId == null || !existing.modId().equals(modId)) {
+        if (!sameOwner(name, ownerTable, modId)) {
             LuaTweakerLog.get().error(LogStage.COMMAND,
                     "Commands:Unregister('" + name + "') rejected: owned by mod '" + existing.modId()
                             + "', caller '" + (modId == null ? "unknown" : modId) + "'.");
@@ -147,6 +188,7 @@ public class CommandServiceImpl implements ICommandService {
         }
         // Remove the primary name and every alias of the definition.
         COMMANDS.entrySet().removeIf(entry -> entry.getValue().name().equals(name));
+        OWNERS.keySet().removeIf(path -> !COMMANDS.containsKey(path));
         LuaTweakerLog.get().info(LogStage.COMMAND,
                 "Commands:Unregister '" + name + "' by mod '" + modId + "'.");
         return true;

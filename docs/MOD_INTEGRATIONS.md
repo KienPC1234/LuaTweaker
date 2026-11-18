@@ -1,5 +1,7 @@
 # 🔌 Mod Integrations, JEI Custom GUI Categories, Async HTTP & Network Messaging (`mods`, `registry`, `jei`, `http`, `network`, `unsafe`)
 
+> ⚠️ **STALE (verified 2026-11-18):** predates the sandbox and the `require()` module system; these globals do not exist in the bootstrap (and `unsafe` memory ops contradict the security model). Pending rewrite or removal — do not implement from this document.
+
 > **Global Variables:** `mods`, `registry`, `jei`, `http`, `network`, `unsafe`  
 > **Service Lookup:** `game:GetService("Mods")`, `game:GetService("Jei")`, `game:GetService("Http")`, `game:GetService("Network")`
 

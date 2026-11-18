@@ -19,13 +19,22 @@ public final class InventoryInteractionHelper {
             ItemStack stack = player.getInventory().getItem(slot);
             if (!stack.isEmpty()) {
                 var hand = net.minecraft.world.InteractionHand.MAIN_HAND;
-                var hit = new BlockHitResult(player.position(), net.minecraft.core.Direction.UP, player.blockPosition(), false);
                 if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-                    var res = serverPlayer.gameMode.useItemOn(serverPlayer, serverPlayer.level(), stack, hand, hit);
-                    return res.consumesAction();
+                    var res = serverPlayer.gameMode.useItem(serverPlayer, serverPlayer.level(), stack, hand);
+                    if (res.consumesAction()) {
+                        return true;
+                    }
+                    var hit = new BlockHitResult(player.position(), net.minecraft.core.Direction.UP, player.blockPosition(), false);
+                    var resOn = serverPlayer.gameMode.useItemOn(serverPlayer, serverPlayer.level(), stack, hand, hit);
+                    return resOn.consumesAction();
                 } else {
-                    var res = stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, hand, hit));
-                    return res.consumesAction();
+                    var res = stack.use(player.level(), player, hand);
+                    if (res.getResult().consumesAction()) {
+                        return true;
+                    }
+                    var hit = new BlockHitResult(player.position(), net.minecraft.core.Direction.UP, player.blockPosition(), false);
+                    var resOn = stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, hand, hit));
+                    return resOn.consumesAction();
                 }
             }
         }

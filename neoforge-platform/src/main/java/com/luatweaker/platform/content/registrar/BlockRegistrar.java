@@ -51,17 +51,80 @@ public final class BlockRegistrar {
      * Lua-defined {@code OnRightClick} hook shared by every block type. Returns
      * {@code null} when the item has no handler (caller falls back to the block's
      * default behavior), otherwise the interaction result.
+     *
+     * <p>A registered portal mapping ({@code Dimensions:RegisterPortal}) takes
+     * precedence over the Lua handler so the mapping is never dead: using the
+     * block teleports the player. Server-side only.
      */
     private static InteractionResult handleBlockUse(Level level, BlockPos pos, Player player, IBlockBuilder builder) {
-        if (!level.isClientSide() && builder.getRightClickHandler() != null) {
-            try {
-                builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), null);
-            } catch (Exception e) {
-                LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed block right-click handler for " + builder.getId() + ": " + e.getMessage());
+        if (!level.isClientSide()) {
+            if (tryPortalTeleport(player, builder)) {
+                return InteractionResult.sidedSuccess(false);
             }
-            return InteractionResult.sidedSuccess(level.isClientSide());
+            if (builder.getRightClickHandler() != null) {
+                try {
+                    builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), null);
+                } catch (Exception e) {
+                    LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed block right-click handler for " + builder.getId() + ": " + e.getMessage());
+                }
+                return InteractionResult.sidedSuccess(level.isClientSide());
+            }
         }
         return null;
+    }
+
+    /**
+     * Engine-level portal consumer for {@code Dimensions:RegisterPortal}.
+     * Looks the used block up in the dimension service and teleports through
+     * {@code DimensionServiceImpl.tryUsePortal} (same code path as the Lua
+     * {@code Dimensions:TeleportTo} call). No nether-style frame validation:
+     * no frame-check helper exists in the codebase, so any use of a portal
+     * block teleports. Returns true when a portal matched (click consumed),
+     * even if the teleport itself failed (failure is logged).
+     *
+     * <p>Limitation: container blocks bypass this path (CustomContainerBlock
+     * opens the GUI instead), so portal sources should be plain blocks.
+     */
+    private static boolean tryPortalTeleport(Player player, IBlockBuilder builder) {
+        if (player == null || builder == null || builder.getId() == null) {
+            return false;
+        }
+        Object serviceObj = com.luatweaker.core.service.LuaServiceRegistry.get("DimensionServiceImpl");
+        if (!(serviceObj instanceof com.luatweaker.dimension.DimensionServiceImpl service)) {
+            return false;
+        }
+        // Builder ids are stored verbatim, while short ids without a namespace
+        // register under the engine default "luatweaker:" namespace
+        // (NeoForgeContentRegistry.parseLocation), so try that form too.
+        String rawId = builder.getId();
+        String namespacedId = rawId.contains(":") ? rawId : "luatweaker:" + rawId;
+        String strippedId = rawId.startsWith("luatweaker:") ? rawId.substring("luatweaker:".length()) : null;
+        String[] candidates = strippedId != null
+                ? new String[]{rawId, strippedId}
+                : new String[]{rawId, namespacedId};
+        String matched = null;
+        for (String candidate : candidates) {
+            String target;
+            try {
+                target = service.getPortalTarget(candidate);
+            } catch (IllegalArgumentException badId) {
+                continue;
+            }
+            if (target != null) {
+                matched = candidate;
+                break;
+            }
+        }
+        if (matched == null) {
+            return false;
+        }
+        try {
+            service.tryUsePortal(new NeoForgePlayerWrapper(player), matched);
+        } catch (RuntimeException teleportFailed) {
+            LuaTweakerLog.get().error(LogStage.SYSTEM,
+                    "Portal teleport failed for block '" + rawId + "': " + teleportFailed.getMessage());
+        }
+        return true;
     }
 
     /**

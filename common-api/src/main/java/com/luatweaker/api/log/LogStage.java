@@ -14,7 +14,7 @@ public enum LogStage {
     // -- Startup ---
     /** Mod constructor running. Platform PAL / config init. */
     MOD_INIT,
-    /** Cobalt VM / engine startup. */
+    /** Lua VM / engine startup. */
     ENGINE_INIT,
     /** LSP stub generation. */
     STUB_GEN,

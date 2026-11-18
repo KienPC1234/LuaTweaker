@@ -1,5 +1,7 @@
 package com.luatweaker.dimension;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.entity.IEntity;
 import com.luatweaker.api.pal.IPlatformContent;
 import com.luatweaker.api.pal.IPlatformDimension;
@@ -8,7 +10,6 @@ import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.core.logger.AsyncFileLogger;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -32,7 +34,7 @@ public class DimensionServiceImplTest {
 
     @BeforeEach
     void setup() {
-        engine = new CobaltLuaEngine();
+        engine = LuaEngineFactory.create(false);
         service = new DimensionServiceImpl(engine);
     }
 
@@ -292,6 +294,72 @@ public class DimensionServiceImplTest {
                 () -> service.registerPortal("", "arcane:crystal_realm"));
         assertThrows(IllegalArgumentException.class,
                 () -> service.registerPortal("arcane:crystal_portal", ""));
+    }
+
+    private static IEntity fakePortalPlayer(Object raw) {
+        return new IEntity() {
+            @Override public String getType() { return "minecraft:player"; }
+            @Override public String getName() { return "P"; }
+            @Override public float getHealth() { return 20; }
+            @Override public void setHealth(float health) {}
+            @Override public float getMaxHealth() { return 20; }
+            @Override public boolean isAlive() { return true; }
+            @Override public void remove() {}
+            @Override public Object getRawEntity() { return raw; }
+        };
+    }
+
+    @Test
+    void tryUsePortal_TeleportsToMappedDimension() {
+        AtomicReference<String> seen = new AtomicReference<>();
+        Platform.setDimension(new IPlatformDimension() {
+            @Override public boolean teleportToDimension(Object rawPlayerEntity, String dimensionId) {
+                seen.set(dimensionId);
+                assertEquals("mock-raw-player", rawPlayerEntity);
+                return true;
+            }
+            @Override public Object getLevel(String dimensionId) { return null; }
+        });
+
+        service.create("arcane:crystal_realm", engine.createTable());
+        service.registerPortal("arcane:crystal_portal", "arcane:crystal_realm");
+
+        assertTrue(service.tryUsePortal(fakePortalPlayer("mock-raw-player"), "arcane:crystal_portal"));
+        assertEquals("arcane:crystal_realm", seen.get());
+    }
+
+    @Test
+    void tryUsePortal_UnregisteredBlockDoesNothing() {
+        AtomicBoolean called = new AtomicBoolean(false);
+        Platform.setDimension(new IPlatformDimension() {
+            @Override public boolean teleportToDimension(Object rawPlayerEntity, String dimensionId) {
+                called.set(true);
+                return true;
+            }
+            @Override public Object getLevel(String dimensionId) { return null; }
+        });
+
+        assertFalse(service.tryUsePortal(fakePortalPlayer("mock"), "arcane:unknown_block"));
+        assertFalse(called.get(), "unregistered block must not trigger a teleport");
+    }
+
+    @Test
+    void tryUsePortal_RejectsBlankIds() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.tryUsePortal(fakePortalPlayer("mock"), ""));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.tryUsePortal(fakePortalPlayer("mock"), "Bad Id!"));
+    }
+
+    @Test
+    void tryUsePortal_UnknownDimensionThrows() {
+        Platform.setDimension(new IPlatformDimension() {
+            @Override public boolean teleportToDimension(Object rawPlayerEntity, String dimensionId) { return true; }
+            @Override public Object getLevel(String dimensionId) { return null; }
+        });
+        service.registerPortal("arcane:portal", "arcane:missing");
+        assertThrows(IllegalArgumentException.class,
+                () -> service.tryUsePortal(fakePortalPlayer("mock"), "arcane:portal"));
     }
 
     // ---------- getDimension info table ----------

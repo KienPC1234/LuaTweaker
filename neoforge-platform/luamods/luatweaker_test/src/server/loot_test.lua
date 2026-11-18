@@ -1,7 +1,8 @@
 -- ===================================================================
 -- LuaTweaker Test Suite: Loot Service
--- Exercises mob drops, chest loot, block drops, fishing and the
--- pending-modification summary (all pure Java, no server needed).
+-- Verifies OBSERVABLE pending-state changes (via GetModifications):
+-- additions increase counts, removals remove pending entries and are
+-- recorded in the summary. No server runtime required.
 -- ===================================================================
 local Loot = require("LuaTweaker.Loot")
 
@@ -13,35 +14,59 @@ local function check(label, cond)
     end
 end
 
--- Mob drops
+local function count(key)
+    local mods = Loot:GetModifications()
+    if type(mods) ~= "table" then
+        return -1
+    end
+    return mods[key] or -1
+end
+
+-- Establish a clean baseline before asserting absolute counts.
+Loot:ClearAll()
+check("ClearAll baseline (all counts 0)", count("mobDrops") == 0
+    and count("chestLoot") == 0 and count("blockDrops") == 0
+    and count("fishingLoot") == 0 and count("removals") == 0)
+
+-- ==== MOB DROPS: ADD THEN REMOVE ====
 Loot:AddMobDrop("minecraft:zombie", "minecraft:diamond", 0.1, 1, 2, 1)
-Loot:AddMobDrop("minecraft:skeleton", "minecraft:bone", 0.5, 1, 3)
-local mods = Loot:GetModifications()
-check("AddMobDrop recorded (mobDrops=2)", mods ~= nil and mods.mobDrops == 2)
+check("AddMobDrop increments mobDrops", count("mobDrops") == 1)
 
 local removed = Loot:RemoveMobDrop("minecraft:zombie", "minecraft:diamond")
 check("RemoveMobDrop returns true", removed == true)
+check("RemoveMobDrop removes pending entry (mobDrops=0)", count("mobDrops") == 0)
+check("RemoveMobDrop recorded in summary (removals=1)", count("removals") == 1)
 
--- Chest loot
+Loot:AddMobDrop("minecraft:zombie", "minecraft:iron_ingot", 0.5, 1, 3)
+check("AddMobDrop after removal increments mobDrops", count("mobDrops") == 1)
+
+-- Removing an item this API never added only records the removal; it cannot
+-- rewrite a vanilla table (documented limitation of the loot provider).
+Loot:RemoveMobDrop("minecraft:zombie", "minecraft:rotten_flesh")
+check("RemoveMobDrop of unmanaged item keeps mobDrops", count("mobDrops") == 1)
+check("RemoveMobDrop of unmanaged item recorded (removals=2)", count("removals") == 2)
+
+-- ==== CHEST LOOT: ADD THEN REMOVE ====
 Loot:AddChestLoot("minecraft:chests/simple_dungeon", "minecraft:emerald", 0.2, 1, 4)
+check("AddChestLoot increments chestLoot", count("chestLoot") == 1)
+
 local chestRemoved = Loot:RemoveChestLoot("minecraft:chests/simple_dungeon", "minecraft:emerald")
 check("RemoveChestLoot returns true", chestRemoved == true)
+check("RemoveChestLoot removes pending entry (chestLoot=0)", count("chestLoot") == 0)
+check("RemoveChestLoot recorded in summary (removals=3)", count("removals") == 3)
 
--- Block drops
+-- ==== BLOCK + FISHING ====
 Loot:SetBlockDrop("minecraft:stone", "minecraft:cobblestone", 0, "")
-Loot:SetBlockDrop("minecraft:coal_ore", "minecraft:coal", 1, "minecraft:coal_ore")
-
--- Fishing
+check("SetBlockDrop increments blockDrops", count("blockDrops") == 1)
 Loot:AddFishingLoot("minecraft:name_tag", 0.05, "TREASURE")
-Loot:AddFishingLoot("minecraft:stick", 0.1, "JUNK")
+check("AddFishingLoot increments fishingLoot", count("fishingLoot") == 1)
 
--- Summary + clear
-local summary = Loot:GetModifications()
-check("GetModifications returns table", type(summary) == "table")
+-- ==== FINAL CLEAR ====
 Loot:ClearAll()
 local afterClear = Loot:GetModifications()
-check("ClearAll zeroes counts", afterClear ~= nil
+check("ClearAll zeroes every count", type(afterClear) == "table"
     and afterClear.mobDrops == 0 and afterClear.chestLoot == 0
-    and afterClear.blockDrops == 0 and afterClear.fishingLoot == 0)
+    and afterClear.blockDrops == 0 and afterClear.fishingLoot == 0
+    and afterClear.removals == 0)
 
 print("[Test][Loot] Loot service verified")

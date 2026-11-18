@@ -1,8 +1,10 @@
 package com.luatweaker.entities;
 
+import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.entity.IEntity;
 import com.luatweaker.api.vm.ILuaTable;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -43,7 +45,7 @@ public class EntityTablePropertyAliasTest {
 
     @Test
     public void propertyAliasesMirrorMethods() throws IOException {
-        CobaltLuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         MockEntity entity = new MockEntity();
         ILuaTable table = EntitiesLuaBinding.createEntityLuaTable(engine, entity);
         engine.getGlobalEnvironment().rawset("boss", table);
@@ -72,7 +74,7 @@ public class EntityTablePropertyAliasTest {
 
     @Test
     public void methodStyleStillWorksOnSameTable() throws IOException {
-        CobaltLuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         MockEntity entity = new MockEntity();
         ILuaTable table = EntitiesLuaBinding.createEntityLuaTable(engine, entity);
         engine.getGlobalEnvironment().rawset("boss", table);

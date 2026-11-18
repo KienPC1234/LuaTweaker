@@ -1,20 +1,19 @@
 package com.luatweaker.core.vm;
 
-import org.squiddev.cobalt.Constants;
-import org.squiddev.cobalt.LuaTable;
-import org.squiddev.cobalt.LuaValue;
+import com.luatweaker.api.vm.ILuaTable;
+import com.luatweaker.api.vm.ILuaValue;
 
+import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Resolves {@code require("LuaTweaker.X")} module names to the global table
- * that backs them. Data-driven: every module alias maps to an ordered list of
- * global keys to try (first non-nil wins). Extracted from {@link CobaltLuaEngine}
- * so the engine stays focused on VM lifecycle.
+ * Resolves {@code require("LuaTweaker.X")} module names to the global value that backs them.
+ * Data-driven: every module alias maps to an ordered list of global keys to try
+ * (first non-nil wins). Extracted from the engine so it stays focused on VM lifecycle.
  */
-final class NativeModuleResolver {
+public final class NativeModuleResolver {
 
     private static final Map<String, String[]> MODULE_GLOBALS = buildModuleGlobals();
 
@@ -117,13 +116,50 @@ final class NativeModuleResolver {
         return Collections.unmodifiableMap(m);
     }
 
-    static LuaValue resolve(LuaTable globals, String modName) {
+    /**
+     * Returns the first non-nil global for the requested module alias.
+     *
+     * @param globals SPI wrapper around the luava globals table
+     * @param modName requested module name
+     * @return the resolved global, or {@code LuaNil.NIL} when the alias is unknown or unset
+     */
+    public static org.luava.runtime.LuaValue resolveLuava(ILuaTable globals, String modName) {
         String[] keys = MODULE_GLOBALS.get(modName);
-        if (keys == null) return Constants.NIL;
+        if (keys == null || globals == null) return org.luava.runtime.LuaNil.NIL;
         for (String key : keys) {
-            LuaValue val = globals.rawget(key);
-            if (val != null && !val.isNil()) return val;
+            ILuaValue val = globals.rawget(key);
+            if (val == null || val.isNil()) continue;
+            org.luava.runtime.LuaValue converted = toLuavaValue(val);
+            if (converted != null && !converted.isNil()) return converted;
         }
-        return Constants.NIL;
+        return org.luava.runtime.LuaNil.NIL;
+    }
+
+    /**
+     * Unwraps an SPI value into its backing luava value. A dedicated luava SPI wrapper exposes
+     * a zero-argument accessor whose return type is a luava LuaValue; discovery by return type
+     * keeps this resolver independent of the wrapper class name.
+     */
+    private static org.luava.runtime.LuaValue toLuavaValue(ILuaValue value) {
+        for (Method method : value.getClass().getMethods()) {
+            if (method.getParameterCount() != 0
+                    || !org.luava.runtime.LuaValue.class.isAssignableFrom(method.getReturnType())) {
+                continue;
+            }
+            try {
+                Object raw = method.invoke(value);
+                if (raw instanceof org.luava.runtime.LuaValue luavaValue) return luavaValue;
+            } catch (ReflectiveOperationException e) {
+                com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                        com.luatweaker.api.log.LogStage.SYSTEM,
+                        "NativeModuleResolver: failed to unwrap Lua value via " + method.getName()
+                                + ": " + e.getMessage());
+            }
+        }
+        Object javaObject = value.toJavaObject();
+        if (javaObject instanceof org.luava.runtime.LuaValue luavaValue) return luavaValue;
+        return javaObject == null
+                ? org.luava.runtime.LuaNil.NIL
+                : org.luava.binding.LuaDataConverter.toLua(javaObject);
     }
 }

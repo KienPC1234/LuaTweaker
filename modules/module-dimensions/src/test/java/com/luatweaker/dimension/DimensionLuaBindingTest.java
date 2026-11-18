@@ -1,7 +1,8 @@
 package com.luatweaker.dimension;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.core.logger.AsyncFileLogger;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import com.luatweaker.api.vm.ILuaEngine;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
@@ -23,7 +24,7 @@ public class DimensionLuaBindingTest {
 
     @Test
     void binding_CreateAndInspectDimensionFromLua() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         DimensionLuaBinding.registerBindings(engine);
 
         engine.executeString(
@@ -57,7 +58,7 @@ public class DimensionLuaBindingTest {
 
     @Test
     void binding_TerrainGeneratorReturnsHeightAndBlock() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         DimensionLuaBinding.registerBindings(engine);
 
         engine.executeString(
@@ -78,7 +79,7 @@ public class DimensionLuaBindingTest {
 
     @Test
     void binding_PortalRegistration() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         DimensionLuaBinding.registerBindings(engine);
 
         engine.executeString(
@@ -92,7 +93,7 @@ public class DimensionLuaBindingTest {
 
     @Test
     void binding_InvalidConfigRaisesLuaError() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         DimensionLuaBinding.registerBindings(engine);
 
         engine.executeString(
@@ -106,7 +107,7 @@ public class DimensionLuaBindingTest {
 
     @Test
     void binding_BlockPickerSpawnPointAndPortalTarget() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         DimensionLuaBinding.registerBindings(engine);
 
         engine.executeString(
@@ -139,7 +140,7 @@ public class DimensionLuaBindingTest {
 
     @Test
     void binding_requireDimensionsResolvesToGlobal() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         DimensionLuaBinding.registerBindings(engine);
 
         engine.executeString(

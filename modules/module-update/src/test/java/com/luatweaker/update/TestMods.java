@@ -52,6 +52,7 @@ public final class TestMods {
                 + updateField
                 + "\n}\n";
         Files.writeString(new File(modDir, "manifest.json").toPath(), manifest, StandardCharsets.UTF_8);
+        Files.writeString(new File(modDir, "main.lua").toPath(), "-- test mod entrypoint\n", StandardCharsets.UTF_8);
         return modDir;
     }
 }

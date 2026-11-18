@@ -1,8 +1,9 @@
 package com.luatweaker.events;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.core.logger.AsyncFileLogger;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,7 +26,7 @@ public class EventServiceImplTest {
 
     @BeforeEach
     void setup() {
-        engine = new CobaltLuaEngine();
+        engine = LuaEngineFactory.create(false);
         service = new EventServiceImpl(engine);
     }
 

@@ -203,8 +203,15 @@ public final class EntityRegistrar {
                             bossEvent.setProgress(Math.max(0.0f, Math.min(1.0f, (float) (entity.getHealth() / entity.getMaxHealth()))));
 
                             AABB area = entity.getBoundingBox().inflate(32.0);
-                            for (ServerPlayer p : entity.level().getEntitiesOfClass(ServerPlayer.class, area)) {
+                            java.util.Set<ServerPlayer> nearbyPlayers = new java.util.HashSet<>(
+                                    entity.level().getEntitiesOfClass(ServerPlayer.class, area));
+                            for (ServerPlayer p : nearbyPlayers) {
                                 bossEvent.addPlayer(p);
+                            }
+                            for (ServerPlayer p : new java.util.ArrayList<>(bossEvent.getPlayers())) {
+                                if (!nearbyPlayers.contains(p)) {
+                                    bossEvent.removePlayer(p);
+                                }
                             }
                         }
                     }

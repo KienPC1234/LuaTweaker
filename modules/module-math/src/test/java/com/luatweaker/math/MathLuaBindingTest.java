@@ -1,7 +1,8 @@
 package com.luatweaker.math;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.vm.ILuaEngine;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -13,7 +14,7 @@ public class MathLuaBindingTest {
 
     @BeforeEach
     public void setUp() {
-        engine = new CobaltLuaEngine(true);
+        engine = LuaEngineFactory.create(true);
         MathLuaBinding.registerBindings(engine);
     }
 

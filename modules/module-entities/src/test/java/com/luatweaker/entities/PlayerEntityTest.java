@@ -1,7 +1,9 @@
 package com.luatweaker.entities;
 
+import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.entity.IPlayer;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class PlayerEntityTest {
 
-    private CobaltLuaEngine engine;
+    private ILuaEngine engine;
     private MockPlayer mockPlayer;
 
     private static class MockPlayer implements IPlayer {
@@ -49,7 +51,7 @@ public class PlayerEntityTest {
 
     @BeforeEach
     public void setUp() {
-        engine = new CobaltLuaEngine();
+        engine = LuaEngineFactory.create(false);
         mockPlayer = new MockPlayer();
     }
 

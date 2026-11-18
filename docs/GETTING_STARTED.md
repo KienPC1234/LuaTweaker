@@ -1,6 +1,6 @@
 # 🚀 Getting Started with LuaTweaker (`kien.LuaTweaker`)
 
-> **Target Version:** Minecraft 1.21.1 (NeoForge) | **Java Version:** 21 | **Lua Version:** 5.1 / 5.2 (LuaJ 3.0.1)
+> **Target Version:** Minecraft 1.21.1 (NeoForge) | **Java Version:** 21 | **Lua Version:** 5.4 (luava 0.2.5)
 
 Welcome to **LuaTweaker**, an ultra-lightweight, high-performance Lua scripting engine for Minecraft modpack creators and developers.
 

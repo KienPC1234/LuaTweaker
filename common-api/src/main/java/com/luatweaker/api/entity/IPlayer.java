@@ -30,11 +30,11 @@ public interface IPlayer extends IEntity {
     void giveExperience(int exp);
 
     @LuaDoc(description = "Applies a potion effect to the player.", params = {"effectId: string", "durationTicks: integer", "amplifier: integer"})
-    void addEffect(String effectId, int durationTicks, int amplifier);
+    void addEffect(String effectId, @LuaDefault("200") int durationTicks, @LuaDefault("0") int amplifier);
 
     @LuaDoc(description = "Plays a sound event at the player's position. e.g. player:playSound('luatweaker:ruby_equip') or player:playSound('minecraft:entity.experience_orb.pickup', 1.0, 1.0)",
             params = {"soundId: string — ResourceLocation of sound event", "volume: number (optional, default 1.0)", "pitch: number (optional, default 1.0)"})
-    void playSound(String soundId, float volume, float pitch);
+    void playSound(String soundId, @LuaDefault("1.0") float volume, @LuaDefault("1.0") float pitch);
 
     @LuaDoc(description = "Returns item ID held in main hand.", returnType = "string")
     default String getMainHandItem() { return "minecraft:air"; }

@@ -1,5 +1,7 @@
 # 🎬 Shader & Post-Processing API (`ShaderAPI`)
 
+> ⚠️ **STALE (verified 2026-11-18):** no `ShaderAPI` exists anywhere in the codebase and none of these globals are defined in the bootstrap. Pending rewrite or removal — do not implement from this document.
+
 > **Access:** `game:GetService("Shaders")`, or globals `shaders` / `render`  
 > **Source:** [ShaderAPI.java](../src/main/java/kien/luatweaker/api/render/ShaderAPI.java)
 

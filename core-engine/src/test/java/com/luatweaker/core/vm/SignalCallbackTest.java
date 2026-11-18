@@ -10,11 +10,12 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Regression tests for the Signal/task pipeline fixes:
+ * Regression tests for the Signal/task pipeline:
  * 1. Signal:Fire must pass only the real arguments to listeners (no arg shift from self).
- * 2. A crashing deferred listener must never leak Cobalt's UnwindThrowable to Java,
- *    and remaining deferred tasks must still run.
- * 3. require("LuaTweaker.GuiService" / RunService / KeyBindService) must resolve.
+ * 2. Signal:FireSync must invoke listeners immediately on the calling thread.
+ * 3. A crashing deferred listener must not stop the remaining tasks, and no VM
+ *    control-flow exception may leak to Java through task._tick.
+ * 4. require("LuaTweaker.GuiService" / RunService / KeyBindService) must resolve.
  */
 public class SignalCallbackTest {
 
@@ -32,7 +33,7 @@ public class SignalCallbackTest {
 
     @Test
     public void fireSignalFromJavaPassesArgsAfterSelf() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         ILuaTable globals = engine.getGlobalEnvironment();
         ILuaValue signalClass = globals.rawget("Signal");
         assertNotNull(signalClass, "Signal class missing from bootstrap");
@@ -62,7 +63,7 @@ public class SignalCallbackTest {
 
     @Test
     public void fireSignalWithColonSyntaxFromLua() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         ILuaTable globals = engine.getGlobalEnvironment();
         ILuaValue signalClass = globals.rawget("Signal");
         ILuaTable signal = createSignal(engine, signalClass);
@@ -87,8 +88,37 @@ public class SignalCallbackTest {
     }
 
     @Test
-    public void crashingListenerDoesNotLeakUnwindThrowableAndOtherTasksStillRun() {
-        ILuaEngine engine = new CobaltLuaEngine();
+    public void fireSyncInvokesListenersImmediatelyOnCallingThread() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        ILuaTable globals = engine.getGlobalEnvironment();
+        ILuaValue signalClass = globals.rawget("Signal");
+        ILuaTable signal = createSignal(engine, signalClass);
+        globals.rawset("_syncSignal", signal);
+
+        engine.executeString(
+            "_syncSignal:Connect(function(value) _syncFirst = value end)\n" +
+            "_syncSignal:FireSync('now')\n" +
+            "assert(_syncFirst == 'now', 'FireSync must run listeners before returning')",
+            "repro_firesync"
+        );
+        assertNull(engine.getAndClearLastExecutionError());
+        assertEquals("now", globals.rawget("_syncFirst").asString());
+
+        // Error path: a crashing listener is contained by pcall inside FireSync and
+        // must not prevent listeners registered after it from running.
+        engine.executeString(
+            "_syncSignal:Connect(function() error('listener boom') end)\n" +
+            "_syncSignal:Connect(function() _syncSurvivor = true end)\n" +
+            "_syncSignal:FireSync('again')",
+            "repro_firesync_error"
+        );
+        assertTrue(globals.rawget("_syncSurvivor").asBoolean(),
+            "a healthy listener registered after a crashing one must still run under FireSync");
+    }
+
+    @Test
+    public void crashingDeferredListenerDoesNotBlockRemainingTasks() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
         ILuaTable globals = engine.getGlobalEnvironment();
         ILuaValue signalClass = globals.rawget("Signal");
         ILuaTable signal = createSignal(engine, signalClass);
@@ -110,7 +140,7 @@ public class SignalCallbackTest {
 
         ILuaValue tickFn = globals.rawget("task").asTable().rawget("_tick");
         assertDoesNotThrow(() -> engine.callFunction(tickFn),
-            "task._tick must not leak UnwindThrowable to Java when a listener crashes");
+            "task._tick must not leak a VM control-flow exception to Java when a listener crashes");
 
         ILuaValue survived = globals.rawget("_reproSurvived");
         assertTrue(survived != null && survived.asBoolean(),
@@ -119,7 +149,7 @@ public class SignalCallbackTest {
 
     @Test
     public void deferredTaskWithWaitYieldsAndResumesAcrossTicks() throws Exception {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         ILuaTable globals = engine.getGlobalEnvironment();
 
         engine.executeString(
@@ -140,6 +170,26 @@ public class SignalCallbackTest {
         engine.callFunction(tickFn);
         step = globals.rawget("_yieldStep");
         assertEquals("resumed", step.asString(), "task.wait must resume the coroutine on a later tick");
+    }
+
+    @Test
+    public void taskDeferAndDelayQueueWorkUntilTick() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        ILuaTable globals = engine.getGlobalEnvironment();
+
+        engine.executeString(
+            "Task.defer(function() _deferRan = true end)\n" +
+            "Task.delay(0, function() _delayRan = true end)\n" +
+            "assert(_deferRan == nil, 'deferred task must not run before the tick')\n" +
+            "assert(_delayRan == nil, 'delayed task must not run before the tick')",
+            "repro_defer_delay"
+        );
+        assertNull(engine.getAndClearLastExecutionError());
+
+        ILuaValue tickFn = globals.rawget("task").asTable().rawget("_tick");
+        engine.callFunction(tickFn);
+        assertTrue(globals.rawget("_deferRan").asBoolean(), "Task.defer work must run on tick");
+        assertTrue(globals.rawget("_delayRan").asBoolean(), "Task.delay(0) work must run on tick");
     }
 
     @Test
@@ -168,13 +218,14 @@ public class SignalCallbackTest {
             }
             assertTrue(candidate.exists(), "Script must be found: " + candidate.getAbsolutePath());
             String source = java.nio.file.Files.readString(candidate.toPath());
-            String error = com.luatweaker.core.engine.LuaEngine.checkSyntax(candidate.getName(), source);
+            String error = LuaEngineFactory.checkSyntax(candidate.getName(), source);
             assertNull(error, candidate.getName() + " has syntax errors: " + error);
         }
     }
 
     @Test
-    public void requireResolvesClientModules() {        ILuaEngine engine = new CobaltLuaEngine();
+    public void requireResolvesClientModules() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
         ILuaTable globals = engine.getGlobalEnvironment();
 
         ILuaTable gui = engine.createTable();
@@ -196,5 +247,6 @@ public class SignalCallbackTest {
             "assert(key ~= nil, 'LuaTweaker.KeyBindService must resolve')",
             "repro_require"
         );
+        assertNull(engine.getAndClearLastExecutionError());
     }
 }

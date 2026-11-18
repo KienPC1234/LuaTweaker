@@ -10,6 +10,11 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class NetworkServiceImpl implements IRocketNetworkService {
+    private static final com.google.gson.Gson GSON = new com.google.gson.Gson();
+    /** Matches the payload codec bound: {@code ByteBufCodecs.STRING_UTF8} caps at 32767 chars. */
+    private static final int MAX_PAYLOAD_CHARS = 32_767;
+    /** UTF-8 can use up to three bytes per char in the codec's bound. */
+    private static final int MAX_PAYLOAD_BYTES = MAX_PAYLOAD_CHARS * 3;
     private final ILuaEngine engine;
     private final Map<String, ILuaTable> remoteEvents = new ConcurrentHashMap<>();
     private final Map<String, ILuaTable> remoteFunctions = new ConcurrentHashMap<>();
@@ -145,9 +150,10 @@ public class NetworkServiceImpl implements IRocketNetworkService {
 
     @Override
     public void OnClientFired(String channelName, String playerUuid, ILuaValue[] args) {
-        com.luatweaker.api.log.LuaTweakerLog.get().info(
+        com.luatweaker.api.log.LuaTweakerLog.get().debug(
             com.luatweaker.api.log.LogStage.SYSTEM,
-            "[Network OnClientFired] [NetService@" + System.identityHashCode(this) + " / Engine@" + System.identityHashCode(engine) + "] Looking up channel '" + channelName + "'. Available channels: " + remoteEvents.keySet()
+            "[Network OnClientFired] Looking up channel '" + channelName + "'. Available channels: "
+                + remoteEvents.keySet()
         );
         ILuaTable remoteEvent = remoteEvents.get(channelName);
         if (remoteEvent != null) {
@@ -155,7 +161,13 @@ public class NetworkServiceImpl implements IRocketNetworkService {
             if (onServerEvent != null && !onServerEvent.isNil()) {
                 ILuaValue signalClass = engine.getGlobalEnvironment().rawget("Signal");
                 if (signalClass != null && signalClass.isTable()) {
-                    ILuaValue fireFn = signalClass.asTable().rawget("Fire");
+                    // Dispatch synchronously on the calling (main) thread: network handlers
+                    // mutate world/player state and must not run on a deferred coroutine
+                    // virtual thread. Fall back to Fire on an engine without FireSync.
+                    ILuaValue fireFn = signalClass.asTable().rawget("FireSync");
+                    if (fireFn == null || fireFn.isNil()) {
+                        fireFn = signalClass.asTable().rawget("Fire");
+                    }
                     if (fireFn != null && !fireFn.isNil()) {
                         ILuaValue player = engine.nilValue();
                         com.luatweaker.api.entity.IPlayer p = null;
@@ -172,9 +184,10 @@ public class NetworkServiceImpl implements IRocketNetworkService {
                             }
                         }
 
-                        com.luatweaker.api.log.LuaTweakerLog.get().info(
+                        com.luatweaker.api.log.LuaTweakerLog.get().debug(
                             com.luatweaker.api.log.LogStage.SYSTEM,
-                            "[Network] OnClientFired firing RemoteEvent '" + channelName + "' for player: " + (p != null ? p.getName() : "Unknown")
+                            "[Network] OnClientFired firing RemoteEvent '" + channelName
+                                + "' for player: " + (p != null ? p.getName() : "Unknown")
                         );
 
                         ILuaValue[] fireArgs = new ILuaValue[args.length + 1];
@@ -205,7 +218,13 @@ public class NetworkServiceImpl implements IRocketNetworkService {
             if (onClientEvent != null && !onClientEvent.isNil()) {
                 ILuaValue signalClass = engine.getGlobalEnvironment().rawget("Signal");
                 if (signalClass != null && signalClass.isTable()) {
-                    ILuaValue fireFn = signalClass.asTable().rawget("Fire");
+                    // Dispatch synchronously on the calling (main) thread: network handlers
+                    // mutate world/player state and must not run on a deferred coroutine
+                    // virtual thread. Fall back to Fire on an engine without FireSync.
+                    ILuaValue fireFn = signalClass.asTable().rawget("FireSync");
+                    if (fireFn == null || fireFn.isNil()) {
+                        fireFn = signalClass.asTable().rawget("Fire");
+                    }
                     if (fireFn != null && !fireFn.isNil()) {
                         engine.callFunction(fireFn, appendThis(onClientEvent, args));
                     }
@@ -223,18 +242,59 @@ public class NetworkServiceImpl implements IRocketNetworkService {
 
     private String serializeArgs(ILuaValue[] args) {
         com.google.gson.JsonArray array = new com.google.gson.JsonArray();
-        for (ILuaValue val : args) {
+        for (ILuaValue val : args != null ? args : new ILuaValue[0]) {
             array.add(convertToTree(val));
         }
-        return new com.google.gson.Gson().toJson(array);
+        String json = GSON.toJson(array);
+        int bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        // The packet codec rejects strings longer than MAX_PAYLOAD_CHARS on the Netty thread,
+        // which tears the connection down instead of raising a Lua error. Enforce the same
+        // bound before the packet is queued so a script sees a normal error.
+        if (json.length() > MAX_PAYLOAD_CHARS || bytes > MAX_PAYLOAD_BYTES) {
+            throw new IllegalArgumentException("Network payload is too large: " + json.length()
+                    + " chars / " + bytes + " bytes (limit " + MAX_PAYLOAD_CHARS + " chars, "
+                    + MAX_PAYLOAD_BYTES + " bytes)");
+        }
+        return json;
     }
 
+    private static final int MAX_NESTING = 32;
+
     private com.google.gson.JsonElement convertToTree(ILuaValue val) {
+        return convertToTree(val, 0);
+    }
+
+    private com.google.gson.JsonElement convertToTree(ILuaValue val, int depth) {
         if (val == null || val.isNil()) return com.google.gson.JsonNull.INSTANCE;
+        if (depth > MAX_NESTING) {
+            throw new IllegalArgumentException(
+                    "Network payload nesting is too deep (max " + MAX_NESTING + " levels)");
+        }
         if (val.isTable()) {
+            ILuaTable table = val.asTable();
+            int length = table.length();
+            Map<ILuaValue, ILuaValue> entries = table.asMap();
+            boolean isArray = length > 0 && entries.size() == length;
+            if (isArray) {
+                for (ILuaValue key : entries.keySet()) {
+                    if (!key.isNumber() || key.asInt() < 1 || key.asInt() > length) {
+                        isArray = false;
+                        break;
+                    }
+                }
+            }
+            if (isArray) {
+                // JSON arrays round-trip as Lua arrays (1..n); objects would arrive as
+                // string-keyed tables and break #t / ipairs on the receiver.
+                com.google.gson.JsonArray array = new com.google.gson.JsonArray();
+                for (int i = 1; i <= length; i++) {
+                    array.add(convertToTree(table.rawget(i), depth + 1));
+                }
+                return array;
+            }
             com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
-            for (Map.Entry<ILuaValue, ILuaValue> entry : val.asTable().asMap().entrySet()) {
-                obj.add(entry.getKey().asString(), convertToTree(entry.getValue()));
+            for (Map.Entry<ILuaValue, ILuaValue> entry : entries.entrySet()) {
+                obj.add(entry.getKey().asString(), convertToTree(entry.getValue(), depth + 1));
             }
             return obj;
         }
@@ -242,6 +302,8 @@ public class NetworkServiceImpl implements IRocketNetworkService {
         if (raw instanceof String s) return new com.google.gson.JsonPrimitive(s);
         if (raw instanceof Number n) return new com.google.gson.JsonPrimitive(n);
         if (raw instanceof Boolean b) return new com.google.gson.JsonPrimitive(b);
-        return new com.google.gson.JsonPrimitive(val.asString());
+        throw new IllegalArgumentException(
+                "Network payloads only support booleans, numbers, strings and tables of those; got "
+                        + val.getClass().getSimpleName());
     }
 }

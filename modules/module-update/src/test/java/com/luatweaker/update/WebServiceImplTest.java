@@ -31,12 +31,15 @@ public class WebServiceImplTest {
 
     @BeforeEach
     void setup() throws IOException {
+        // These tests exercise a real local HTTP server; SSRF filtering would reject it.
+        System.setProperty(UrlSafety.ALLOW_INTERNAL_PROPERTY, "true");
         engine = new FakeEngine();
         webService = new WebServiceImpl(engine);
     }
 
     @AfterEach
     void tearDown() {
+        System.clearProperty(UrlSafety.ALLOW_INTERNAL_PROPERTY);
         if (server != null) server.stop(0);
     }
 

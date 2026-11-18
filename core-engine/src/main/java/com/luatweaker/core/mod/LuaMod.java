@@ -15,6 +15,7 @@ import java.io.File;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -51,7 +52,8 @@ public class LuaMod {
         // an empty table and every cfg.mana / cfg.skills access crashed).
         File configDir = new File(luamodsDir.getAbsoluteFile().getParentFile(), "luaconfig");
         if (!configDir.exists()) configDir.mkdirs();
-        this.configFile = new File(configDir, manifest.id() + ".json");
+        Path configPath = LuaModPathSecurity.resolveContained(configDir.toPath(), manifest.id() + ".json");
+        this.configFile = configPath.toFile();
     }
 
     public @NotNull LuaModManifest getManifest() {

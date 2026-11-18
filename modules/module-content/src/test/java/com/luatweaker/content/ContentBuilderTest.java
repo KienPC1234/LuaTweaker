@@ -1,8 +1,10 @@
 package com.luatweaker.content;
 
+import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.content.IBlockBuilder;
 import com.luatweaker.api.content.IItemBuilder;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -14,14 +16,14 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class ContentBuilderTest {
 
-    private CobaltLuaEngine engine;
+    private ILuaEngine engine;
     private ContentServiceImpl contentService;
     private StorageServiceImpl storageService;
     private DatapackServiceImpl datapackService;
 
     @BeforeEach
     public void setUp() {
-        engine = new CobaltLuaEngine();
+        engine = LuaEngineFactory.create(false);
         contentService = new ContentServiceImpl();
         storageService = new StorageServiceImpl(new File("build/tmp/test_storage.json"));
         datapackService = new DatapackServiceImpl();
@@ -34,6 +36,25 @@ public class ContentBuilderTest {
         file.deleteOnExit();
         Files.writeString(file.toPath(), content);
         return file;
+    }
+
+    @Test
+    public void tagHelpersRegisterFilesWithDotAndCallSyntax() {
+        engine.executeString(
+            "tag.item('c:gems', {'luatweaker:custom_ruby'})\n" +
+            "tag('block', 'minecraft:beacon_base_blocks', {'luatweaker:ruby_block'})",
+            "tag_helpers"
+        );
+        assertNull(engine.getAndClearLastExecutionError());
+
+        var files = datapackService.getVirtualFiles();
+        assertTrue(files.containsKey("data/c/tags/item/gems.json"),
+            "tag.item dot call must register the item tag: " + files.keySet());
+        assertTrue(files.containsKey("data/minecraft/tags/block/beacon_base_blocks.json"),
+            "tag(...) call form must register the block tag: " + files.keySet());
+        assertTrue(files.get("data/c/tags/item/gems.json").contains("luatweaker:custom_ruby"));
+        assertTrue(files.get("data/minecraft/tags/block/beacon_base_blocks.json")
+                .contains("luatweaker:ruby_block"));
     }
 
     @Test

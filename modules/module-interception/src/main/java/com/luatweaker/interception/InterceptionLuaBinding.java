@@ -3,56 +3,69 @@ package com.luatweaker.interception;
 import com.luatweaker.api.interception.IInterceptionService;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
+import com.luatweaker.core.bind.LuaBinder;
 import org.jetbrains.annotations.NotNull;
 
-public class InterceptionLuaBinding {
+public final class InterceptionLuaBinding {
+    private static final int DEFAULT_ANVIL_EXP_COST = 1;
+    private static final int DEFAULT_TRADE_MAX_USES = 16;
+    private static final int DEFAULT_TRADE_XP = 2;
+
+    private InterceptionLuaBinding() {}
+
     public static void registerBindings(@NotNull ILuaEngine engine, @NotNull IInterceptionService interceptionService) {
         ILuaTable globals = engine.getGlobalEnvironment();
         ILuaTable table = engine.createTable();
 
         table.rawset("AddAnvilRecipe", args -> {
-            if (args.length >= 5) {
-                interceptionService.addAnvilRecipe(
-                    args[1].asString(),
-                    args[2].asString(),
-                    args[3].asString(),
-                    args[4].asString(),
-                    args.length >= 6 ? args[5].asInt() : 1
-                );
+            int off = LuaBinder.getOffset(args);
+            if (args.length - off < 4) {
+                throw new IllegalArgumentException(
+                    "AddAnvilRecipe requires recipeId, leftInput, rightInput, outputItem");
             }
+            interceptionService.addAnvilRecipe(
+                args[off].asString(),
+                args[off + 1].asString(),
+                args[off + 2].asString(),
+                args[off + 3].asString(),
+                args.length - off >= 5 ? args[off + 4].asInt() : DEFAULT_ANVIL_EXP_COST
+            );
             return engine.nilValue();
         });
 
         table.rawset("AddBrewingRecipe", args -> {
-            if (args.length >= 5) {
-                interceptionService.addBrewingRecipe(
-                    args[1].asString(),
-                    args[2].asString(),
-                    args[3].asString(),
-                    args[4].asString()
-                );
+            int off = LuaBinder.getOffset(args);
+            if (args.length - off < 4) {
+                throw new IllegalArgumentException(
+                    "AddBrewingRecipe requires recipeId, inputPotion, catalystItem, outputPotion");
             }
+            interceptionService.addBrewingRecipe(
+                args[off].asString(),
+                args[off + 1].asString(),
+                args[off + 2].asString(),
+                args[off + 3].asString()
+            );
             return engine.nilValue();
         });
 
         table.rawset("AddVillagerTrade", args -> {
-            if (args.length >= 6) {
-                interceptionService.addVillagerTrade(
-                    args[1].asString(),
-                    args[2].asInt(),
-                    args[3].asString(),
-                    args[4].asString(),
-                    args.length >= 6 ? args[5].asInt() : 16,
-                    args.length >= 7 ? args[6].asInt() : 2
-                );
+            int off = LuaBinder.getOffset(args);
+            if (args.length - off < 4) {
+                throw new IllegalArgumentException(
+                    "AddVillagerTrade requires profession, level, buyItem, sellItem");
             }
+            interceptionService.addVillagerTrade(
+                args[off].asString(),
+                args[off + 1].asInt(),
+                args[off + 2].asString(),
+                args[off + 3].asString(),
+                args.length - off >= 5 ? args[off + 4].asInt() : DEFAULT_TRADE_MAX_USES,
+                args.length - off >= 6 ? args[off + 5].asInt() : DEFAULT_TRADE_XP
+            );
             return engine.nilValue();
         });
 
-        table.rawset("ClearInterceptions", args -> {
-            interceptionService.clearPendingInterceptions();
-            return engine.nilValue();
-        });
+        table.rawset("GetRegistrationCount", args -> engine.wrapNumber(interceptionService.getRegistrationCount()));
 
         globals.rawset("Interception", table);
         engine.registerService("InterceptionService", table);

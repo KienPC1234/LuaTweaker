@@ -98,6 +98,30 @@ public class DimensionServiceImpl implements IDimensionService {
     }
 
     /**
+     * Runtime portal consumer: when a player uses a block, the platform
+     * block-use path calls this with the used block id. A registered portal
+     * source teleports through {@link #teleportTo} (the same code path as the
+     * Lua {@code Dimensions:TeleportTo} call); an unregistered id is a no-op
+     * returning false.
+     *
+     * <p>No nether-style frame validation is performed: no frame-check helper
+     * exists in the codebase, so any use of the portal block teleports. Mod
+     * authors wanting frame gates can check block state in Lua instead.
+     */
+    public boolean tryUsePortal(@NotNull IEntity player, @NotNull String blockId) {
+        if (player == null) {
+            throw new IllegalArgumentException("tryUsePortal requires a valid player entity");
+        }
+        validateId("blockId", blockId);
+        String target = portals.get(blockId);
+        if (target == null) {
+            return false;
+        }
+        teleportTo(player, target);
+        return true;
+    }
+
+    /**
      * Sets a block picker callback: {@code function(x, z, surfaceY, minY) -> {[y] = blockId, ...}}.
      * Returned overrides replace the default column fill at those Y positions
      * (use "minecraft:air" to carve caves).

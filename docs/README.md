@@ -1,6 +1,6 @@
 # LuaTweaker Documentation Portal (`docs/`)
 
-LuaTweaker is a high-performance Lua 5.1/Luau scripting engine for Minecraft 1.21.1 (NeoForge).
+LuaTweaker is a high-performance Lua 5.4 (luava) scripting engine for Minecraft 1.21.1 (NeoForge).
 
 > **LuaTweaker Architecture Style:**
 > **TƯ DUY LẮP RÁP (MODULE & BUILDER) + NGỮ PHÁP TỰ NHIÊN CỦA LUA**
@@ -33,3 +33,12 @@ LuaTweaker is a high-performance Lua 5.1/Luau scripting engine for Minecraft 1.2
 * [**COMMANDS.md**](COMMANDS.md) — In-game diagnostic commands (`/lt hand`, `/lt dump`, `/lt doctor`, `/lt reload`).
 * [**TROUBLESHOOTING.md**](TROUBLESHOOTING.md) — Log diagnostics (`lua/logs/luatweaker.log`), error tracebacks, and loop limit settings.
 * [**ADDON_DEVELOPER_GUIDE.md**](ADDON_DEVELOPER_GUIDE.md) — Third-party Java mod plugin interface (`@LuaTweakerPlugin`, `ILuaTweakerPlugin`).
+
+### Legacy / Pending Rewrite (⚠️ stale — describes an older API surface, do not implement from these)
+* [**GUI_GRAPHICS.md**](GUI_GRAPHICS.md) — Historical GUI draft (`GuiGraphicsAPI.java` does not exist; real API is `GuiService`).
+* [**SHADER_API.md**](SHADER_API.md) — No `ShaderAPI` exists in the codebase.
+* [**NBT_HELPERS.md**](NBT_HELPERS.md) — The `nbt`/`enums` globals do not exist (real NBT path: `NbtCodec`).
+* [**SCHEDULER_AND_EFFECTS.md**](SCHEDULER_AND_EFFECTS.md) — Predates the `Task` service and bootstrap conventions.
+* [**MOD_INTEGRATIONS.md**](MOD_INTEGRATIONS.md) — `mods`/`registry`/`jei`/`http`/`unsafe` globals predate the sandbox and `require()` system.
+* [**WORLD_AND_BOSSBAR.md**](WORLD_AND_BOSSBAR.md) — `bossbar`/`world` globals predate the current APIs.
+* [**LTVM_DOCUMENTATION.md**](LTVM_DOCUMENTATION.md) — Architecture overview; VM details predate the Luava migration.

@@ -5,7 +5,7 @@ import com.luatweaker.api.vm.*;
 import com.luatweaker.core.logger.AsyncFileLogger;
 import com.luatweaker.core.lsp.LtvmStubExporter;
 import com.luatweaker.core.lsp.LtvmStubGenerator;
-import com.luatweaker.core.vm.CobaltLuaEngine;
+import com.luatweaker.core.vm.LuaEngineFactory;
 import com.luatweaker.platform.command.LuaTweakerCommandRegistry;
 import com.luatweaker.platform.config.LuaTweakerConfig;
 import com.luatweaker.platform.recipe.InterceptionHelper;
@@ -40,9 +40,11 @@ public class LuaTweakerMod {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LuaTweakerMod.class);
 
-    private static ILuaEngine activeEngine;
-    private static com.luatweaker.network.NetworkServiceImpl serverNetworkService;
-    private static com.luatweaker.network.NetworkServiceImpl clientNetworkService;
+    // Written on the server/client tick thread and read by the render thread, network handlers
+    // and worldgen workers; publish them safely.
+    private static volatile ILuaEngine activeEngine;
+    private static volatile com.luatweaker.network.NetworkServiceImpl serverNetworkService;
+    private static volatile com.luatweaker.network.NetworkServiceImpl clientNetworkService;
 
     public static ILuaEngine getActiveEngine() {
         return activeEngine;
@@ -167,7 +169,7 @@ public class LuaTweakerMod {
     }
 
     private void loadStartupLuaMods(File luaDir) {
-        ILuaEngine startupEngine = new CobaltLuaEngine(isDebugEnabled());
+        ILuaEngine startupEngine = LuaEngineFactory.create(isDebugEnabled());
         startupEngine.setLuaDirectory(luaDir);
         com.luatweaker.platform.bootstrap.LuaServiceBootstrap.registerAllServices(
                 startupEngine, contentService, storageService, datapackService, new NeoForgeRecipeManager()
@@ -188,6 +190,13 @@ public class LuaTweakerMod {
 
         // Kick off declarative update checks for mods that declare update_url.
         com.luatweaker.update.UpdateServiceImpl.checkAll();
+
+        // Publish the engine that actually loaded the mods. Without this a dedicated client
+        // (and the first dedicated-server reload) ends up ticking/dispatching a different,
+        // empty VM: no HUD listeners, no RemoteEvent handlers, no teardown on reload.
+        if (activeEngine == null) {
+            activeEngine = startupEngine;
+        }
     }
 
     /**
@@ -207,7 +216,7 @@ public class LuaTweakerMod {
     }
 
     private void onClientSetup(final net.neoforged.fml.event.lifecycle.FMLClientSetupEvent event) {
-        ILuaEngine engine = activeEngine != null ? activeEngine : new CobaltLuaEngine(isDebugEnabled());
+        ILuaEngine engine = activeEngine != null ? activeEngine : LuaEngineFactory.create(isDebugEnabled());
         engine.setLuaDirectory(getLuaDirectory());
         activeEngine = engine;
 
@@ -227,7 +236,14 @@ public class LuaTweakerMod {
         com.luatweaker.interception.InterceptionServiceImpl interceptionService = new com.luatweaker.interception.InterceptionServiceImpl();
         com.luatweaker.interception.InterceptionLuaBinding.registerBindings(engine, interceptionService);
 
-        com.luatweaker.network.NetworkServiceImpl clientNetService = new com.luatweaker.network.NetworkServiceImpl(engine);
+        // Reuse the service that loaded the LuaMods. Creating a fresh one here would drop
+        // every RemoteEvent/RemoteFunction registered during startup, so OnClientEvent
+        // handlers would silently never fire on a multiplayer client.
+        Object existingNetwork = com.luatweaker.core.service.LuaServiceRegistry.get("NetworkServiceImpl");
+        com.luatweaker.network.NetworkServiceImpl clientNetService =
+                existingNetwork instanceof com.luatweaker.network.NetworkServiceImpl existing
+                        ? existing
+                        : new com.luatweaker.network.NetworkServiceImpl(engine);
         setClientNetworkService(clientNetService);
         com.luatweaker.network.NetworkLuaBinding.registerBindings(engine, clientNetService);
         com.luatweaker.events.EventLuaBinding.registerBindings(engine);
@@ -429,7 +445,18 @@ public class LuaTweakerMod {
         }
 
         NeoForgeRecipeManager recipeManager = new NeoForgeRecipeManager();
-        activeEngine = new CobaltLuaEngine(debugMode);
+        ILuaEngine previousEngine = activeEngine;
+        if (previousEngine != null) {
+            // OnDisable must run on the VM that owns the closures, before it is shut down.
+            com.luatweaker.core.mod.LuaModManager.fireModTeardownHooks(previousEngine);
+            // Drop tweens pinned to the old VM before it is shut down; their per-frame writes
+            // would otherwise touch tables from a dead engine.
+            com.luatweaker.client.TweenServiceImpl.clearAll();
+            // Stop suspended task coroutines before replacing the VM, otherwise they keep
+            // holding Lua closures and can be resumed by a stray delay callback after reload.
+            previousEngine.shutdown();
+        }
+        activeEngine = LuaEngineFactory.create(debugMode);
         ILuaEngine engine = activeEngine;
         engine.setLuaDirectory(getLuaDirectory());
 

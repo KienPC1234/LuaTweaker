@@ -31,6 +31,9 @@ import java.util.Optional;
  */
 public final class DimensionMobSpawner {
 
+    // Engine-level tuning, not per-mod config: DimensionConfig carries only
+    // terrain/visual/spawn data (no spawner interval field), so the tick
+    // interval lives here as a named constant instead of a magic number.
     private static final int SPAWN_INTERVAL = 100;
 
     private static int tickCounter = 0;

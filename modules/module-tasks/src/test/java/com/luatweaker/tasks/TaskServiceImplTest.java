@@ -1,8 +1,9 @@
 package com.luatweaker.tasks;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +16,7 @@ public class TaskServiceImplTest {
 
     @BeforeEach
     public void setUp() {
-        engine = new CobaltLuaEngine(true);
+        engine = LuaEngineFactory.create(true);
         taskService = new TaskServiceImpl();
         TaskLuaBinding.registerBindings(engine, taskService);
     }

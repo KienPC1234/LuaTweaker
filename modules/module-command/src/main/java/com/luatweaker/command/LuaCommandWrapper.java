@@ -9,7 +9,6 @@ import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaFunction;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import com.luatweaker.entities.EntitiesLuaBinding;
 import org.jetbrains.annotations.NotNull;
 
@@ -119,8 +118,7 @@ public final class LuaCommandWrapper implements ILuaTweakerCommand {
                     buildArgsTable(engine, args),
                     engine.wrapString(rawTail)
             );
-            if (engine instanceof CobaltLuaEngine cobaltEngine
-                    && cobaltEngine.getAndClearLastExecutionError() != null) {
+            if (engine.getAndClearLastExecutionError() != null) {
                 // The handler raised a Lua error: the engine already logged it loudly.
                 return 0;
             }

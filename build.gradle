@@ -8,7 +8,6 @@ allprojects {
 
     repositories {
         mavenCentral()
-        maven { url = 'https://maven.squiddev.cc' }
         maven { url = 'https://maven.neoforged.net/releases' }
         maven { url = 'https://modmaven.dev' }
         maven { url = 'https://maven.blamejared.com/' }

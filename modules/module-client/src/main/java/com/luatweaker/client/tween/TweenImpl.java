@@ -40,21 +40,31 @@ public class TweenImpl {
         EasingHelper.EasingDirection tDirection = EasingHelper.EasingDirection.OUT;
         
         if (tweenInfo != null) {
+            // The shipped TweenInfo.new writes Time; older/hand-built tables use Duration.
             ILuaValue durVal = tweenInfo.rawget("Duration");
+            if (durVal == null || !durVal.isNumber()) {
+                durVal = tweenInfo.rawget("Time");
+            }
             if (durVal != null && durVal.isNumber()) tDuration = durVal.asDouble();
             
             ILuaValue styleVal = tweenInfo.rawget("EasingStyle");
             if (styleVal != null && styleVal.isString()) {
                 try {
                     tStyle = EasingHelper.EasingStyle.valueOf(styleVal.asString().toUpperCase());
-                } catch (Exception ignored) {}
+                } catch (IllegalArgumentException e) {
+                    LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                            "Unknown Tween EasingStyle '" + styleVal.asString() + "', using LINEAR: " + e.getMessage());
+                }
             }
             
             ILuaValue dirVal = tweenInfo.rawget("EasingDirection");
             if (dirVal != null && dirVal.isString()) {
                 try {
                     tDirection = EasingHelper.EasingDirection.valueOf(dirVal.asString().toUpperCase());
-                } catch (Exception ignored) {}
+                } catch (IllegalArgumentException e) {
+                    LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                            "Unknown Tween EasingDirection '" + dirVal.asString() + "', using OUT: " + e.getMessage());
+                }
             }
         }
         
@@ -109,6 +119,14 @@ public class TweenImpl {
     
     public void setBoundTable(ILuaTable table) {
         this.boundTable = table;
+    }
+
+    /**
+     * Called every frame. Writes into Lua tables, so it must run under the engine lock; the
+     * render thread calls this instead of {@link #tick(double)} directly.
+     */
+    public void tickGuarded(double deltaTime) {
+        engine.runExclusive(() -> tick(deltaTime));
     }
 
     // Called every frame

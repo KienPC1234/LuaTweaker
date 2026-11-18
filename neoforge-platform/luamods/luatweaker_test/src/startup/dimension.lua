@@ -74,35 +74,21 @@ Content.NewBlock("crystal_leaves")
     :CreativeTab("arcane_tab")
     :Register()
 
--- ==== PORTAL BLOCK: right-click teleports into the Crystal Realm ====
-local function makePortalBlock(blockId, dimensionId, message)
+-- ==== PORTAL BLOCK: right-click teleports via Dimensions:RegisterPortal ====
+-- The engine consumes the portal mapping at runtime (BlockRegistrar): using
+-- the block teleports the player to the mapped dimension, no OnRightClick
+-- needed here. Arrival feedback lives in the DimensionEntered listener below.
+local function makePortalBlock(blockId)
     Content.NewBlock(blockId)
         :Hardness(-1)
         :Resistance(6000000.0)
         :LightLevel(15)
         :SoundType("GLASS")
         :CreativeTab("arcane_tab")
-        :OnRightClick(function(player, blockState)
-            local info = Dimensions:GetDimension(dimensionId)
-            local target = info and info.portals and info.portals[blockId]
-            if not target then
-                player:sendActionBar("§cThe portal is inert: dimension '" .. dimensionId .. "' is not registered.")
-                return true
-            end
-            local ok, err = pcall(function()
-                Dimensions:TeleportTo(player, target)
-            end)
-            if ok then
-                player:sendActionBar(message)
-            else
-                player:sendActionBar("§c" .. tostring(err))
-            end
-            return true
-        end)
         :Register()
 end
 
-makePortalBlock("luatweaker:crystal_portal", dimensionId, "§bEntering the Crystal Realm...")
+makePortalBlock("luatweaker:crystal_portal")
 
 -- ==== DIMENSION BIOMES (datapack JSON via the virtual datapack) ====
 Datapack:AddData("luatweaker/worldgen/biome/crystal_plains.json", [[{
@@ -412,7 +398,7 @@ end)
 local skylandsId = realm.skylands_id or "luatweaker:crystal_skylands"
 local skylands = cfg.crystal_skylands or {}
 
-makePortalBlock("luatweaker:crystal_sky_portal", skylandsId, "§dAscending to the Crystal Skylands...")
+makePortalBlock("luatweaker:crystal_sky_portal")
 
 Datapack:AddData("luatweaker/worldgen/biome/skyland_plains.json", [[{
   "has_precipitation": true,

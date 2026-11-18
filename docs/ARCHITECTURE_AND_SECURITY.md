@@ -11,7 +11,7 @@ The core design identity of LuaTweaker is built upon:
 
 1. **Content & Recipe Registration:** Chainable Builder DSLs ending with `:Register()`. Zero unanchored global magic.
 2. **Runtime Logic & Signals:** Event-driven architecture using `Signal` objects and explicit `require("LuaTweaker.ModuleName")` imports.
-3. **Lua-Native Types:** Clean `Vector3`, `Vector2`, `Color3`, tables, and first-class functions optimized for Cobalt VM execution.
+3. **Lua-Native Types:** Clean `Vector3`, `Vector2`, `Color3`, tables, and first-class functions optimized for the Luava VM.
 
 ```
 [ LUA-TWEAKER ARCHITECTURE STYLE ]
@@ -35,7 +35,7 @@ LuaTweaker enforces strict Single Responsibility Principle (SRP) and Dependency 
 ```
 common-api (Pure Java 21 Interfaces, zero external dependencies)
     ^
-core-engine (Cobalt 0.9.9 VM Wrapper, Logger, EmmyLua Stub Generator)
+core-engine (Luava 0.2.5 VM wrapper, Logger, EmmyLua Stub Generator)
     ^
 modules/module-* (Domain-specific bindings: recipes, entities, events, tasks, math, client, network)
     ^

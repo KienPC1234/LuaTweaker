@@ -1,5 +1,7 @@
 # 🧪 Easy NBT Manipulation Library (`nbt`) & Enums (`enums`)
 
+> ⚠️ **STALE (verified 2026-11-18):** the `nbt`/`enums` globals do not exist in the bootstrap. The real NBT path is `NbtCodec` on the platform side. Pending rewrite or removal — do not implement from this document.
+
 ## 1. 🏷️ NBT & SNBT Helper Library (`nbt`)
 
 LuaTweaker provides the global `nbt` library to convert seamlessly between intuitive Lua tables and Minecraft SNBT (Stringified NBT) data structures without writing complex JSON syntax.

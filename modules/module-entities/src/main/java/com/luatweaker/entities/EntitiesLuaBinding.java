@@ -2,10 +2,17 @@ package com.luatweaker.entities;
 
 import com.luatweaker.api.entity.IEntity;
 import com.luatweaker.api.entity.IPlayer;
+import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.vm.*;
 import com.luatweaker.core.bind.LuaBinder;
+import com.luatweaker.core.logger.AsyncFileLogger;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class EntitiesLuaBinding {
+
+    private static final String DYNAMIC_GET_GLOBAL = "__luatweaker_dynamic_get";
+    private static final String DYNAMIC_SET_GLOBAL = "__luatweaker_dynamic_set";
 
     static {
         // Any IEntity returned from a bound method becomes a full entity Lua table.
@@ -78,23 +85,18 @@ public class EntitiesLuaBinding {
                     if (existing != null && !existing.isNil()) {
                         return existing;
                     }
-                    
-                    // Fallback to DynamicJavaProxy for unknown properties (e.g. Modded fields)
+
+                    // Fallback to the engine's dynamic Java bridge for unknown properties
+                    // (e.g. modded fields). Lua indexing triggers the proxy __index metamethod,
+                    // which translates the property name into a Java getter call.
                     Object rawJavaObj = entity.getRawEntity();
-                    if (rawJavaObj != null && engine instanceof com.luatweaker.core.vm.CobaltLuaEngine cobaltEngine) {
-                        org.squiddev.cobalt.LuaUserdata proxy = com.luatweaker.core.bind.DynamicJavaProxy.create(
-                                cobaltEngine.getCobaltState(), rawJavaObj);
-                        try {
-                            org.squiddev.cobalt.LuaValue result = org.squiddev.cobalt.OperationHelper.getTable(
-                                    cobaltEngine.getCobaltState(), proxy, org.squiddev.cobalt.ValueFactory.valueOf(key));
-                            if (!result.isNil()) {
-                                return new com.luatweaker.core.vm.CobaltLuaValue(result);
-                            }
-                        } catch (org.squiddev.cobalt.LuaError | org.squiddev.cobalt.UnwindThrowable e) {
-                            // Ignore and fall through to nil
+                    if (rawJavaObj != null) {
+                        ILuaValue result = readDynamicProperty(engine, rawJavaObj, key);
+                        if (result != null) {
+                            return result;
                         }
                     }
-                    
+
                     return engine.nilValue();
                 }
             }
@@ -127,25 +129,14 @@ public class EntitiesLuaBinding {
                         table.rawset(key, val);
                         return engine.nilValue();
                     }
-                    
-                    // 2. Fallback to DynamicJavaProxy setter
+
+                    // 2. Fallback to the dynamic Java bridge setter. Lua assignment triggers
+                    // the proxy __newindex metamethod, which invokes the Java setter.
                     Object rawJavaObj = entity.getRawEntity();
-                    if (rawJavaObj != null && engine instanceof com.luatweaker.core.vm.CobaltLuaEngine cobaltEngine) {
-                        org.squiddev.cobalt.LuaUserdata proxy = com.luatweaker.core.bind.DynamicJavaProxy.create(
-                                cobaltEngine.getCobaltState(), rawJavaObj);
-                        try {
-                            org.squiddev.cobalt.LuaValue cobaltVal = org.squiddev.cobalt.Constants.NIL;
-                            if (val instanceof com.luatweaker.core.vm.CobaltLuaValue cobaltWrapper) {
-                                cobaltVal = cobaltWrapper.getCobaltValue();
-                            }
-                            org.squiddev.cobalt.OperationHelper.setTable(
-                                    cobaltEngine.getCobaltState(), proxy, org.squiddev.cobalt.ValueFactory.valueOf(key), cobaltVal);
-                            return engine.nilValue();
-                        } catch (org.squiddev.cobalt.LuaError | org.squiddev.cobalt.UnwindThrowable e) {
-                            // Ignore and fall through
-                        }
+                    if (rawJavaObj != null && writeDynamicProperty(engine, rawJavaObj, key, val)) {
+                        return engine.nilValue();
                     }
-                    
+
                     // 3. Just set it on the table
                     table.rawset(key, val);
                 }
@@ -192,6 +183,93 @@ public class EntitiesLuaBinding {
             }
         }
         return null;
+    }
+
+    /**
+     * Reads an unknown property through the engine's dynamic Java bridge. Lua's indexing
+     * operator dispatches to the proxy {@code __index} metamethod, which resolves the
+     * property name to a Java getter in an engine-neutral way.
+     *
+     * @return the property value, or {@code null} when absent or when the bridge failed;
+     *         bridge failures are logged by the engine
+     */
+    @Nullable
+    public static ILuaValue readDynamicProperty(@NotNull ILuaEngine engine,
+                                                @NotNull Object rawJavaObj,
+                                                @NotNull String key) {
+        ILuaValue wrapped;
+        ILuaValue getFn;
+        try {
+            wrapped = engine.wrapDynamicJavaObject(rawJavaObj);
+            getFn = dynamicHelper(engine, DYNAMIC_GET_GLOBAL,
+                    "function(obj, key) return obj[key] end");
+        } catch (RuntimeException e) {
+            AsyncFileLogger.get().warn(LogStage.RUNTIME_ERROR,
+                    "[EntitiesLuaBinding] Dynamic bridge read setup failed for '" + key + "': " + e.getMessage());
+            return null;
+        }
+        if (wrapped == null || wrapped.isNil() || getFn == null || getFn.isNil()) {
+            return null;
+        }
+        ILuaValue result = engine.callFunction(getFn, wrapped, engine.wrapString(key));
+        return (result == null || result.isNil()) ? null : result;
+    }
+
+    /**
+     * Writes an unknown property through the engine's dynamic Java bridge. Lua's assignment
+     * dispatches to the proxy {@code __newindex} metamethod. A {@code pcall} wrapper reports
+     * a failed setter instead of silently falling through, so callers can keep the old
+     * "set on the Lua table when the bridge rejects the write" behavior.
+     *
+     * @return {@code true} when the bridge accepted the write without raising an error
+     */
+    public static boolean writeDynamicProperty(@NotNull ILuaEngine engine,
+                                               @NotNull Object rawJavaObj,
+                                               @NotNull String key,
+                                               @NotNull ILuaValue val) {
+        ILuaValue wrapped;
+        ILuaValue setFn;
+        try {
+            wrapped = engine.wrapDynamicJavaObject(rawJavaObj);
+            setFn = dynamicHelper(engine, DYNAMIC_SET_GLOBAL,
+                    "function(obj, key, value)\n"
+                            + "    local ok, err = pcall(function() obj[key] = value end)\n"
+                            + "    if ok then return true end\n"
+                            + "    return false, tostring(err)\n"
+                            + "end");
+        } catch (RuntimeException e) {
+            AsyncFileLogger.get().warn(LogStage.RUNTIME_ERROR,
+                    "[EntitiesLuaBinding] Dynamic bridge write setup failed for '" + key + "': " + e.getMessage());
+            return false;
+        }
+        if (wrapped == null || wrapped.isNil() || setFn == null || setFn.isNil()) {
+            return false;
+        }
+        ILuaValue[] results = engine.callFunctionMulti(setFn, wrapped, engine.wrapString(key), val);
+        if (results.length == 0 || !results[0].asBoolean()) {
+            String detail = results.length > 1 ? results[1].asString() : "unknown error";
+            AsyncFileLogger.get().warn(LogStage.RUNTIME_ERROR,
+                    "[EntitiesLuaBinding] Dynamic bridge write failed for '" + key + "': " + detail);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Lazily installs a small indexing helper in the engine's globals. Wrapping the dynamic
+     * bridge this way keeps these bindings engine-neutral: no Cobalt or luava symbols are
+     * referenced, and both engines dispatch {@code obj[key]} through the same metamethods.
+     */
+    private static ILuaValue dynamicHelper(@NotNull ILuaEngine engine,
+                                            @NotNull String globalName,
+                                            @NotNull String source) {
+        ILuaTable globals = engine.getGlobalEnvironment();
+        ILuaValue helper = globals.rawget(globalName);
+        if (helper == null || helper.isNil()) {
+            engine.executeString(globalName + " = " + source, "luatweaker_dynamic_bridge");
+            helper = globals.rawget(globalName);
+        }
+        return helper;
     }
 
     public static void registerBindings(ILuaEngine engine) {

@@ -1,8 +1,8 @@
 package com.luatweaker.core.bind;
 
+import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.core.logger.AsyncFileLogger;
-import com.luatweaker.core.vm.CobaltLuaEngine;
-import com.luatweaker.core.vm.CobaltLuaValue;
+import com.luatweaker.core.vm.LuaEngineFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 
@@ -168,6 +168,13 @@ public class DynamicJavaProxyTest {
         public void setAmount(int amount) { this.amount = amount; }
     }
 
+    public static class OverloadProbe {
+        public String pick() { return "zero"; }
+        public String pick(int value) { return "int:" + value; }
+        public String pick(double value) { return "double:" + value; }
+        public String pick(String value) { return "string:" + value; }
+    }
+
     /**
      * Regression: property access on a proxy must return the GETTER VALUE, not a
      * wrapped method function. The heuristic remapper matches "Entity" -> getEntity(),
@@ -177,10 +184,8 @@ public class DynamicJavaProxyTest {
      */
     @Test
     void testPropertyAccessReturnsValueNotMethodFunction() {
-        CobaltLuaEngine engine = new CobaltLuaEngine();
-        org.squiddev.cobalt.LuaState state = engine.getCobaltState();
-        org.squiddev.cobalt.LuaUserdata proxy = DynamicJavaProxy.create(state, new GetterProbe());
-        engine.getGlobalEnvironment().rawset("_proxy", new CobaltLuaValue(proxy));
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        engine.getGlobalEnvironment().rawset("_proxy", engine.wrapDynamicJavaObject(new GetterProbe()));
 
         engine.executeString(
             "assert(type(_proxy.Entity) == 'string', 'Entity property must be a string, got ' .. type(_proxy.Entity))\n" +
@@ -195,5 +200,21 @@ public class DynamicJavaProxyTest {
             "assert(_proxy:getAmount() == 40, 'getAmount method call must return value')",
             "proxy_getter_repro"
         );
+        assertNull(engine.getAndClearLastExecutionError());
+    }
+
+    @Test
+    void testMethodCallSelectsOverloadByArguments() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        engine.getGlobalEnvironment().rawset("_proxy", engine.wrapDynamicJavaObject(new OverloadProbe()));
+
+        engine.executeString(
+            "assert(_proxy:pick() == 'zero')\n" +
+            "assert(_proxy:pick(42) == 'int:42')\n" +
+            "assert(_proxy.pick(_proxy, 4.5) == 'double:4.5')\n" +
+            "assert(_proxy:pick('abc') == 'string:abc')",
+            "proxy_overload_repro"
+        );
+        assertNull(engine.getAndClearLastExecutionError());
     }
 }

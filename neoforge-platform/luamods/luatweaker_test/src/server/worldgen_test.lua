@@ -24,13 +24,84 @@ Worldgen:AddOreBiomeFiltered("luatweaker_test:test_ore", "minecraft:overworld",
 -- Vegetation
 Worldgen:AddVegetation("minecraft:poppy", 0.1, { "minecraft:plains" })
 
+-- Vegetation patch variant (random_patch shape, not flower)
+Worldgen:AddVegetationPatch("minecraft:short_grass", 0.2, { "minecraft:plains" })
+
 -- Summary
 local mods = Worldgen:GetModifications()
 check("GetModifications returns table", type(mods) == "table")
+check("GetModifications counts vegetation", mods["vegetation"] == 2)
 
 -- Remove vanilla ore
 local removed = Worldgen:RemoveOre("minecraft:coal_ore", "minecraft:overworld")
 check("RemoveOre returns boolean", type(removed) == "boolean")
+
+-- Data-driven registries: custom removal table + custom dimension tag
+local regOk = Worldgen:RegisterRemovalFeatures("luatweaker_test:test_ore", { "luatweaker_test:test_ore_upper" })
+check("RegisterRemovalFeatures returns true", regOk == true)
+local dimOk = Worldgen:RegisterDimensionBiomeTag("luatweaker_test:deep_dark", "#minecraft:is_overworld")
+check("RegisterDimensionBiomeTag returns true", dimOk == true)
+local dims = Worldgen:GetKnownDimensions()
+check("GetKnownDimensions returns table", type(dims) == "table")
+
+-- ModifyBiome: explicit add + remove (emits neoforge biome-modifier JSON)
+local beforeModify = Worldgen:GetModifications()
+Worldgen:ModifyBiome("minecraft:plains", {
+    biomes = { "minecraft:plains", "minecraft:forest" },
+    add = { { feature = "luatweaker_test:test_vein", step = "underground_ores" } },
+    remove = { "minecraft:ore_dirt" },
+})
+local afterModify = Worldgen:GetModifications()
+check("ModifyBiome increments biomeModifiers", afterModify["biomeModifiers"] == beforeModify["biomeModifiers"] + 1)
+
+-- AddFeature: custom ore-like feature (configured + placed + modifier JSON)
+local beforeFeature = Worldgen:GetModifications()
+Worldgen:AddFeature("luatweaker_test:test_vein", {
+    block = "luatweaker_test:test_ore",
+    biomes = { "minecraft:plains" },
+    count = 10,
+    size = 8,
+    minHeight = -64,
+    maxHeight = 32,
+})
+local afterFeature = Worldgen:GetModifications()
+check("AddFeature increments customFeatures", afterFeature["customFeatures"] == beforeFeature["customFeatures"] + 1)
+
+-- Error paths must fail loudly (no silent no-ops)
+local okBlank = pcall(function()
+    Worldgen:ModifyBiome("", { biomes = { "minecraft:plains" }, remove = { "minecraft:ore_dirt" } })
+end)
+check("ModifyBiome rejects blank biomeId", not okBlank)
+
+local okStep = pcall(function()
+    Worldgen:AddFeature("luatweaker_test:bad_vein", {
+        block = "luatweaker_test:test_ore",
+        biomes = { "minecraft:plains" },
+        step = "not_a_step",
+    })
+end)
+check("AddFeature rejects unknown step", not okStep)
+
+local okRange = pcall(function()
+    Worldgen:AddFeature("luatweaker_test:bad_vein", {
+        block = "luatweaker_test:test_ore",
+        biomes = { "minecraft:plains" },
+        minHeight = 32,
+        maxHeight = -64,
+    })
+end)
+check("AddFeature rejects inverted height range", not okRange)
+
+local okReg = pcall(function()
+    Worldgen:RegisterRemovalFeatures("luatweaker_test:test_ore", {})
+end)
+check("RegisterRemovalFeatures rejects empty features", not okReg)
+
+-- GetBiome is explicitly not supported (needs a PAL capability that does not exist yet)
+local okBiome = pcall(function()
+    Worldgen:GetBiome("minecraft:plains")
+end)
+check("GetBiome reports not-supported loudly", not okBiome)
 
 -- Clear
 Worldgen:ClearAll()

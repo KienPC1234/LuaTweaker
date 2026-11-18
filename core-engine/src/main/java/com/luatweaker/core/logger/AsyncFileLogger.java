@@ -2,13 +2,13 @@ package com.luatweaker.core.logger;
 
 import com.luatweaker.api.log.ILuaTweakerLog;
 import com.luatweaker.api.log.LogStage;
-import org.squiddev.cobalt.LuaState;
-import org.squiddev.cobalt.debug.DebugHelpers;
+import com.luatweaker.core.mod.LuaModPathSecurity;
 
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -29,12 +29,16 @@ public class AsyncFileLogger implements ILuaTweakerLog {
     private static AsyncFileLogger instance;
 
     public static synchronized AsyncFileLogger get() {
-        if (instance == null) instance = new AsyncFileLogger();
+        if (instance == null || !instance.running) instance = new AsyncFileLogger();
         return instance;
     }
 
     // -- Internals ---
-    private final BlockingQueue<String> queue = new LinkedBlockingQueue<>();
+    /** Bounded so a log flood cannot exhaust the heap; overflow is counted and reported. */
+    private static final int MAX_QUEUE_SIZE = 20_000;
+    private final BlockingQueue<String> queue = new LinkedBlockingQueue<>(MAX_QUEUE_SIZE);
+    private final java.util.concurrent.atomic.AtomicLong droppedLines =
+            new java.util.concurrent.atomic.AtomicLong();
     private final Thread workerThread;
     private volatile boolean running = true;
     private volatile boolean debugEnabled = false;
@@ -48,6 +52,18 @@ public class AsyncFileLogger implements ILuaTweakerLog {
     private static final String MODS_LOG_DIR = "logs/luatweaker/mods";
 
     private final File logFile;
+
+    /**
+     * Engine-neutral call-site data. Replaces the old Cobalt-only LuaState argument.
+     */
+    public interface CallSiteProvider {
+        String modId();
+
+        String location();
+    }
+
+    /** Simple immutable {@link CallSiteProvider} for callers without an engine object. */
+    public record CallSite(String modId, String location) implements CallSiteProvider {}
 
     private AsyncFileLogger() {
         this.logFile = new File(LOG_DIR, LATEST_LOG);
@@ -76,21 +92,25 @@ public class AsyncFileLogger implements ILuaTweakerLog {
 
     public void initModLog(String modId) {
         if (modId == null || modId.isBlank()) return;
+        String safeModId = LuaModPathSecurity.validateModId(modId);
         File modsLogDir = new File(MODS_LOG_DIR);
         if (!modsLogDir.exists()) modsLogDir.mkdirs();
-        File modLogFile = new File(modsLogDir, modId + ".log");
+        Path modLogPath = LuaModPathSecurity.resolveContained(modsLogDir.toPath(), safeModId + ".log");
+        File modLogFile = modLogPath.toFile();
         try (PrintWriter writer = new PrintWriter(new FileWriter(modLogFile, false))) {
             writer.println("========================================================================");
-            writer.println("  LuaMod Dedicated Log: " + modId + " - " + HEADER_DATE_FORMAT.format(LocalDateTime.now()));
+            writer.println("  LuaMod Dedicated Log: " + safeModId + " - " + HEADER_DATE_FORMAT.format(LocalDateTime.now()));
             writer.println("========================================================================");
         } catch (Exception e) { System.err.println("AsyncFileLogger error: " + e.getMessage()); e.printStackTrace(); }
     }
 
     public void logMod(String modId, String level, String message) {
         if (modId == null || modId.isBlank()) return;
+        String safeModId = LuaModPathSecurity.validateModId(modId);
         File modsLogDir = new File(MODS_LOG_DIR);
         if (!modsLogDir.exists()) modsLogDir.mkdirs();
-        File modLogFile = new File(modsLogDir, modId + ".log");
+        Path modLogPath = LuaModPathSecurity.resolveContained(modsLogDir.toPath(), safeModId + ".log");
+        File modLogFile = modLogPath.toFile();
         try (PrintWriter writer = new PrintWriter(new FileWriter(modLogFile, true))) {
             String ts = TIME_FORMAT.format(LocalDateTime.now());
             writer.printf("%s [%s] %s%n", ts, level.trim(), message != null ? message : "");
@@ -112,16 +132,6 @@ public class AsyncFileLogger implements ILuaTweakerLog {
     @Override
     public void error(LogStage stage, String message) {
         enqueue(stage, "ERROR", null, -1, message);
-    }
-
-    public void info(LogStage stage, String message, LuaState state) {
-        String fileLine = resolveFileLine(state);
-        enqueue(stage, "INFO ", fileLine, -1, message);
-    }
-
-    public void error(LogStage stage, String message, LuaState state) {
-        String fileLine = resolveFileLine(state);
-        enqueue(stage, "ERROR", fileLine, -1, message);
     }
 
     @Override
@@ -152,25 +162,25 @@ public class AsyncFileLogger implements ILuaTweakerLog {
         System.out.println("[LuaTweaker] " + line);
     }
 
-    // -- Legacy raw API (backward-compat with old call sites) ---
+    // -- Engine-neutral call sites --
 
-    public void log(String context, String message, LuaState state) {
-        String fileLine = resolveFileLine(state);
-        enqueueRaw(context, "INFO ", fileLine, message);
+    public void log(String context, String message, CallSiteProvider site) {
+        enqueueRaw(context, "INFO ", siteLocation(site), message);
+        logModIfPresent(site, "INFO", message);
     }
 
-    public void info(String context, String message, LuaState state) {
-        log(context, "[INFO] " + message, state);
+    public void info(String context, String message, CallSiteProvider site) {
+        log(context, "[INFO] " + message, site);
     }
 
-    public void warn(String context, String message, LuaState state) {
-        String fileLine = resolveFileLine(state);
-        enqueueRaw(context, "WARN ", fileLine, message);
+    public void warn(String context, String message, CallSiteProvider site) {
+        enqueueRaw(context, "WARN ", siteLocation(site), message);
+        logModIfPresent(site, "WARN", message);
     }
 
-    public void error(String context, String message, LuaState state) {
-        String fileLine = resolveFileLine(state);
-        enqueueRaw(context, "ERROR", fileLine, message);
+    public void error(String context, String message, CallSiteProvider site) {
+        enqueueRaw(context, "ERROR", siteLocation(site), message);
+        logModIfPresent(site, "ERROR", message);
     }
 
     // -- Internals ---
@@ -183,7 +193,13 @@ public class AsyncFileLogger implements ILuaTweakerLog {
         if (message == null) message = "";
         String location = (fileLine != null && !"system".equalsIgnoreCase(fileLine)) ? fileLine : null;
         String formatted = formatLine(stage, level, location, message);
-        queue.offer(formatted);
+        if (!queue.offer(formatted)) {
+            long dropped = droppedLines.incrementAndGet();
+            if (dropped == 1 || dropped % 1000 == 0) {
+                System.err.println("[LuaTweaker] Logger queue full; dropped " + dropped
+                        + " line(s). Reduce log volume or raise MAX_QUEUE_SIZE.");
+            }
+        }
 
         // Clean console output without ugly system padding
         String lvl = level.trim();
@@ -207,17 +223,32 @@ public class AsyncFileLogger implements ILuaTweakerLog {
         return String.format("%s [%s] %s%s%s", ts, stageCol, locStr, lvlStr, message);
     }
 
-    private static String resolveFileLine(LuaState state) {
-        if (state == null || state.getCurrentThread() == null) return null;
+    private static String siteLocation(CallSiteProvider site) {
+        if (site == null) return null;
+        String location = site.location();
+        return (location != null && !"system".equalsIgnoreCase(location)) ? location : null;
+    }
+
+    private void logModIfPresent(CallSiteProvider site, String level, String message) {
+        if (site == null) return;
+        String modId = site.modId();
+        if (modId == null || modId.isBlank()) return;
         try {
-            String fl = DebugHelpers.fileLine(state.getCurrentThread());
-            return (fl != null && !"system".equalsIgnoreCase(fl)) ? fl : null;
-        } catch (Exception ignored) { return null; }
+            logMod(modId, level, message);
+        } catch (IllegalArgumentException e) {
+            // Keep the main log alive when a caller supplies a non-LuaMod id.
+            enqueueRaw("LOGGER", "WARN", null, "Invalid mod id for per-mod log: " + e.getMessage());
+        }
     }
 
     public void shutdown() {
         running = false;
         workerThread.interrupt();
+        synchronized (AsyncFileLogger.class) {
+            if (instance == this) {
+                instance = null;
+            }
+        }
     }
 
     private void processQueue() {

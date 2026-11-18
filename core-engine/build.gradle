@@ -8,7 +8,7 @@ java {
 
 dependencies {
     api project(':common-api')
-    api 'cc.tweaked:cobalt:0.9.9'
+    api "io.github.kienpc1234:luava:${luava_version}"
     implementation 'com.google.code.gson:gson:2.10.1'
     
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'
@@ -18,7 +18,7 @@ dependencies {
 
 jar {
     from {
-        configurations.runtimeClasspath.filter { it.name.contains('cobalt') }.collect { zipTree(it) }
+        configurations.runtimeClasspath.filter { it.name.contains('luava') }.collect { zipTree(it) }
     }
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }

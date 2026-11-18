@@ -81,14 +81,6 @@ public interface ILootService {
     );
 
     @LuaDoc(
-        description = "Get the raw LootTable object for direct Java access via Dynamic Bridge.",
-        params = {"tableId: string - loot table resource location"},
-        returnType = "object|nil"
-    )
-    @Nullable
-    Object getTable(@NotNull String tableId);
-
-    @LuaDoc(
         description = "Get all pending loot modifications as a summary.",
         returnType = "table"
     )

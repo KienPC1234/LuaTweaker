@@ -1,7 +1,8 @@
 package com.luatweaker.spawn;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.core.logger.AsyncFileLogger;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import com.luatweaker.api.vm.ILuaEngine;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
@@ -20,7 +21,7 @@ public class SpawnRuleLuaBindingTest {
 
     @Test
     void binding_RegisterHandlerFromLua() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         SpawnRuleLuaBinding.registerBindings(engine);
 
         engine.executeString(
@@ -45,7 +46,7 @@ public class SpawnRuleLuaBindingTest {
 
     @Test
     void binding_RegisterRejectsMissingFunction() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         SpawnRuleLuaBinding.registerBindings(engine);
 
         String script =
@@ -59,7 +60,7 @@ public class SpawnRuleLuaBindingTest {
 
     @Test
     void binding_requireSpawnRulesResolvesToGlobal() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         SpawnRuleLuaBinding.registerBindings(engine);
         engine.executeString(
             "local SpawnRules = require('LuaTweaker.SpawnRules')\n" +

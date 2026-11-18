@@ -65,6 +65,9 @@ public class LuaChunkGenerator extends ChunkGenerator {
             Codec.STRING.fieldOf("dimension_id").forGetter(LuaChunkGenerator::getDimensionId)
     ).apply(instance, LuaChunkGenerator::new));
 
+    // Engine-level tuning, not per-mod config: DimensionConfig carries only
+    // terrain/visual/spawn data (no cache or seed fields), so the column-cache
+    // bound and placement seeds live here as named constants.
     private static final int MAX_CACHED_CHUNKS = 1024;
     private static final int GEN_DEPTH = 16;
     /** Vanilla per-chunk placement seeds (same constants vanilla features use). */

@@ -2,7 +2,7 @@ package com.luatweaker.platform.command.core;
 
 import com.luatweaker.api.command.ICommandSender;
 import com.luatweaker.api.command.ILuaTweakerCommand;
-import com.luatweaker.core.engine.LuaEngine;
+import com.luatweaker.core.vm.LuaEngineFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -74,7 +74,7 @@ public class SyntaxCommand implements ILuaTweakerCommand {
     private int checkFile(ICommandSender sender, File file) {
         try {
             String source = Files.readString(file.toPath());
-            String error = LuaEngine.checkSyntax(file.getName(), source);
+            String error = LuaEngineFactory.checkSyntax(file.getName(), source);
             if (error == null) {
                 sender.sendSuccess("§a[OK] §f" + file.getName());
                 return 1;

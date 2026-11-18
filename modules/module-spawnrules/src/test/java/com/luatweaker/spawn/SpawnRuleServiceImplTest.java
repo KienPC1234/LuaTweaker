@@ -1,7 +1,8 @@
 package com.luatweaker.spawn;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.core.logger.AsyncFileLogger;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaValue;
 import org.junit.jupiter.api.AfterAll;
@@ -22,7 +23,7 @@ public class SpawnRuleServiceImplTest {
 
     @BeforeEach
     void setup() {
-        engine = new CobaltLuaEngine();
+        engine = LuaEngineFactory.create(false);
         service = new SpawnRuleServiceImpl(engine);
     }
 

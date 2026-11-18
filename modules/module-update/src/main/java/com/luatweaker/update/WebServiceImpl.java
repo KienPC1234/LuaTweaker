@@ -51,7 +51,8 @@ public class WebServiceImpl implements IWebService {
     public static final String USER_AGENT = "LuaTweaker-WebService/1.0";
     public static final int MAX_BODY_BYTES = 1024 * 1024;
     public static final double MIN_TIMEOUT_SECONDS = 1.0;
-    public static final double MAX_TIMEOUT_SECONDS = 60.0;
+    /** Synchronous on the calling thread, so the cap is deliberately short. */
+    public static final double MAX_TIMEOUT_SECONDS = 10.0;
 
     private final ILuaEngine engine;
 
@@ -85,13 +86,16 @@ public class WebServiceImpl implements IWebService {
             if (!scheme.equals("http") && !scheme.equals("https")) {
                 return errorTable("Net:HttpGet() rejected: only http/https URLs are allowed, found: " + scheme);
             }
+            // Reject SSRF targets (loopback, link-local, private, unique-local) after DNS.
+            UrlSafety.validatePublicHost(parsed);
             HttpURLConnection conn = (HttpURLConnection) parsed.openConnection();
             try {
                 conn.setConnectTimeout(timeoutMs);
                 conn.setReadTimeout(timeoutMs);
                 conn.setRequestMethod("GET");
                 conn.setRequestProperty("User-Agent", USER_AGENT);
-                conn.setInstanceFollowRedirects(true);
+                // Redirects are not followed: a public URL must not bounce to an internal one.
+                conn.setInstanceFollowRedirects(false);
 
                 int code = conn.getResponseCode();
                 String body = readBody(conn, code);

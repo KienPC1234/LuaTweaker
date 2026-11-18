@@ -125,6 +125,12 @@ public class NeoForgeInteractionPlatform implements IPlatformInteraction {
     public java.util.Map<String, Object> getBlockState(@NotNull String dimension, int x, int y, int z) {
         net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
         if (level == null) return null;
+        // Never force chunk generation from a Lua callback: the server thread may hold the Lua
+        // execution gate while waiting for generation, and the gen worker would then need that
+        // same gate to run its Lua terrain callback (deadlock). Unloaded chunks read as null.
+        if (!isChunkLoaded(level, x, z)) {
+            return null;
+        }
         net.minecraft.world.level.block.state.BlockState state = level.getBlockState(new net.minecraft.core.BlockPos(x, y, z));
         java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("Id", net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString());
@@ -143,6 +149,15 @@ public class NeoForgeInteractionPlatform implements IPlatformInteraction {
         if (level == null) return false;
         net.minecraft.world.level.block.state.BlockState state = resolveBlockState(blockId, properties);
         if (state == null) return false;
+        // Writing into an unloaded chunk forces generation; refuse it loudly instead of
+        // blocking on a chunk future while holding the Lua execution gate.
+        if (!isChunkLoaded(level, x, z)) {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "setBlockState skipped: chunk (" + (x >> 4) + "," + (z >> 4)
+                            + ") is not loaded in " + dimension);
+            return false;
+        }
         return level.setBlock(new net.minecraft.core.BlockPos(x, y, z), state, 3);
     }
 
@@ -271,15 +286,21 @@ public class NeoForgeInteractionPlatform implements IPlatformInteraction {
         }
 
         long set = 0;
+        long skippedUnloaded = 0;
         for (int x = Math.min(x1, x2); x <= Math.max(x1, x2); x++) {
             for (int y = Math.min(y1, y2); y <= Math.max(y1, y2); y++) {
                 for (int z = Math.min(z1, z2); z <= Math.max(z1, z2); z++) {
+                    if (!isChunkLoaded(level, x, z)) {
+                        skippedUnloaded++;
+                        continue;
+                    }
                     if (level.setBlock(new net.minecraft.core.BlockPos(x, y, z), state, 3)) {
                         set++;
                     }
                 }
             }
         }
+        warnSkippedUnloaded("fillBlocks", skippedUnloaded);
         return set;
     }
 
@@ -313,9 +334,14 @@ public class NeoForgeInteractionPlatform implements IPlatformInteraction {
         }
 
         long replaced = 0;
+        long skippedUnloaded = 0;
         for (int x = Math.min(x1, x2); x <= Math.max(x1, x2); x++) {
             for (int y = Math.min(y1, y2); y <= Math.max(y1, y2); y++) {
                 for (int z = Math.min(z1, z2); z <= Math.max(z1, z2); z++) {
+                    if (!isChunkLoaded(level, x, z)) {
+                        skippedUnloaded++;
+                        continue;
+                    }
                     net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(x, y, z);
                     if (level.getBlockState(pos).getBlock() == fromBlock
                             && level.setBlock(pos, toState, 3)) {
@@ -324,7 +350,25 @@ public class NeoForgeInteractionPlatform implements IPlatformInteraction {
                 }
             }
         }
+        warnSkippedUnloaded("replaceBlocks", skippedUnloaded);
         return replaced;
+    }
+
+    /**
+     * True when the chunk is already loaded. Deliberately does not trigger generation: a Lua
+     * callback that blocks on a chunk future while holding the execution gate can deadlock with
+     * the generation worker that needs that gate for its own Lua terrain callback.
+     */
+    private static boolean isChunkLoaded(net.minecraft.server.level.ServerLevel level, int x, int z) {
+        return level.getChunkSource().hasChunk(x >> 4, z >> 4);
+    }
+
+    private static void warnSkippedUnloaded(String operation, long skipped) {
+        if (skipped > 0) {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    operation + " skipped " + skipped + " block(s) in unloaded chunks");
+        }
     }
 
     private static long boxVolume(int x1, int y1, int z1, int x2, int y2, int z2) {
@@ -378,10 +422,37 @@ public class NeoForgeInteractionPlatform implements IPlatformInteraction {
         return true;
     }
 
+    /** Manifest permission required to run console-level commands from Lua. */
+    public static final String COMMAND_PERMISSION = "commands.execute";
+
+    /** Per-installation grant: any loaded mod opting in unlocks console commands. */
+    private static boolean hasCommandPermission() {
+        for (com.luatweaker.core.mod.LuaMod mod
+                : com.luatweaker.core.mod.LuaModManager.getLoadedMods().values()) {
+            if (mod.getManifest().permissions().contains(COMMAND_PERMISSION)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public boolean executeCommand(@NotNull String command) {
         var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
         if (server == null || command == null || command.isBlank()) return false;
+        if (!hasCommandPermission()) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "ExecuteCommand rejected: no loaded mod declares the '" + COMMAND_PERMISSION
+                            + "' permission in manifest.json. Command: '" + command + "'");
+            return false;
+        }
+        if (!server.isSameThread()) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "ExecuteCommand rejected: must run on the server thread (command: '" + command + "')");
+            return false;
+        }
         // Commands need an active world (game rules); during server startup the
         // overworld is not created yet, so defer or skip.
         if (server.overworld() == null) {

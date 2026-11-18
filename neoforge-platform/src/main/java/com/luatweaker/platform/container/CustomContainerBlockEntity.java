@@ -54,6 +54,8 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
     private static final int DEFAULT_COLS = 6;
     /** Fallback use reach (blocks) when the owning block could not be resolved. */
     private static final double DEFAULT_USE_DISTANCE = 8.0;
+    /** Block-center offset for the use-distance check (half a block, vanilla convention). */
+    private static final double BLOCK_CENTER_OFFSET = 0.5;
 
     private final NonNullList<ItemStack> items;
     private CompoundTag extraNbt = new CompoundTag();
@@ -138,6 +140,10 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
         if (level != null && level.getBlockState(worldPosition).getBlock() instanceof CustomContainerBlock container) {
             return container.getSpec();
         }
+        // Intentionally fixed engine fallback (unresolvable owner is a corrupt state, not a
+        // per-mod setting): mirrors the Lua builder defaults ("packed", 8.0 reach, no
+        // energy/fluid). Real values always come from the Lua Container()/ContainerUseDistance()
+        // builder via BlockBuilderImpl -> ContainerSpec -> CustomContainerBlock.
         return new ContainerSpec(DEFAULT_ROWS, DEFAULT_COLS, "packed", null, DEFAULT_USE_DISTANCE,
                 null, null, null, 0, 0, 0, 0, java.util.List.of(), null, false, null);
     }
@@ -389,7 +395,7 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
         if (level.getBlockState(worldPosition).getBlock() instanceof CustomContainerBlock container) {
             distance = container.getUseDistance();
         }
-        return player.distanceToSqr(worldPosition.getX() + 0.5, worldPosition.getY() + 0.5, worldPosition.getZ() + 0.5) <= distance * distance;
+        return player.distanceToSqr(worldPosition.getX() + BLOCK_CENTER_OFFSET, worldPosition.getY() + BLOCK_CENTER_OFFSET, worldPosition.getZ() + BLOCK_CENTER_OFFSET) <= distance * distance;
     }
 
     // ===== IEnergyStorage (external mods: cables, generators, batteries) =====

@@ -1,5 +1,7 @@
 package com.luatweaker.platform;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.pal.IPlatformContent;
 import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.vm.ILuaEngine;
@@ -9,7 +11,6 @@ import com.luatweaker.content.StorageServiceImpl;
 import com.luatweaker.core.logger.AsyncFileLogger;
 import com.luatweaker.core.mod.LuaModManager;
 import com.luatweaker.core.service.LuaServiceRegistry;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import com.luatweaker.platform.bootstrap.LuaServiceBootstrap;
 import com.luatweaker.platform.recipe.NeoForgeRecipeManager;
 import org.junit.jupiter.api.AfterAll;
@@ -132,7 +133,7 @@ public class LuaScriptsIntegrationTest {
         File baseDir = findLuamodsDir();
         assertTrue(baseDir.exists(), "luamods directory should exist at " + baseDir.getAbsolutePath());
 
-        ILuaEngine engine = new CobaltLuaEngine(true);
+        ILuaEngine engine = LuaEngineFactory.create(true);
         engine.setLuaDirectory(baseDir);
 
         ContentServiceImpl contentService = new ContentServiceImpl();
@@ -159,7 +160,7 @@ public class LuaScriptsIntegrationTest {
     @Test
     public void testBlockStateAndNbtBindings() {
         File baseDir = findLuamodsDir();
-        ILuaEngine engine = new CobaltLuaEngine(true);
+        ILuaEngine engine = LuaEngineFactory.create(true);
         engine.setLuaDirectory(baseDir);
         ContentServiceImpl contentService = new ContentServiceImpl();
         StorageServiceImpl storageService = new StorageServiceImpl(new File(baseDir, "storage.json"));

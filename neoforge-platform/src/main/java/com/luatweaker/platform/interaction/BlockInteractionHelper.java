@@ -29,8 +29,7 @@ public final class BlockInteractionHelper {
     private static final int PERFORMANCE_WARNING_RADIUS = 32;
 
     public static boolean performBlockBreak(@NotNull IEntity actor, int x, int y, int z) {
-        if (actor.getRawEntity() instanceof Entity entity) {
-            ServerLevel level = (ServerLevel) entity.level();
+        if (actor.getRawEntity() instanceof Entity entity && entity.level() instanceof ServerLevel level) {
             BlockPos pos = new BlockPos(x, y, z);
             if (entity instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
                 return serverPlayer.gameMode.destroyBlock(pos);
@@ -44,8 +43,7 @@ public final class BlockInteractionHelper {
     }
 
     public static boolean performBlockPlace(@NotNull IEntity actor, int x, int y, int z, @NotNull String blockId) {
-        if (actor.getRawEntity() instanceof Entity entity) {
-            ServerLevel level = (ServerLevel) entity.level();
+        if (actor.getRawEntity() instanceof Entity entity && entity.level() instanceof ServerLevel level) {
             BlockPos pos = new BlockPos(x, y, z);
             ResourceLocation rl = ResourceLocation.parse(blockId);
             Block block = BuiltInRegistries.BLOCK.get(rl);
@@ -57,8 +55,7 @@ public final class BlockInteractionHelper {
     }
 
     public static boolean performBlockUse(@NotNull IEntity actor, int x, int y, int z) {
-        if (actor.getRawEntity() instanceof Entity entity) {
-            ServerLevel level = (ServerLevel) entity.level();
+        if (actor.getRawEntity() instanceof Entity entity && entity.level() instanceof ServerLevel level) {
             BlockPos pos = new BlockPos(x, y, z);
             BlockState state = level.getBlockState(pos);
             if (entity instanceof Player player) {
@@ -85,7 +82,7 @@ public final class BlockInteractionHelper {
                         + "); this scans up to " + (2L * radius + 1) * (2L * radius + 1) * (2L * radius + 1)
                         + " blocks and may lag the server.");
             }
-            ServerLevel level = (ServerLevel) mcEntity.level();
+            net.minecraft.world.level.Level level = mcEntity.level();
             BlockPos center = mcEntity.blockPosition();
             for (int dx = -radius; dx <= radius; dx++) {
                 for (int dy = -radius; dy <= radius; dy++) {

@@ -203,7 +203,82 @@ public class LootServiceImplTest {
     }
 
     @Test
-    void testGetTable_ReturnsNull() {
-        assertNull(lootService.getTable("minecraft:chests/simple_dungeon"));
+    void testRemoveMobDrop_RemovesMatchingPendingEntry() {
+        lootService.addMobDrop("minecraft:zombie", "minecraft:diamond", 0.1, 1, 3, 1);
+        lootService.addMobDrop("minecraft:zombie", "minecraft:iron_ingot", 0.5, 1, 1, 0);
+        assertEquals(2, lootService.getModifications().get("mobDrops"));
+
+        assertTrue(lootService.removeMobDrop("minecraft:zombie", "minecraft:diamond"));
+
+        List<LootServiceImpl.MobDropEntry> remaining = lootService.getPendingMobDrops().get("minecraft:zombie");
+        assertEquals(1, remaining.size());
+        assertEquals("minecraft:iron_ingot", remaining.get(0).itemId());
+        assertEquals(1, lootService.getModifications().get("mobDrops"));
+        assertEquals(1, lootService.getModifications().get("removals"));
+    }
+
+    @Test
+    void testRemoveChestLoot_RemovesMatchingPendingEntry() {
+        lootService.addChestLoot("minecraft:chests/simple_dungeon", "minecraft:diamond", 0.05, 1, 2);
+        lootService.addChestLoot("minecraft:chests/simple_dungeon", "minecraft:emerald", 0.2, 1, 1);
+        assertEquals(2, lootService.getModifications().get("chestLoot"));
+
+        assertTrue(lootService.removeChestLoot("minecraft:chests/simple_dungeon", "minecraft:diamond"));
+
+        List<LootServiceImpl.ChestLootEntry> remaining =
+            lootService.getPendingChestLoot().get("minecraft:chests/simple_dungeon");
+        assertEquals(1, remaining.size());
+        assertEquals("minecraft:emerald", remaining.get(0).itemId());
+        assertEquals(1, lootService.getModifications().get("chestLoot"));
+        assertEquals(1, lootService.getModifications().get("removals"));
+    }
+
+    @Test
+    void testRemovalBeforeAdd_IsAppliedAtApplyTime() {
+        lootService.removeMobDrop("minecraft:skeleton", "minecraft:bone");
+        lootService.addMobDrop("minecraft:skeleton", "minecraft:bone", 0.5, 1, 1, 0);
+        lootService.addMobDrop("minecraft:skeleton", "minecraft:arrow", 0.5, 1, 1, 0);
+
+        lootService.applyRemovalsToPending();
+
+        List<LootServiceImpl.MobDropEntry> remaining = lootService.getPendingMobDrops().get("minecraft:skeleton");
+        assertEquals(1, remaining.size());
+        assertEquals("minecraft:arrow", remaining.get(0).itemId());
+    }
+
+    @Test
+    void testRemovalLeavesUnrelatedItemsAndTables() {
+        lootService.addMobDrop("minecraft:zombie", "minecraft:diamond", 0.1, 1, 1, 0);
+        lootService.addMobDrop("minecraft:zombie", "minecraft:bone", 0.2, 1, 1, 0);
+        lootService.addMobDrop("minecraft:skeleton", "minecraft:diamond", 0.1, 1, 1, 0);
+        lootService.addChestLoot("minecraft:chests/simple_dungeon", "minecraft:diamond", 0.1, 1, 1);
+
+        lootService.removeMobDrop("minecraft:zombie", "minecraft:diamond");
+
+        List<LootServiceImpl.MobDropEntry> zombieDrops = lootService.getPendingMobDrops().get("minecraft:zombie");
+        assertNotNull(zombieDrops, "zombie entry list must still exist");
+        assertEquals(1, zombieDrops.size(), "only the removed diamond must be gone");
+        assertEquals("minecraft:bone", zombieDrops.get(0).itemId(), "unrelated bone drop must survive");
+        assertEquals(1, lootService.getPendingMobDrops().get("minecraft:skeleton").size());
+        assertEquals(1, lootService.getPendingChestLoot().get("minecraft:chests/simple_dungeon").size());
+    }
+
+    @Test
+    void testRemoveMobDrop_RejectsBlankIds() {
+        assertThrows(IllegalArgumentException.class, () -> lootService.removeMobDrop("", "minecraft:diamond"));
+        assertThrows(IllegalArgumentException.class, () -> lootService.removeMobDrop("minecraft:zombie", ""));
+    }
+
+    @Test
+    void testRemoveChestLoot_RejectsBlankIds() {
+        assertThrows(IllegalArgumentException.class, () -> lootService.removeChestLoot("", "minecraft:diamond"));
+        assertThrows(IllegalArgumentException.class, () ->
+            lootService.removeChestLoot("minecraft:chests/simple_dungeon", ""));
+    }
+
+    @Test
+    void testAddMobDrop_RejectsNegativeLootingBonus() {
+        assertThrows(IllegalArgumentException.class, () ->
+            lootService.addMobDrop("minecraft:zombie", "minecraft:diamond", 0.5, 1, 1, -1));
     }
 }

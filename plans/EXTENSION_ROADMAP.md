@@ -105,20 +105,28 @@ Loot.SetBlockDrop("mymod:ruby_ore", {
 })
 ```
 
-#### Tầng 2: Dynamic Bridge (20% power users)
+#### Tầng 2: Raw JSON injection (20% power users)
+
+Raw `LootTable` Java objects are **not** exposed: doing so would require a PAL capability for
+unobfuscated NeoForge loot-table access, which is not available. For full control over a table,
+provide the JSON directly through the virtual datapack service instead:
 
 ```lua
--- Access raw LootTable objects via DynamicJavaProxy
-local lootTable = Loot.GetTable("minecraft:chests/simple_dungeon")
+local Datapack = require("LuaTweaker.Datapack")
 
--- Call Java methods directly
-lootTable:addPool(customPool)
-local pools = lootTable:getPools()
-
--- Modify conditions
-local pool = lootTable:getPool(0)
-pool:addCondition(LootCondition.randomChance(0.5))
+Datapack:AddLootTable("minecraft:chests/simple_dungeon", [[
+{
+  "type": "minecraft:chest",
+  "pools": [{"rolls": 1, "entries": [
+    {"type": "minecraft:item", "name": "minecraft:diamond"}
+  ]}]
+}
+]])
 ```
+
+> Note: `AddLootTable` replaces the target table wholesale. Vanilla entries not present in the
+> supplied JSON are dropped. The `Loot:*` builders below are the safe, validated path for the
+> common cases and apply removals to the entries they manage.
 
 ### 2.3 Technical Implementation
 
@@ -135,9 +143,10 @@ modules/module-loot/
 ├── src/main/java/com/luatweaker/loot/
 │   ├── LootServiceImpl.java       # Implementation
 │   ├── LootLuaBinding.java        # LuaBinder integration
-│   └── LootTableHelper.java       # Helper methods
+│   └── LootTableJsonBuilder.java  # Pure loot table JSON serializer
 └── src/test/java/
-    └── LootServiceImplTest.java   # Tests
+    ├── LootServiceImplTest.java   # Service + removal tests
+    └── LootTableJsonBuilderTest.java  # JSON builder tests
 
 neoforge-platform/
 └── platform/loot/
@@ -158,9 +167,6 @@ public interface ILootService {
     
     @LuaDoc(description = "Add chest loot")
     void addChestLoot(String chestId, String itemId, ILuaTable options);
-    
-    @LuaDoc(description = "Get raw LootTable object (for Dynamic Bridge)")
-    Object getTable(String lootTableId);
 }
 ```
 
@@ -171,10 +177,9 @@ public interface ILootService {
    - Sugar syntax, validated inputs
    - Use Platform.getInstance() for NeoForge API
 
-2. **Dynamic Bridge fallback**:
-   - `getTable()` returns raw `LootTable` object
-   - Wrap via DynamicJavaProxy
-   - Modder calls Java methods directly
+2. **Raw JSON fallback**:
+   - `Datapack:AddLootTable(path, json)` replaces a table wholesale
+   - No raw Java `LootTable` access is exposed (requires a PAL capability that does not exist)
 
 ### 2.4 Files Cần Tạo
 
@@ -589,7 +594,7 @@ Module-Dimensions (depends on Worldgen)
 
 - [ ] **M1 (Week 1):** Module-Loot complete, tested, documented
 - [ ] **M2 (Week 2):** Module-Worldgen complete, tested, documented
-- [ ] **M3 (Week 4):** Module-Structures complete, tested, documented
+- [x] **M3 (Week 4):** Module-Structures MVP complete, tested, documented (scoped: single-template registry + datapack emission; no jigsaw assembly API)
 - [ ] **M4 (Week 7):** Module-Dimensions complete, tested, documented
 - [ ] **M5 (Week 8):** Integration tests, cross-module validation
 

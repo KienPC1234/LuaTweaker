@@ -1,8 +1,9 @@
 package com.luatweaker.client;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.client.IGuiService;
 import com.luatweaker.api.vm.ILuaEngine;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -54,7 +55,7 @@ public class ClientLuaBindingTest {
 
     @Test
     public void guiServiceExpandedBindingsDispatchToImplementation() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         MockGuiService gui = new MockGuiService();
         ClientLuaBinding.registerBindings(engine, new ClientServiceImpl(), new KeyBindServiceImpl(), gui);
 
@@ -81,7 +82,7 @@ public class ClientLuaBindingTest {
 
     @Test
     public void clientTableKeepsOnKeyBindPressedSignalAfterBindingRegistration() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         ClientLuaBinding.registerBindings(engine, new ClientServiceImpl());
 
         engine.executeString(
@@ -98,5 +99,58 @@ public class ClientLuaBindingTest {
             "assert(capturedPayload == 'StaffCastSkill', 'listener must receive the payload, got: ' .. tostring(capturedPayload))",
             "KeyBindSignalTest"
         );
+    }
+
+    @Test
+    public void clientServicesUseOneCanonicalBindingPerService() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        ClientLuaBinding.registerBindings(engine, new ClientServiceImpl());
+        engine.getAndClearLastExecutionError();
+
+        engine.executeString(
+            "assert(Camera ~= nil, 'Camera must be bound')\n" +
+            "assert(type(Camera.Shake) == 'function', 'Camera.Shake must be available')\n" +
+            "assert(ClientEffects ~= nil, 'ClientEffects must be bound')\n" +
+            "assert(type(ClientEffects.PlaySound) == 'function', 'ClientEffects.PlaySound must be available')\n" +
+            "assert(TweenService ~= nil, 'TweenService must be bound')\n" +
+            "assert(type(TweenService.Create) == 'function', 'TweenService.Create must be available')\n" +
+            "assert(CameraService == nil, 'undocumented CameraService alias must be removed')\n" +
+            "assert(ClientEffectsService == nil, 'undocumented ClientEffectsService alias must be removed')\n" +
+            "assert(Mod:GetService('Camera') == Camera, 'Camera global and service must be one table')\n" +
+            "assert(Mod:GetService('ClientEffects') == ClientEffects, 'ClientEffects global and service must be one table')\n" +
+            "assert(Mod:GetService('TweenService') == TweenService, 'TweenService global and service must be one table')\n",
+            "ClientSingleBindingTest"
+        );
+        String bindingError = engine.getAndClearLastExecutionError();
+        assertNull(bindingError, "Lua assertions in ClientSingleBindingTest must pass: " + bindingError);
+    }
+
+    @Test
+    public void canonicalTweenServiceStillTicksTweens() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        ClientLuaBinding.registerBindings(engine, new ClientServiceImpl());
+        engine.getAndClearLastExecutionError();
+
+        engine.executeString(
+            "tweenInstance = { Value = 0 }\n" +
+            "tweenHandle = TweenService:Create(tweenInstance, { Duration = 1.0 }, { Value = 10.0 })\n" +
+            "assert(type(tweenHandle.Play) == 'function', 'Play must exist')\n" +
+            "assert(type(tweenHandle.Pause) == 'function', 'Pause must exist')\n" +
+            "assert(type(tweenHandle.Cancel) == 'function', 'Cancel must exist')\n" +
+            "tweenHandle:Play()\n",
+            "TweenCreateTest"
+        );
+        String createError = engine.getAndClearLastExecutionError();
+        assertNull(createError, "Lua assertions in TweenCreateTest must pass: " + createError);
+
+        TweenServiceImpl.tickAll(0.5);
+
+        engine.executeString(
+            "assert(math.abs(tweenInstance.Value - 5.0) < 1e-6,\n" +
+            "    'tween must interpolate to 5.0, got ' .. tostring(tweenInstance.Value))\n",
+            "TweenTickTest"
+        );
+        String tickError = engine.getAndClearLastExecutionError();
+        assertNull(tickError, "Lua assertions in TweenTickTest must pass: " + tickError);
     }
 }

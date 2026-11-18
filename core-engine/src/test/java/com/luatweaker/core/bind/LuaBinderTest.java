@@ -1,12 +1,13 @@
 package com.luatweaker.core.bind;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.annotation.LuaDefault;
 import com.luatweaker.api.entity.IEntity;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.core.logger.AsyncFileLogger;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 
@@ -57,7 +58,7 @@ public class LuaBinderTest {
 
     @Test
     public void bindsMethodsWithPascalCaseAliasesAndConversions() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         MockImpl impl = new MockImpl();
         LuaBinder.bind(engine, "MockApi", impl, MockApi.class);
 
@@ -81,7 +82,7 @@ public class LuaBinderTest {
 
     @Test
     public void unwrapsEntityTablesAndConvertsEntitiesOnReturn() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         MockImpl impl = new MockImpl();
         LuaBinder.registerReturnConverter(IEntity.class, (e, value) -> {
             ILuaTable table = e.createTable();
@@ -105,7 +106,7 @@ public class LuaBinderTest {
 
     @Test
     public void missingRequiredArgumentRaisesLuaError() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         LuaBinder.bind(engine, "MockApi", new MockImpl(), MockApi.class);
 
         engine.executeString(
@@ -118,7 +119,7 @@ public class LuaBinderTest {
 
     @Test
     public void objectParameterReceivesOriginalLuaValue() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         MockImpl impl = new MockImpl();
         LuaBinder.bind(engine, "MockApi", impl, MockApi.class);
 

@@ -181,6 +181,8 @@ public class InterceptionHelper {
             Map<ResourceLocation, RecipeHolder<?>> newByName = new HashMap<>(byName);
 
             for (NeoForgeRecipeManager.RecipeModification mod : modifications) {
+                // One malformed recipe must not discard every other mod's changes.
+                try {
                 switch (mod.type()) {
                     case REMOVE_BY_OUTPUT   -> removeByOutput(newRecipes, newByName, (String) mod.data(), registries);
                     case REMOVE_BY_INPUT    -> removeByInput(newRecipes, newByName, (String) mod.data());
@@ -201,6 +203,13 @@ public class InterceptionHelper {
                     case ADD_ANVIL          -> schedulePendingAnvil((NeoForgeRecipeManager.AnvilData) mod.data());
                     case ADD_BREWING        -> schedulePendingBrewing((NeoForgeRecipeManager.BrewingData) mod.data());
                     case ADD_TRADE          -> schedulePendingTrade((NeoForgeRecipeManager.TradeData) mod.data());
+                }
+                } catch (RuntimeException e) {
+                    com.luatweaker.api.log.LuaTweakerLog.get().error(
+                        com.luatweaker.api.log.LogStage.RECIPE_APPLY,
+                        "Skipped recipe modification " + mod.type() + ": "
+                            + e.getClass().getSimpleName() + ": " + e.getMessage()
+                    );
                 }
             }
 

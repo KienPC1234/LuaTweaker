@@ -4,6 +4,7 @@ import com.luatweaker.api.command.ICommandService;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.core.bind.LuaBinder;
+import com.luatweaker.core.stub.StubCatalog;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -21,6 +22,7 @@ public class CommandLuaBinding {
     public static void registerBindings(@NotNull ILuaEngine engine) {
         ICommandService service = new CommandServiceImpl(engine);
         LuaBinder.bind(engine, "Commands", service, ICommandService.class, "commands");
+        StubCatalog.register("Commands", ICommandService.class);
 
         // Java-side consumers (LuaTweakerCommandRegistry, HelpCommand) look up
         // the service impl, not the Lua table, exactly like NetworkServiceImpl.

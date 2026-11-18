@@ -80,22 +80,29 @@ function task.wait(...)
         sec = rawArgs[2]
     end
     sec = tonumber(sec) or 0
-    local thread = coroutine.running()
-    if thread == nil then
-        -- Without a coroutine there is nothing to resume later, and coroutine.yield()
-        -- would raise an UnwindThrowable that Java callFunction swallows silently.
+    -- Lua 5.4 returns (thread, isMain). Outside a coroutine the first value is the
+    -- main thread, which cannot be yielded, so check isMain instead of nil.
+    local thread, isMain = coroutine.running()
+    if thread == nil or isMain then
+        -- Without a resumable coroutine there is nothing to resume later, so
+        -- yield() would raise "attempt to yield from outside a coroutine".
         print('[WARN][task] task.wait() called outside a coroutine - wrap it in Task.spawn()')
         return
     end
     task.delay(sec, function()
-        if thread then coroutine.resume(thread) end
+        if thread then
+            local ok, err = coroutine.resume(thread)
+            if not ok then
+                print('[ERROR][task] task.wait resume failed: ' .. tostring(err))
+            end
+        end
     end)
     return coroutine.yield()
 end
 
--- Run a deferred function inside a Cobalt coroutine loop (task._run_deferred is a
--- Java binding). Catches Lua errors per task so one crashing task cannot abort the
--- whole tick or leak VM control-flow exceptions into Java.
+-- Run a deferred function inside a Lua coroutine (task._run_deferred is a Java
+-- binding backed by the engine coroutine scheduler). Catches Lua errors per task
+-- so one crashing task cannot abort the whole tick.
 local function runDeferred(fn, args)
     if type(fn) ~= 'function' then
         print('[WARN][task] Skipping deferred task: expected function, got ' .. tostring(fn))
@@ -108,21 +115,25 @@ local function runDeferred(fn, args)
 end
 
 function task._tick()
+    -- Snapshot both queues up front. A wait() scheduled by a deferred task during
+    -- this tick belongs to the next tick, not to the delay pass of this one.
     local def = deferred
     deferred = {}
+    local due = delays
+    delays = {}
+
     for _, item in ipairs(def) do
         runDeferred(item.fn, item.args)
     end
+
     local now = getTimeClock()
-    local remaining = {}
-    for _, item in ipairs(delays) do
+    for _, item in ipairs(due) do
         if now >= item.time then
             runDeferred(item.fn, item.args)
         else
-            table.insert(remaining, item)
+            table.insert(delays, item)
         end
     end
-    delays = remaining
 end
 
 _G.task = task
@@ -163,7 +174,12 @@ Signal.connect = Signal.Connect
 
 function Signal:Once(fn)
     local connection
+    local fired = false
     connection = self:Connect(function(...)
+        -- Fire defers listeners, so two Fire calls in one tick can enqueue this
+        -- wrapper twice before the first Disconnect runs. The latch makes it once.
+        if fired then return end
+        fired = true
         connection:Disconnect()
         fn(...)
     end)
@@ -173,7 +189,11 @@ end
 function Signal:Fire(...)
     self._listeners = self._listeners or {}
     local args = {...}
-    for _, l in ipairs(self._listeners) do
+    -- Iterate a snapshot: a listener may Disconnect itself (Once) or another
+    -- listener while the automatically-dispatched tasks run.
+    local snapshot = {}
+    for i = 1, #self._listeners do snapshot[i] = self._listeners[i] end
+    for _, l in ipairs(snapshot) do
         if l.connected and type(l.fn) == 'function' then
             task.spawn(l.fn, table.unpack(args))
         end
@@ -187,7 +207,11 @@ Signal.fire = Signal.Fire
 function Signal:FireSync(...)
     self._listeners = self._listeners or {}
     local args = {...}
-    for _, l in ipairs(self._listeners) do
+    -- Snapshot first: Disconnect removes from the live array, which would skip
+    -- the listener that shifts into the current index during iteration.
+    local snapshot = {}
+    for i = 1, #self._listeners do snapshot[i] = self._listeners[i] end
+    for _, l in ipairs(snapshot) do
         if l.connected and type(l.fn) == 'function' then
             local ok, err = pcall(l.fn, table.unpack(args))
             if not ok and err then
@@ -200,15 +224,21 @@ end
 Signal.fireSync = Signal.FireSync
 
 function Signal:Wait()
-    local runningThread = coroutine.running()
-    if runningThread == nil then
+    local runningThread, isMain = coroutine.running()
+    if runningThread == nil or isMain then
         print('[WARN][Signal] Signal:Wait() called outside a coroutine - returning nil')
         return nil
     end
     local conn
+    local resumed = false
     conn = self:Connect(function(...)
+        if resumed then return end
+        resumed = true
         conn:Disconnect()
-        coroutine.resume(runningThread, ...)
+        local ok, err = coroutine.resume(runningThread, ...)
+        if not ok then
+            print('[ERROR][Signal] Signal:Wait resume failed: ' .. tostring(err))
+        end
     end)
     return coroutine.yield()
 end
@@ -371,6 +401,7 @@ TweenInfo.__index = TweenInfo
 function TweenInfo.new(time, easingStyle, easingDirection, repeatCount, reverses, delayTime)
     local self = setmetatable({}, TweenInfo)
     self.Time = time or 1.0
+    self.Duration = self.Time
     self.EasingStyle = easingStyle or "Linear"
     self.EasingDirection = easingDirection or "Out"
     self.RepeatCount = repeatCount or 0
@@ -381,24 +412,6 @@ end
 
 _G.TweenInfo = TweenInfo
 
-local TweenService = {}
-
-function TweenService:Create(instance, tweenInfo, targetProperties)
-    local tween = {
-        _completedSignal = Signal.new(),
-        Completed = Signal.new()
-    }
-    function tween:Play()
-        local duration = tweenInfo and tweenInfo.Time or 1.0
-        task.delay(duration, function()
-            tween.Completed:Fire()
-        end)
-    end
-    function tween:Cancel()
-    end
-    return tween
-end
-
-_G.TweenService = TweenService
+-- TweenService is bound by ClientLuaBinding (Java impl with real Play/Pause/Cancel).
 
 print("[LuaTweaker] System Bootstrap Library loaded successfully!")

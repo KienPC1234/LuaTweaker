@@ -30,5 +30,6 @@ public class TaskLuaBinding {
         globals.rawset("task", taskTable);
         engine.registerService("TaskService", taskTable);
         engine.registerService("Task", taskTable);
+        engine.registerService("TaskServiceImpl", taskService);
     }
 }

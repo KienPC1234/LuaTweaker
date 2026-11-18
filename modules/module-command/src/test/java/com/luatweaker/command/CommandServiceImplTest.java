@@ -1,9 +1,10 @@
 package com.luatweaker.command;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.core.logger.AsyncFileLogger;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,7 @@ public class CommandServiceImplTest {
     }
 
     private ILuaEngine newEngineWithMod(String modId) {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         CommandLuaBinding.registerBindings(engine);
         setModGlobal(engine, modId);
         return engine;
@@ -292,7 +293,7 @@ public class CommandServiceImplTest {
 
     @Test
     public void registerWithoutModContextIsRejected() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         CommandLuaBinding.registerBindings(engine);
         registerExpectFalse(engine, "ping", "{ Handler = function() end }");
         assertNull(CommandServiceImpl.get("ping"));

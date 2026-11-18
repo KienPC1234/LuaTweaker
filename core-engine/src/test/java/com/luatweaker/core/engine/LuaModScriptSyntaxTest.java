@@ -1,5 +1,6 @@
 package com.luatweaker.core.engine;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -44,7 +45,7 @@ public class LuaModScriptSyntaxTest {
             assertTrue(files.size() >= 15, "expected the shipped Lua mods, found " + files.size());
             for (Path file : files) {
                 String source = Files.readString(file, StandardCharsets.UTF_8);
-                String error = LuaEngine.checkSyntax(luaMods.relativize(file).toString(), source);
+                String error = LuaEngineFactory.checkSyntax(luaMods.relativize(file).toString(), source);
                 if (error != null) {
                     failures.add(file.getFileName() + ": " + error);
                 }

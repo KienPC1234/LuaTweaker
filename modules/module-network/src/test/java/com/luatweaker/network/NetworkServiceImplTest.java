@@ -1,10 +1,12 @@
 package com.luatweaker.network;
 
+import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.pal.IPlatformNetwork;
 import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -30,7 +32,7 @@ public class NetworkServiceImplTest {
 
     @Test
     void testGetOrCreateRemoteEvent() {
-        CobaltLuaEngine engine = new CobaltLuaEngine(false);
+        ILuaEngine engine = LuaEngineFactory.create(false);
         NetworkServiceImpl networkService = new NetworkServiceImpl(engine);
 
         ILuaTable remoteEvent = networkService.GetOrCreateRemoteEvent("TestEvent");
@@ -40,7 +42,7 @@ public class NetworkServiceImplTest {
 
     @Test
     void testRemoteFunctionInvokeServer() {
-        CobaltLuaEngine engine = new CobaltLuaEngine(false);
+        ILuaEngine engine = LuaEngineFactory.create(false);
         NetworkServiceImpl networkService = new NetworkServiceImpl(engine);
         NetworkLuaBinding.registerBindings(engine, networkService);
 
@@ -59,6 +61,39 @@ public class NetworkServiceImplTest {
     }
 
     @Test
+    void remoteFunctionLuaWrapperCanInvokeServerCallback() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        NetworkServiceImpl networkService = new NetworkServiceImpl(engine);
+        NetworkLuaBinding.registerBindings(engine, networkService);
+
+        engine.executeString("local net = Mod:GetService('NetworkService')\n" +
+                "local fn = net:GetOrCreateRemoteFunction('LuaFunc')\n" +
+                "fn.OnServerInvoke = function(a, b)\n" +
+                "    return a + b\n" +
+                "end\n" +
+                "invokeResult = fn:InvokeServer(10, 20)\n", "TEST");
+
+        assertNull(engine.getAndClearLastExecutionError());
+        assertEquals(30.0, engine.getGlobalEnvironment().rawget("invokeResult").asDouble());
+    }
+
+    @Test
+    void remoteFunctionLuaWrapperCanInvokeClientCallback() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        NetworkServiceImpl networkService = new NetworkServiceImpl(engine);
+        NetworkLuaBinding.registerBindings(engine, networkService);
+
+        engine.executeString("local fn = NetworkService:GetOrCreateRemoteFunction('ClientFunc')\n" +
+                "fn.OnClientInvoke = function(a, b)\n" +
+                "    return a .. ':' .. b\n" +
+                "end\n" +
+                "clientInvokeResult = fn:InvokeClient('00000000-0000-0000-0000-000000000000', 'x', 7)\n", "TEST");
+
+        assertNull(engine.getAndClearLastExecutionError());
+        assertEquals("x:7", engine.getGlobalEnvironment().rawget("clientInvokeResult").asString());
+    }
+
+    @Test
     void remoteEventFireClientPreservesArgumentOrder() {
         List<String[]> captured = new java.util.ArrayList<>();
         Platform.setNetwork(new IPlatformNetwork() {
@@ -74,7 +109,7 @@ public class NetworkServiceImplTest {
             public void sendPayloadPacketToServer(String channelName, String dataJson) {}
         });
 
-        CobaltLuaEngine engine = new CobaltLuaEngine(false);
+        ILuaEngine engine = LuaEngineFactory.create(false);
         NetworkServiceImpl networkService = new NetworkServiceImpl(engine);
         NetworkLuaBinding.registerBindings(engine, networkService);
 

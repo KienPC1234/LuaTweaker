@@ -1,8 +1,9 @@
 package com.luatweaker.noise;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.core.bind.LuaBinder;
 import com.luatweaker.core.logger.AsyncFileLogger;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import com.luatweaker.api.vm.ILuaEngine;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,7 @@ public class NoiseLuaBindingTest {
 
     @Test
     void binding_ExposesNoiseGlobalsAndFunctions() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         NoiseLuaBinding.registerBindings(engine);
 
         engine.executeString(
@@ -51,7 +52,7 @@ public class NoiseLuaBindingTest {
 
     @Test
     void binding_MissingRequiredArgumentsRaiseLuaError() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         NoiseLuaBinding.registerBindings(engine);
 
         engine.executeString(
@@ -63,7 +64,7 @@ public class NoiseLuaBindingTest {
 
     @Test
     void binding_requireNoiseResolvesToGlobal() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         NoiseLuaBinding.registerBindings(engine);
 
         engine.executeString(

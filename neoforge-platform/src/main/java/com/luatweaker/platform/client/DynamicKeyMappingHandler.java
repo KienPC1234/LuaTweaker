@@ -52,14 +52,16 @@ public class DynamicKeyMappingHandler {
     }
 
     public static void onClientTick(ClientTickEvent.Post event) {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        boolean hasScreen = mc.screen != null;
         for (Map.Entry<String, KeyMappingRecord> mapEntry : REGISTERED_MAPPINGS.entrySet()) {
             String keyBindId = mapEntry.getKey();
             KeyMappingRecord record = mapEntry.getValue();
             // Edge-trigger: fire exactly once per press. consumeClick() would replay
             // every queued press while a key is HELD (OS auto-repeat queues several
             // press events per tick), flooding the server with duplicate packets.
-            boolean isDown = InputConstants.isKeyDown(
-                    net.minecraft.client.Minecraft.getInstance().getWindow().getWindow(),
+            boolean isDown = !hasScreen && InputConstants.isKeyDown(
+                    mc.getWindow().getWindow(),
                     record.mapping().getKey().getValue());
             boolean wasDown = Boolean.TRUE.equals(LAST_DOWN_STATE.getOrDefault(keyBindId, false));
             LAST_DOWN_STATE.put(keyBindId, isDown);

@@ -12,6 +12,7 @@ import java.io.File;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.zip.ZipEntry;
@@ -58,6 +59,9 @@ public class LuaModManager {
 
         File[] files = luamodsDir.listFiles();
         if (files == null || files.length == 0) return;
+        // File-system enumeration order is unspecified; stable discovery makes dependency
+        // diagnostics and duplicate-id behavior reproducible across operating systems.
+        Arrays.sort(files, Comparator.comparing(File::getName, String.CASE_INSENSITIVE_ORDER));
 
         List<DiscoveredMod> discovered = new ArrayList<>();
 
@@ -173,8 +177,19 @@ public class LuaModManager {
                 continue;
             }
 
+            List<String> missingDependencies = dm.manifest().dependencies().stream()
+                    .filter(dep -> !LOADED_MODS.containsKey(dep))
+                    .toList();
+            if (!missingDependencies.isEmpty()) {
+                String dependencyMessage = "Dependencies not loaded: " + String.join(", ", missingDependencies);
+                LOAD_ERRORS.put(modId, dependencyMessage);
+                LuaTweakerLog.get().error(LogStage.SYSTEM,
+                        "[LuaModManager] Skipping mod '" + modId + "': " + dependencyMessage);
+                continue;
+            }
+
             String modEnv = dm.manifest().environment();
-            if (!modEnv.equals("universal") && !modEnv.equals(currentEnv)) {
+            if (!shouldLoadInEnvironment(modEnv, currentEnv)) {
                 LuaTweakerLog.get().info(LogStage.SYSTEM,
                         "[LuaModManager] Mod '" + modId + "' is declared as '" + modEnv + "' but current environment is '" + currentEnv + "' - Skipping execution.");
                 continue;
@@ -187,7 +202,6 @@ public class LuaModManager {
                     "[LuaModManager] Loading active LuaMod: " + modId + " v" + dm.manifest().version() + " by " + dm.manifest().author() + " (" + dm.file().getName() + ")");
 
             LuaMod mod = new LuaMod(dm.manifest(), dm.file(), currentEnv, LOADED_MODS, luamodsDir);
-            LOADED_MODS.put(modId, mod);
             mod.ensureConfigFile(dm.defaultConfig());
 
             ILuaTable modTable = mod.createModTable(engine);
@@ -196,17 +210,18 @@ public class LuaModManager {
 
             // Execute main.lua ONLY
             String mainScriptPath = dm.manifest().main();
+            LuaModContext.pushLoadingMod(modId);
             try {
+                clearEngineError(engine);
                 String mainCode = readScriptContent(dm.file(), mainScriptPath);
                 if (mainCode != null) {
                     LuaTweakerLog.get().info(LogStage.SCRIPT_LOAD,
                             "[LuaMod][" + modId + "] Executing entrypoint: " + mainScriptPath);
                     engine.executeString(mainCode, modId + "/" + mainScriptPath);
-                    if (engine instanceof com.luatweaker.core.vm.CobaltLuaEngine cobaltEngine) {
-                        String loadError = cobaltEngine.getAndClearLastExecutionError();
-                        if (loadError != null) {
-                            LOAD_ERRORS.put(modId, loadError);
-                        }
+                    String loadError = clearEngineError(engine);
+                    if (loadError != null) {
+                        LOAD_ERRORS.put(modId, loadError);
+                        continue;
                     }
 
                     // Trigger mod.OnEnable() if provided
@@ -216,16 +231,27 @@ public class LuaModManager {
                     }
                     if (onEnableVal != null && onEnableVal.isFunction()) {
                         engine.callFunction(onEnableVal);
+                        String enableError = clearEngineError(engine);
+                        if (enableError != null) {
+                            LOAD_ERRORS.put(modId, enableError);
+                            continue;
+                        }
                     }
+                    LOADED_MODS.put(modId, mod);
                     LuaTweakerLog.get().info(LogStage.SCRIPT_LOAD,
                             "[LuaMod][" + dm.manifest().id() + "] Successfully loaded v" + dm.manifest().version());
                 } else {
+                    String missingMessage = "Main entrypoint script not found: " + mainScriptPath;
+                    LOAD_ERRORS.put(modId, missingMessage);
                     LuaTweakerLog.get().error(LogStage.SCRIPT_LOAD,
-                            "[LuaMod][" + dm.manifest().id() + "] Main entrypoint script not found: " + mainScriptPath);
+                            "[LuaMod][" + dm.manifest().id() + "] " + missingMessage);
                 }
             } catch (Exception e) {
+                LOAD_ERRORS.put(modId, errorMessage(e));
                 LuaTweakerLog.get().error(LogStage.SCRIPT_LOAD,
-                        "[LuaMod][" + dm.manifest().id() + "] Error executing " + mainScriptPath + ": " + e.getMessage());
+                        "[LuaMod][" + dm.manifest().id() + "] Error executing " + mainScriptPath + ": " + errorMessage(e));
+            } finally {
+                LuaModContext.popLoadingMod();
             }
         }
         LuaTweakerLog.get().info(LogStage.SYSTEM,
@@ -234,7 +260,14 @@ public class LuaModManager {
                 "========================================================================");
     }
 
-    private static void fireModTeardownHooks(@NotNull ILuaEngine engine) {
+    /**
+     * Fires {@code OnDisable} for every loaded mod on the engine that loaded it. Callers must pass
+     * the owning engine: firing old-VM closures on a new engine corrupts both VMs. The loaded map
+     * is cleared afterwards so a later {@link #loadLuaMods} call does not fire the hooks twice.
+     *
+     * @param engine engine that loaded the mods
+     */
+    public static void fireModTeardownHooks(@NotNull ILuaEngine engine) {
         for (Map.Entry<String, LuaMod> entry : LOADED_MODS.entrySet()) {
             String modId = entry.getKey();
             LuaMod mod = entry.getValue();
@@ -256,11 +289,28 @@ public class LuaModManager {
                 }
             }
         }
+        LOADED_MODS.clear();
+    }
+
+    private static boolean shouldLoadInEnvironment(String modEnv, String currentEnv) {
+        if ("universal".equals(currentEnv)) return true;
+        return "universal".equals(modEnv) || modEnv.equals(currentEnv);
+    }
+
+    private static String clearEngineError(ILuaEngine engine) {
+        return engine.getAndClearLastExecutionError();
+    }
+
+    private static String errorMessage(Exception e) {
+        String message = e.getMessage();
+        return (message == null || message.isBlank()) ? e.getClass().getSimpleName() : message;
     }
 
     private static String readScriptContent(File fileOrDir, String relPath) {
+        relPath = LuaModPathSecurity.validateEntryPoint(relPath);
         if (fileOrDir.isDirectory()) {
-            File scriptFile = new File(fileOrDir, relPath);
+            Path scriptPath = LuaModPathSecurity.resolveContained(fileOrDir.toPath(), relPath);
+            File scriptFile = scriptPath.toFile();
             if (scriptFile.exists()) {
                 try {
                     return Files.readString(scriptFile.toPath(), StandardCharsets.UTF_8);

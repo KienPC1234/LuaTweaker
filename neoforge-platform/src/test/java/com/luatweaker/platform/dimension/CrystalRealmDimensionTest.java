@@ -1,5 +1,7 @@
 package com.luatweaker.platform.dimension;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.pal.IPlatformContent;
 import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.vm.ILuaEngine;
@@ -9,7 +11,6 @@ import com.luatweaker.content.StorageServiceImpl;
 import com.luatweaker.core.logger.AsyncFileLogger;
 import com.luatweaker.core.mod.LuaModManager;
 import com.luatweaker.core.service.LuaServiceRegistry;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import com.luatweaker.dimension.DimensionConfig;
 import com.luatweaker.dimension.DimensionServiceImpl;
 import com.luatweaker.platform.bootstrap.LuaServiceBootstrap;
@@ -111,7 +112,7 @@ public class CrystalRealmDimensionTest {
         File baseDir = findLuamodsDir();
         assertTrue(baseDir.exists(), "luamods directory should exist at " + baseDir.getAbsolutePath());
 
-        ILuaEngine engine = new CobaltLuaEngine(true);
+        ILuaEngine engine = LuaEngineFactory.create(true);
         engine.setLuaDirectory(baseDir);
 
         ContentServiceImpl contentService = new ContentServiceImpl();
@@ -250,7 +251,7 @@ public class CrystalRealmDimensionTest {
     @Test
     public void crystalSkylands_LoadsWithFloatingIslands() {
         File baseDir = findLuamodsDir();
-        ILuaEngine engine = new CobaltLuaEngine(true);
+        ILuaEngine engine = LuaEngineFactory.create(true);
         engine.setLuaDirectory(baseDir);
 
         ContentServiceImpl contentService = new ContentServiceImpl();

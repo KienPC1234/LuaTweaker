@@ -86,15 +86,26 @@ public class NeoForgeInteractableItem implements IInteractableItem {
             ItemStack stack = getItemStack();
             if (!stack.isEmpty()) {
                 var hand = net.minecraft.world.InteractionHand.MAIN_HAND;
-                var hit = new net.minecraft.world.phys.BlockHitResult(
-                    player.position(), net.minecraft.core.Direction.UP, player.blockPosition(), false
-                );
                 if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-                    var res = serverPlayer.gameMode.useItemOn(serverPlayer, serverPlayer.level(), stack, hand, hit);
-                    return res.consumesAction();
+                    var res = serverPlayer.gameMode.useItem(serverPlayer, serverPlayer.level(), stack, hand);
+                    if (res.consumesAction()) {
+                        return true;
+                    }
+                    var hit = new net.minecraft.world.phys.BlockHitResult(
+                        player.position(), net.minecraft.core.Direction.UP, player.blockPosition(), false
+                    );
+                    var resOn = serverPlayer.gameMode.useItemOn(serverPlayer, serverPlayer.level(), stack, hand, hit);
+                    return resOn.consumesAction();
                 } else {
-                    var res = stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, hand, hit));
-                    return res.consumesAction();
+                    var res = stack.use(player.level(), player, hand);
+                    if (res.getResult().consumesAction()) {
+                        return true;
+                    }
+                    var hit = new net.minecraft.world.phys.BlockHitResult(
+                        player.position(), net.minecraft.core.Direction.UP, player.blockPosition(), false
+                    );
+                    var resOn = stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, hand, hit));
+                    return resOn.consumesAction();
                 }
             }
         }
@@ -193,7 +204,11 @@ public class NeoForgeInteractableItem implements IInteractableItem {
         if (stack.has(net.minecraft.core.component.DataComponents.CUSTOM_DATA)) {
             net.minecraft.world.item.component.CustomData customData = stack.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
             if (customData != null && customData.contains(key)) {
-                return customData.copyTag().get(key).getAsString();
+                net.minecraft.nbt.CompoundTag tag = customData.copyTag();
+                if (tag.contains(key, net.minecraft.nbt.Tag.TAG_STRING)) {
+                    return tag.getString(key);
+                }
+                return tag.get(key).getAsString();
             }
         }
         return null;

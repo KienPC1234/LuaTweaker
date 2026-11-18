@@ -1,9 +1,10 @@
 package com.luatweaker.events;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.event.EventNames;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaValue;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,7 +26,7 @@ public class TeardownHookTest {
 
     @Test
     void testOnScriptUnload_CalledOnTeardown() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         EventLuaBinding.registerBindings(engine);
 
         engine.executeString(
@@ -45,7 +46,7 @@ public class TeardownHookTest {
 
     @Test
     void testOnScriptUnload_ListenersClearedAfterTeardown() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         EventLuaBinding.registerBindings(engine);
 
         engine.executeString(
@@ -70,7 +71,7 @@ public class TeardownHookTest {
 
     @Test
     void testOnScriptUnload_ReplaceSemantics() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         EventLuaBinding.registerBindings(engine);
 
         engine.executeString(

@@ -1,5 +1,7 @@
 # 👑 BossBar & 🌐 World Server Data Interaction API
 
+> ⚠️ **STALE (verified 2026-11-18):** the `bossbar`/`world` globals and `game:GetService` names used here do not match the current APIs. Pending rewrite or removal — do not implement from this document.
+
 > **Global Variables:** `bossbar`, `world`, `workspace`  
 > **Service Lookup:** `game:GetService("BossBar")`, `game:GetService("World")`, `workspace`
 

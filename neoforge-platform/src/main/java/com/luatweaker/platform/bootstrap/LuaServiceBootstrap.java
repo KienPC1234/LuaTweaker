@@ -75,7 +75,11 @@ public final class LuaServiceBootstrap {
         TaskLuaBinding.registerBindings(engine, taskService);
 
         // 9. Recipe Interception Service (Anvil, Brewing, Villager Trade)
-        InterceptionServiceImpl interceptionService = new InterceptionServiceImpl();
+        // Publish the active recipe manager so the client-side compatibility constructor
+        // (LuaTweakerMod.onClientSetup) resolves the same delegate as this engine.
+        com.luatweaker.core.service.LuaServiceRegistry.register(
+            InterceptionServiceImpl.RECIPE_SERVICE_KEY, recipeManager);
+        InterceptionServiceImpl interceptionService = new InterceptionServiceImpl(recipeManager);
         InterceptionLuaBinding.registerBindings(engine, interceptionService);
 
         // 9a. Loot Service (Mob Drops, Chest Loot, Block Drops, Fishing)
@@ -99,6 +103,11 @@ public final class LuaServiceBootstrap {
 
         // 9b4. Full-control spawn handlers (the Lua code decides every spawn)
         com.luatweaker.spawn.SpawnRuleLuaBinding.registerBindings(engine);
+
+        // 9b5. Structures Service (single-template NBT structures, validated registry)
+        com.luatweaker.structures.StructureServiceImpl structureService = new com.luatweaker.structures.StructureServiceImpl();
+        com.luatweaker.structures.StructureLuaBinding.registerBindings(engine, structureService);
+        engine.registerService("StructureServiceImpl", structureService);
 
         // 9b. Server-side command registration (Commands:Register for /lt sub-commands)
         com.luatweaker.command.CommandLuaBinding.registerBindings(engine);

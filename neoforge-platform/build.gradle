@@ -10,6 +10,7 @@ evaluationDependsOn ':modules:module-worldgen'
 evaluationDependsOn ':modules:module-noise'
 evaluationDependsOn ':modules:module-dimensions'
 evaluationDependsOn ':modules:module-spawnrules'
+evaluationDependsOn ':modules:module-structures'
 evaluationDependsOn ':modules:module-update'
 
 version = mod_version
@@ -89,6 +90,7 @@ neoForge {
  sourceSet(project(':modules:module-noise').sourceSets.main)
  sourceSet(project(':modules:module-dimensions').sourceSets.main)
  sourceSet(project(':modules:module-spawnrules').sourceSets.main)
+ sourceSet(project(':modules:module-structures').sourceSets.main)
   sourceSet(project(':modules:module-update').sourceSets.main)
         }
     }
@@ -129,6 +131,7 @@ dependencies {
  jarJar(project(':modules:module-noise'))
  jarJar(project(':modules:module-dimensions'))
  jarJar(project(':modules:module-spawnrules'))
+ jarJar(project(':modules:module-structures'))
  jarJar(project(':modules:module-update'))
 
     // Also needed at compile time
@@ -151,13 +154,14 @@ dependencies {
  implementation project(':modules:module-noise')
  implementation project(':modules:module-dimensions')
  implementation project(':modules:module-spawnrules')
+ implementation project(':modules:module-structures')
  implementation project(':modules:module-update')
 
     // JEI integration for checking recipes in-game easily
     implementation "mezz.jei:jei-1.21.1-neoforge:19.32.0.359"
 
     // FML runtime classpath overrides for dev environment
-    additionalRuntimeClasspath "cc.tweaked:cobalt:0.9.9"
+    additionalRuntimeClasspath "io.github.kienpc1234:luava:${luava_version}"
     additionalRuntimeClasspath "org.mongodb:bson:5.1.0"
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'

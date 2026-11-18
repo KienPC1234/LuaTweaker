@@ -1,11 +1,13 @@
 package com.luatweaker.interaction;
 
+import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.interaction.IInteractableBlock;
 import com.luatweaker.api.interaction.IInteractableItem;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.core.logger.AsyncFileLogger;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,11 +21,11 @@ public class InteractionLuaBindingTest {
         AsyncFileLogger.get().shutdown();
     }
 
-    private CobaltLuaEngine engine;
+    private ILuaEngine engine;
 
     @BeforeEach
     void setup() {
-        engine = new CobaltLuaEngine();
+        engine = LuaEngineFactory.create(false);
     }
 
     @Test

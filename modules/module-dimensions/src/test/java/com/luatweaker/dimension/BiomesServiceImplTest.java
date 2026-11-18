@@ -1,9 +1,10 @@
 package com.luatweaker.dimension;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.content.IDatapackService;
 import com.luatweaker.core.logger.AsyncFileLogger;
 import com.luatweaker.core.service.LuaServiceRegistry;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaValue;
 import org.junit.jupiter.api.AfterAll;
@@ -42,7 +43,7 @@ public class BiomesServiceImplTest {
     @BeforeEach
     void setup() {
         LuaServiceRegistry.clear();
-        engine = new CobaltLuaEngine();
+        engine = LuaEngineFactory.create(false);
         service = new BiomesServiceImpl(engine);
         datapack = new FakeDatapack();
         engine.registerService("Datapack", datapack);

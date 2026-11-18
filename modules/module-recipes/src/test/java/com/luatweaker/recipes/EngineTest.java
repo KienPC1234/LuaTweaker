@@ -1,13 +1,13 @@
 package com.luatweaker.recipes;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.recipe.IRecipeManagerService;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.wrapper.IngredientWrapper;
 import com.luatweaker.api.wrapper.ItemCount;
-import com.luatweaker.core.engine.LuaEngine;
 import com.luatweaker.core.logger.AsyncFileLogger;
 import com.luatweaker.core.service.LuaServiceRegistry;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -159,7 +159,7 @@ public class EngineTest {
 
     @Test
     public void testRecipeScripts() throws IOException {
-        com.luatweaker.api.vm.ILuaEngine engine = new com.luatweaker.core.vm.CobaltLuaEngine();
+        com.luatweaker.api.vm.ILuaEngine engine = LuaEngineFactory.create(false);
         com.luatweaker.api.vm.ILuaTable recipesTable = engine.createTable();
         RecipesLuaBinding.bind(recipesTable, mockService);
         engine.registerService("Recipes", recipesTable);
@@ -188,7 +188,7 @@ public class EngineTest {
 
     @Test
     public void testSyntaxErrorTraceback() throws IOException, InterruptedException {
-        com.luatweaker.api.vm.ILuaEngine engine = new com.luatweaker.core.vm.CobaltLuaEngine();
+        com.luatweaker.api.vm.ILuaEngine engine = LuaEngineFactory.create(false);
         
         File logFile = new File("logs/luatweaker/latest.log");
         if (logFile.exists()) {
@@ -281,7 +281,7 @@ public class EngineTest {
         log.info("Test Mod structured log line")
         """);
 
-        ILuaEngine engine = new CobaltLuaEngine(true);
+        ILuaEngine engine = LuaEngineFactory.create(true);
         com.luatweaker.core.mod.LuaModManager.loadLuaMods(luamodsDir, engine, "universal");
 
         File modsManagerFile = new File(luamodsDir, "mods_manager.json");

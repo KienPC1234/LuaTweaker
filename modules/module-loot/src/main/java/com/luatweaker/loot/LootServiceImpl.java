@@ -40,6 +40,9 @@ public class LootServiceImpl implements ILootService {
         if (minCount < 0 || maxCount < minCount) {
             throw new IllegalArgumentException("Invalid count range: min=" + minCount + ", max=" + maxCount);
         }
+        if (lootingBonus < 0) {
+            throw new IllegalArgumentException("lootingBonus must not be negative, got: " + lootingBonus);
+        }
 
         pendingMobDrops.computeIfAbsent(entityId, k -> Collections.synchronizedList(new ArrayList<>()))
                 .add(new MobDropEntry(entityId, itemId, chance, minCount, maxCount, lootingBonus));
@@ -51,6 +54,7 @@ public class LootServiceImpl implements ILootService {
             throw new IllegalArgumentException("entityId and itemId must not be blank");
         }
         pendingRemovals.add(new RemovalEntry("mob:" + entityId, itemId));
+        applyRemovalsToPending();
         return true;
     }
 
@@ -77,6 +81,7 @@ public class LootServiceImpl implements ILootService {
             throw new IllegalArgumentException("tableId and itemId must not be blank");
         }
         pendingRemovals.add(new RemovalEntry("chest:" + tableId, itemId));
+        applyRemovalsToPending();
         return true;
     }
 
@@ -106,10 +111,37 @@ public class LootServiceImpl implements ILootService {
         pendingFishingLoot.add(new FishingLootEntry(itemId, chance, normalizedCategory));
     }
 
-    @Override
-    @Nullable
-    public Object getTable(@NotNull String tableId) {
-        return null;
+    /**
+     * Applies every recorded removal to the pending additions so the emitted datapack JSON no
+     * longer contains the removed item. Idempotent: safe to call both from the removal methods and
+     * again at apply time (which also covers remove-before-add orderings).
+     *
+     * <p>Limitation: this only removes entries registered through this API. Removing a vanilla
+     * drop that was never added here has no effect on the vanilla table; reading/rewriting the
+     * original table would require a verified resource-manager PAL capability.
+     */
+    public void applyRemovalsToPending() {
+        synchronized (pendingRemovals) {
+            for (RemovalEntry removal : pendingRemovals) {
+                if (removal.targetId().startsWith("mob:")) {
+                    String entityId = removal.targetId().substring("mob:".length());
+                    List<MobDropEntry> drops = pendingMobDrops.get(entityId);
+                    if (drops != null) {
+                        synchronized (drops) {
+                            drops.removeIf(drop -> drop.itemId().equals(removal.itemId()));
+                        }
+                    }
+                } else if (removal.targetId().startsWith("chest:")) {
+                    String tableId = removal.targetId().substring("chest:".length());
+                    List<ChestLootEntry> entries = pendingChestLoot.get(tableId);
+                    if (entries != null) {
+                        synchronized (entries) {
+                            entries.removeIf(entry -> entry.itemId().equals(removal.itemId()));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     @Override

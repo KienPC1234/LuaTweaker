@@ -66,6 +66,13 @@ public class DoctorCommand implements ILuaTweakerCommand {
         int serviceCount = LuaServiceRegistry.size();
         sender.sendMessage("§7Registered services: §e" + serviceCount);
 
+        Object taskService = LuaServiceRegistry.get("TaskServiceImpl");
+        if (taskService instanceof com.luatweaker.tasks.TaskServiceImpl tasks) {
+            sender.sendMessage("§7Lua tasks: §e" + tasks.getQueuedTaskCount()
+                    + " queued, §c" + tasks.getDroppedTaskCount() + " dropped, §6"
+                    + tasks.getSlowTaskCount() + " slow callbacks");
+        }
+
         Object cmdService = LuaServiceRegistry.get("CommandServiceImpl");
         if (cmdService instanceof com.luatweaker.command.CommandServiceImpl commandService) {
             var luaCommands = commandService.getSnapshot();

@@ -1,5 +1,7 @@
 # 🎨 GUI Graphics & Screen Rendering API (`GuiGraphicsAPI`)
 
+> ⚠️ **STALE (verified 2026-11-18):** this document describes an API surface that does not exist in the current codebase (`GuiGraphicsAPI.java` absent, `kien.*` packages absent, none of these globals defined in the bootstrap). The real client graphics API is `GuiService`. Pending rewrite or removal — do not implement from this document.
+
 > **Access:** `game:GetService("GuiGraphics")`, or globals `gui` / `graphics`  
 > **Source:** [GuiGraphicsAPI.java](../src/main/java/kien/luatweaker/api/gui/GuiGraphicsAPI.java)
 

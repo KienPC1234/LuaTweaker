@@ -9,6 +9,12 @@ import java.util.function.BiFunction;
 
 public class ContentLuaBinding {
 
+    private static final int DEFAULT_COUNT = 1;
+    private static final int DEFAULT_CONTAINER_COLUMNS = 6;
+    private static final String DEFAULT_DROP_MODE = "packed";
+    private static final String DEFAULT_BOSS_BAR_COLOR = "RED";
+    private static final String DEFAULT_BOSS_BAR_OVERLAY = "PROGRESS";
+
     public static void registerBindings(ILuaEngine engine, IContentService contentService, IStorageService storageService, IDatapackService datapackService) {
         ILuaTable env = engine.getGlobalEnvironment();
 
@@ -318,7 +324,7 @@ public class ContentLuaBinding {
         startupTable.rawset("Item", args -> {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             String id = args[off].asString();
-            int count = args.length - off >= 2 ? args[off + 1].asInt() : 1;
+            int count = args.length - off >= 2 ? args[off + 1].asInt() : DEFAULT_COUNT;
             return engine.toLuaValue(new com.luatweaker.api.wrapper.ItemCount(id, count));
         });
 
@@ -476,31 +482,46 @@ public class ContentLuaBinding {
         //   tag.block("minecraft:beacon_base_blocks", {"luatweaker:ruby_block"})
         ILuaTable tagTable = engine.createTable();
         tagTable.rawset("item", args -> {
-            if (args.length >= 2) addTagFromLua(datapackService, "item", args[1].asString(), args.length >= 3 ? args[2] : null);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 1) {
+                throw new IllegalArgumentException("tag.item requires (tagId, values)");
+            }
+            addTagFromLua(datapackService, "item", args[off].asString(),
+                    args.length - off >= 2 ? args[off + 1] : null);
             return null;
         });
         tagTable.rawset("block", args -> {
-            if (args.length >= 2) addTagFromLua(datapackService, "block", args[1].asString(), args.length >= 3 ? args[2] : null);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 1) {
+                throw new IllegalArgumentException("tag.block requires (tagId, values)");
+            }
+            addTagFromLua(datapackService, "block", args[off].asString(),
+                    args.length - off >= 2 ? args[off + 1] : null);
             return null;
         });
         tagTable.rawset("add", args -> {
-            if (args.length >= 3) addTagFromLua(datapackService, args[1].asString(), args[2].asString(), args.length >= 4 ? args[3] : null);
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 2) {
+                throw new IllegalArgumentException("tag.add requires (type, tagId, values)");
+            }
+            addTagFromLua(datapackService, args[off].asString(), args[off + 1].asString(),
+                    args.length - off >= 3 ? args[off + 2] : null);
             return null;
         });
 
         // Add __call metamethod so tag(...) function call works for both tag ingredients AND tag registration!
         ILuaTable tagMeta = engine.createTable();
         tagMeta.rawset("__call", args -> {
-            // Note: in Cobalt function invocation, args[1] is self (tagTable)
-            if (args.length >= 3 && !args[2].isNil() && (
-                    args[2].asString().equalsIgnoreCase("item") ||
-                    args[2].asString().equalsIgnoreCase("block") ||
-                    args[2].asString().equalsIgnoreCase("fluid") ||
-                    args[2].asString().equalsIgnoreCase("entity_type")
+            // Lua passes the table itself first, so the call arguments start at index 1.
+            if (args.length >= 3 && !args[1].isNil() && (
+                    args[1].asString().equalsIgnoreCase("item") ||
+                    args[1].asString().equalsIgnoreCase("block") ||
+                    args[1].asString().equalsIgnoreCase("fluid") ||
+                    args[1].asString().equalsIgnoreCase("entity_type")
             )) {
-                String type = args[2].asString();
-                String tagId = args.length >= 4 ? args[3].asString() : "";
-                ILuaValue val = args.length >= 5 ? args[4] : null;
+                String type = args[1].asString();
+                String tagId = args.length >= 3 ? args[2].asString() : "";
+                ILuaValue val = args.length >= 4 ? args[3] : null;
                 if (!tagId.isEmpty()) {
                     addTagFromLua(datapackService, type, tagId, val);
                 }
@@ -541,9 +562,12 @@ public class ContentLuaBinding {
 
     private static void bindCreationHelper(ILuaEngine engine, ILuaTable startupTable, String name, IDatapackService datapackService, BiFunction<String, java.util.function.Consumer<IItemBuilder>, IItemBuilder> creator) {
         startupTable.rawset(name, args -> {
-            if (args.length < 2) throw new IllegalArgumentException("startup:" + name + " requires (id, builderFunc)");
-            String id = args[1].asString();
-            ILuaValue callbackVal = args[2];
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 2) {
+                throw new IllegalArgumentException("startup:" + name + " requires (id, builderFunc)");
+            }
+            String id = args[off].asString();
+            ILuaValue callbackVal = args[off + 1];
 
             creator.apply(id, builder -> {
                 if (callbackVal.isFunction()) {
@@ -806,7 +830,7 @@ public class ContentLuaBinding {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) {
                 String itemId = args[off].asString();
-                int minCount = args.length - off >= 2 ? args[off + 1].asInt() : 1;
+                int minCount = args.length - off >= 2 ? args[off + 1].asInt() : DEFAULT_COUNT;
                 int maxCount = args.length - off >= 3 ? args[off + 2].asInt() : minCount;
                 builder.drop(itemId, minCount, maxCount);
             }
@@ -827,8 +851,8 @@ public class ContentLuaBinding {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) {
                 int rows = args[off].asInt();
-                int cols = args.length - off >= 2 ? args[off + 1].asInt() : 6;
-                String dropMode = args.length - off >= 3 ? args[off + 2].asString() : "packed";
+                int cols = args.length - off >= 2 ? args[off + 1].asInt() : DEFAULT_CONTAINER_COLUMNS;
+                String dropMode = args.length - off >= 3 ? args[off + 2].asString() : DEFAULT_DROP_MODE;
                 builder.container(rows, cols, dropMode);
             }
             return table;
@@ -1078,7 +1102,7 @@ public class ContentLuaBinding {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) {
                 String itemId = args[off].asString();
-                int minCount = args.length - off >= 2 ? args[off + 1].asInt() : 1;
+                int minCount = args.length - off >= 2 ? args[off + 1].asInt() : DEFAULT_COUNT;
                 int maxCount = args.length - off >= 3 ? args[off + 2].asInt() : minCount;
                 builder.drop(itemId, minCount, maxCount);
             }
@@ -1094,8 +1118,8 @@ public class ContentLuaBinding {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) {
                 String title = args[off].asString();
-                String color = args.length - off >= 2 ? args[off + 1].asString() : "RED";
-                String overlay = args.length - off >= 3 ? args[off + 2].asString() : "PROGRESS";
+                String color = args.length - off >= 2 ? args[off + 1].asString() : DEFAULT_BOSS_BAR_COLOR;
+                String overlay = args.length - off >= 3 ? args[off + 2].asString() : DEFAULT_BOSS_BAR_OVERLAY;
                 builder.bossBar(title, color, overlay);
             }
             return table;

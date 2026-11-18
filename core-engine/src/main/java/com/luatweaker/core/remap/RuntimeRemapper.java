@@ -28,7 +28,7 @@ public class RuntimeRemapper implements IRemappingService {
     }
 
     private boolean detectObfuscation(@NotNull Class<?> sampleClass) {
-        if (obfuscated != null) return obfuscated;
+        if (Boolean.TRUE.equals(obfuscated)) return true;
 
         String envProp = System.getProperty("luatweaker.obfuscated");
         if (envProp != null) {
@@ -47,7 +47,6 @@ public class RuntimeRemapper implements IRemappingService {
             current = current.getSuperclass();
         }
 
-        obfuscated = false;
         return false;
     }
 

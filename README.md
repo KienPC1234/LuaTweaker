@@ -18,7 +18,7 @@
 
 The engine is **loader-agnostic**. All platform access goes through the **PAL (Platform Abstraction Layer)**, so the core engine and feature modules never touch a mod loader API directly. The reference implementation targets **NeoForge**; new loaders can be added by implementing the PAL interfaces without touching core code.
 
-The runtime is **Lua 5.2 / Cobalt** with a Roblox (Luau)-flavored API: services, signals, task scheduling, and fluent content builders.
+The runtime is **Lua 5.4 / luava 0.2.5** with a Roblox (Luau)-flavored API: services, signals, task scheduling, and fluent content builders.
 
 ---
 
@@ -82,7 +82,7 @@ Strict **Separation of Concerns** across decoupled modules:
 ```text
 LuaTweaker/
 ├── common-api/         # Pure Java 21: PAL interfaces, VM interfaces, @LuaDoc / @LuaDefault annotations
-├── core-engine/        # Cobalt VM wrapper, LuaBinder (auto-binding), DynamicJavaProxy, async logger, linter, stub generator
+├── core-engine/        # Luava VM wrapper, LuaBinder (auto-binding), DynamicJavaProxy, async logger, linter, stub generator
 ├── modules/
 │   ├── module-content/     # Content builders (items, blocks, fluids, entities, tabs, keybinds)
 │   ├── module-recipes/     # Recipe manipulation
@@ -96,6 +96,12 @@ LuaTweaker/
 │   ├── module-math/        # Vector3 / Vector2 / Color3 / math extensions
 │   ├── module-interception/# Anvil / brewing / villager trade interception
 │   ├── module-loot/        # Loot table manipulation (mob drops, chest, block, fishing)
+│   ├── module-command/     # Server-side /lt sub-command registration from Lua
+│   ├── module-worldgen/    # Ore, vegetation and biome feature generation hooks
+│   ├── module-noise/       # fBm, ridged, domain-warp, voronoi and simplex noise
+│   ├── module-dimensions/  # Custom dimensions, terrain generation and biome spawn entries
+│   ├── module-spawnrules/  # Full-control Lua mob spawn handlers
+│   ├── module-structures/  # Single-template NBT structures (validated registry + datapack emission)
 │   └── module-update/      # Declarative update checker + permission-gated HTTP GET
 └── neoforge-platform/  # Reference PAL implementation (NeoForge launcher, registrars, render)
 ```

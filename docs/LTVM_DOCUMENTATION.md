@@ -1,5 +1,9 @@
 # LuaTweaker VM (LTVM) - Architectural Design & Extension Guide
 
+> ⚠️ **PARTLY STALE (verified 2026-11-18):** the module-structure overview is broadly correct, but
+> VM internals and service-access examples predate the Luava migration and the `require()`
+> module convention. Verify every detail against `common-api`/`core-engine` source.
+
 **LuaTweaker VM (LTVM)** is an ultra-lightweight, high-performance scripting engine designed to allow fast, dynamic, and non-blocking game modifications. It is built to ensure a zero-clutter, clean multi-module architecture, enabling easy porting to other platforms (Fabric/Forge) and seamless additions of new features.
 
 ---
@@ -30,8 +34,8 @@ Contains only pure Java 21 interfaces and records. It has **zero dependencies** 
 - **Decoupled VM**: `ILuaValue`, `ILuaTable`, `ILuaFunction`, `ILuaEngine` interfaces.
 - **Annotations**: `@LuaDoc` metadata annotations.
 
-### 1.2 `core-engine` (LTVM Cobalt Wrapper)
-Implements the abstract VM interfaces using Cobalt. It manages the Lua execution lifecycle, asynchronous logging, custom compile/runtime error tracebacks, and LSP stubs. It also executes a pure Lua bootstrap script on startup to define Roblox core classes (`task`, `Signal`, `RemoteEvent`, `Players`).
+### 1.2 `core-engine` (LTVM Luava Wrapper)
+Implements the abstract VM interfaces using luava 0.2.5. It manages the Lua execution lifecycle, asynchronous logging, custom compile/runtime error tracebacks, and LSP stubs. It also executes a pure Lua bootstrap script on startup to define Roblox core classes (`task`, `Signal`, `RemoteEvent`, `Players`).
 
 ### 1.3 Feature Modules (`modules/*`)
 Business logic features (Recipes, Entities, Interaction, Events, Math, Storage, Network). By compiling only against `common-api` and `core-engine`, these modules are **completely engine-agnostic and platform-agnostic**. They register Lua bindings by interacting with `ILuaTable` and `ILuaFunction` callback interfaces rather than importing Cobalt or Minecraft classes.

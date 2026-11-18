@@ -16,7 +16,35 @@ import org.jetbrains.annotations.Nullable;
  * permission decisions must NOT be based on it (see {@link #resolveCurrentModId}).</p>
  */
 public final class LuaModContext {
+    /**
+     * Java-side stack of the mod whose entrypoint/OnEnable is currently executing. Unlike the
+     * {@code mod} global this cannot be spoofed by Lua, so permission checks and command ownership
+     * use it whenever it is available.
+     */
+    private static final ThreadLocal<java.util.Deque<String>> LOADING_MOD =
+            ThreadLocal.withInitial(java.util.ArrayDeque::new);
+
     private LuaModContext() {}
+
+    public static void pushLoadingMod(@NotNull String modId) {
+        LOADING_MOD.get().push(modId);
+    }
+
+    public static void popLoadingMod() {
+        java.util.Deque<String> stack = LOADING_MOD.get();
+        if (!stack.isEmpty()) {
+            stack.pop();
+        }
+        if (stack.isEmpty()) {
+            LOADING_MOD.remove();
+        }
+    }
+
+    /** @return the mod whose entrypoint is executing on this thread, or null outside a load. */
+    public static @Nullable String currentLoadingMod() {
+        java.util.Deque<String> stack = LOADING_MOD.get();
+        return stack.isEmpty() ? null : stack.peek();
+    }
 
     /**
      * Resolves the id of the Lua mod whose script is currently running from

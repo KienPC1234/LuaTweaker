@@ -35,7 +35,10 @@ public class NeoForgeClientEventListener {
                 }
             }
         } catch (Throwable t) {
-            // Ignore
+            // Never crash the render loop, but do not hide the failure either.
+            com.luatweaker.api.log.LuaTweakerLog.get().debug(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "RunService signal '" + signalName + "' dispatch failed: " + t.getMessage());
         }
     }
 
@@ -97,7 +100,10 @@ public class NeoForgeClientEventListener {
                 }
             }
         } catch (Throwable t) {
-            // Ignore frame render errors to prevent crashing client loop
+            // Never crash the render loop, but leave a trace for HUD debugging.
+            com.luatweaker.api.log.LuaTweakerLog.get().debug(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "GuiService.OnRenderHUD dispatch failed: " + t.getMessage());
         } finally {
             NeoForgeGuiService.clearGraphics();
         }

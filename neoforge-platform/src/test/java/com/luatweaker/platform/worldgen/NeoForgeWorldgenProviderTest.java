@@ -90,11 +90,19 @@ public class NeoForgeWorldgenProviderTest {
         assertEquals(2, placed, "one placed feature per biome (multiple 'biome' placements would AND together)");
 
         long biomePlacements = files.values().stream()
-                .filter(j -> j.contains("\"type\":\"minecraft:biome\",\"biome\":"))
+                .filter(j -> j.contains("\"type\":\"minecraft:biome\""))
                 .count();
         assertEquals(2, biomePlacements);
-        assertTrue(files.values().stream().anyMatch(j -> j.contains("\"biome\":\"minecraft:plains\"")));
-        assertTrue(files.values().stream().anyMatch(j -> j.contains("\"biome\":\"minecraft:desert\"")));
+        // Bare minecraft:biome is the vanilla shape (191/191 placed features in the
+        // 1.21.1 jar) - per-biome scoping lives in the add_features modifier, not here.
+        assertFalse(files.values().stream().anyMatch(j -> j.contains("\"biome\":\"minecraft:plains\"")));
+        long vegModifiers = files.values().stream()
+                .filter(j -> j.contains("\"type\":\"neoforge:add_features\"")
+                        && j.contains("\"step\":\"vegetal_decoration\""))
+                .count();
+        assertEquals(2, vegModifiers, "one add_features modifier per placed vegetation feature");
+        assertTrue(files.values().stream().anyMatch(j -> j.contains("\"biomes\":[\"minecraft:plains\"]")));
+        assertTrue(files.values().stream().anyMatch(j -> j.contains("\"biomes\":[\"minecraft:desert\"]")));
         assertTrue(files.values().stream().anyMatch(j -> j.contains("\"chance\":10")));
     }
 

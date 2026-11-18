@@ -1,9 +1,11 @@
 package com.luatweaker.platform.bootstrap;
 
+import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.client.IKeyBindService;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.client.KeyBindServiceImpl;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import com.luatweaker.network.NetworkServiceImpl;
 import org.junit.jupiter.api.Test;
 
@@ -21,7 +23,7 @@ public class KeyBindPayloadValidatorTest {
 
     @Test
     public void matchedPayloadsProduceNoWarnings() {
-        CobaltLuaEngine engine = new CobaltLuaEngine(false);
+        ILuaEngine engine = LuaEngineFactory.create(false);
         NetworkServiceImpl networkService = new NetworkServiceImpl(engine);
         networkService.GetOrCreateRemoteEvent("StaffCastSkill");
         networkService.GetOrCreateRemoteEvent("StaffSwapSkill");
@@ -37,7 +39,7 @@ public class KeyBindPayloadValidatorTest {
 
     @Test
     public void typoPayloadProducesWarningNamingTheKeybind() {
-        CobaltLuaEngine engine = new CobaltLuaEngine(false);
+        ILuaEngine engine = LuaEngineFactory.create(false);
         NetworkServiceImpl networkService = new NetworkServiceImpl(engine);
         networkService.GetOrCreateRemoteEvent("StaffCastSkill");
 
@@ -56,7 +58,7 @@ public class KeyBindPayloadValidatorTest {
 
     @Test
     public void blankPayloadIsSkipped() {
-        CobaltLuaEngine engine = new CobaltLuaEngine(false);
+        ILuaEngine engine = LuaEngineFactory.create(false);
         NetworkServiceImpl networkService = new NetworkServiceImpl(engine);
 
         KeyBindServiceImpl keyBindService = new KeyBindServiceImpl();

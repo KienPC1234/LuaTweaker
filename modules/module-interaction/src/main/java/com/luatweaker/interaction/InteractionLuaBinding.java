@@ -8,6 +8,8 @@ import org.jetbrains.annotations.NotNull;
 
 public class InteractionLuaBinding {
 
+    private static final String DEFAULT_DIMENSION = "minecraft:overworld";
+
     public static void registerBindings(@NotNull ILuaEngine engine) {
         IInteractionService service = new InteractionServiceImpl();
         
@@ -27,7 +29,7 @@ public class InteractionLuaBinding {
                 double x = pos.rawget("X").asDouble();
                 double y = pos.rawget("Y").asDouble();
                 double z = pos.rawget("Z").asDouble();
-                IInteractableBlock block = service.GetBlock("minecraft:overworld", (int) x, (int) y, (int) z);
+                IInteractableBlock block = service.GetBlock(DEFAULT_DIMENSION, (int) x, (int) y, (int) z);
                 return block != null ? wrapBlock(engine, block) : engine.nilValue();
             }
             return engine.nilValue();
@@ -82,7 +84,7 @@ public class InteractionLuaBinding {
                 off = off + 1;
             }
             if (args.length - off < 3) return engine.nilValue();
-            String dimension = dimOff >= 0 ? args[dimOff].asString() : "minecraft:overworld";
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : DEFAULT_DIMENSION;
             int x = args[off].asInt();
             int y = args[off + 1].asInt();
             int z = args[off + 2].asInt();
@@ -100,7 +102,7 @@ public class InteractionLuaBinding {
                 off = off + 1;
             }
             if (args.length - off < 4) return engine.nilValue();
-            String dimension = dimOff >= 0 ? args[dimOff].asString() : "minecraft:overworld";
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : DEFAULT_DIMENSION;
             int x = args[off].asInt();
             int y = args[off + 1].asInt();
             int z = args[off + 2].asInt();
@@ -123,7 +125,7 @@ public class InteractionLuaBinding {
                 off = off + 1;
             }
             if (args.length - off < 3) return engine.nilValue();
-            String dimension = dimOff >= 0 ? args[dimOff].asString() : "minecraft:overworld";
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : DEFAULT_DIMENSION;
             int x = args[off].asInt();
             int y = args[off + 1].asInt();
             int z = args[off + 2].asInt();
@@ -141,7 +143,7 @@ public class InteractionLuaBinding {
                 off = off + 1;
             }
             if (args.length - off < 4 || !args[off + 3].isTable()) return engine.wrapBoolean(false);
-            String dimension = dimOff >= 0 ? args[dimOff].asString() : "minecraft:overworld";
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : DEFAULT_DIMENSION;
             int x = args[off].asInt();
             int y = args[off + 1].asInt();
             int z = args[off + 2].asInt();
@@ -160,7 +162,7 @@ public class InteractionLuaBinding {
                 off = off + 1;
             }
             if (args.length - off < 4) return engine.wrapBoolean(false);
-            String dimension = dimOff >= 0 ? args[dimOff].asString() : "minecraft:overworld";
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : DEFAULT_DIMENSION;
             int x = args[off].asInt();
             int y = args[off + 1].asInt();
             int z = args[off + 2].asInt();
@@ -183,7 +185,7 @@ public class InteractionLuaBinding {
                 off = off + 1;
             }
             if (args.length - off < 7) return engine.wrapNumber(-1);
-            String dimension = dimOff >= 0 ? args[dimOff].asString() : "minecraft:overworld";
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : DEFAULT_DIMENSION;
             int x1 = args[off].asInt();
             int y1 = args[off + 1].asInt();
             int z1 = args[off + 2].asInt();
@@ -209,7 +211,7 @@ public class InteractionLuaBinding {
                 off = off + 1;
             }
             if (args.length - off < 8) return engine.wrapNumber(-1);
-            String dimension = dimOff >= 0 ? args[dimOff].asString() : "minecraft:overworld";
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : DEFAULT_DIMENSION;
             int x1 = args[off].asInt();
             int y1 = args[off + 1].asInt();
             int z1 = args[off + 2].asInt();
@@ -241,7 +243,7 @@ public class InteractionLuaBinding {
                 off = off + 1;
             }
             if (args.length - off < 4) return engine.wrapBoolean(false);
-            String dimension = dimOff >= 0 ? args[dimOff].asString() : "minecraft:overworld";
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : DEFAULT_DIMENSION;
             String templateId = args[off].asString();
             int x = args[off + 1].asInt();
             int y = args[off + 2].asInt();
@@ -689,38 +691,10 @@ public class InteractionLuaBinding {
 
     @org.jetbrains.annotations.Nullable
     private static ILuaValue getDynamicFallback(@NotNull ILuaEngine engine, @NotNull Object rawJavaObj, @NotNull String key) {
-        if (engine instanceof com.luatweaker.core.vm.CobaltLuaEngine cobaltEngine) {
-            org.squiddev.cobalt.LuaUserdata proxy = com.luatweaker.core.bind.DynamicJavaProxy.create(
-                    cobaltEngine.getCobaltState(), rawJavaObj);
-            try {
-                org.squiddev.cobalt.LuaValue result = org.squiddev.cobalt.OperationHelper.getTable(
-                        cobaltEngine.getCobaltState(), proxy, org.squiddev.cobalt.ValueFactory.valueOf(key));
-                if (!result.isNil()) {
-                    return new com.luatweaker.core.vm.CobaltLuaValue(result);
-                }
-            } catch (org.squiddev.cobalt.LuaError | org.squiddev.cobalt.UnwindThrowable e) {
-                // Fall through to nil
-            }
-        }
-        return null;
+        return EntitiesLuaBinding.readDynamicProperty(engine, rawJavaObj, key);
     }
 
     private static boolean setDynamicFallback(@NotNull ILuaEngine engine, @NotNull Object rawJavaObj, @NotNull String key, @NotNull ILuaValue val) {
-        if (engine instanceof com.luatweaker.core.vm.CobaltLuaEngine cobaltEngine) {
-            org.squiddev.cobalt.LuaUserdata proxy = com.luatweaker.core.bind.DynamicJavaProxy.create(
-                    cobaltEngine.getCobaltState(), rawJavaObj);
-            try {
-                org.squiddev.cobalt.LuaValue cobaltVal = org.squiddev.cobalt.Constants.NIL;
-                if (val instanceof com.luatweaker.core.vm.CobaltLuaValue cobaltWrapper) {
-                    cobaltVal = cobaltWrapper.getCobaltValue();
-                }
-                org.squiddev.cobalt.OperationHelper.setTable(
-                        cobaltEngine.getCobaltState(), proxy, org.squiddev.cobalt.ValueFactory.valueOf(key), cobaltVal);
-                return true;
-            } catch (org.squiddev.cobalt.LuaError | org.squiddev.cobalt.UnwindThrowable e) {
-                // Fall through
-            }
-        }
-        return false;
+        return EntitiesLuaBinding.writeDynamicProperty(engine, rawJavaObj, key, val);
     }
 }

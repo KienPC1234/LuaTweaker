@@ -5,7 +5,7 @@ import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.core.logger.AsyncFileLogger;
-import com.luatweaker.core.vm.CobaltLuaEngine;
+import com.luatweaker.core.vm.LuaEngineFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -117,15 +117,13 @@ public class WorldEditBindingTest {
     /** Executes Lua and fails the test if the engine recorded a script error. */
     private static void executeLua(ILuaEngine engine, String code, String name) {
         engine.executeString(code, name);
-        if (engine instanceof CobaltLuaEngine cobalt) {
-            String error = cobalt.getAndClearLastExecutionError();
-            assertNull(error, "Lua script failed: " + error);
-        }
+        String error = engine.getAndClearLastExecutionError();
+        assertNull(error, "Lua script failed: " + error);
     }
 
     @Test
     public void fillBlocksPassesArgsAndRoundTripsCount() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         InteractionLuaBinding.registerBindings(engine);
 
         executeLua(engine,
@@ -142,7 +140,7 @@ public class WorldEditBindingTest {
 
     @Test
     public void fillBlocksSupportsDimensionPrefix() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         InteractionLuaBinding.registerBindings(engine);
 
         executeLua(engine,
@@ -156,7 +154,7 @@ public class WorldEditBindingTest {
 
     @Test
     public void replaceBlocksPassesArgsAndRoundTripsCount() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         InteractionLuaBinding.registerBindings(engine);
 
         executeLua(engine,
@@ -173,7 +171,7 @@ public class WorldEditBindingTest {
 
     @Test
     public void missingArgumentsReturnMinusOne() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         InteractionLuaBinding.registerBindings(engine);
 
         executeLua(engine,
@@ -190,7 +188,7 @@ public class WorldEditBindingTest {
     public void platformRejectionRoundTrips() {
         interaction.fillResult = -1;
         interaction.replaceResult = -1;
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         InteractionLuaBinding.registerBindings(engine);
 
         executeLua(engine,
@@ -205,7 +203,7 @@ public class WorldEditBindingTest {
     @Test
     public void placeStructurePassesArgs() {
         interaction.placeResult = true;
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         InteractionLuaBinding.registerBindings(engine);
 
         executeLua(engine,
@@ -222,7 +220,7 @@ public class WorldEditBindingTest {
     @Test
     public void placeStructureSupportsDimensionPrefixAndDefaultRotation() {
         interaction.placeResult = false;
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         InteractionLuaBinding.registerBindings(engine);
 
         executeLua(engine,
@@ -237,7 +235,7 @@ public class WorldEditBindingTest {
 
     @Test
     public void missingArgumentsReturnFalse() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         InteractionLuaBinding.registerBindings(engine);
 
         executeLua(engine,
@@ -250,7 +248,7 @@ public class WorldEditBindingTest {
 
     @Test
     public void camelCaseAliasesExist() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         InteractionLuaBinding.registerBindings(engine);
 
         ILuaValue fill = engine.getGlobalEnvironment().rawget("World").asTable().rawget("fillBlocks");

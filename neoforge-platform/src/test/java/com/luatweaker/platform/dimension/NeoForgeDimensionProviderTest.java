@@ -1,11 +1,12 @@
 package com.luatweaker.platform.dimension;
 
+import com.luatweaker.core.vm.LuaEngineFactory;
+
 import com.luatweaker.api.content.IDatapackService;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.core.logger.AsyncFileLogger;
 import com.luatweaker.core.service.LuaServiceRegistry;
-import com.luatweaker.core.vm.CobaltLuaEngine;
 import com.luatweaker.dimension.DimensionLuaBinding;
 import com.luatweaker.dimension.DimensionServiceImpl;
 import org.junit.jupiter.api.AfterAll;
@@ -49,7 +50,7 @@ public class NeoForgeDimensionProviderTest {
 
     @Test
     void applyAll_WritesDimensionTypeAndDimensionJsons() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         DimensionLuaBinding.registerBindings(engine);
 
         engine.executeString(
@@ -91,7 +92,7 @@ public class NeoForgeDimensionProviderTest {
 
     @Test
     void applyAll_WritesCustomDimensionTypeFields() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         DimensionLuaBinding.registerBindings(engine);
 
         engine.executeString(
@@ -122,7 +123,7 @@ public class NeoForgeDimensionProviderTest {
 
     @Test
     void applyAll_WithNoDimensionsWritesNothing() {
-        ILuaEngine engine = new CobaltLuaEngine();
+        ILuaEngine engine = LuaEngineFactory.create(false);
         DimensionLuaBinding.registerBindings(engine);
         FakeDatapack datapack = new FakeDatapack();
         NeoForgeDimensionProvider.applyAll(datapack);

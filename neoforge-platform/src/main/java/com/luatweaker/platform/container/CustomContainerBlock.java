@@ -52,9 +52,20 @@ public class CustomContainerBlock extends Block implements EntityBlock {
 
     private static final Direction[] ALL_DIRECTIONS = Direction.values();
     public static final BooleanProperty[] CONNECTION_PROPS = {
-            BlockStateProperties.NORTH, BlockStateProperties.EAST, BlockStateProperties.SOUTH,
-            BlockStateProperties.WEST, BlockStateProperties.UP, BlockStateProperties.DOWN
+            BlockStateProperties.DOWN, BlockStateProperties.UP, BlockStateProperties.NORTH,
+            BlockStateProperties.SOUTH, BlockStateProperties.WEST, BlockStateProperties.EAST
     };
+
+    public static BooleanProperty getConnectionProp(Direction dir) {
+        return switch (dir) {
+            case DOWN -> BlockStateProperties.DOWN;
+            case UP -> BlockStateProperties.UP;
+            case NORTH -> BlockStateProperties.NORTH;
+            case SOUTH -> BlockStateProperties.SOUTH;
+            case WEST -> BlockStateProperties.WEST;
+            case EAST -> BlockStateProperties.EAST;
+        };
+    }
 
     private final String crateId;
     private final String crateTitle;
@@ -186,7 +197,7 @@ public class CustomContainerBlock extends Block implements EntityBlock {
             for (Direction dir : ALL_DIRECTIONS) {
                 BlockPos neighbor = pos.relative(dir);
                 BlockState neighborState = level.getBlockState(neighbor);
-                if (neighborState.getBlock() == this && neighborState.getValue(CONNECTION_PROPS[dir.get3DDataValue()])) {
+                if (neighborState.getBlock() == this && neighborState.getValue(getConnectionProp(dir.getOpposite()))) {
                     updateConnections(level, neighbor, neighborState);
                 }
             }
@@ -196,10 +207,9 @@ public class CustomContainerBlock extends Block implements EntityBlock {
 
     private void updateConnections(Level level, BlockPos pos, BlockState state) {
         BlockState updated = state;
-        for (int i = 0; i < ALL_DIRECTIONS.length; i++) {
-            Direction dir = ALL_DIRECTIONS[i];
+        for (Direction dir : ALL_DIRECTIONS) {
             boolean connected = level.getBlockState(pos.relative(dir)).getBlock() == this;
-            updated = updated.setValue(CONNECTION_PROPS[i], connected);
+            updated = updated.setValue(getConnectionProp(dir), connected);
         }
         if (updated != state) {
             level.setBlock(pos, updated, Block.UPDATE_ALL);

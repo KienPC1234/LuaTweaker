@@ -178,7 +178,10 @@ public class NeoForgeWorldRenderEventListener {
                 }
             }
         } catch (Throwable t) {
-            // Never crash the render loop
+            // Never crash the render loop, but keep a diagnostic trail.
+            com.luatweaker.api.log.LuaTweakerLog.get().debug(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "Client.OnRenderWorld dispatch failed: " + t.getMessage());
         }
 
         // Render queued primitives. The stage pose stack only carries the camera
@@ -195,9 +198,25 @@ public class NeoForgeWorldRenderEventListener {
                 for (Object op : ops) {
                     if (op instanceof Line line) {
                         float[] c = toColor(line.color());
-                        net.minecraft.client.renderer.LevelRenderer.renderLineBox(poseStack, consumer,
-                                new net.minecraft.world.phys.AABB(line.x1(), line.y1(), line.z1(), line.x2(), line.y2(), line.z2()),
-                                c[0], c[1], c[2], c[3]);
+                        float dx = (float) (line.x2() - line.x1());
+                        float dy = (float) (line.y2() - line.y1());
+                        float dz = (float) (line.z2() - line.z1());
+                        float len = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+                        if (len > 1.0E-5F) {
+                            dx /= len;
+                            dy /= len;
+                            dz /= len;
+                        } else {
+                            dx = 0.0F;
+                            dy = 1.0F;
+                            dz = 0.0F;
+                        }
+                        consumer.addVertex(poseStack.last().pose(), (float) line.x1(), (float) line.y1(), (float) line.z1())
+                                .setColor(c[0], c[1], c[2], c[3])
+                                .setNormal(poseStack.last(), dx, dy, dz);
+                        consumer.addVertex(poseStack.last().pose(), (float) line.x2(), (float) line.y2(), (float) line.z2())
+                                .setColor(c[0], c[1], c[2], c[3])
+                                .setNormal(poseStack.last(), dx, dy, dz);
                     } else if (op instanceof Box box) {
                         float[] c = toColor(box.color());
                         net.minecraft.client.renderer.LevelRenderer.renderLineBox(poseStack, consumer,

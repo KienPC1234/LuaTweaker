@@ -50,6 +50,8 @@ public final class UpdateChecker {
                         + ":// (plain http is blocked to protect player traffic)";
                 return failure(modId, currentVersion, updateUrl, msg);
             }
+            // A manifest is untrusted input: never let update_url reach loopback/private hosts.
+            UrlSafety.validatePublicHost(url);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             try {
                 conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
@@ -65,6 +67,8 @@ public final class UpdateChecker {
                     return failure(modId, currentVersion, updateUrl,
                             "update_url redirected to non-https protocol: " + finalProtocol);
                 }
+                // Re-check the host too: a public feed must not redirect to an internal address.
+                UrlSafety.validatePublicHost(conn.getURL());
                 if (code != HttpURLConnection.HTTP_OK) {
                     return failure(modId, currentVersion, updateUrl, "update_url returned HTTP " + code);
                 }
