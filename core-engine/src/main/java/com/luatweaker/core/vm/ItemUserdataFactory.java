@@ -90,7 +90,9 @@ public final class ItemUserdataFactory {
      *
      * @param state active luava state
      * @param ing   ingredient definition to expose
-     * @return userdata with chainable {@code orIngredient}/{@code alt}/{@code otherwise}/{@code or}
+     * @return userdata with chainable {@code orIngredient}/{@code alt}/{@code otherwise}.
+     *         Lua names a method {@code or} cannot be used: {@code or} is a reserved keyword,
+     *         so {@code ing:or(...)} is a syntax error.
      */
     public static LuaUserdata createIngredientUserdataLuava(LuaState state, IngredientWrapper ing) {
         LuaTable meta = new LuaTable();
@@ -108,7 +110,6 @@ public final class ItemUserdataFactory {
         setMethod(meta, "orIngredient", orFunction);
         setMethod(meta, "alt", orFunction);
         setMethod(meta, "otherwise", orFunction);
-        setMethod(meta, "or", orFunction);
         meta.rawset(LuaValue.valueOf("descriptor"), LuaValue.valueOf(ing.descriptor()));
         meta.rawset(LuaValue.Meta.INDEX, meta);
 

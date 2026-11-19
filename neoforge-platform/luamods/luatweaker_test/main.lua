@@ -33,6 +33,7 @@ require(".src.server.update_test")
 require(".src.server.dynamic_bridge")
 require(".src.server.recipes")
 require(".src.server.commands")
+require(".src.server.multiblock_machine")
 
 -- ==== CLIENT PHASE: HUD & Visuals ====
 require(".src.client.hud")

@@ -147,6 +147,11 @@ public class FakeTable implements ILuaTable {
     }
 
     @Override
+    public boolean isBoolean() {
+        return false;
+    }
+
+    @Override
     public ILuaTable asTable() {
         return this;
     }

@@ -39,18 +39,67 @@ public class WorldgenServiceImpl implements IWorldgenService, IWorldgenExtendedS
             java.util.regex.Pattern.compile("^[a-z0-9_.-]+(:[a-z0-9_./-]+)?$");
 
     /**
-     * Verified GenerationStep.Decoration serialized names (game jar:
-     * GenerationStep$Decoration constructor strings in the 1.21.1
-     * deobfuscated jar). Used to validate every step value up front so a
-     * typo fails fast in Lua instead of silently breaking the datapack.
+     * Verified GenerationStep.Decoration serialized names; see
+     * {@link com.luatweaker.api.worldgen.GenerationSteps} (single source of
+     * truth shared with the dimensions module for biome feature ordinals).
      */
-    private static final Set<String> KNOWN_STEPS = Set.of(
-            "raw_generation", "lakes", "local_modifications", "underground_structures",
-            "surface_structures", "strongholds", "underground_ores", "underground_decoration",
-            "fluid_springs", "vegetal_decoration", "top_layer_modification");
+    private static final java.util.Set<String> KNOWN_STEPS =
+            new java.util.LinkedHashSet<>(com.luatweaker.api.worldgen.GenerationSteps.ORDER);
+
+    /**
+     * Configured-feature types present in the vanilla 1.21.1 datapack
+     * (enumerated from data/minecraft/worldgen/configured_feature/*.json
+     * in minecraft_1.21.1_client.jar). Raw JSON with any other type fails
+     * fast instead of dying silently at datapack load.
+     */
+    private static final Set<String> KNOWN_FEATURE_TYPES = Set.of(
+            "minecraft:bamboo", "minecraft:basalt_columns", "minecraft:basalt_pillar",
+            "minecraft:block_column", "minecraft:block_pile", "minecraft:blue_ice",
+            "minecraft:bonus_chest", "minecraft:chorus_plant", "minecraft:delta_feature",
+            "minecraft:desert_well", "minecraft:disk", "minecraft:dripstone_cluster",
+            "minecraft:end_gateway", "minecraft:end_island", "minecraft:end_spike",
+            "minecraft:flower", "minecraft:forest_rock", "minecraft:fossil",
+            "minecraft:freeze_top_layer", "minecraft:geode", "minecraft:glowstone_blob",
+            "minecraft:huge_brown_mushroom", "minecraft:huge_fungus", "minecraft:huge_red_mushroom",
+            "minecraft:ice_spike", "minecraft:iceberg", "minecraft:kelp", "minecraft:lake",
+            "minecraft:large_dripstone", "minecraft:monster_room", "minecraft:multiface_growth",
+            "minecraft:nether_forest_vegetation", "minecraft:netherrack_replace_blobs",
+            "minecraft:ore", "minecraft:random_boolean_selector", "minecraft:random_patch",
+            "minecraft:random_selector", "minecraft:root_system", "minecraft:scattered_ore",
+            "minecraft:sculk_patch", "minecraft:sea_pickle", "minecraft:seagrass",
+            "minecraft:simple_block", "minecraft:simple_random_selector", "minecraft:spring_feature",
+            "minecraft:tree", "minecraft:twisting_vines", "minecraft:underwater_magma",
+            "minecraft:vegetation_patch", "minecraft:vines", "minecraft:void_start_platform",
+            "minecraft:waterlogged_vegetation_patch", "minecraft:weeping_vines");
 
     /** Default decoration step for added features (verified jar value). */
     private static final String DEFAULT_STEP = "underground_ores";
+
+    /** Defaults mirror vanilla placement shapes (verified against 1.21.1 placed features). */
+    private static final String DEFAULT_HEIGHT_TYPE = "uniform";
+    private static final String DEFAULT_ANCHOR = "absolute";
+    private static final double DEFAULT_DISCARD_CHANCE = 0.0;
+    private static final int DEFAULT_BIASED_INNER = 8;
+
+    /**
+     * Height-provider types accepted for {@code spec.heightType}. {@code uniform}
+     * and {@code trapezoid} shapes verified across vanilla ore placed features
+     * (e.g. ore_coal_upper, ore_iron_middle); {@code very_biased_to_bottom}
+     * verified in spring_lava.json ({@code inner: 8}). {@code biased_to_bottom}
+     * is UNVERIFIED for height (only observed for count in glowstone_extra) but
+     * shares the same {min, max, inner} codec family, so it is accepted and any
+     * mismatch fails loudly at datapack load.
+     */
+    private static final Set<String> KNOWN_HEIGHT_TYPES = Set.of(
+            "uniform", "trapezoid", "biased_to_bottom", "very_biased_to_bottom");
+
+    /**
+     * Vertical anchors for {@code spec.anchorMin}/{@code spec.anchorMax}.
+     * All three forms verified in vanilla ore placed features
+     * ({@code absolute} in ore_coal_upper, {@code above_bottom} in
+     * ore_diamond, {@code below_top} in ore_debris_small).
+     */
+    private static final Set<String> KNOWN_ANCHORS = Set.of("absolute", "above_bottom", "below_top");
 
     /** Defaults mirror addOre's @LuaDefault values so both paths behave the same. */
     private static final int DEFAULT_FEATURE_COUNT = 10;
@@ -120,13 +169,22 @@ public class WorldgenServiceImpl implements IWorldgenService, IWorldgenExtendedS
                                     List<String> removeSteps) {}
 
     public record CustomFeature(String featureId, String block, List<String> biomes, String step,
-                                String replace, int count, int size, int minHeight, int maxHeight) {}
+                                String replace, int count, int size, int minHeight, int maxHeight,
+                                String heightType, String anchorMin, String anchorMax,
+                                Integer rarity, double discardChance, boolean scattered, int inner) {}
+
+    public record RawConfigured(String featureId, String json) {}
+
+    public record RawPlaced(String featureId, String json) {}
 
     private final List<OreEntry> pendingOres = Collections.synchronizedList(new ArrayList<>());
     private final List<VegetationEntry> pendingVegetation = Collections.synchronizedList(new ArrayList<>());
     private final List<OreRemovalEntry> pendingRemovals = Collections.synchronizedList(new ArrayList<>());
     private final List<BiomeModification> pendingBiomeMods = Collections.synchronizedList(new ArrayList<>());
     private final List<CustomFeature> pendingFeatures = Collections.synchronizedList(new ArrayList<>());
+    private final List<RawConfigured> pendingRawConfigured = Collections.synchronizedList(new ArrayList<>());
+    private final List<RawPlaced> pendingRawPlaced = Collections.synchronizedList(new ArrayList<>());
+    private final List<MixedVein> pendingMixedVeins = Collections.synchronizedList(new ArrayList<>());
 
     /** User overrides for ore-removal feature lists; block ID -&gt; placed-feature IDs. */
     private final Map<String, List<String>> removalOverrides = new ConcurrentHashMap<>();
@@ -210,14 +268,32 @@ public class WorldgenServiceImpl implements IWorldgenService, IWorldgenExtendedS
         for (String biome : biomes) {
             validateBiomeRef(biome);
         }
-        String step = optStep(spec, "step", DEFAULT_STEP);
-        String replace = optString(spec, "replace");
-        if (replace == null || replace.isEmpty()) {
-            replace = DEFAULT_REPLACE_KIND;
-        } else if (!KNOWN_REPLACE_KINDS.contains(replace)) {
-            throw new IllegalArgumentException("spec.replace must be one of "
-                    + KNOWN_REPLACE_KINDS + ", got: " + replace);
+        if (isFeatureIdTaken(featureId)) {
+            throw new IllegalArgumentException(
+                    "featureId '" + featureId + "' is already registered; call ClearAll or use a unique id");
         }
+        Placement placement = parsePlacement(spec);
+        boolean scattered = optBoolean(spec, "scattered", false);
+        pendingFeatures.add(new CustomFeature(featureId, block, List.copyOf(biomes),
+                placement.step(), parseReplace(spec),
+                placement.count(), placement.size(), placement.minHeight(), placement.maxHeight(),
+                placement.heightType(), placement.anchorMin(), placement.anchorMax(),
+                placement.rarity(), placement.discardChance(), scattered, placement.inner()));
+    }
+
+    /**
+     * Shared placement fields for ore-like registrations (vanilla placement
+     * modifiers: count/rarity, height provider, air-exposure thinning).
+     * Parsed once here so {@link #addFeature} and {@link #addMixedVein} cannot
+     * drift apart.
+     */
+    record Placement(String step, int count, Integer rarity, int size,
+                     int minHeight, int maxHeight, String heightType,
+                     String anchorMin, String anchorMax,
+                     double discardChance, int inner) {}
+
+    private @NotNull Placement parsePlacement(@NotNull ILuaTable spec) {
+        String step = optStep(spec, "step", DEFAULT_STEP);
         int count = optInt(spec, "count", DEFAULT_FEATURE_COUNT);
         int size = optInt(spec, "size", DEFAULT_FEATURE_SIZE);
         int minHeight = optInt(spec, "minHeight", DEFAULT_MIN_HEIGHT);
@@ -232,8 +308,210 @@ public class WorldgenServiceImpl implements IWorldgenService, IWorldgenExtendedS
             throw new IllegalArgumentException(
                     "spec.minHeight (" + minHeight + ") > spec.maxHeight (" + maxHeight + ")");
         }
-        pendingFeatures.add(new CustomFeature(featureId, block, List.copyOf(biomes),
-                step, replace, count, size, minHeight, maxHeight));
+        String heightType = optString(spec, "heightType");
+        if (heightType == null || heightType.isEmpty()) {
+            heightType = DEFAULT_HEIGHT_TYPE;
+        } else if (!KNOWN_HEIGHT_TYPES.contains(heightType)) {
+            throw new IllegalArgumentException("spec.heightType must be one of "
+                    + KNOWN_HEIGHT_TYPES + ", got: " + heightType);
+        }
+        String anchorMin = optAnchor(spec, "anchorMin");
+        String anchorMax = optAnchor(spec, "anchorMax");
+        boolean hasCount = hasExplicit(spec, "count");
+        boolean hasRarity = hasExplicit(spec, "rarity");
+        if (hasCount && hasRarity) {
+            throw new IllegalArgumentException(
+                    "spec.count and spec.rarity are mutually exclusive (count = N veins per chunk, "
+                    + "rarity = 1-in-N chunk chance like vanilla diamond_large); set exactly one");
+        }
+        Integer rarity = null;
+        if (hasRarity) {
+            int rawRarity = optInt(spec, "rarity", 1);
+            if (rawRarity <= 0) {
+                throw new IllegalArgumentException("spec.rarity must be > 0, got: " + rawRarity);
+            }
+            rarity = rawRarity;
+        }
+        double discardChance = optDouble(spec, "discardChance", DEFAULT_DISCARD_CHANCE);
+        if (!Double.isFinite(discardChance) || discardChance < 0.0 || discardChance > 1.0) {
+            throw new IllegalArgumentException(
+                    "spec.discardChance must be between 0.0 and 1.0, got: " + discardChance);
+        }
+        int inner = optInt(spec, "inner", DEFAULT_BIASED_INNER);
+        if (inner < 0) {
+            throw new IllegalArgumentException("spec.inner must be >= 0, got: " + inner);
+        }
+        return new Placement(step, count, rarity, size, minHeight, maxHeight,
+                heightType, anchorMin, anchorMax, discardChance, inner);
+    }
+
+    private @NotNull String parseReplace(@NotNull ILuaTable spec) {
+        String replace = optString(spec, "replace");
+        if (replace == null || replace.isEmpty()) {
+            return DEFAULT_REPLACE_KIND;
+        }
+        if (!KNOWN_REPLACE_KINDS.contains(replace)) {
+            throw new IllegalArgumentException("spec.replace must be one of "
+                    + KNOWN_REPLACE_KINDS + ", got: " + replace);
+        }
+        return replace;
+    }
+
+    /** True when any pending registration (feature, raw, vein) already owns the id. */
+    private boolean isFeatureIdTaken(@NotNull String featureId) {
+        return pendingFeatures.stream().anyMatch(f -> f.featureId().equals(featureId))
+                || pendingRawConfigured.stream().anyMatch(f -> f.featureId().equals(featureId))
+                || pendingMixedVeins.stream().anyMatch(v -> v.veinId().equals(featureId));
+    }
+
+    /**
+     * One ore candidate inside a mixed vein: the block to place and its
+     * relative weight among the candidates matching the same position.
+     */
+    public record VeinOre(String block, int weight) {}
+
+    /**
+     * GTNH-style mixed vein: one ellipsoid blob (custom
+     * {@code luatweaker:mixed_vein} feature) mixing several ores by weight.
+     * Placement fields mirror {@link CustomFeature} (same vanilla modifiers).
+     */
+    public record MixedVein(String veinId, List<VeinOre> ores, String replace, List<String> biomes,
+                            String step, int count, Integer rarity, int size,
+                            int minHeight, int maxHeight, String heightType,
+                            String anchorMin, String anchorMax,
+                            double discardChance, int inner) {}
+
+    /**
+     * Vanilla {@code OreConfiguration} caps {@code size} at 64; mixed veins are
+     * meant to be bigger blobs, and the custom codec allows 0-256 (the
+     * ellipsoid math is identical, ~100 blocks wide at the cap).
+     */
+    private static final int MAX_VEIN_SIZE = 256;
+
+    @Override
+    public void addMixedVein(@NotNull String veinId, @NotNull ILuaTable spec) {
+        validateResourceLocation(veinId, "veinId");
+        if (spec == null) {
+            throw new IllegalArgumentException("addMixedVein requires a spec table");
+        }
+        List<VeinOre> ores = parseVeinOres(spec);
+        String replace = parseReplace(spec);
+        List<String> biomes = reqStringList(spec, "biomes", "biome", "spec.biomes");
+        for (String biome : biomes) {
+            validateBiomeRef(biome);
+        }
+        if (isFeatureIdTaken(veinId)) {
+            throw new IllegalArgumentException(
+                    "featureId '" + veinId + "' is already registered; call ClearAll or use a unique id");
+        }
+        Placement placement = parsePlacement(spec);
+        if (placement.size() > MAX_VEIN_SIZE) {
+            throw new IllegalArgumentException("spec.size must be <= " + MAX_VEIN_SIZE
+                    + " (mixed_vein codec bound), got: " + placement.size());
+        }
+        pendingMixedVeins.add(new MixedVein(veinId, List.copyOf(ores), replace, List.copyOf(biomes),
+                placement.step(), placement.count(), placement.rarity(), placement.size(),
+                placement.minHeight(), placement.maxHeight(), placement.heightType(),
+                placement.anchorMin(), placement.anchorMax(),
+                placement.discardChance(), placement.inner()));
+    }
+
+    private @NotNull List<VeinOre> parseVeinOres(@NotNull ILuaTable spec) {
+        ILuaValue value = spec.rawget("ores");
+        if (value == null || value.isNil()) {
+            throw new IllegalArgumentException("spec.ores is required (list of {block=..., weight=...})");
+        }
+        List<VeinOre> ores = new ArrayList<>();
+        if (value.isTable()) {
+            ILuaTable table = value.asTable();
+            if (table == null) {
+                throw new IllegalArgumentException("spec.ores must be a list of {block=..., weight=...}");
+            }
+            if (table.length() == 0) {
+                ILuaValue singleBlock = table.rawget("block");
+                if (singleBlock != null && !singleBlock.isNil()) {
+                    ores.add(parseVeinOre(table, "spec.ores"));
+                    return ores;
+                }
+                throw new IllegalArgumentException("spec.ores must not be empty");
+            }
+            for (int i = 1; i <= table.length(); i++) {
+                ILuaValue item = table.rawget(i);
+                if (item == null || item.isNil() || !item.isTable() || item.asTable() == null) {
+                    throw new IllegalArgumentException("spec.ores[" + i + "] must be {block=..., weight=...}");
+                }
+                ores.add(parseVeinOre(item.asTable(), "spec.ores[" + i + "]"));
+            }
+            return ores;
+        }
+        throw new IllegalArgumentException("spec.ores must be a list of {block=..., weight=...}");
+    }
+
+    private @NotNull VeinOre parseVeinOre(@NotNull ILuaTable entry, @NotNull String what) {
+        String block = reqString(entry, "block", what + ".block");
+        validateResourceLocation(block, what + ".block");
+        int weight = 1;
+        ILuaValue rawWeight = entry.rawget("weight");
+        if (rawWeight != null && !rawWeight.isNil()) {
+            if (!rawWeight.isNumber()) {
+                throw new IllegalArgumentException(what + ".weight must be a number");
+            }
+            weight = (int) rawWeight.asDouble();
+        }
+        if (weight <= 0) {
+            throw new IllegalArgumentException(what + ".weight must be > 0, got: " + weight);
+        }
+        return new VeinOre(block, weight);
+    }
+
+    @Override
+    public void addRawConfiguredFeature(@NotNull String featureId, @NotNull String json) {
+        validateResourceLocation(featureId, "featureId");
+        String type = parseRawJson(json, "configured", "type", featureId);
+        if (!KNOWN_FEATURE_TYPES.contains(type)) {
+            throw new IllegalArgumentException("AddRawConfiguredFeature: unknown vanilla type '" + type
+                    + "' for '" + featureId + "' (must be one of the 1.21.1 configured-feature types)");
+        }
+        if (isFeatureIdTaken(featureId)) {
+            throw new IllegalArgumentException(
+                    "featureId '" + featureId + "' is already registered; call ClearAll or use a unique id");
+        }
+        pendingRawConfigured.add(new RawConfigured(featureId, json));
+    }
+
+    @Override
+    public void addRawPlacedFeature(@NotNull String featureId, @NotNull String json) {
+        validateResourceLocation(featureId, "featureId");
+        parseRawJson(json, "placed", "feature", featureId);
+        if (pendingRawPlaced.stream().anyMatch(f -> f.featureId().equals(featureId))) {
+            throw new IllegalArgumentException(
+                    "featureId '" + featureId + "' is already registered; call ClearAll or use a unique id");
+        }
+        pendingRawPlaced.add(new RawPlaced(featureId, json));
+    }
+
+    /**
+     * Parses raw JSON, requiring a string field (the type or feature
+     * reference). Returns the field value.
+     */
+    private @NotNull String parseRawJson(@NotNull String json, @NotNull String kind,
+                                         @NotNull String field, @NotNull String featureId) {
+        if (json == null || json.isBlank()) {
+            throw new IllegalArgumentException("AddRaw JSON must not be blank for '" + featureId + "'");
+        }
+        com.google.gson.JsonObject parsed;
+        try {
+            parsed = com.google.gson.JsonParser.parseString(json).getAsJsonObject();
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                    "AddRaw " + kind + " JSON for '" + featureId + "' does not parse: " + e.getMessage());
+        }
+        com.google.gson.JsonElement member = parsed.get(field);
+        if (member == null || !member.isJsonPrimitive() || !member.getAsJsonPrimitive().isString()) {
+            throw new IllegalArgumentException("AddRaw " + kind + " JSON for '" + featureId
+                    + "' requires a string '" + field + "' field");
+        }
+        return member.getAsString();
     }
 
     @Override
@@ -283,6 +561,18 @@ public class WorldgenServiceImpl implements IWorldgenService, IWorldgenExtendedS
     }
 
     @Override
+    public @NotNull List<String> getRemovalFeatures(@NotNull String blockId) {
+        validateResourceLocation(blockId, "blockId");
+        return List.copyOf(resolveRemovalFeatures(blockId));
+    }
+
+    @Override
+    public @Nullable String getDimensionBiomeTag(@NotNull String dimension) {
+        validateResourceLocation(dimension, "dimension");
+        return resolveDimensionBiomeTag(dimension).orElse(null);
+    }
+
+    @Override
     @NotNull
     public Map<String, Object> getModifications() {
         Map<String, Object> summary = new LinkedHashMap<>();
@@ -291,6 +581,9 @@ public class WorldgenServiceImpl implements IWorldgenService, IWorldgenExtendedS
         summary.put("removals", pendingRemovals.size());
         summary.put("biomeModifiers", pendingBiomeMods.size());
         summary.put("customFeatures", pendingFeatures.size());
+        summary.put("mixedVeins", pendingMixedVeins.size());
+        summary.put("rawConfigured", pendingRawConfigured.size());
+        summary.put("rawPlaced", pendingRawPlaced.size());
         return summary;
     }
 
@@ -301,6 +594,9 @@ public class WorldgenServiceImpl implements IWorldgenService, IWorldgenExtendedS
         pendingRemovals.clear();
         pendingBiomeMods.clear();
         pendingFeatures.clear();
+        pendingMixedVeins.clear();
+        pendingRawConfigured.clear();
+        pendingRawPlaced.clear();
     }
 
     public List<OreEntry> getPendingOres() {
@@ -321,6 +617,18 @@ public class WorldgenServiceImpl implements IWorldgenService, IWorldgenExtendedS
 
     public List<CustomFeature> getPendingFeatures() {
         return Collections.unmodifiableList(pendingFeatures);
+    }
+
+    public List<MixedVein> getPendingMixedVeins() {
+        return Collections.unmodifiableList(pendingMixedVeins);
+    }
+
+    public List<RawConfigured> getPendingRawConfigured() {
+        return Collections.unmodifiableList(pendingRawConfigured);
+    }
+
+    public List<RawPlaced> getPendingRawPlaced() {
+        return Collections.unmodifiableList(pendingRawPlaced);
     }
 
     /**
@@ -344,6 +652,23 @@ public class WorldgenServiceImpl implements IWorldgenService, IWorldgenExtendedS
      */
     public @NotNull Optional<String> resolveDimensionBiomeTag(@NotNull String dimension) {
         return Optional.ofNullable(dimensionTags.get(dimension));
+    }
+
+    /**
+     * Builds the datapack files for raw passthrough entries as
+     * relPath -&gt; JSON, using the same path conventions as the provider
+     * ({@code luatweaker/worldgen/(configured|placed)_feature/*.json}).
+     * JSON was validated at registration; it is emitted verbatim.
+     */
+    public @NotNull Map<String, String> buildRawFiles() {
+        Map<String, String> files = new LinkedHashMap<>();
+        for (RawConfigured raw : getPendingRawConfigured()) {
+            files.put("luatweaker/worldgen/configured_feature/" + sanitizeFileId(raw.featureId()) + ".json", raw.json());
+        }
+        for (RawPlaced raw : getPendingRawPlaced()) {
+            files.put("luatweaker/worldgen/placed_feature/" + sanitizeFileId(raw.featureId()) + ".json", raw.json());
+        }
+        return files;
     }
 
     /**
@@ -435,10 +760,13 @@ public class WorldgenServiceImpl implements IWorldgenService, IWorldgenExtendedS
     }
 
     private @NotNull String buildConfiguredOreFeature(@NotNull CustomFeature feature) {
+        // scattered_ore (ancient-debris pattern) exposes veins instead of burying
+        // them; discard_chance_on_air_exposure (e.g. vanilla diamond_large 0.7)
+        // thins veins that touch air.
         return "{"
-            + "\"type\":\"minecraft:ore\","
+            + "\"type\":\"minecraft:" + (feature.scattered() ? "scattered_ore" : "ore") + "\","
             + "\"config\":{"
-            +   "\"discard_chance_on_air_exposure\":0.0,"
+            +   "\"discard_chance_on_air_exposure\":" + feature.discardChance() + ","
             +   "\"size\":" + feature.size() + ","
             +   "\"targets\":[" + oreTargets(feature) + "]"
             + "}"
@@ -452,37 +780,114 @@ public class WorldgenServiceImpl implements IWorldgenService, IWorldgenExtendedS
      * provider convention; UNVERIFIED, no vanilla end-ore precedent exists.
      */
     private @NotNull String oreTargets(@NotNull CustomFeature feature) {
-        String state = "\"state\":{\"Name\":\"" + escapeJson(feature.block()) + "\"}";
-        return switch (feature.replace()) {
-            case "nether" ->
+        return String.join(",", rockTargets(feature.block(), feature.replace()));
+    }
+
+    /**
+     * Replaceable rock predicates by kind, shared by ore features and mixed
+     * veins. Each entry pairs one predicate with one state; mixed veins repeat
+     * the pair per ore with its own weight.
+     */
+    private @NotNull List<String> rockTargets(@NotNull String block, @NotNull String replace) {
+        String state = "\"state\":{\"Name\":\"" + escapeJson(block) + "\"}";
+        return switch (replace) {
+            case "nether" -> List.of(
                     "{\"target\":{\"predicate_type\":\"minecraft:block_match\",\"block\":\"minecraft:netherrack\"},"
-                    + state + "}";
-            case "end" ->
+                    + state + "}");
+            case "end" -> List.of(
                     "{\"target\":{\"predicate_type\":\"minecraft:block_match\",\"block\":\"minecraft:end_stone\"},"
-                    + state + "}";
-            default ->
+                    + state + "}");
+            default -> List.of(
                     "{\"target\":{\"predicate_type\":\"minecraft:tag_match\",\"tag\":\"minecraft:stone_ore_replaceables\"},"
-                    + state + "},"
-                    + "{\"target\":{\"predicate_type\":\"minecraft:tag_match\",\"tag\":\"minecraft:deepslate_ore_replaceables\"},"
-                    + state + "}";
+                    + state + "}",
+                    "{\"target\":{\"predicate_type\":\"minecraft:tag_match\",\"tag\":\"minecraft:deepslate_ore_replaceables\"},"
+                    + state + "}");
         };
     }
 
     private @NotNull String buildPlacedOreFeature(@NotNull String safeId, @NotNull CustomFeature feature) {
+        return buildPlacedFeatureJson("luatweaker:" + safeId, new Placement(
+                feature.step(), feature.count(), feature.rarity(), feature.size(),
+                feature.minHeight(), feature.maxHeight(), feature.heightType(),
+                feature.anchorMin(), feature.anchorMax(), feature.discardChance(), feature.inner()));
+    }
+
+    /**
+     * Placed-feature JSON from shared placement fields. The {@code feature}
+     * reference is the full id (vanilla ids pass through for raw-adjacent
+     * flows, {@code luatweaker:} ids for generated ones).
+     */
+    private @NotNull String buildPlacedFeatureJson(@NotNull String featureRef, @NotNull Placement placement) {
+        // Frequency: count = N attempts per chunk (ore_coal_upper pattern) or
+        // rarity = 1-in-N chunk chance (ore_diamond_large pattern); mutually
+        // exclusive, enforced at registration.
+        String frequency = placement.rarity() != null
+                ? "{\"type\":\"minecraft:rarity_filter\",\"chance\":" + placement.rarity() + "}"
+                : "{\"type\":\"minecraft:count\",\"count\":" + placement.count() + "}";
+        String height = "{\"type\":\"minecraft:" + placement.heightType() + "\","
+                + "\"min_inclusive\":{\"" + placement.anchorMin() + "\":" + placement.minHeight() + "},"
+                + "\"max_inclusive\":{\"" + placement.anchorMax() + "\":" + placement.maxHeight() + "}"
+                + (isBiased(placement.heightType()) ? ",\"inner\":" + placement.inner() : "")
+                + "}";
         return "{"
-            + "\"feature\":\"luatweaker:" + safeId + "\","
+            + "\"feature\":\"" + escapeJson(featureRef) + "\","
             + "\"placement\":["
-            +   "{\"type\":\"minecraft:count\",\"count\":" + feature.count() + "},"
+            +   frequency + ","
             +   "{\"type\":\"minecraft:in_square\"},"
-            +   "{\"type\":\"minecraft:height_range\","
-            +    "\"height\":{\"type\":\"minecraft:uniform\","
-            +               "\"min_inclusive\":{\"absolute\":" + feature.minHeight() + "},"
-            +               "\"max_inclusive\":{\"absolute\":" + feature.maxHeight() + "}"
-            +    "}"
-            +   "},"
+            +   "{\"type\":\"minecraft:height_range\",\"height\":" + height + "},"
             +   "{\"type\":\"minecraft:biome\"}"
             + "]"
             + "}";
+    }
+
+    /**
+     * Builds the datapack files for mixed veins: one custom configured feature
+     * ({@code luatweaker:mixed_vein}, registered by the platform) + one placed
+     * feature + one add_features modifier per vein. Target field names
+     * ({@code target}/{@code state}) mirror {@code OreConfiguration}, plus the
+     * custom {@code weight} each candidate carries.
+     */
+    public @NotNull Map<String, String> buildMixedVeinFiles() {
+        Map<String, String> files = new LinkedHashMap<>();
+        for (MixedVein vein : getPendingMixedVeins()) {
+            String safe = sanitizeFileId(vein.veinId());
+            files.put("luatweaker/worldgen/configured_feature/" + safe + ".json",
+                    buildMixedVeinConfiguredJson(vein));
+            files.put("luatweaker/worldgen/placed_feature/" + safe + ".json",
+                    buildPlacedFeatureJson("luatweaker:" + safe, new Placement(
+                            vein.step(), vein.count(), vein.rarity(), vein.size(),
+                            vein.minHeight(), vein.maxHeight(), vein.heightType(),
+                            vein.anchorMin(), vein.anchorMax(),
+                            vein.discardChance(), vein.inner())));
+            files.put("luatweaker/neoforge/biome_modifier/add_" + safe + ".json",
+                    buildAddFeaturesModifier(vein.biomes(), List.of("luatweaker:" + safe), vein.step()));
+        }
+        return files;
+    }
+
+    private @NotNull String buildMixedVeinConfiguredJson(@NotNull MixedVein vein) {
+        StringBuilder targets = new StringBuilder();
+        for (VeinOre ore : vein.ores()) {
+            for (String rockTarget : rockTargets(ore.block(), vein.replace())) {
+                if (targets.length() > 0) {
+                    targets.append(",");
+                }
+                targets.append(rockTarget, 0, rockTarget.length() - 1);
+                targets.append(",\"weight\":").append(ore.weight()).append("}");
+            }
+        }
+        return "{"
+            + "\"type\":\"luatweaker:mixed_vein\","
+            + "\"config\":{"
+            +   "\"size\":" + vein.size() + ","
+            +   "\"discard_chance_on_air_exposure\":" + vein.discardChance() + ","
+            +   "\"targets\":[" + targets + "]"
+            + "}"
+            + "}";
+    }
+
+    private static boolean isBiased(@NotNull String heightType) {
+        return "biased_to_bottom".equals(heightType) || "very_biased_to_bottom".equals(heightType);
     }
 
     /**
@@ -512,10 +917,8 @@ public class WorldgenServiceImpl implements IWorldgenService, IWorldgenExtendedS
     /**
      * NeoForge remove-features modifier. The codec takes plural
      * {@code steps} (verified: {@code Set<Decoration> steps} record component
-     * + {@code "steps"} codec string in NeoForge 21.1.242), serialized as a
-     * JSON list. NOTE: the platform provider currently emits singular
-     * {@code "step"} here, which contradicts the jar; flagged for the
-     * platform owner (see docs/WORLDGEN.md follow-ups).
+     * in NeoForge 21.1.242 {@code RemoveFeaturesBiomeModifier}), serialized as
+     * a JSON list. The platform provider emits the same plural form.
      */
     private @NotNull String buildRemoveFeaturesModifier(@NotNull List<String> biomes,
                                                         @NotNull List<String> features,
@@ -691,6 +1094,46 @@ public class WorldgenServiceImpl implements IWorldgenService, IWorldgenExtendedS
             throw new IllegalArgumentException("spec." + key + " must be a number");
         }
         return (int) value.asDouble();
+    }
+
+    private static double optDouble(@NotNull ILuaTable table, @NotNull String key, double fallback) {
+        ILuaValue value = table.rawget(key);
+        if (value == null || value.isNil()) {
+            return fallback;
+        }
+        if (!value.isNumber()) {
+            throw new IllegalArgumentException("spec." + key + " must be a number");
+        }
+        return value.asDouble();
+    }
+
+    private static boolean optBoolean(@NotNull ILuaTable table, @NotNull String key, boolean fallback) {
+        ILuaValue value = table.rawget(key);
+        if (value == null || value.isNil()) {
+            return fallback;
+        }
+        if (!value.isBoolean()) {
+            throw new IllegalArgumentException("spec." + key + " must be a boolean");
+        }
+        return value.asBoolean();
+    }
+
+    private static boolean hasExplicit(@NotNull ILuaTable table, @NotNull String key) {
+        ILuaValue value = table.rawget(key);
+        return value != null && !value.isNil();
+    }
+
+    private static @NotNull String optAnchor(@NotNull ILuaTable table, @NotNull String key) {
+        ILuaValue value = table.rawget(key);
+        if (value == null || value.isNil()) {
+            return DEFAULT_ANCHOR;
+        }
+        String anchor = value.asString();
+        if (!KNOWN_ANCHORS.contains(anchor)) {
+            throw new IllegalArgumentException("spec." + key + " must be one of "
+                    + KNOWN_ANCHORS + ", got: " + anchor);
+        }
+        return anchor;
     }
 
     private static @NotNull List<String> reqStringList(@NotNull ILuaTable table,

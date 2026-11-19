@@ -1,5 +1,6 @@
 package com.luatweaker.api.structures;
 
+import com.luatweaker.api.annotation.LuaDefault;
 import com.luatweaker.api.annotation.LuaDoc;
 import com.luatweaker.api.vm.ILuaTable;
 import org.jetbrains.annotations.NotNull;
@@ -51,4 +52,23 @@ public interface IStructureService {
 
     @LuaDoc(description = "Remove every structure registration.", returnType = "void")
     void clearAll();
+
+    @LuaDoc(
+        description = "Place a registered structure's NBT template at a world position in a loaded dimension. Rotation/mirror follow vanilla names. Returns true when the template was placed (false when the template or level is missing).",
+        params = {"structureId: string - registered structure ID",
+                  "dimensionId: string - target dimension (e.g. 'minecraft:overworld')",
+                  "x: number", "y: number", "z: number",
+                  "rotation: string - none|clockwise_90|clockwise_180|counterclockwise_90",
+                  "mirror: string - none|left_right|front_back"},
+        returnType = "boolean"
+    )
+    boolean placeAt(
+            @NotNull String structureId,
+            @NotNull String dimensionId,
+            int x,
+            int y,
+            int z,
+            @LuaDefault("none") @NotNull String rotation,
+            @LuaDefault("none") @NotNull String mirror
+    );
 }

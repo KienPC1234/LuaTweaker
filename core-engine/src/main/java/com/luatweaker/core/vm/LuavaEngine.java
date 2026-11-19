@@ -531,6 +531,13 @@ public class LuavaEngine implements ILuaEngine {
         return LuaNil.NIL;
     }
 
+    /**
+     * Loads one module file.
+     *
+     * @return the module value, or {@code null} when the candidate path does not exist
+     * @throws LuaException when the file exists but fails to compile/run: falling through to
+     *         "module not found" (and to the native require search path) hid the real cause
+     */
     private @Nullable LuaValue tryLoadModuleFile(@NotNull File root, @NotNull String relativePath,
                                                  @NotNull String modName) {
         Path path;
@@ -550,17 +557,21 @@ public class LuavaEngine implements ILuaEngine {
             LuaValue returned = state.eval(source, path.getFileName().toString());
             return returned != null && !returned.isNil() ? returned : LuaValue.valueOf(true);
         } catch (LuaException e) {
+            String details = describeLuaException(e);
             AsyncFileLogger.get().error(LogStage.RUNTIME_ERROR,
-                    "Failed to load Lua module file '" + relativePath + "': " + describeLuaException(e));
-            return LuaNil.NIL;
+                    "Failed to load Lua module file '" + relativePath + "': " + details);
+            throw new LuaException("Failed to load module '" + modName + "' ("
+                    + relativePath + "): " + details);
         } catch (IOException e) {
             AsyncFileLogger.get().error(LogStage.SCRIPT_LOAD,
                     "Failed to read Lua module file '" + relativePath + "': " + e.getMessage());
-            return LuaNil.NIL;
+            throw new LuaException("Failed to read module '" + modName + "' ("
+                    + relativePath + "): " + e.getMessage());
         } catch (Throwable e) {
             AsyncFileLogger.get().error(LogStage.RUNTIME_ERROR,
                     "Unexpected error loading Lua module file '" + relativePath + "': " + e);
-            return LuaNil.NIL;
+            throw new LuaException("Unexpected error loading module '" + modName + "' ("
+                    + relativePath + "): " + e);
         } finally {
             activeModuleStack.get().pop();
         }

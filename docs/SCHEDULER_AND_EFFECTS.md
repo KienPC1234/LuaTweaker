@@ -81,6 +81,11 @@ particles:circle("minecraft:enchant", 0, 70, 0, 3.0, 32, 0.02)
 
 ## Sound API (`sounds`)
 
+> ⚠️ **SUPERSEDED:** the `sounds` global described below does not exist. Use
+> `World:PlaySound` / `World:StopSound` (server) and `ClientEffects:PlaySound` /
+> `PlaySoundAt` / `StopSound` (client) — see
+> [CLIENT_AND_SOUND_API.md](CLIENT_AND_SOUND_API.md).
+
 Play sounds at world positions or to specific players.
 
 ### Positional Sound

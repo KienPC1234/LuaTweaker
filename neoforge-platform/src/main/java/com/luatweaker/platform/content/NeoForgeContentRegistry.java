@@ -46,11 +46,11 @@ public class NeoForgeContentRegistry {
 
     public NeoForgeContentRegistry(IContentService contentService) {
         this.contentService = contentService;
-        this.itemRegistrar = new ItemRegistrar(contentService, createdItems, this::parseLocation);
-        this.blockRegistrar = new BlockRegistrar(contentService, createdBlocks, createdItems, this::parseLocation);
-        this.fluidRegistrar = new FluidRegistrar(contentService, createdFluids, createdItems, createdBlocks, this::parseLocation);
-        this.entityRegistrar = new EntityRegistrar(contentService, createdEntityTypes, createdItems, this::parseLocation);
-        this.tabRegistrar = new TabRegistrar(contentService, createdItems, createdCustomTabs, this::parseLocation);
+        this.itemRegistrar = new ItemRegistrar(contentService, createdItems, NeoForgeContentRegistry::parseLocation);
+        this.blockRegistrar = new BlockRegistrar(contentService, createdBlocks, createdItems, NeoForgeContentRegistry::parseLocation);
+        this.fluidRegistrar = new FluidRegistrar(contentService, createdFluids, createdItems, createdBlocks, NeoForgeContentRegistry::parseLocation);
+        this.entityRegistrar = new EntityRegistrar(contentService, createdEntityTypes, createdItems, NeoForgeContentRegistry::parseLocation);
+        this.tabRegistrar = new TabRegistrar(contentService, createdItems, createdCustomTabs, NeoForgeContentRegistry::parseLocation);
 
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.register(new GameBusListener());
     }
@@ -99,6 +99,16 @@ public class NeoForgeContentRegistry {
                 }
             }
         }
+
+        @SubscribeEvent
+        public void onLeftClickBlock(net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.LeftClickBlock event) {
+            ItemRegistrar.handleSwing(event.getEntity(), event.getItemStack());
+        }
+
+        @SubscribeEvent
+        public void onLeftClickEmpty(net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.LeftClickEmpty event) {
+            ItemRegistrar.handleSwing(event.getEntity(), event.getItemStack());
+        }
     }
 
     @SubscribeEvent
@@ -138,6 +148,37 @@ public class NeoForgeContentRegistry {
             this.parent = parent;
         }
 
+        @SubscribeEvent
+        public void onClientSetup(net.neoforged.fml.event.lifecycle.FMLClientSetupEvent event) {
+            event.enqueueWork(() -> {
+                for (IItemBuilder b : parent.contentService.getRegisteredItems()) {
+                    String anim = b.getUseAnimation();
+                    if ("BOW".equalsIgnoreCase(anim) || "CROSSBOW".equalsIgnoreCase(anim)) {
+                        ResourceLocation rl = NeoForgeContentRegistry.parseLocation(b.getId());
+                        Item item = parent.createdItems.get(rl);
+                        if (item != null) {
+                            net.minecraft.client.renderer.item.ItemProperties.register(
+                                    item,
+                                    ResourceLocation.withDefaultNamespace("pulling"),
+                                    (stack, level, entity, seed) ->
+                                            entity != null && entity.isUsingItem() && entity.getUseItem() == stack ? 1.0F : 0.0F
+                            );
+                            net.minecraft.client.renderer.item.ItemProperties.register(
+                                    item,
+                                    ResourceLocation.withDefaultNamespace("pull"),
+                                    (stack, level, entity, seed) -> {
+                                        if (entity == null || entity.getUseItem() != stack) return 0.0F;
+                                        int dur = b.getUseDuration() > 0 ? b.getUseDuration() : 20;
+                                        return (float) (stack.getUseDuration(entity) - entity.getUseItemRemainingTicks()) / (float) dur;
+                                    }
+                            );
+                            LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered bow pulling item properties for " + rl);
+                        }
+                    }
+                }
+            });
+        }
+
 
 
         @SuppressWarnings("unchecked")
@@ -145,11 +186,11 @@ public class NeoForgeContentRegistry {
         public void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
             for (com.luatweaker.api.content.IEntityBuilder e : parent.contentService.getRegisteredEntities()) {
                 try {
-                    ResourceLocation rl = parent.parseLocation(e.getId());
+                    ResourceLocation rl = NeoForgeContentRegistry.parseLocation(e.getId());
                     EntityType<?> rawType = parent.createdEntityTypes.get(rl);
                     if (rawType != null) {
                         ResourceLocation texLoc = e.getTexture() != null
-                                ? parent.parseLocation(e.getTexture())
+                                ? NeoForgeContentRegistry.parseLocation(e.getTexture())
                                 : ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/zombie/zombie.png");
                         com.luatweaker.platform.content.ClientMobParentRegistry.RendererFactory factory = com.luatweaker.platform.content.ClientMobParentRegistry.getFactory(e.getParentMob());
                         EntityType entityType = rawType;
@@ -158,6 +199,25 @@ public class NeoForgeContentRegistry {
                     }
                 } catch (Exception ex) {
                     LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed entity renderer registration for " + e.getId() + ": " + ex.getMessage());
+                }
+            }
+
+            for (com.luatweaker.api.content.IBlockBuilder b : parent.contentService.getRegisteredBlocks()) {
+                if (b.getRenderHandler() != null) {
+                    try {
+                        ResourceLocation rl = NeoForgeContentRegistry.parseLocation(b.getId());
+                        net.minecraft.world.level.block.entity.BlockEntityType<?> rawType =
+                                com.luatweaker.platform.container.CustomContainerRegistry.CONTAINER_BE_TYPES.get(rl);
+                        if (rawType != null) {
+                            net.minecraft.world.level.block.entity.BlockEntityType type = rawType;
+                            // Resolve the handler per frame: /lt reload replaces it on the block.
+                            event.registerBlockEntityRenderer(type, ctx ->
+                                    new com.luatweaker.platform.client.LuaBlockEntityRenderer(type, ctx));
+                            LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom BlockEntityRenderer for: " + rl);
+                        }
+                    } catch (Exception ex) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed block entity renderer registration for " + b.getId() + ": " + ex.getMessage());
+                    }
                 }
             }
         }
@@ -173,12 +233,12 @@ public class NeoForgeContentRegistry {
         @SubscribeEvent
         public void onRegisterItemColors(RegisterColorHandlersEvent.Item event) {
             for (com.luatweaker.api.content.IFluidBuilder builder : parent.contentService.getRegisteredFluids()) {
-                ResourceLocation bucketRl = parent.parseLocation(builder.getId() + "_bucket");
+                ResourceLocation bucketRl = NeoForgeContentRegistry.parseLocation(builder.getId() + "_bucket");
                 Item bucketItem = parent.createdItems.get(bucketRl);
                 if (bucketItem != null) {
                     event.register(new net.neoforged.neoforge.client.model.DynamicFluidContainerModel.Colors(), bucketItem);
                 }
-                ResourceLocation altBucketRl = parent.parseLocation(builder.getId().replace("_fluid", "") + "_bucket");
+                ResourceLocation altBucketRl = NeoForgeContentRegistry.parseLocation(builder.getId().replace("_fluid", "") + "_bucket");
                 Item altBucketItem = parent.createdItems.get(altBucketRl);
                 if (altBucketItem != null && altBucketItem != bucketItem) {
                     event.register(new net.neoforged.neoforge.client.model.DynamicFluidContainerModel.Colors(), altBucketItem);
@@ -215,7 +275,7 @@ public class NeoForgeContentRegistry {
         entityRegistrar.onRegisterSpawnPlacements(event);
     }
 
-    private ResourceLocation parseLocation(String id) {
+    public static ResourceLocation parseLocation(String id) {
         if (id == null || id.isBlank()) {
             return ResourceLocation.fromNamespaceAndPath("luatweaker", "empty");
         }

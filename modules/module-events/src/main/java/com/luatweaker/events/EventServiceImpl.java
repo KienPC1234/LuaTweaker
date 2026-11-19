@@ -98,13 +98,17 @@ public class EventServiceImpl implements IEventService {
         return !cancelled;
     }
 
-    public void fireRawEvent(@NotNull String eventName, @NotNull ILuaValue payload) {
+    public boolean fireRawEvent(@NotNull String eventName, @NotNull ILuaValue payload) {
         java.util.List<ListenerEntry> entries = LISTENERS.get(eventName);
-        if (entries == null) return;
+        if (entries == null) return true;
+        boolean cancelled = false;
         for (ListenerEntry entry : entries) {
             if (entry.function() == null || !entry.function().isFunction()) continue;
             try {
-                entry.engine().callFunction(entry.function(), payload);
+                ILuaValue result = entry.engine().callFunction(entry.function(), payload);
+                if (result != null && result.toJavaObject() instanceof Boolean bool && !bool) {
+                    cancelled = true;
+                }
             } catch (Exception e) {
                 java.io.StringWriter sw = new java.io.StringWriter();
                 e.printStackTrace(new java.io.PrintWriter(sw));
@@ -114,6 +118,7 @@ public class EventServiceImpl implements IEventService {
                 );
             }
         }
+        return !cancelled;
     }
 
     public static void fireTeardownHooks() {

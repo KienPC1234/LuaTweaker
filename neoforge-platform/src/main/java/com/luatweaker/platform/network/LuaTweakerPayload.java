@@ -12,7 +12,7 @@ public record LuaTweakerPayload(String channelName, String dataJson) implements 
     
     public static final StreamCodec<FriendlyByteBuf, LuaTweakerPayload> STREAM_CODEC = StreamCodec.composite(
         ByteBufCodecs.STRING_UTF8, LuaTweakerPayload::channelName,
-        ByteBufCodecs.STRING_UTF8, LuaTweakerPayload::dataJson,
+        ByteBufCodecs.stringUtf8(262144), LuaTweakerPayload::dataJson,
         LuaTweakerPayload::new
     );
 

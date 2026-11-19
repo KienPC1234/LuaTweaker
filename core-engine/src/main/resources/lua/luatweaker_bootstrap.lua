@@ -29,17 +29,42 @@ local function parseTaskArgs(...)
     return fn, args
 end
 
-function task.spawn(...)
-    -- Bypassing Cobalt stack corruption bug on synchronous coroutine.resume with yields
-    task.defer(...)
+-- Creates a cancellable task entry. The returned handle is what task.cancel() takes;
+-- Cancel() is false once the task has started or was already cancelled.
+local function makeTaskEntry(fn, args, time)
+    local entry = { fn = fn, args = args, time = time, cancelled = false, started = false }
+    entry.Cancel = function()
+        if entry.started or entry.cancelled then
+            return false
+        end
+        entry.cancelled = true
+        return true
+    end
+    return entry
 end
 
+function task.spawn(...)
+    return task.defer(...)
+end
+
+--- Schedules fn for the next tick. Returns a handle for task.cancel().
 function task.defer(...)
     local fn, args = parseTaskArgs(...)
     if type(fn) ~= 'function' then
         error('[task.defer] Expected function, got ' .. type(fn))
     end
-    table.insert(deferred, { fn = fn, args = args })
+    local entry = makeTaskEntry(fn, args, 0)
+    table.insert(deferred, entry)
+    return entry
+end
+
+--- Cancels a task that has not started yet (from task.defer/spawn/delay).
+--- Returns true when it was cancelled, false when it already ran or was cancelled.
+function task.cancel(handle)
+    if type(handle) == 'table' and type(handle.Cancel) == 'function' then
+        return handle.Cancel()
+    end
+    return false
 end
 
 local function getTimeClock()
@@ -70,7 +95,9 @@ function task.delay(...)
     for i = startIdx, #rawArgs do
         table.insert(passArgs, rawArgs[i])
     end
-    table.insert(delays, { time = getTimeClock() + sec, fn = fn, args = passArgs })
+    local entry = makeTaskEntry(fn, passArgs, getTimeClock() + sec)
+    table.insert(delays, entry)
+    return entry
 end
 
 function task.wait(...)
@@ -123,17 +150,29 @@ function task._tick()
     delays = {}
 
     for _, item in ipairs(def) do
-        runDeferred(item.fn, item.args)
+        if not item.cancelled then
+            item.started = true
+            runDeferred(item.fn, item.args)
+        end
     end
 
     local now = getTimeClock()
     for _, item in ipairs(due) do
-        if now >= item.time then
+        if item.cancelled then
+            -- dropped: task.cancel() ran before the deadline
+        elseif now >= item.time then
+            item.started = true
             runDeferred(item.fn, item.args)
         else
             table.insert(delays, item)
         end
     end
+end
+
+-- Queue snapshot used by /lt doctor. The deferral/delay queues live in this closure,
+-- so Java cannot read them any other way.
+function task._stats()
+    return { queued = #deferred + #delays, deferred = #deferred, delayed = #delays }
 end
 
 _G.task = task
@@ -306,6 +345,50 @@ _G.RemoteEvent = RemoteEvent
 local RemoteFunction = {}
 RemoteFunction.__index = RemoteFunction
 
+-- RemoteFunction is a real request/response round trip: the request goes over the
+-- network, the answering side runs OnServerInvoke/OnClientInvoke, and the caller
+-- yields until the answer arrives. These are hard caps for that wait.
+local RPC_POLL_INTERVAL_SECONDS = 0.05
+local RPC_TIMEOUT_SECONDS = 10
+
+local function canYield()
+    local thread, isMain = coroutine.running()
+    return thread ~= nil and not isMain
+end
+
+-- Waits for one request id, yielding the calling coroutine between polls.
+-- Returns the remote return value; raises on remote errors, timeouts and misuse.
+local function awaitRpc(net, requestId, label)
+    if type(requestId) ~= 'string' or requestId == '' then
+        error('[' .. label .. '] transport did not return a request id', 0)
+    end
+    local startedAt = getTimeClock()
+    while true do
+        local state = net:_RpcPoll(requestId)
+        local status = type(state) == 'table' and state.Status or nil
+        if status == 'done' then
+            return state.Value
+        end
+        if status == 'error' then
+            error('[' .. label .. '] ' .. tostring(state.Error), 0)
+        end
+        if status == nil then
+            net:_RpcCancel(requestId)
+            error('[' .. label .. '] transport returned no response state', 0)
+        end
+        if getTimeClock() - startedAt >= RPC_TIMEOUT_SECONDS then
+            net:_RpcCancel(requestId)
+            error('[' .. label .. '] timed out after ' .. RPC_TIMEOUT_SECONDS .. 's', 0)
+        end
+        if not canYield() then
+            net:_RpcCancel(requestId)
+            error('[' .. label .. '] waits for the server answer, so it must run inside a '
+                .. 'coroutine: use task.spawn(function() ... end) or task.delay', 0)
+        end
+        task.wait(RPC_POLL_INTERVAL_SECONDS)
+    end
+end
+
 function RemoteFunction:new(name, javaNetworkService)
     local self = setmetatable({}, RemoteFunction)
     self.Name = name
@@ -315,26 +398,32 @@ function RemoteFunction:new(name, javaNetworkService)
     return self
 end
 
+--- Invokes the server handler (server side receives the calling player first).
 function RemoteFunction:InvokeServer(...)
     local args = {...}
     local net = _G.NetworkService
-    if net and type(net.InvokeServer) == "function" then
-        return net:InvokeServer(self.Name, args)
+    if not net or type(net._RpcInvokeServer) ~= 'function' then
+        return nil
     end
+    local requestId = net:_RpcInvokeServer(self.Name, args)
+    return awaitRpc(net, requestId, 'RemoteFunction:InvokeServer(' .. tostring(self.Name) .. ')')
 end
 
+--- Invokes one client's handler; the client handler receives only these arguments.
 function RemoteFunction:InvokeClient(player, ...)
     local args = {...}
     local uuid = ""
-    if type(player) == "string" then
+    if type(player) == 'string' then
         uuid = player
-    elseif type(player) == "table" and type(player.getUuid) == "function" then
+    elseif type(player) == 'table' and type(player.getUuid) == 'function' then
         uuid = player:getUuid()
     end
     local net = _G.NetworkService
-    if net and type(net.InvokeClient) == "function" then
-        return net:InvokeClient(self.Name, uuid, args)
+    if not net or type(net._RpcInvokeClient) ~= 'function' then
+        return nil
     end
+    local requestId = net:_RpcInvokeClient(self.Name, uuid, args)
+    return awaitRpc(net, requestId, 'RemoteFunction:InvokeClient(' .. tostring(self.Name) .. ')')
 end
 
 _G.RemoteFunction = RemoteFunction
@@ -343,6 +432,10 @@ _G.RemoteFunction = RemoteFunction
 -- USER INPUT & RUN SERVICE APIS
 -- ===================================================================
 
+-- InputBegan/InputEnded fire on raw client input with:
+--   (inputType, code, action, modifiers)
+-- inputType = "key" | "mouse", code = GLFW key/button id,
+-- action = 1 (press) or 0 (release), modifiers = GLFW modifier bits.
 local UserInputService = {
     InputBegan = Signal.new(),
     InputEnded = Signal.new()

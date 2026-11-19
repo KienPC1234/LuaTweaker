@@ -22,22 +22,26 @@ public class TweenServiceImpl implements ITweenService {
 
     @Override
     public ILuaTable create(ILuaTable instance, ILuaTable tweenInfo, ILuaTable properties) {
-        if (engine == null) return null;
-        
+        if (instance == null || properties == null) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "TweenService:Create requires (instance, tweenInfo, properties); ignoring the call");
+            return null;
+        }
+
         TweenImpl tween = new TweenImpl(engine, instance, tweenInfo, properties);
-        
+
         ILuaTable tweenTable = engine.createTable();
         tweenTable.rawset("Play", args -> {
             tween.play();
-            return null;
+            return engine.nilValue();
         });
         tweenTable.rawset("Pause", args -> {
             tween.pause();
-            return null;
+            return engine.nilValue();
         });
         tweenTable.rawset("Cancel", args -> {
             tween.cancel();
-            return null;
+            return engine.nilValue();
         });
         
         // Add a stub for Completed signal so user can listen to it

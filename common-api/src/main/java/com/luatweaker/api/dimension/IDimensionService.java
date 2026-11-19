@@ -90,4 +90,19 @@ public interface IDimensionService {
     )
     @Nullable
     Object getDimension(@NotNull String dimensionId);
+
+    @LuaDoc(
+        description = "List every registered dimension id (sorted).",
+        returnType = "table"
+    )
+    @NotNull
+    java.util.List<String> getDimensionIds();
+
+    @LuaDoc(
+        description = "Get the id of the dimension an entity is currently in, or nil when unavailable.",
+        params = {"entity: Entity - entity table"},
+        returnType = "string|nil"
+    )
+    @Nullable
+    String getEntityDimension(@NotNull IEntity entity);
 }

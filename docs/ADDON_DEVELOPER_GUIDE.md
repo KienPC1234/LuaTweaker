@@ -99,6 +99,43 @@ Register it once per engine:
 LuaBinder.bind(engine, "MyAddon", new MyAddonApiImpl(engine), IMyAddonApi.class);
 ```
 
+> **No fork required (plugin runtime hook).** Do NOT patch `LuaServiceBootstrap`,
+> `LuaTweakerMod`, `settings.gradle` or `neoforge-platform/build.gradle`. Instead wrap the
+> binding above in an `ILuaTweakerPlugin` and expose it once — the engine discovers it on
+> every reload (see section 6):
+
+```java
+package com.example.myaddon;
+
+import com.luatweaker.api.plugin.ILuaTweakerPlugin;
+import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.core.bind.LuaBinder;
+import com.example.myaddon.api.IMyAddonApi;
+import org.jetbrains.annotations.NotNull;
+import java.util.Map;
+
+public final class MyAddonPlugin implements ILuaTweakerPlugin {
+    @Override public @NotNull String pluginId() { return "myaddon"; }
+    @Override public @NotNull String pluginVersion() { return "1.0.0"; }
+
+    @Override
+    public void registerServices(@NotNull ILuaEngine engine) {
+        // LOW-LEVEL primitives only: one method per bridge call, logic stays in Lua.
+        LuaBinder.bind(engine, "MyAddon", new MyAddonApiImpl(engine), IMyAddonApi.class);
+    }
+
+    @Override
+    public @NotNull Map<String, String[]> requireAliases() {
+        return Map.of("LuaTweaker.MyAddon", new String[]{"MyAddon"});
+    }
+
+    @Override
+    public @NotNull Map<String, Class<?>> stubServices() {
+        return Map.of("MyAddon", IMyAddonApi.class);
+    }
+}
+```
+
 `LuaBinder.bind` creates a table with both `camelCase` and `PascalCase` method names, sets the global
 `MyAddon` and registers that same table as the service `MyAddon`. Scripts use either form:
 
@@ -145,3 +182,66 @@ end)
 Use `LuaTweakerLog.get()` with a `LogStage` value; catch exceptions with context and never discard
 them silently. `@LuaDoc` annotations on the interface are read by the engine's stub generator, so
 addons get EmmyLua autocomplete without hand-written stub files.
+
+---
+
+## 6. Publishing a plugin (two supported paths, no fork)
+
+The engine calls every discovered plugin at the end of `LuaServiceBootstrap.registerAllServices`
+(on every `/lt reload`), after all built-in services. A plugin that throws only fails itself —
+the reload continues and the error is logged with the plugin id.
+
+**Path A — separate NeoForge mod (recommended for Minecraft API access).**
+Your mod depends on LuaTweaker and registers once from its own mod constructor:
+
+```java
+public MyAddonMod(IEventBus bus, ModContainer container) {
+    LuaTweakerPluginRegistry.register(new MyAddonPlugin());
+}
+```
+
+**Path B — plain jar via ServiceLoader (no NeoForge mod needed).**
+Ship a jar containing the plugin class plus:
+
+```
+META-INF/services/com.luatweaker.api.plugin.ILuaTweakerPlugin
+```
+
+with the single line:
+
+```
+com.example.myaddon.MyAddonPlugin
+```
+
+Rules:
+
+- `pluginId` must be stable and unique; explicit `register()` wins over ServiceLoader on conflict.
+- `loadOrder` (default `1000`) controls order; lower registers first. Built-ins always run before plugins.
+- Expose LOW-LEVEL primitives only (`Raycast`, `ApplyDamage`, `SpawnParticle`, ...). Never ship a
+  high-level `castMagicSpell()` that hides gameplay logic from Lua (AGENTS.md anti-KubeJS rule).
+- Never import `net.minecraft.*` / `net.neoforged.*` outside the platform layer — go through
+  `Platform.getX()`. `common-api` plugins compile against `common-api` + `core-engine` only.
+- A ready-to-copy Gradle project lives in `templates/java-plugin/`.
+  A Lua-only mod template (manifest + `main.lua` + `optional_dependencies` + `ExportAPI` example)
+  lives in `templates/luamod/`.
+
+---
+
+## 7. Lua-only mods: manifest fields for safe interop
+
+```json
+{
+  "id": "my_mod",
+  "environment": "universal",
+  "dependencies": ["required_base"],
+  "optional_dependencies": ["present_loads_first", "missing_is_ignored"],
+  "permissions": []
+}
+```
+
+- `dependencies`: hard requirement — the mod is skipped with a `/lt doctor` error when absent.
+- `optional_dependencies`: soft requirement — loads after the listed mod when present,
+  warns and continues when absent.
+- Cross-mod helpers on the `mod` table: `mod:HasMod("other")`,
+  `mod:GetModVersion("other")`, `mod:ExportAPI("ApiName", apiTable)`,
+  `mod:ImportAPI("other_mod", "ApiName")`.

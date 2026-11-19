@@ -52,6 +52,31 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
     }
 
     @Override
+    protected void init() {
+        super.init();
+        if (menu.getType() != null) {
+            java.util.List<com.luatweaker.api.content.MachineButtonSpec> buttons =
+                    CustomContainerRegistry.CONTAINER_BUTTONS.get(menu.getType());
+            if (buttons != null) {
+                int x = (width - imageWidth) / 2;
+                int y = (height - imageHeight) / 2;
+                for (com.luatweaker.api.content.MachineButtonSpec btn : buttons) {
+                    addRenderableWidget(net.minecraft.client.gui.components.Button.builder(
+                            Component.literal(btn.label()),
+                            b -> {
+                                if (menu.getBlockPos() != null) {
+                                    net.neoforged.neoforge.network.PacketDistributor.sendToServer(
+                                            new com.luatweaker.platform.network.ContainerButtonPayload(menu.getBlockPos(), btn.id()));
+                                }
+                            })
+                            .bounds(x + btn.x(), y + btn.y(), btn.width(), btn.height())
+                            .build());
+                }
+            }
+        }
+    }
+
+    @Override
     protected void renderBg(GuiGraphics guiGraphics, float partialTick, int mouseX, int mouseY) {
         int x = (width - imageWidth) / 2;
         int y = (height - imageHeight) / 2;
@@ -158,5 +183,49 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
     protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
         guiGraphics.drawString(this.font, this.title, this.titleLabelX, this.titleLabelY, LABEL_COLOR, false);
         guiGraphics.drawString(this.font, PLAYER_INV_LABEL, this.inventoryLabelX, this.inventoryLabelY, LABEL_COLOR, false);
+
+        if (menu.getType() != null) {
+            java.util.List<com.luatweaker.api.content.MachineLabelSpec> labels =
+                    CustomContainerRegistry.CONTAINER_LABELS.get(menu.getType());
+            if (labels != null) {
+                for (com.luatweaker.api.content.MachineLabelSpec lbl : labels) {
+                    guiGraphics.drawString(this.font, lbl.textOrVar(), lbl.x(), lbl.y(), lbl.color(), false);
+                }
+            }
+        }
+    }
+
+    @Override
+    protected void renderTooltip(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+        super.renderTooltip(guiGraphics, mouseX, mouseY);
+        if (menu.getType() == null) return;
+        java.util.List<com.luatweaker.api.content.MachineBarSpec> bars =
+                CustomContainerRegistry.CONTAINER_BARS.get(menu.getType());
+        if (bars == null) return;
+        int x = (width - imageWidth) / 2;
+        int y = (height - imageHeight) / 2;
+        for (com.luatweaker.api.content.MachineBarSpec bar : bars) {
+            int bx = x + bar.x();
+            int by = y + bar.y();
+            if (mouseX >= bx && mouseX <= bx + bar.width() && mouseY >= by && mouseY <= by + bar.height()) {
+                Component tooltip = formatBarTooltip(bar);
+                if (tooltip != null) {
+                    guiGraphics.renderTooltip(this.font, tooltip, mouseX, mouseY);
+                    break;
+                }
+            }
+        }
+    }
+
+    private Component formatBarTooltip(com.luatweaker.api.content.MachineBarSpec bar) {
+        if (bar.tooltipFormat() != null && !bar.tooltipFormat().isBlank()) {
+            return Component.literal(bar.tooltipFormat());
+        }
+        return switch (bar.source()) {
+            case "energy" -> Component.literal(String.format("%,d / %,d FE", menu.getEnergyStored(), menu.getEnergyCapacity()));
+            case "fluid" -> Component.literal(String.format("%,d / %,d mB", menu.getFluidAmount(), menu.getFluidCapacity()));
+            case "progress" -> Component.literal(String.format("%d%%", Math.round(menu.getProgress() * 100)));
+            default -> null;
+        };
     }
 }

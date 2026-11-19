@@ -3,6 +3,7 @@ package com.luatweaker.platform.dimension;
 import com.luatweaker.core.vm.LuaEngineFactory;
 
 import com.luatweaker.api.content.IDatapackService;
+import com.luatweaker.api.event.IEventService;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.core.logger.AsyncFileLogger;
@@ -13,6 +14,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -115,7 +118,7 @@ public class NeoForgeDimensionProviderTest {
         assertTrue(typeJson.contains("\"piglin_safe\":true"), "piglin_safe must come from config");
         assertTrue(typeJson.contains("\"has_raids\":true"), "has_raids must come from config");
         assertTrue(typeJson.contains("\"monster_spawn_light_level\":{\"type\":\"minecraft:constant\",\"value\":5}"),
-                "monster light level must be a keyed IntProvider (1.21.1 vanilla format)");
+                "monster light level must be a keyed IntProvider (constant decodes on 1.21.1; vanilla overworld uses uniform)");
         assertTrue(typeJson.contains("\"monster_spawn_block_light_limit\":3"), "block light limit must come from config");
         assertTrue(typeJson.contains("\"infiniburn\":\"#minecraft:infiniburn_nether\""), "infiniburn must come from config");
         assertTrue(typeJson.contains("\"effects\":\"minecraft:the_nether\""), "effects must come from config");
@@ -128,6 +131,42 @@ public class NeoForgeDimensionProviderTest {
         FakeDatapack datapack = new FakeDatapack();
         NeoForgeDimensionProvider.applyAll(datapack);
         assertTrue(datapack.files.isEmpty(), "no dimensions -> no datapack files");
+    }
+
+    @Test
+    void applyAll_FiresDimensionsMaterializedWithIds() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        DimensionLuaBinding.registerBindings(engine);
+        engine.executeString(
+            "Dimensions:Create('arcane:crystal_realm', {\n" +
+            "    seaLevel = 40,\n" +
+            "    minHeight = -32,\n" +
+            "    maxHeight = 128\n" +
+            "})\n",
+            "setup_evt"
+        );
+
+        List<String> fired = new ArrayList<>();
+        List<ILuaTable> payloads = new ArrayList<>();
+        LuaServiceRegistry.register("Events", new IEventService() {
+            @Override public void listen(String eventName, Object callback) {}
+            @Override public void post(String eventName, ILuaTable payload) {}
+            @Override public void fireEvent(String eventName, ILuaTable payload) {
+                fired.add(eventName);
+                payloads.add(payload);
+            }
+            @Override public boolean fireCancellable(String eventName, ILuaTable payload) { return true; }
+            @Override public ILuaEngine getEngine() { return engine; }
+        });
+        try {
+            NeoForgeDimensionProvider.applyAll(new FakeDatapack());
+            assertTrue(fired.contains("DimensionsMaterialized"), "DimensionsMaterialized must fire: " + fired);
+            ILuaTable dims = payloads.get(fired.indexOf("DimensionsMaterialized"))
+                    .rawget("dimensions").asTable();
+            assertEquals("arcane:crystal_realm", dims.rawget(1).asString());
+        } finally {
+            LuaServiceRegistry.clear();
+        }
     }
 }
 

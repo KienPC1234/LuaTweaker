@@ -22,8 +22,8 @@ import com.luatweaker.api.vm.ILuaValue;
 public interface IWebService {
 
     @LuaDoc(
-        description = "Performs a synchronous HTTP GET request. Requires at least one loaded mod to declare the 'net.http' permission in manifest.json (per-installation grant, granting mods are warned about); otherwise the call is rejected. Returns {Success, StatusCode, Body, Json, Error}.",
-        params = {"url: string", "timeoutSeconds: number (optional, default 5.0, clamped to 1-60)"},
+        description = "Performs a blocking HTTP GET request: the calling thread waits for the response (cap 10s), so avoid calling it from hot paths. Requires at least one loaded mod to declare the 'net.http' permission in manifest.json (per-installation grant, granting mods are warned about); otherwise the call is rejected. Returns {Success, StatusCode, Body, Json, Error}.",
+        params = {"url: string", "timeoutSeconds: number (optional, default 5.0, clamped to 1-10)"},
         returnType = "table"
     )
     ILuaValue HttpGet(String url, @LuaDefault("5.0") double timeoutSeconds);

@@ -1,9 +1,11 @@
 package com.luatweaker.platform.structures;
 
 import com.google.gson.JsonParser;
+import com.luatweaker.api.event.IEventService;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.content.DatapackServiceImpl;
+import com.luatweaker.core.service.LuaServiceRegistry;
 import com.luatweaker.core.vm.LuaEngineFactory;
 import com.luatweaker.structures.StructureServiceImpl;
 import org.junit.jupiter.api.Test;
@@ -12,6 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -137,5 +140,37 @@ public class NeoForgeStructureProviderTest {
                 second.get("data/mymod/worldgen/structure_set/ancient_temple.json"));
         assertTrue(second.get("data/mymod/worldgen/structure_set/ancient_temple.json").contains("\"spacing\":48"));
         assertTrue(second.get("data/mymod/worldgen/structure_set/ancient_temple.json").contains("\"separation\":12"));
+    }
+
+    @Test
+    public void structuresAppliedEventFiresWithCounts() throws Exception {
+        setup("mymod");
+        writeNbt("mymod", "structures/kept");
+        service.register("mymod:ghost",
+                config("mymod:structures/ghost", new String[]{"minecraft:plains"}, 32, 8));
+        service.register("mymod:kept",
+                config("mymod:structures/kept", new String[]{"minecraft:plains"}, 32, 8));
+
+        List<String> fired = new ArrayList<>();
+        List<ILuaTable> payloads = new ArrayList<>();
+        LuaServiceRegistry.register("Events", new IEventService() {
+            @Override public void listen(String eventName, Object callback) {}
+            @Override public void post(String eventName, ILuaTable payload) {}
+            @Override public void fireEvent(String eventName, ILuaTable payload) {
+                fired.add(eventName);
+                payloads.add(payload);
+            }
+            @Override public boolean fireCancellable(String eventName, ILuaTable payload) { return true; }
+            @Override public ILuaEngine getEngine() { return engine; }
+        });
+        try {
+            apply();
+            assertTrue(fired.contains("StructuresApplied"), "StructuresApplied must fire: " + fired);
+            ILuaTable payload = payloads.get(fired.indexOf("StructuresApplied"));
+            assertEquals(1, payload.rawget("applied").asInt());
+            assertEquals(1, payload.rawget("skipped").asInt());
+        } finally {
+            LuaServiceRegistry.clear();
+        }
     }
 }

@@ -11,13 +11,36 @@ package com.luatweaker.api.content;
  * </ul>
  * A wide bar fills horizontally, a tall bar fills vertically.
  *
- * @param id     unique bar id (unused by rendering, useful for Lua tooltips later)
- * @param x      panel x (0 = left edge of the 176-wide panel)
- * @param y      panel y (0 = top edge)
- * @param width  bar width in pixels
- * @param height bar height in pixels
- * @param source one of "energy", "fluid", "progress"
- * @param color  ARGB color (e.g. 0xFF00E676); 0 or negative = source default
+ * @param id            unique bar id
+ * @param x             panel x (0 = left edge of the 176-wide panel)
+ * @param y             panel y (0 = top edge)
+ * @param width         bar width in pixels
+ * @param height        bar height in pixels
+ * @param source        one of "energy", "fluid", "progress"
+ * @param color         ARGB color (e.g. 0xFF00E676); 0 or negative = source default
+ * @param tooltipFormat optional tooltip format or template string
+ * @param texture       optional texture path for sprite bars
+ * @param u             texture U coordinate
+ * @param v             texture V coordinate
  */
-public record MachineBarSpec(String id, int x, int y, int width, int height, String source, int color) {
+public record MachineBarSpec(
+        String id,
+        int x,
+        int y,
+        int width,
+        int height,
+        String source,
+        int color,
+        String tooltipFormat,
+        String texture,
+        int u,
+        int v
+) {
+    public MachineBarSpec(String id, int x, int y, int width, int height, String source, int color) {
+        this(id, x, y, width, height, source, color, null, null, 0, 0);
+    }
+
+    public MachineBarSpec(String id, int x, int y, int width, int height, String source, int color, String tooltipFormat) {
+        this(id, x, y, width, height, source, color, tooltipFormat, null, 0, 0);
+    }
 }

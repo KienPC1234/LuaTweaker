@@ -122,8 +122,10 @@ public class CrystalRealmDimensionTest {
         LuaServiceBootstrap.registerAllServices(engine, contentService, storageService, datapackService,
                 new NeoForgeRecipeManager());
 
-        assertDoesNotThrow(() -> LuaModManager.loadLuaMods(baseDir, engine, "universal"),
-                "Failed executing autonomous LuaMods (incl. luatweaker_test Crystal Realm)");
+        LuaModManager.loadLuaMods(baseDir, engine, "universal");
+        assertTrue(LuaModManager.getLoadErrors().isEmpty(),
+                "Failed executing autonomous LuaMods (incl. luatweaker_test Crystal Realm): "
+                        + LuaModManager.getLoadErrors());
 
         Object serviceObj = LuaServiceRegistry.get("DimensionServiceImpl");
         assertTrue(serviceObj instanceof DimensionServiceImpl, "DimensionServiceImpl must be registered");
@@ -260,7 +262,9 @@ public class CrystalRealmDimensionTest {
 
         LuaServiceBootstrap.registerAllServices(engine, contentService, storageService, datapackService,
                 new NeoForgeRecipeManager());
-        assertDoesNotThrow(() -> LuaModManager.loadLuaMods(baseDir, engine, "universal"));
+        LuaModManager.loadLuaMods(baseDir, engine, "universal");
+        assertTrue(LuaModManager.getLoadErrors().isEmpty(),
+                "LuaMods must load without errors: " + LuaModManager.getLoadErrors());
 
         DimensionServiceImpl service = (DimensionServiceImpl) LuaServiceRegistry.get("DimensionServiceImpl");
 

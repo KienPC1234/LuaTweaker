@@ -22,11 +22,72 @@ public interface IRocketNetworkService {
     @LuaDoc(description = "Fires a remote event from client to server.", params = {"channelName: string", "args: table"})
     void FireServer(String channelName, ILuaValue[] args);
 
-    @LuaDoc(description = "Invokes a remote function on the server from the client and returns the result.", params = {"functionName: string", "args: table"}, returnType = "any")
-    ILuaValue InvokeServer(String functionName, ILuaValue[] args);
+    /**
+     * Starts a RemoteFunction round trip to the server and returns its correlation id.
+     * The caller polls {@link #RpcPoll(String)} until the answer arrives; the Lua
+     * {@code RemoteFunction:InvokeServer} wrapper does that and yields the coroutine.
+     *
+     * @throws IllegalStateException when too many requests are still unanswered
+     * @throws IllegalArgumentException when the function is not registered locally or the
+     *                                  arguments/return value cannot be serialized
+     */
+    @LuaDoc(
+        description = "Starts a RemoteFunction request to the server and returns the request id.",
+        params = {"functionName: string", "args: table"},
+        returnType = "string"
+    )
+    String RpcInvokeServer(String functionName, ILuaValue[] args);
 
-    @LuaDoc(description = "Invokes a remote function on a client from the server and returns the result.", params = {"functionName: string", "playerUuid: string", "args: table"}, returnType = "any")
-    ILuaValue InvokeClient(String functionName, String playerUuid, ILuaValue[] args);
+    /**
+     * Starts a RemoteFunction round trip to one client and returns its correlation id.
+     *
+     * @see #RpcInvokeServer(String, ILuaValue[])
+     */
+    @LuaDoc(
+        description = "Starts a RemoteFunction request to one client and returns the request id.",
+        params = {"functionName: string", "playerUuid: string", "args: table"},
+        returnType = "string"
+    )
+    String RpcInvokeClient(String functionName, String playerUuid, ILuaValue[] args);
+
+    /**
+     * Pops the state of a pending request.
+     *
+     * @return a table with {@code Status} = {@code "pending" | "done" | "error"}; when
+     *         {@code "done"} it carries {@code Value}, when {@code "error"} it carries
+     *         {@code Error}
+     */
+    @LuaDoc(
+        description = "Pops the state of a pending RemoteFunction request.",
+        params = {"requestId: string"},
+        returnType = "table"
+    )
+    ILuaTable RpcPoll(String requestId);
+
+    /** Drops a pending request (called by the Lua wrapper on timeout). */
+    @LuaDoc(
+        description = "Drops a pending RemoteFunction request.",
+        params = {"requestId: string"}
+    )
+    void RpcCancel(String requestId);
+
+    /**
+     * Handles an incoming {@link RpcPhase#INVOKE} packet: runs {@code OnServerInvoke} (server
+     * side, receives the calling player as first argument) or {@code OnClientInvoke} (client
+     * side) and answers with the return value or a serialized failure.
+     *
+     * @param playerUuid caller uuid on the server; empty on the client
+     * @param argsJson   JSON argument array
+     */
+    void OnRpcInvoke(String requestId, String functionName, String playerUuid, String argsJson);
+
+    /**
+     * Handles an incoming {@link RpcPhase#RESULT} packet and hands it to the waiting caller.
+     *
+     * @param resultJson JSON single-element result array; empty when {@code error} is set
+     * @param error      empty on success, otherwise the failure message
+     */
+    void OnRpcResult(String requestId, String resultJson, String error);
 
     @LuaDoc(description = "Routes a client packet message received by server to active listeners.", params = {"channelName: string", "playerUuid: string", "args: table"})
     void OnClientFired(String channelName, String playerUuid, ILuaValue[] args);

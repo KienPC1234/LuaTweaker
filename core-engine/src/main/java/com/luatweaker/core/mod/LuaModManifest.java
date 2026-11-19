@@ -20,6 +20,7 @@ public record LuaModManifest(
         @NotNull String main,
         @NotNull String environment,
         @NotNull List<String> dependencies,
+        @NotNull List<String> optionalDependencies,
         @NotNull List<String> permissions,
         @Nullable String updateUrl
 ) {
@@ -36,6 +37,7 @@ public record LuaModManifest(
             throw new IllegalArgumentException("LuaMod manifest 'environment' must be 'client', 'server', or 'universal', found: " + environment);
         }
         if (dependencies == null) dependencies = Collections.emptyList();
+        if (optionalDependencies == null) optionalDependencies = Collections.emptyList();
         if (permissions == null) permissions = Collections.emptyList();
         if (updateUrl != null && updateUrl.isBlank()) updateUrl = null;
     }
@@ -61,6 +63,11 @@ public record LuaModManifest(
                 json.getAsJsonArray("permissions").forEach(elem -> perms.add(elem.getAsString()));
             }
 
+            List<String> optionalDeps = new ArrayList<>();
+            if (json.has("optional_dependencies") && json.get("optional_dependencies").isJsonArray()) {
+                json.getAsJsonArray("optional_dependencies").forEach(elem -> optionalDeps.add(elem.getAsString()));
+            }
+
             String updateUrl = null;
             if (json.has("update_url") && json.get("update_url").isJsonPrimitive()) {
                 updateUrl = json.get("update_url").getAsString().trim();
@@ -72,7 +79,7 @@ public record LuaModManifest(
             }
             String environment = json.get("environment").getAsString();
 
-            return new LuaModManifest(id, name, author, version, main, environment, deps, perms, updateUrl);
+            return new LuaModManifest(id, name, author, version, main, environment, deps, optionalDeps, perms, updateUrl);
         } catch (Exception e) {
             return null;
         }

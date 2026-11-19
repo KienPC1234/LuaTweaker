@@ -35,6 +35,9 @@ public interface IInteractableItem {
     default @Nullable String getAttribute(@NotNull String key) { return null; }
     default void setAttribute(@NotNull String key, @NotNull String value) {}
 
+    default @Nullable Object getCustomData(@NotNull String key) { return null; }
+    default void setCustomData(@NotNull String key, @Nullable Object value) {}
+
     @NotNull
     Object getRawItemStack();
 }

@@ -9,6 +9,27 @@ import com.luatweaker.core.stub.StubCatalog;
 import org.jetbrains.annotations.NotNull;
 
 public class ClientLuaBinding {
+
+    /** True on a client process (integrated or remote); false on a dedicated server. */
+    private static boolean isClientRuntime() {
+        return com.luatweaker.api.pal.Platform.isInitialized()
+                && com.luatweaker.api.pal.Platform.getContent().isClient();
+    }
+
+    /**
+     * True when this process can mutate the world: a dedicated server, or a client hosting an
+     * integrated server. A client joined to a remote server reports false, so server-only Lua
+     * branches are skipped instead of failing against a missing world.
+     */
+    private static boolean isServerRuntime() {
+        if (!com.luatweaker.api.pal.Platform.isInitialized()) {
+            // Engine-neutral test doubles keep the historical server-side defaults.
+            return true;
+        }
+        com.luatweaker.api.pal.IPlatformContent content = com.luatweaker.api.pal.Platform.getContent();
+        return content.isDedicatedServer() || content.hasLocalServer();
+    }
+
     public static void registerBindings(@NotNull ILuaEngine engine, @NotNull ClientServiceImpl clientService) {
         registerBindings(engine, clientService, new KeyBindServiceImpl());
     }
@@ -19,8 +40,6 @@ public class ClientLuaBinding {
 
     public static void registerBindings(@NotNull ILuaEngine engine, @NotNull ClientServiceImpl clientService, @NotNull IKeyBindService keyBindService, com.luatweaker.api.client.IGuiService guiService) {
         ILuaTable globals = engine.getGlobalEnvironment();
-
-        boolean isDedicatedServer = com.luatweaker.api.pal.Platform.isInitialized() && com.luatweaker.api.pal.Platform.getContent().isDedicatedServer();
 
         // Merge into the bootstrap-provided Client table (which defines OnKeyBindPressed)
         // instead of replacing it, so keybind Lua listeners keep working.
@@ -84,43 +103,34 @@ public class ClientLuaBinding {
         ILuaValue uisValue = globals.rawget("UserInputService");
         if (uisValue != null && uisValue.isTable()) {
             ILuaTable uis = uisValue.asTable();
+            // State comes from NeoForgeClientEventListener; on a dedicated server nothing
+            // feeds it, so both queries simply stay false instead of the whole table
+            // disappearing (one API surface on every distribution).
             uis.rawset("IsKeyDown", args -> {
-                if (isDedicatedServer) return engine.wrapBoolean(false);
                 int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
-                if (args.length - off >= 1) {
-                    int key = args[off].asInt();
-                    return engine.wrapBoolean(clientService.isKeyDown(key));
+                if (args.length - off < 1) {
+                    return engine.wrapBoolean(false);
                 }
-                return engine.wrapBoolean(false);
+                return engine.wrapBoolean(clientService.isKeyDown(args[off].asInt()));
+            });
+            uis.rawset("IsMouseButtonDown", args -> {
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+                if (args.length - off < 1) {
+                    return engine.wrapBoolean(false);
+                }
+                return engine.wrapBoolean(clientService.isMouseButtonDown(args[off].asInt()));
             });
         }
 
-        if (isDedicatedServer) {
-            // Bind dummy services for dedicated server that do nothing
-            ILuaTable dummyCamera = engine.createTable();
-            dummyCamera.rawset("Shake", args -> null);
-            globals.rawset("Camera", dummyCamera);
-            engine.registerService("Camera", dummyCamera);
-
-            ILuaTable dummyEffects = engine.createTable();
-            dummyEffects.rawset("SpawnParticle", args -> null);
-            dummyEffects.rawset("PlaySound", args -> null);
-            dummyEffects.rawset("FlashScreen", args -> null);
-            globals.rawset("ClientEffects", dummyEffects);
-            engine.registerService("ClientEffects", dummyEffects);
-            
-            ILuaTable dummyTween = engine.createTable();
-            dummyTween.rawset("Create", args -> null);
-            globals.rawset("TweenService", dummyTween);
-            engine.registerService("TweenService", dummyTween);
-        } else {
-            LuaBinder.bind(engine, "Camera", new com.luatweaker.client.CameraServiceImpl(), com.luatweaker.api.client.ICameraService.class);
-            StubCatalog.register("Camera", com.luatweaker.api.client.ICameraService.class);
-            LuaBinder.bind(engine, "ClientEffects", new com.luatweaker.client.ClientEffectsServiceImpl(), com.luatweaker.api.client.IClientEffectsService.class);
-            StubCatalog.register("ClientEffects", com.luatweaker.api.client.IClientEffectsService.class);
-            LuaBinder.bind(engine, "TweenService", new com.luatweaker.client.TweenServiceImpl(engine), com.luatweaker.api.client.ITweenService.class);
-            StubCatalog.register("TweenService", com.luatweaker.api.client.ITweenService.class);
-        }
+        // Real implementations on every distribution: the services delegate through
+        // Platform.getClientOrNull() and degrade to no-ops (with a debug line) where no
+        // client exists. Dummy tables used to expose a smaller API on dedicated servers.
+        LuaBinder.bind(engine, "Camera", new com.luatweaker.client.CameraServiceImpl(), com.luatweaker.api.client.ICameraService.class);
+        StubCatalog.register("Camera", com.luatweaker.api.client.ICameraService.class);
+        LuaBinder.bind(engine, "ClientEffects", new com.luatweaker.client.ClientEffectsServiceImpl(), com.luatweaker.api.client.IClientEffectsService.class);
+        StubCatalog.register("ClientEffects", com.luatweaker.api.client.IClientEffectsService.class);
+        LuaBinder.bind(engine, "TweenService", new com.luatweaker.client.TweenServiceImpl(engine), com.luatweaker.api.client.ITweenService.class);
+        StubCatalog.register("TweenService", com.luatweaker.api.client.ITweenService.class);
 
         // 5. Roblox RunService — merge into the bootstrap table (keeps IsServer/IsClient)
         ILuaValue signalClass = globals.rawget("Signal");
@@ -133,16 +143,31 @@ public class ClientLuaBinding {
             if (newSignalFn != null && !newSignalFn.isNil()) {
                 runService.rawset("RenderStepped", engine.callFunction(newSignalFn, signalClass));
                 runService.rawset("Heartbeat", engine.callFunction(newSignalFn, signalClass));
+                if (runService.rawget("Stepped") == null || runService.rawget("Stepped").isNil()) {
+                    runService.rawset("Stepped", engine.callFunction(newSignalFn, signalClass));
+                }
             }
         }
+        // Runtime role, evaluated per call: a client joined to a remote server hosts no server,
+        // while single-player hosts an integrated one. The bootstrap defaults (server=true,
+        // client=false) were wrong for every client script.
+        runService.rawset("IsClient", args -> engine.wrapBoolean(isClientRuntime()));
+        runService.rawset("IsServer", args -> engine.wrapBoolean(isServerRuntime()));
         globals.rawset("RunService", runService);
         engine.registerService("RunService", runService);
 
-        if (!isDedicatedServer) {
+        ILuaValue existingGuiValue = globals.rawget("GuiService");
+        boolean hasExistingGui = existingGuiValue != null && existingGuiValue.isTable();
+        // HUD rendering only exists on a client. Attaching OnRenderHUD on a dedicated
+        // server would invite per-frame work that can never draw anything.
+        boolean hasHudRenderer = !com.luatweaker.api.pal.Platform.isInitialized()
+                || !com.luatweaker.api.pal.Platform.getContent().isDedicatedServer();
+
+        if (guiService != null) {
             // 6. Roblox GuiService — method bindings auto-generated from IGuiService
             ILuaTable guiServiceTable = LuaBinder.bind(engine, "GuiService", guiService, com.luatweaker.api.client.IGuiService.class);
             StubCatalog.register("GuiService", com.luatweaker.api.client.IGuiService.class);
-            if (signalClass != null && signalClass.isTable()) {
+            if (hasHudRenderer && signalClass != null && signalClass.isTable()) {
                 ILuaValue newSignalFn = signalClass.asTable().rawget("new");
                 if (newSignalFn != null && !newSignalFn.isNil()) {
                     guiServiceTable.rawset("OnRenderHUD", engine.callFunction(newSignalFn, signalClass));
@@ -151,31 +176,79 @@ public class ClientLuaBinding {
 
             // GetScreenSize returns a table {1, 2, Width, Height} — bind manually.
             guiServiceTable.rawset("GetScreenSize", args -> {
-                if (guiService != null) {
-                    int[] size = guiService.getScreenSize();
-                    ILuaTable result = engine.createTable();
-                    result.rawset(1, engine.wrapNumber(size[0]));
-                    result.rawset(2, engine.wrapNumber(size[1]));
-                    result.rawset("Width", engine.wrapNumber(size[0]));
-                    result.rawset("Height", engine.wrapNumber(size[1]));
-                    return result;
+                int[] size = guiService.getScreenSize();
+                ILuaTable result = engine.createTable();
+                result.rawset(1, engine.wrapNumber(size[0]));
+                result.rawset(2, engine.wrapNumber(size[1]));
+                result.rawset("Width", engine.wrapNumber(size[0]));
+                result.rawset("Height", engine.wrapNumber(size[1]));
+                return result;
+            });
+            guiServiceTable.rawset("getScreenSize", guiServiceTable.rawget("GetScreenSize"));
+
+            // MeasureText returns a table {1, 2, Width, Height}; the raw int[] from the
+            // auto-binding would arrive as opaque userdata.
+            guiServiceTable.rawset("MeasureText", args -> {
+                int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+                if (args.length - off < 1) {
+                    return engine.nilValue();
+                }
+                int[] size = guiService.measureText(args[off].asString());
+                ILuaTable result = engine.createTable();
+                result.rawset(1, engine.wrapNumber(size[0]));
+                result.rawset(2, engine.wrapNumber(size[1]));
+                result.rawset("Width", engine.wrapNumber(size[0]));
+                result.rawset("Height", engine.wrapNumber(size[1]));
+                return result;
+            });
+            guiServiceTable.rawset("measureText", guiServiceTable.rawget("MeasureText"));
+
+            guiServiceTable.rawset("CreateScreen", args -> {
+                int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+                String sid = args.length > off ? args[off].asString() : "screen";
+                String title = args.length > off + 1 ? args[off + 1].asString() : sid;
+                ILuaTable screen = engine.createTable();
+                screen.rawset("Id", engine.wrapString(sid));
+                screen.rawset("Title", engine.wrapString(title));
+                screen.rawset("Open", screenArgs -> {
+                    guiService.openScreen(sid, title, false);
+                    return engine.nilValue();
+                });
+                screen.rawset("open", screen.rawget("Open"));
+                screen.rawset("Close", screenArgs -> {
+                    guiService.closeScreen();
+                    return engine.nilValue();
+                });
+                screen.rawset("close", screen.rawget("Close"));
+                guiService.registerScreen(sid, screen);
+                return screen;
+            });
+            guiServiceTable.rawset("createScreen", guiServiceTable.rawget("CreateScreen"));
+
+            guiServiceTable.rawset("RegisterScreen", args -> {
+                int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;
+                if (args.length > off + 1 && args[off + 1].isTable()) {
+                    String sid = args[off].asString();
+                    guiService.registerScreen(sid, args[off + 1].asTable());
                 }
                 return engine.nilValue();
             });
-            guiServiceTable.rawset("getScreenSize", guiServiceTable.rawget("GetScreenSize"));
+            guiServiceTable.rawset("registerScreen", guiServiceTable.rawget("RegisterScreen"));
             engine.registerService("GuiService", guiServiceTable);
-
-            engine.registerService("ClientService", clientService);
+        } else if (hasExistingGui) {
+            // A second registration without an implementation must never replace a working
+            // GuiService: that silently turned every draw call into a nil-returning no-op.
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "GuiService re-binding skipped: no IGuiService supplied, keeping the existing table");
         } else {
-            // Ensure GuiService is bound as a dummy
-            ILuaTable dummyGui = engine.createTable();
-            dummyGui.rawset("GetScreenSize", args -> engine.createTable());
-            dummyGui.rawset("getScreenSize", dummyGui.rawget("GetScreenSize"));
-            globals.rawset("GuiService", dummyGui);
-            engine.registerService("GuiService", dummyGui);
-            
-            ILuaTable dummyClientService = engine.createTable();
-            engine.registerService("ClientService", dummyClientService);
+            // Only reachable when a caller supplies no implementation (tests, custom
+            // embedders). LuaTweakerMod always supplies the NeoForge or headless service.
+            com.luatweaker.api.log.LuaTweakerLog.get().debug(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "GuiService is not bound: no IGuiService was supplied");
         }
+
+        engine.registerService("ClientService", clientService);
     }
 }

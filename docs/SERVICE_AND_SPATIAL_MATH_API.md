@@ -26,7 +26,7 @@ local Color3       = require("LuaTweaker.Math.Color3")
 | `Task.Delay(seconds, fn)` | Schedules callback execution after specified delay in seconds. |
 | `Task.Defer(fn, ...args)` | Defers callback execution until the end of the current tick. |
 | `Task.Wait(seconds)` | Pauses execution for specified seconds (default: 0.05s). |
-| `Task.Cancel(taskId)` | Cancels a pending delayed or deferred task. |
+| `Task.Cancel(handle)` | Cancels a pending delayed or deferred task. `Task.Spawn/Delay/Defer` return the handle; `Cancel` returns false once the task started. |
 
 ```lua
 -- 1. Task.Spawn: Run async task immediately
@@ -64,6 +64,11 @@ local bossbar = Content.GetBossBar("dragon_bar")
 local tween = TweenService:Create(bossbar, info, { Percent = 0.0 })
 tween:Play()
 ```
+
+`TweenInfo.new(time, style, direction, repeatCount, reverses, delayTime)` — all six
+fields are honored (`repeatCount = -1` loops forever, `reverses = true` ping-pongs).
+Styles: `Linear`, `Sine`, `Quad`, `Cubic`, `Quart`, `Quint`, `Expo`, `Circ`, `Back`,
+`Elastic`, `Bounce`; directions: `In`, `Out`, `InOut`.
 
 ---
 
@@ -103,4 +108,22 @@ local clamped = math.clamp(150, 0, 100) -- 100
 local rounded = math.round(4.6)         -- 5
 local signed  = math.sign(-50)          -- -1
 local lerped  = math.lerp(10, 20, 0.5)   -- 15
+```
+
+---
+
+## 6. Deterministic Noise (`Noise`)
+
+Seeded 2D noise for terrain plus 3D noise for caves, floating islands and
+overhangs (all in [-1, 1], reproducible per `SetSeed`):
+
+```lua
+local Noise = require("LuaTweaker.Noise")
+Noise:SetSeed(1337)
+
+local hills = Noise:fbm(x * 0.01, z * 0.01, 4)       -- 2D mountains
+local island = Noise:fbm3(x * 0.02, y * 0.02, z * 0.02, 3) -- 3D density
+if island > 0.35 then
+    -- solid ground, else carve air
+end
 ```

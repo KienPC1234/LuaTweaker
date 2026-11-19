@@ -118,7 +118,9 @@ public class DimensionSpawnSimulationTest {
         DatapackServiceImpl datapackService = new DatapackServiceImpl();
         LuaServiceBootstrap.registerAllServices(engine, contentService, storageService, datapackService,
                 new NeoForgeRecipeManager());
-        assertDoesNotThrow(() -> LuaModManager.loadLuaMods(baseDir, engine, "universal"));
+        LuaModManager.loadLuaMods(baseDir, engine, "universal");
+        assertTrue(LuaModManager.getLoadErrors().isEmpty(),
+                "LuaMods must load without errors: " + LuaModManager.getLoadErrors());
 
         service = (DimensionServiceImpl) LuaServiceRegistry.get("DimensionServiceImpl");
         assertNotNull(service);

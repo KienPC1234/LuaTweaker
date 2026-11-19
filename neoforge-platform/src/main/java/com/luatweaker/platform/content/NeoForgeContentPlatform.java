@@ -62,6 +62,11 @@ public class NeoForgeContentPlatform implements IPlatformContent {
     }
 
     @Override
+    public boolean hasLocalServer() {
+        return ServerLifecycleHooks.getCurrentServer() != null;
+    }
+
+    @Override
     public String getPlatformName() {
         return "NeoForge";
     }

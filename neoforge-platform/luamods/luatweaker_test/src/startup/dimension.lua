@@ -330,7 +330,47 @@ end
 -- ==== PORTAL MAPPING ====
 Dimensions:RegisterPortal(portalBlockId, dimensionId)
 
--- ==== BIOMES MODULE (data tool: vanilla biome spawner entries) ====
+-- ==== BIOMES MODULE (full definitions + vanilla biome spawner entries) ====
+-- Define first: a biome JSON must exist in the virtual datapack before
+-- AddSpawn merges into it (unknown ids fail fast instead of shadowing).
+Biomes:Define("luatweaker:crystal_plains", {
+    temperature = 0.7,
+    downfall = 0.4,
+    effects = {
+        sky_color = 7907327,
+        fog_color = 12638463,
+        water_color = 4159204,
+        water_fog_color = 329011,
+    },
+    features = {
+        vegetal_decoration = { "minecraft:flower_plain", "minecraft:patch_grass_plain" },
+        underground_ores = { "minecraft:ore_coal_upper", "minecraft:ore_iron_upper" },
+    },
+})
+Biomes:Define("luatweaker:void_wastes", {
+    temperature = 0.2,
+    downfall = 0.0,
+    has_precipitation = false,
+    effects = {
+        sky_color = 0,
+        fog_color = 0,
+        water_color = 0,
+        water_fog_color = 0,
+    },
+})
+Biomes:Define("luatweaker:crystal_forest", {
+    temperature = 0.6,
+    downfall = 0.5,
+    effects = {
+        sky_color = 7907327,
+        fog_color = 12638463,
+        water_color = 4159204,
+        water_fog_color = 329011,
+    },
+    features = {
+        vegetal_decoration = { "minecraft:trees_plains", "minecraft:flower_plain" },
+    },
+})
 Biomes:AddSpawn("luatweaker:crystal_plains", "monster", "luatweaker:crystal_golem", 3, 1, 1)
 Biomes:AddSpawn("luatweaker:void_wastes", "monster", "minecraft:phantom", 5, 1, 2)
 Biomes:AddSpawn("luatweaker:crystal_forest", "monster", "luatweaker:crystal_beast", 8, 1, 2)

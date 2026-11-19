@@ -205,6 +205,31 @@ public class StorageServiceImpl implements IRobloxStorageService {
                 }
                 saveWorldStorage();
             }
+
+            @Override
+            public boolean RemoveAsync(String key) {
+                boolean existed = worldStore.remove(key) != null;
+                if (existed) {
+                    saveWorldStorage();
+                }
+                return existed;
+            }
+
+            @Override
+            public java.util.List<String> GetKeys() {
+                return sortedKeys(worldStore.keySet());
+            }
+
+            @Override
+            public double IncrementAsync(String key, double delta) {
+                double[] updated = new double[1];
+                worldStore.compute(key, (k, existing) -> {
+                    updated[0] = requireNumber(k, existing) + delta;
+                    return updated[0];
+                });
+                saveWorldStorage();
+                return updated[0];
+            }
         };
     }
 
@@ -233,6 +258,44 @@ public class StorageServiceImpl implements IRobloxStorageService {
                 });
                 savePlayerStorage();
             }
+
+            @Override
+            public boolean RemoveAsync(String key) {
+                boolean[] existed = new boolean[1];
+                playerStore.compute(playerUuid, (uuid, existing) -> {
+                    if (existing == null || !existing.containsKey(key)) {
+                        return existing;
+                    }
+                    existed[0] = true;
+                    Map<String, Object> next = new ConcurrentHashMap<>(existing);
+                    next.remove(key);
+                    return next;
+                });
+                if (existed[0]) {
+                    savePlayerStorage();
+                }
+                return existed[0];
+            }
+
+            @Override
+            public java.util.List<String> GetKeys() {
+                Map<String, Object> player = playerStore.get(playerUuid);
+                return sortedKeys(player == null ? java.util.Set.of() : player.keySet());
+            }
+
+            @Override
+            public double IncrementAsync(String key, double delta) {
+                double[] updated = new double[1];
+                playerStore.compute(playerUuid, (uuid, existing) -> {
+                    Map<String, Object> next = existing == null
+                            ? new ConcurrentHashMap<>() : new ConcurrentHashMap<>(existing);
+                    updated[0] = requireNumber(key, next.get(key)) + delta;
+                    next.put(key, updated[0]);
+                    return next;
+                });
+                savePlayerStorage();
+                return updated[0];
+            }
         };
     }
 
@@ -253,7 +316,45 @@ public class StorageServiceImpl implements IRobloxStorageService {
                     sessionStore.put(key, toStorable(key, value));
                 }
             }
+
+            @Override
+            public boolean RemoveAsync(String key) {
+                return sessionStore.remove(key) != null;
+            }
+
+            @Override
+            public java.util.List<String> GetKeys() {
+                return sortedKeys(sessionStore.keySet());
+            }
+
+            @Override
+            public double IncrementAsync(String key, double delta) {
+                double[] updated = new double[1];
+                sessionStore.compute(key, (k, existing) -> {
+                    updated[0] = requireNumber(k, existing) + delta;
+                    return updated[0];
+                });
+                return updated[0];
+            }
         };
+    }
+
+    private static java.util.List<String> sortedKeys(java.util.Set<String> keys) {
+        java.util.List<String> sorted = new java.util.ArrayList<>(keys);
+        java.util.Collections.sort(sorted);
+        return sorted;
+    }
+
+    private static double requireNumber(String key, Object existing) {
+        if (existing == null) {
+            return 0.0;
+        }
+        if (existing instanceof Number number) {
+            return number.doubleValue();
+        }
+        throw new IllegalStateException("Storage key '" + key + "' holds a "
+                + existing.getClass().getSimpleName()
+                + ", not a number; IncrementAsync would corrupt the stored value");
     }
 
     /**

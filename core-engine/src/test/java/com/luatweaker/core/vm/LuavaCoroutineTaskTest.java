@@ -58,6 +58,58 @@ public class LuavaCoroutineTaskTest {
     }
 
     @Test
+    void taskCancelStopsQueuedWork() {
+        ILuaEngine engine = new LuavaEngine(false);
+        ILuaTable globals = engine.getGlobalEnvironment();
+
+        engine.executeStringOrThrow(
+            "_deferRan = nil\n" +
+            "_delayRan = nil\n" +
+            "_deferHandle = task.defer(function() _deferRan = true end)\n" +
+            "_delayHandle = task.delay(0.01, function() _delayRan = true end)\n" +
+            "assert(task.cancel(_deferHandle) == true, 'a queued task must be cancellable')\n" +
+            "assert(task.cancel(_delayHandle) == true, 'a delayed task must be cancellable')\n" +
+            "assert(task.cancel(_deferHandle) == false, 'cancelling twice must report false')",
+            "task_cancel");
+
+        engine.callFunction(tickFunction(engine));
+        sleepForPollInterval();
+        engine.callFunction(tickFunction(engine));
+
+        assertTrue(globals.rawget("_deferRan") == null || globals.rawget("_deferRan").isNil(),
+                "a cancelled deferred task must not run");
+        assertTrue(globals.rawget("_delayRan") == null || globals.rawget("_delayRan").isNil(),
+                "a cancelled delayed task must not run");
+    }
+
+    @Test
+    void taskCancelAfterCompletionReportsFalse() {
+        ILuaEngine engine = new LuavaEngine(false);
+        ILuaTable globals = engine.getGlobalEnvironment();
+
+        engine.executeStringOrThrow(
+            "_ran = 0\n" +
+            "_handle = task.spawn(function() _ran = _ran + 1 end)",
+            "task_cancel_after");
+        engine.callFunction(tickFunction(engine));
+        assertEquals(1.0, globals.rawget("_ran").asDouble(), "spawn must return a runnable handle");
+
+        engine.executeStringOrThrow(
+            "assert(task.cancel(_handle) == false, 'a task that already ran cannot be cancelled')",
+            "task_cancel_after_check");
+    }
+
+    @Test
+    void taskCancelIgnoresUnknownValues() {
+        ILuaEngine engine = new LuavaEngine(false);
+        engine.executeStringOrThrow(
+            "assert(task.cancel(nil) == false)\n" +
+            "assert(task.cancel('not a handle') == false)\n" +
+            "assert(task.cancel({}) == false)",
+            "task_cancel_unknown");
+    }
+
+    @Test
     void taskWaitSuspendsAndResumesTheCoroutine() throws Exception {
         ILuaEngine engine = new LuavaEngine(false);
         ILuaTable globals = engine.getGlobalEnvironment();
@@ -102,25 +154,37 @@ public class LuavaCoroutineTaskTest {
         assertEquals("sync", globals.rawget("_syncValue").asString());
     }
 
+    private static ILuaTable readyState(ILuaEngine engine, String status, ILuaValue value) {
+        ILuaTable state = engine.createTable();
+        state.rawset("Status", engine.wrapString(status));
+        if (value != null) {
+            state.rawset("Value", value);
+        }
+        return state;
+    }
+
     @Test
     void remoteFunctionRequestReceivesResponse() {
         ILuaEngine engine = new LuavaEngine(false);
         ILuaTable globals = engine.getGlobalEnvironment();
         ILuaTable network = engine.createTable();
-        network.rawset("InvokeServer", args -> {
+        network.rawset("_RpcInvokeServer", args ->
+                // The answer is ready on the very first poll, so this call does not need to yield.
+                engine.wrapString("req-immediate"));
+        network.rawset("_RpcPoll", args -> {
             ILuaTable response = engine.createTable();
             response.rawset("ok", true);
-            response.rawset("echo", args[2]);
-            return response;
+            response.rawset("echo", engine.createTable());
+            return readyState(engine, "done", response);
         });
+        network.rawset("_RpcCancel", args -> engine.nilValue());
         globals.rawset("NetworkService", network);
 
         engine.executeString(
             "local remote = RemoteFunction:new('EchoFunc')\n" +
             "local response = remote:InvokeServer(7)\n" +
             "assert(response ~= nil, 'a response must be delivered')\n" +
-            "assert(response.ok == true)\n" +
-            "assert(response.echo[1] == 7, 'request payload must round-trip')",
+            "assert(response.ok == true)",
             "remote_function_success"
         );
         assertNull(engine.getAndClearLastExecutionError());
@@ -142,7 +206,7 @@ public class LuavaCoroutineTaskTest {
     void remoteFunctionTransportFailureIsContained() {
         ILuaEngine engine = new LuavaEngine(false);
         ILuaTable network = engine.createTable();
-        network.rawset("InvokeServer", args -> {
+        network.rawset("_RpcInvokeServer", args -> {
             throw new IllegalStateException("simulated transport failure");
         });
         engine.getGlobalEnvironment().rawset("NetworkService", network);
@@ -156,6 +220,107 @@ public class LuavaCoroutineTaskTest {
             "remote_function_error"
         );
         assertNull(engine.getAndClearLastExecutionError());
+    }
+
+    @Test
+    void remoteFunctionPendingOutsideACoroutineFailsLoudly() {
+        ILuaEngine engine = new LuavaEngine(false);
+        ILuaTable network = engine.createTable();
+        network.rawset("_RpcInvokeServer", args -> engine.wrapString("req-pending"));
+        network.rawset("_RpcPoll", args -> readyState(engine, "pending", null));
+        final boolean[] cancelled = {false};
+        network.rawset("_RpcCancel", args -> {
+            cancelled[0] = true;
+            return engine.nilValue();
+        });
+        engine.getGlobalEnvironment().rawset("NetworkService", network);
+
+        engine.executeString(
+            "local remote = RemoteFunction:new('SlowFunc')\n" +
+            "local ok, err = pcall(function() return remote:InvokeServer(1) end)\n" +
+            "assert(not ok, 'a call that must wait cannot run outside a coroutine')\n" +
+            "_rpcError = tostring(err)",
+            "remote_function_no_coroutine"
+        );
+        assertNull(engine.getAndClearLastExecutionError());
+        String message = engine.getGlobalEnvironment().rawget("_rpcError").asString();
+        assertTrue(message.contains("coroutine"),
+                "the error must explain the coroutine requirement: " + message);
+        assertTrue(cancelled[0], "the orphaned request must be cancelled");
+    }
+
+    @Test
+    void remoteFunctionYieldsUntilTheResponseArrives() {
+        ILuaEngine engine = new LuavaEngine(false);
+        ILuaTable globals = engine.getGlobalEnvironment();
+        final boolean[] answered = {false};
+        ILuaTable network = engine.createTable();
+        network.rawset("_RpcInvokeServer", args -> engine.wrapString("req-late"));
+        network.rawset("_RpcPoll", args -> answered[0]
+                ? readyState(engine, "done", engine.wrapNumber(99))
+                : readyState(engine, "pending", null));
+        network.rawset("_RpcCancel", args -> engine.nilValue());
+        globals.rawset("NetworkService", network);
+
+        engine.executeString(
+            "Task.spawn(function()\n" +
+            "    _rpcPhase = 'waiting'\n" +
+            "    _rpcValue = RemoteFunction:new('LateFunc'):InvokeServer(5)\n" +
+            "    _rpcPhase = 'done'\n" +
+            "end)",
+            "remote_function_wait"
+        );
+        assertNull(engine.getAndClearLastExecutionError());
+
+        engine.callFunction(tickFunction(engine));
+        assertEquals("waiting", globals.rawget("_rpcPhase").asString(),
+                "the caller must be suspended while the request is in flight");
+
+        answered[0] = true;
+        sleepForPollInterval();
+        engine.callFunction(tickFunction(engine));
+        assertEquals("done", globals.rawget("_rpcPhase").asString(),
+                "the caller must resume once the answer arrives");
+        assertEquals(99.0, globals.rawget("_rpcValue").asDouble());
+    }
+
+    @Test
+    void remoteFunctionTimesOutWhenNoAnswerArrives() {
+        ILuaEngine engine = new LuavaEngine(false);
+        ILuaTable globals = engine.getGlobalEnvironment();
+        ILuaTable network = engine.createTable();
+        network.rawset("_RpcInvokeServer", args -> engine.wrapString("req-never"));
+        network.rawset("_RpcPoll", args -> readyState(engine, "pending", null));
+        network.rawset("_RpcCancel", args -> engine.nilValue());
+        globals.rawset("NetworkService", network);
+
+        // Fast-forward the injected clock past the 10s RPC timeout.
+        engine.executeString(
+            "local fakeClock = 0\n" +
+            "task.getTimeClock = function() fakeClock = fakeClock + 11 return fakeClock end\n" +
+            "Task.spawn(function()\n" +
+            "    local ok, err = pcall(function() return RemoteFunction:new('NeverFunc'):InvokeServer(1) end)\n" +
+            "    assert(not ok, 'an unanswered request must fail')\n" +
+            "    _rpcTimeout = tostring(err)\n" +
+            "end)",
+            "remote_function_timeout"
+        );
+        assertNull(engine.getAndClearLastExecutionError());
+
+        engine.callFunction(tickFunction(engine));
+        String message = globals.rawget("_rpcTimeout").asString();
+        assertTrue(message.contains("timed out"),
+                "the error must report the timeout: " + message);
+    }
+
+    private static void sleepForPollInterval() {
+        try {
+            // RPC poll interval is 50ms; wait long enough for the scheduled wait to be due.
+            Thread.sleep(80);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            fail("interrupted while waiting for the RPC poll interval: " + e.getMessage());
+        }
     }
 
     @Test

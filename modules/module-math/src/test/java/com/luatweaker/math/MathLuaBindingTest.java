@@ -20,29 +20,32 @@ public class MathLuaBindingTest {
 
     @Test
     public void testRobloxMathExtensions() {
-        assertDoesNotThrow(() -> {
-            engine.executeString(
-                "local c = math.clamp(150, 0, 100)\n" +
-                "assert(c == 100, 'math.clamp failed')\n" +
-                "local l = math.lerp(10, 20, 0.5)\n" +
-                "assert(l == 15, 'math.lerp failed')\n" +
-                "local r = math.round(4.6)\n" +
-                "assert(r == 5, 'math.round failed')",
-                "MathTest"
-            );
-        });
+        engine.executeStringOrThrow(
+            "local c = math.clamp(150, 0, 100)\n" +
+            "assert(c == 100, 'math.clamp failed')\n" +
+            "local l = math.lerp(10, 20, 0.5)\n" +
+            "assert(l == 15, 'math.lerp failed')\n" +
+            "local r = math.round(4.6)\n" +
+            "assert(r == 5, 'math.round failed')",
+            "MathTest"
+        );
     }
 
     @Test
     public void testRobloxStringExtensions() {
-        assertDoesNotThrow(() -> {
-            engine.executeString(
-                "local parts = string.split('a,b,c', ',')\n" +
-                "assert(#parts == 3, 'string.split count failed')\n" +
-                "local trimmed = string.trim('  hello  ')\n" +
-                "assert(trimmed == 'hello', 'string.trim failed')",
-                "StringTest"
-            );
-        });
+        engine.executeStringOrThrow(
+            "local parts = string.split('a,b,c', ',')\n" +
+            "assert(#parts == 3, 'string.split count failed')\n" +
+            "local trimmed = string.trim('  hello  ')\n" +
+            "assert(trimmed == 'hello', 'string.trim failed')",
+            "StringTest"
+        );
+    }
+
+    @Test
+    public void executeStringOrThrowSurfacesAFailingChunk() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> engine.executeStringOrThrow("assert(false, 'boom')", "FailingTest"));
+        assertTrue(error.getMessage().contains("boom"), error.getMessage());
     }
 }

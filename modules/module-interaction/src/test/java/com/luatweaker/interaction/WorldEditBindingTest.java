@@ -99,6 +99,54 @@ public class WorldEditBindingTest {
         @Override public boolean setBlockEntityData(String d, int x, int y, int z, Map<String, Object> data) { return false; }
         @Override public boolean ejectContainerItem(String d, int x, int y, int z, int slot, int count) { return false; }
         @Override public boolean executeCommand(String c) { return false; }
+
+        String particleId;
+        double[] particlePos = new double[3];
+        int particleCount = -1;
+        double particleSpeed = -1;
+        int particleCalls = 0;
+
+        @Override
+        public void spawnParticle(String dimension, String particleId, double x, double y, double z,
+                                  double vx, double vy, double vz, int count, double speed) {
+            particleCalls++;
+            this.particleId = particleId;
+            particlePos = new double[] { x, y, z };
+            particleCount = count;
+            particleSpeed = speed;
+        }
+
+        String soundDimension;
+        String soundId;
+        String soundSource;
+        double[] soundPos = new double[3];
+        float soundVolume = 1.0f;
+        float soundPitch = 1.0f;
+        int soundCalls = 0;
+        String stoppedSoundId;
+        String stoppedSoundSource;
+        int stopCalls = 0;
+
+        @Override
+        public void playSound(String dimension, String soundId, double x, double y, double z,
+                              float volume, float pitch, String source) {
+            soundCalls++;
+            soundDimension = dimension;
+            this.soundId = soundId;
+            soundPos = new double[] { x, y, z };
+            soundVolume = volume;
+            soundPitch = pitch;
+            soundSource = source;
+        }
+
+        @Override
+        public boolean stopSound(String dimension, String soundId, String source) {
+            stopCalls++;
+            soundDimension = dimension;
+            stoppedSoundId = soundId;
+            stoppedSoundSource = source;
+            return true;
+        }
     }
 
     private MockInteraction interaction;
@@ -262,5 +310,79 @@ public class WorldEditBindingTest {
         ILuaValue place = engine.getGlobalEnvironment().rawget("World").asTable().rawget("placeStructure");
         assertNotNull(place);
         assertTrue(place.isFunction(), "World.placeStructure alias must exist");
+    }
+
+    @Test
+    public void playSoundPassesPositionVolumePitchAndSource() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        InteractionLuaBinding.registerBindings(engine);
+
+        executeLua(engine,
+                "World:PlaySound('minecraft:entity.experience_orb.pickup', 1, 2, 3, 0.5, 1.5, 'HOSTILE')\n" +
+                "World:PlaySound('luatweaker:crystal_realm', 'minecraft:block.note_block.harp', " +
+                "{ X = 4, Y = 5, Z = 6 }, 0.25, 2.0, 'BLOCKS')",
+                "play_sound_args");
+
+        assertEquals(2, interaction.soundCalls);
+        assertArrayEquals(new double[] { 4, 5, 6 }, interaction.soundPos,
+                "the second call must use the Vector3 table");
+        assertEquals("minecraft:block.note_block.harp", interaction.soundId);
+        assertEquals("luatweaker:crystal_realm", interaction.soundDimension);
+        assertEquals(0.25f, interaction.soundVolume);
+        assertEquals(2.0f, interaction.soundPitch);
+        assertEquals("BLOCKS", interaction.soundSource);
+    }
+
+    @Test
+    public void playSoundWithoutPositionNeverReachesThePlatform() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        InteractionLuaBinding.registerBindings(engine);
+
+        executeLua(engine,
+                "assert(World:PlaySound('minecraft:entity.experience_orb.pickup') == nil)\n" +
+                "assert(World:PlaySound('minecraft:entity.experience_orb.pickup', 'PLAYERS') == nil)\n" +
+                "World:SpawnParticle('minecraft:flame')",
+                "sound_missing_position");
+
+        assertEquals(0, interaction.soundCalls,
+                "defaulting a missing position to 0,0,0 would play at the world origin");
+    }
+
+    @Test
+    public void stopSoundDisambiguatesSourceFromDimension() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        InteractionLuaBinding.registerBindings(engine);
+
+        executeLua(engine,
+                "assert(World:StopSound('minecraft:block.note_block.harp', 'PLAYERS') == true)",
+                "stop_sound_source");
+
+        assertEquals("minecraft:overworld", interaction.soundDimension,
+                "'PLAYERS' is a source, so the first string must stay the sound id");
+        assertEquals("minecraft:block.note_block.harp", interaction.stoppedSoundId);
+        assertEquals("PLAYERS", interaction.stoppedSoundSource);
+
+        executeLua(engine,
+                "assert(World:StopSound('minecraft:the_nether', 'minecraft:block.note_block.harp') == true)",
+                "stop_sound_dimension");
+
+        assertEquals("minecraft:the_nether", interaction.soundDimension,
+                "a non-source second string makes the first string the dimension");
+    }
+
+    @Test
+    public void particleArgumentsAreFullyParsed() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        InteractionLuaBinding.registerBindings(engine);
+
+        executeLua(engine,
+                "World:SpawnParticle('minecraft:flame', { X = 1, Y = 2, Z = 3 }, " +
+                "{ X = 0.1, Y = 0.2, Z = 0.3 }, 12, 0.5)",
+                "particle_vector_args");
+
+        assertEquals("minecraft:flame", interaction.particleId);
+        assertArrayEquals(new double[] { 1, 2, 3 }, interaction.particlePos);
+        assertEquals(12, interaction.particleCount);
+        assertEquals(0.5, interaction.particleSpeed, 1e-9);
     }
 }

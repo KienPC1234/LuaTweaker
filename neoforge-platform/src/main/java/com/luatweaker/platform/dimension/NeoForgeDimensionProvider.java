@@ -55,6 +55,8 @@ public final class NeoForgeDimensionProvider {
             LuaTweakerLog.get().info(LogStage.SYSTEM,
                     "Materialized dimension '" + dimensionId + "' into the virtual datapack");
         }
+        com.luatweaker.core.service.AppliedEventHelper.fire("DimensionsMaterialized",
+            java.util.Map.of("dimensions", service.getDimensionIds()));
     }
 
     /** Splits "namespace:path" -> [namespace, path]; defaults the namespace to "luatweaker". */

@@ -120,6 +120,7 @@ public class LuaChunkGenerator extends ChunkGenerator {
         String[] topBlocks = new String[256];
         BlockState waterState = resolveBlock(config.waterBlock());
 
+        BlockPos.MutableBlockPos mutPos = new BlockPos.MutableBlockPos();
         for (int z = 0; z < 16; z++) {
             for (int x = 0; x < 16; x++) {
                 int worldX = pos.getMinBlockX() + x;
@@ -145,7 +146,7 @@ public class LuaChunkGenerator extends ChunkGenerator {
                                 : com.luatweaker.dimension.TerrainColumn.blockAtDepth(config, height, y);
                         state = resolveBlock(blockId);
                     }
-                    chunk.setBlockState(new BlockPos(worldX, y, worldZ), state, false);
+                    chunk.setBlockState(mutPos.set(worldX, y, worldZ), state, false);
                     for (Heightmap heightmap : heightmaps) {
                         heightmap.update(x, y, z, state);
                     }
@@ -157,7 +158,7 @@ public class LuaChunkGenerator extends ChunkGenerator {
                     } else {
                         state = y <= config.seaLevel() ? waterState : airState;
                     }
-                    chunk.setBlockState(new BlockPos(worldX, y, worldZ), state, false);
+                    chunk.setBlockState(mutPos.set(worldX, y, worldZ), state, false);
                     for (Heightmap heightmap : heightmaps) {
                         heightmap.update(x, y, z, state);
                     }
@@ -200,7 +201,8 @@ public class LuaChunkGenerator extends ChunkGenerator {
         ChunkPos center = region.getCenter();
         Random random = new Random(center.x * CHUNK_X_SEED ^ center.z * CHUNK_Z_SEED);
         for (DimensionConfig.SpawnEntry entry : config.spawnEntities()) {
-            java.util.Optional<EntityType<?>> type = EntityType.byString(entry.entity());
+            java.util.Optional<EntityType<?>> type =
+                    com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(entry.entity());
             if (type.isEmpty()) {
                 LuaTweakerLog.get().error(LogStage.SYSTEM,
                         "spawnEntities for dimension '" + dimensionId + "' references unknown entity '"
@@ -235,7 +237,8 @@ public class LuaChunkGenerator extends ChunkGenerator {
         }
         List<MobSpawnSettings.SpawnerData> spawners = new ArrayList<>();
         for (DimensionConfig.SpawnEntry entry : config.spawnEntities()) {
-            java.util.Optional<EntityType<?>> type = EntityType.byString(entry.entity());
+            java.util.Optional<EntityType<?>> type =
+                    com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(entry.entity());
             if (type.isEmpty() || type.get().getCategory() != category) continue;
             spawners.add(new MobSpawnSettings.SpawnerData(type.get(), entry.weight(),
                     entry.minGroup(), entry.maxGroup()));

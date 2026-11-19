@@ -39,6 +39,7 @@ public class StructureServiceImplTest {
             // rawset(String, Object) and be stored as userdata, not a number.
             else if (value instanceof Double d) table.rawset(key, d.doubleValue());
             else if (value instanceof Integer n) table.rawset(key, n.doubleValue());
+            else if (value instanceof Boolean b) table.rawset(key, b.booleanValue());
             else if (value instanceof ILuaTable t) table.rawset(key, t);
             else throw new IllegalArgumentException("unsupported test value: " + value);
         }
@@ -88,6 +89,58 @@ public class StructureServiceImplTest {
         assertEquals(8, entry.separation(), "default separation must match vanilla desert_pyramids (8)");
         assertEquals(1.0, entry.spawnChance(), 1e-9);
         assertTrue(entry.lootTables().isEmpty());
+        // Jigsaw placement defaults mirror vanilla village_plains.json.
+        assertEquals(0, entry.startHeight());
+        assertEquals(1, entry.size());
+        assertEquals(80, entry.maxDistance());
+        assertFalse(entry.useExpansionHack());
+        assertEquals("beard_thin", entry.terrainAdaptation());
+        assertEquals("WORLD_SURFACE_WG", entry.heightmap());
+        assertEquals("surface_structures", entry.step());
+        assertEquals(StructureServiceImpl.defaultSalt("mymod:ruin"), entry.salt());
+    }
+
+    @Test
+    void register_StoresCustomPlacement() {
+        service.register("mymod:sky_temple", config("template", "mymod:structures/temple",
+                "spawnBiomes", biomeList("minecraft:plains"),
+                "spacing", 64, "separation", 16, "salt", 12345,
+                "startHeight", 100, "size", 6, "maxDistance", 128,
+                "useExpansionHack", true, "terrainAdaptation", "bury",
+                "heightmap", "OCEAN_FLOOR_WG", "step", "surface_structures"));
+
+        StructureServiceImpl.StructureEntry entry = service.getEntry("mymod:sky_temple");
+        assertNotNull(entry);
+        assertEquals(100, entry.startHeight());
+        assertEquals(6, entry.size());
+        assertEquals(128, entry.maxDistance());
+        assertTrue(entry.useExpansionHack());
+        assertEquals("bury", entry.terrainAdaptation());
+        assertEquals("OCEAN_FLOOR_WG", entry.heightmap());
+        assertEquals(12345, entry.salt());
+    }
+
+    @Test
+    void register_RejectsBadPlacementValues() {
+        // Unknown enum-style values fail fast instead of dying at datapack load.
+        assertThrows(IllegalArgumentException.class, () -> service.register("mymod:x",
+                config("template", "mymod:structures/x", "spawnBiomes", biomeList("minecraft:plains"),
+                        "terrainAdaptation", "beard_fluffy")));
+        assertThrows(IllegalArgumentException.class, () -> service.register("mymod:x",
+                config("template", "mymod:structures/x", "spawnBiomes", biomeList("minecraft:plains"),
+                        "heightmap", "SKY")));
+        assertThrows(IllegalArgumentException.class, () -> service.register("mymod:x",
+                config("template", "mymod:structures/x", "spawnBiomes", biomeList("minecraft:plains"),
+                        "step", "not_a_step")));
+        assertThrows(IllegalArgumentException.class, () -> service.register("mymod:x",
+                config("template", "mymod:structures/x", "spawnBiomes", biomeList("minecraft:plains"),
+                        "startHeight", 5000)));
+        assertThrows(IllegalArgumentException.class, () -> service.register("mymod:x",
+                config("template", "mymod:structures/x", "spawnBiomes", biomeList("minecraft:plains"),
+                        "size", 0)));
+        assertThrows(IllegalArgumentException.class, () -> service.register("mymod:x",
+                config("template", "mymod:structures/x", "spawnBiomes", biomeList("minecraft:plains"),
+                        "useExpansionHack", "yes")));
     }
 
     @Test
@@ -95,6 +148,31 @@ public class StructureServiceImplTest {
         assertThrows(IllegalArgumentException.class, () -> service.register("", fullConfig()));
         assertThrows(IllegalArgumentException.class, () -> service.register("   ", fullConfig()));
         assertThrows(IllegalArgumentException.class, () -> service.register("UPPER:case", fullConfig()));
+    }
+
+    @Test
+    void placeAt_RejectsUnknownStructure() {
+        assertThrows(IllegalArgumentException.class, () ->
+            service.placeAt("mymod:ghost", "minecraft:overworld", 0, 64, 0, "none", "none"));
+    }
+
+    @Test
+    void placeAt_RejectsInvalidIds() {
+        service.register("mymod:ruin", config("template", "mymod:structures/ruin",
+                "spawnBiomes", biomeList("minecraft:plains")));
+        assertThrows(IllegalArgumentException.class, () ->
+            service.placeAt("", "minecraft:overworld", 0, 64, 0, "none", "none"));
+        assertThrows(IllegalArgumentException.class, () ->
+            service.placeAt("mymod:ruin", "Bad Id!", 0, 64, 0, "none", "none"));
+    }
+
+    @Test
+    void placeAt_ThrowsWhenPlatformUninitialized() {
+        service.register("mymod:ruin", config("template", "mymod:structures/ruin",
+                "spawnBiomes", biomeList("minecraft:plains")));
+        // No test in this module initializes the Platform content holder.
+        assertThrows(IllegalStateException.class, () ->
+            service.placeAt("mymod:ruin", "minecraft:overworld", 0, 64, 0, "none", "none"));
     }
 
     @Test

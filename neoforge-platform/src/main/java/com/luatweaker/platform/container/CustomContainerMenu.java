@@ -41,6 +41,9 @@ public class CustomContainerMenu extends AbstractContainerMenu {
     private int fluidAmount;
     private int fluidCapacity;
     private int progressFixed;
+    private int blockPosX;
+    private int blockPosY;
+    private int blockPosZ;
 
     public CustomContainerMenu(@Nullable MenuType<?> menuType, int containerId, @NotNull Inventory playerInventory,
                               @NotNull Container container, int containerRows, int containerCols) {
@@ -90,6 +93,9 @@ public class CustomContainerMenu extends AbstractContainerMenu {
         addMachineDataSlot(() -> machine != null ? machine.getFluidAmount() : 0, v -> fluidAmount = v);
         addMachineDataSlot(() -> machine != null ? machine.getFluidCapacity() : 0, v -> fluidCapacity = v);
         addMachineDataSlot(() -> machine != null ? Math.round(machine.getProgress() * PROGRESS_SCALE) : 0, v -> progressFixed = v);
+        addMachineDataSlot(() -> machine != null ? machine.getBlockPos().getX() : 0, v -> blockPosX = v);
+        addMachineDataSlot(() -> machine != null ? machine.getBlockPos().getY() : 0, v -> blockPosY = v);
+        addMachineDataSlot(() -> machine != null ? machine.getBlockPos().getZ() : 0, v -> blockPosZ = v);
     }
 
     private void addMachineDataSlot(java.util.function.IntSupplier reader, java.util.function.IntConsumer writer) {
@@ -137,6 +143,10 @@ public class CustomContainerMenu extends AbstractContainerMenu {
 
     public int getContainerCols() {
         return containerCols;
+    }
+
+    public net.minecraft.core.BlockPos getBlockPos() {
+        return new net.minecraft.core.BlockPos(blockPosX, blockPosY, blockPosZ);
     }
 
     @Override

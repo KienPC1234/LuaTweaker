@@ -15,6 +15,14 @@ public interface IPlatformContent {
     boolean isModLoaded(String modId);
     boolean isClient();
     boolean isDedicatedServer();
+
+    /**
+     * True when this process currently hosts a Minecraft server (integrated server in
+     * single-player). Always false on a client joined to a remote server, so scripts can tell
+     * "this VM can mutate the world" from "this VM is only a client".
+     */
+    default boolean hasLocalServer() { return false; }
+
     String getPlatformName();
     
     Set<String> getSupportedMobParents();

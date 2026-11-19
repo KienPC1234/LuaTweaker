@@ -472,12 +472,204 @@ public class NeoForgeInteractionPlatform implements IPlatformInteraction {
         }
     }
 
+    @Override
+    @NotNull
+    public com.luatweaker.api.spatial.RaycastResult raycast(
+            @NotNull String dimension,
+            double originX, double originY, double originZ,
+            double dirX, double dirY, double dirZ,
+            @NotNull com.luatweaker.api.spatial.RaycastParams params) {
+        return NeoForgeSpatialHelper.raycast(dimension, originX, originY, originZ, dirX, dirY, dirZ, params);
+    }
+
+    @Override
+    public void spawnParticle(@NotNull String dimension, @NotNull String particleId,
+                               double x, double y, double z,
+                               double vx, double vy, double vz,
+                               int count, double speed) {
+        net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
+        if (level == null) return;
+        net.minecraft.resources.ResourceLocation rl = particleId.contains(":")
+                ? net.minecraft.resources.ResourceLocation.tryParse(particleId)
+                : net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("minecraft", particleId);
+        if (rl == null) return;
+        var particleOpt = net.minecraft.core.registries.BuiltInRegistries.PARTICLE_TYPE.getOptional(rl);
+        if (particleOpt.isPresent() && particleOpt.get() instanceof net.minecraft.core.particles.ParticleOptions pOptions) {
+            level.sendParticles(pOptions, x, y, z, Math.max(1, count), vx, vy, vz, speed);
+        }
+    }
+
+    @Override
+    public void playSound(@NotNull String dimension, @NotNull String soundId,
+                           double x, double y, double z,
+                           float volume, float pitch, @NotNull String source) {
+        net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
+        if (level == null) {
+            return;
+        }
+        net.minecraft.resources.ResourceLocation rl =
+                com.luatweaker.platform.sound.SoundHelper.parseId(soundId);
+        net.minecraft.sounds.SoundEvent event =
+                com.luatweaker.platform.sound.SoundHelper.registered(rl, "dimension " + dimension);
+        if (event == null) {
+            return;
+        }
+        net.minecraft.sounds.SoundSource category =
+                com.luatweaker.platform.sound.SoundHelper.parseSource(source,
+                        net.minecraft.sounds.SoundSource.PLAYERS);
+        level.playSound(null, x, y, z, event, category,
+                com.luatweaker.platform.sound.SoundHelper.volume(volume),
+                com.luatweaker.platform.sound.SoundHelper.pitch(pitch));
+    }
+
+    @Override
+    public boolean stopSound(@NotNull String dimension, @NotNull String soundId, @NotNull String source) {
+        net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
+        if (level == null) {
+            return false;
+        }
+        net.minecraft.resources.ResourceLocation rl =
+                com.luatweaker.platform.sound.SoundHelper.parseId(soundId);
+        if (rl == null) {
+            return false;
+        }
+        net.minecraft.sounds.SoundSource category =
+                com.luatweaker.platform.sound.SoundHelper.parseSource(source,
+                        net.minecraft.sounds.SoundSource.MASTER);
+        if (level.players().isEmpty()) {
+            return false;
+        }
+        net.minecraft.network.protocol.game.ClientboundStopSoundPacket packet =
+                new net.minecraft.network.protocol.game.ClientboundStopSoundPacket(rl, category);
+        for (net.minecraft.server.level.ServerPlayer player : level.players()) {
+            player.connection.send(packet);
+        }
+        return true;
+    }
+
+    @Override
+    public int getRedstoneSignal(@NotNull String dimension, int x, int y, int z, @Nullable String direction) {
+        net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
+        if (level == null) return 0;
+        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(x, y, z);
+        if (direction != null && !direction.isBlank()) {
+            net.minecraft.core.Direction dir = net.minecraft.core.Direction.byName(direction.toLowerCase());
+            if (dir != null) {
+                return level.getSignal(pos, dir);
+            }
+        }
+        return level.getBestNeighborSignal(pos);
+    }
+
+    @Override
+    public boolean checkPattern(@NotNull String dimension, int originX, int originY, int originZ,
+                                @NotNull java.util.List<java.util.Map<String, Object>> pattern) {
+        net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
+        if (level == null) return false;
+        for (java.util.Map<String, Object> entry : pattern) {
+            int dx = entry.get("dx") instanceof Number n ? n.intValue() : 0;
+            int dy = entry.get("dy") instanceof Number n ? n.intValue() : 0;
+            int dz = entry.get("dz") instanceof Number n ? n.intValue() : 0;
+            net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(originX + dx, originY + dy, originZ + dz);
+            net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
+            String requiredBlock = (String) entry.get("block");
+            if (requiredBlock != null) {
+                String actualId = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+                if (!requiredBlock.contains(":")) {
+                    requiredBlock = "minecraft:" + requiredBlock;
+                }
+                if (!actualId.equalsIgnoreCase(requiredBlock)) {
+                    return false;
+                }
+            }
+            String requiredTag = (String) entry.get("tag");
+            if (requiredTag != null) {
+                net.minecraft.resources.ResourceLocation tagRl = net.minecraft.resources.ResourceLocation.tryParse(requiredTag);
+                if (tagRl == null) return false;
+                net.minecraft.tags.TagKey<net.minecraft.world.level.block.Block> tagKey =
+                        net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.BLOCK, tagRl);
+                if (!state.is(tagKey)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    @Override
+    public int transferEnergy(@NotNull String dimension, int fromX, int fromY, int fromZ,
+                              int toX, int toY, int toZ, int maxAmount, boolean simulate) {
+        net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
+        if (level == null || maxAmount <= 0) return 0;
+        net.minecraft.core.BlockPos fromPos = new net.minecraft.core.BlockPos(fromX, fromY, fromZ);
+        net.minecraft.core.BlockPos toPos = new net.minecraft.core.BlockPos(toX, toY, toZ);
+        net.neoforged.neoforge.energy.IEnergyStorage fromStorage =
+                level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.EnergyStorage.BLOCK, fromPos, null);
+        net.neoforged.neoforge.energy.IEnergyStorage toStorage =
+                level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.EnergyStorage.BLOCK, toPos, null);
+        if (fromStorage == null || toStorage == null) return 0;
+        int extracted = fromStorage.extractEnergy(maxAmount, true);
+        if (extracted <= 0) return 0;
+        int accepted = toStorage.receiveEnergy(extracted, simulate);
+        if (accepted > 0 && !simulate) {
+            fromStorage.extractEnergy(accepted, false);
+        }
+        return accepted;
+    }
+
+    @Override
+    public int transferFluid(@NotNull String dimension, int fromX, int fromY, int fromZ,
+                             int toX, int toY, int toZ, int maxAmount, boolean simulate) {
+        net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
+        if (level == null || maxAmount <= 0) return 0;
+        net.minecraft.core.BlockPos fromPos = new net.minecraft.core.BlockPos(fromX, fromY, fromZ);
+        net.minecraft.core.BlockPos toPos = new net.minecraft.core.BlockPos(toX, toY, toZ);
+        net.neoforged.neoforge.fluids.capability.IFluidHandler fromHandler =
+                level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.FluidHandler.BLOCK, fromPos, null);
+        net.neoforged.neoforge.fluids.capability.IFluidHandler toHandler =
+                level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.FluidHandler.BLOCK, toPos, null);
+        if (fromHandler == null || toHandler == null) return 0;
+        net.neoforged.neoforge.fluids.FluidStack drained =
+                fromHandler.drain(maxAmount, net.neoforged.neoforge.fluids.capability.IFluidHandler.FluidAction.SIMULATE);
+        if (drained.isEmpty()) return 0;
+        int filled = toHandler.fill(drained, simulate
+                ? net.neoforged.neoforge.fluids.capability.IFluidHandler.FluidAction.SIMULATE
+                : net.neoforged.neoforge.fluids.capability.IFluidHandler.FluidAction.EXECUTE);
+        if (filled > 0 && !simulate) {
+            fromHandler.drain(filled, net.neoforged.neoforge.fluids.capability.IFluidHandler.FluidAction.EXECUTE);
+        }
+        return filled;
+    }
+
+    @Override
+    public int transferItem(@NotNull String dimension, int fromX, int fromY, int fromZ, int fromSlot,
+                            int toX, int toY, int toZ, int toSlot, int maxCount, boolean simulate) {
+        net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
+        if (level == null || maxCount <= 0) return 0;
+        net.minecraft.core.BlockPos fromPos = new net.minecraft.core.BlockPos(fromX, fromY, fromZ);
+        net.minecraft.core.BlockPos toPos = new net.minecraft.core.BlockPos(toX, toY, toZ);
+        net.neoforged.neoforge.items.IItemHandler fromHandler =
+                level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, fromPos, null);
+        net.neoforged.neoforge.items.IItemHandler toHandler =
+                level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, toPos, null);
+        if (fromHandler == null || toHandler == null) return 0;
+        if (fromSlot < 0 || fromSlot >= fromHandler.getSlots()) return 0;
+        net.minecraft.world.item.ItemStack simulatedExtract = fromHandler.extractItem(fromSlot, maxCount, true);
+        if (simulatedExtract.isEmpty()) return 0;
+        net.minecraft.world.item.ItemStack remaining;
+        if (toSlot >= 0 && toSlot < toHandler.getSlots()) {
+            remaining = toHandler.insertItem(toSlot, simulatedExtract, simulate);
+        } else {
+            remaining = net.neoforged.neoforge.items.ItemHandlerHelper.insertItem(toHandler, simulatedExtract, simulate);
+        }
+        int moved = simulatedExtract.getCount() - remaining.getCount();
+        if (moved > 0 && !simulate) {
+            fromHandler.extractItem(fromSlot, moved, false);
+        }
+        return moved;
+    }
+
     private net.minecraft.server.level.ServerLevel resolveLevel(@NotNull String dimension) {
-        var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
-        if (server == null) return null;
-        net.minecraft.resources.ResourceLocation rl = net.minecraft.resources.ResourceLocation.tryParse(dimension);
-        if (rl == null) return null;
-        return server.getLevel(net.minecraft.resources.ResourceKey.create(
-                net.minecraft.core.registries.Registries.DIMENSION, rl));
+        return ServerLevels.resolve(dimension);
     }
 }

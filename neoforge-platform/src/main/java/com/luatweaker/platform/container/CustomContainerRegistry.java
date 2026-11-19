@@ -18,6 +18,20 @@ public final class CustomContainerRegistry {
     public static final Map<MenuType<CustomContainerMenu>, String> CONTAINER_SLOT_TEXTURES = new ConcurrentHashMap<>();
     /** GUI bar elements per menu type (energy/fluid/progress), rendered on top of the panel. */
     public static final Map<MenuType<CustomContainerMenu>, java.util.List<com.luatweaker.api.content.MachineBarSpec>> CONTAINER_BARS = new ConcurrentHashMap<>();
+    /** Interactive buttons per menu type. */
+    public static final Map<MenuType<CustomContainerMenu>, java.util.List<com.luatweaker.api.content.MachineButtonSpec>> CONTAINER_BUTTONS = new ConcurrentHashMap<>();
+    /** Text labels per menu type. */
+    public static final Map<MenuType<CustomContainerMenu>, java.util.List<com.luatweaker.api.content.MachineLabelSpec>> CONTAINER_LABELS = new ConcurrentHashMap<>();
+    /** Server-side button click callbacks per block. */
+    public static final Map<net.minecraft.world.level.block.Block, java.util.function.BiConsumer<Object, String>> BUTTON_HANDLERS = new ConcurrentHashMap<>();
+    /** Neighbor change callbacks per block. */
+    public static final Map<net.minecraft.world.level.block.Block, java.util.function.BiConsumer<Object, Object>> NEIGHBOR_HANDLERS = new ConcurrentHashMap<>();
+    /** Every block created from a Lua builder, keyed by registry id (reload rebinding). */
+    public static final Map<ResourceLocation, net.minecraft.world.level.block.Block> CREATED_BLOCKS = new ConcurrentHashMap<>();
+    /** Container blocks by registry id, used to rebind runtime behaviour after a reload. */
+    public static final Map<ResourceLocation, CustomContainerBlock> BLOCKS = new ConcurrentHashMap<>();
+    /** Container blocks by their block entity type (client BER resolves the live handler). */
+    public static final Map<net.minecraft.world.level.block.entity.BlockEntityType<?>, CustomContainerBlock> BLOCK_BY_TYPE = new ConcurrentHashMap<>();
 
     private CustomContainerRegistry() {}
 }

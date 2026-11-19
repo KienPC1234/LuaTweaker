@@ -38,6 +38,15 @@ public class LuaTweakerCommandRegistry {
     /** All built-in sub-commands. Read-only after {@link #build(RegisterCommandsEvent)}. */
     private final List<ILuaTweakerCommand> commands = new ArrayList<>();
 
+    /**
+     * Lua paths already live in a dispatcher from an earlier registration cycle.
+     * RegisterCommandsEvent fires once at startup; reloads only ADD brand-new
+     * paths (changed handlers need no work — wrappers resolve definitions live).
+     * Removals are not tracked here: Brigadier cannot unregister nodes, so a
+     * deleted command stays until the next datapack reload.
+     */
+    private final Set<String> registeredLuaPaths = new HashSet<>();
+
     private final File luaRoot;
 
     public LuaTweakerCommandRegistry(File luaRoot) {
@@ -145,6 +154,11 @@ public class LuaTweakerCommandRegistry {
      * Registers every Lua command (primary paths + aliases) at the dispatcher
      * root. Names already occupied by vanilla or other mods are skipped with a
      * loud error instead of silently overwriting them.
+     *
+     * <p>Idempotent across reloads: paths registered by an earlier cycle are
+     * skipped quietly (their wrappers resolve definitions live, so changed
+     * handlers already work). Only brand-new paths consume dispatcher nodes.
+     * Same-cycle duplicates and vanilla collisions stay loud.
      */
     private void registerLuaCommands(CommandDispatcher<CommandSourceStack> dispatcher) {
         Object service = com.luatweaker.core.service.LuaServiceRegistry.get("CommandServiceImpl");
@@ -154,13 +168,75 @@ public class LuaTweakerCommandRegistry {
 
         Set<String> occupied = new HashSet<>();
         dispatcher.getRoot().getChildren().forEach(node -> occupied.add(node.getName()));
+        Set<String> justAdded = new HashSet<>();
 
         for (CommandDefinition def : commandService.getSnapshot()) {
-            registerLuaPath(dispatcher, occupied, def, def.name());
-            for (String aliasPath : def.aliases()) {
-                registerLuaPath(dispatcher, occupied, def, aliasPath);
+            for (String path : allPathsOf(def)) {
+                registerLuaPath(dispatcher, occupied, justAdded, def, path);
             }
         }
+    }
+
+    /**
+     * Re-registers only brand-new Lua command paths into a live dispatcher.
+     * Called after {@code /lt reload}: {@link RegisterCommandsEvent} fires once
+     * at startup, so without this new paths 404 until a datapack reload or
+     * restart (changed handlers need nothing — wrappers resolve live).
+     *
+     * <p>Removals are NOT applied here: Brigadier has no node removal, so a
+     * deleted command keeps working until the next datapack reload. This is
+     * logged, not silent.
+     */
+    public void registerNewLuaCommands(CommandDispatcher<CommandSourceStack> dispatcher) {
+        registerLuaCommands(dispatcher);
+    }
+
+    /**
+     * All registrable paths for one definition, primary path first. Pure string
+     * logic (no Brigadier/Minecraft touch) so reload diffing stays unit-testable.
+     */
+    static List<String> allPathsOf(CommandDefinition def) {
+        List<String> paths = new ArrayList<>(def.aliases().size() + 1);
+        paths.add(def.name());
+        paths.addAll(def.aliases());
+        return paths;
+    }
+
+    /** Outcome of the reload-diff for one candidate path. */
+    enum PathDecision {
+        /** Fresh path: build Brigadier nodes now. */
+        REGISTER,
+        /** Live from an earlier cycle: skip quietly, wrapper resolves the new handler. */
+        SKIP_ALREADY_LIVE,
+        /** Same snapshot registers it twice: loud duplicate, keep the first. */
+        REJECT_DUPLICATE_THIS_CYCLE,
+        /** A prefix is taken by vanilla/another mod: loud, skip. */
+        REJECT_OCCUPIED
+    }
+
+    /**
+     * Pure reload-diff for one candidate path. Priority: same-cycle duplicates
+     * stay loud (a mod typo must not vanish), previous-cycle paths skip quietly,
+     * vanilla-occupied prefixes stay loud.
+     */
+    static PathDecision decidePath(String path, Set<String> occupied, Set<String> justAdded,
+                                   Set<String> registeredLuaPaths) {
+        if (justAdded.contains(path)) {
+            return PathDecision.REJECT_DUPLICATE_THIS_CYCLE;
+        }
+        if (registeredLuaPaths.contains(path)) {
+            return PathDecision.SKIP_ALREADY_LIVE;
+        }
+        String[] segments = path.split("/");
+        StringBuilder prefix = new StringBuilder();
+        for (String segment : segments) {
+            if (prefix.length() > 0) prefix.append('/');
+            prefix.append(segment);
+            if (occupied.contains(prefix.toString())) {
+                return PathDecision.REJECT_OCCUPIED;
+            }
+        }
+        return PathDecision.REGISTER;
     }
 
     /**
@@ -171,25 +247,49 @@ public class LuaTweakerCommandRegistry {
      */
     private void registerLuaPath(CommandDispatcher<CommandSourceStack> dispatcher,
                                  Set<String> occupied,
+                                 Set<String> justAdded,
                                  CommandDefinition def,
                                  String path) {
-        String[] segments = path.split("/");
-        StringBuilder prefix = new StringBuilder();
-        for (String segment : segments) {
-            if (prefix.length() > 0) prefix.append('/');
-            prefix.append(segment);
-            if (occupied.contains(prefix.toString())) {
+        switch (decidePath(path, occupied, justAdded, registeredLuaPaths)) {
+            case SKIP_ALREADY_LIVE -> {
+                return;
+            }
+            case REJECT_DUPLICATE_THIS_CYCLE -> {
                 LuaTweakerLog.get().error(LogStage.COMMAND,
                         "Lua command '/" + path + "' from mod '" + def.modId()
-                                + "' NOT registered: '/" + prefix
-                                + "' is already taken by another command. Rename it to avoid conflicts.");
+                                + "' NOT registered: registered twice in the same load cycle.");
                 return;
+            }
+            case REJECT_OCCUPIED -> {
+                String[] segments = path.split("/");
+                StringBuilder prefix = new StringBuilder();
+                for (String segment : segments) {
+                    if (prefix.length() > 0) prefix.append('/');
+                    prefix.append(segment);
+                    if (occupied.contains(prefix.toString())) {
+                        LuaTweakerLog.get().error(LogStage.COMMAND,
+                                "Lua command '/" + path + "' from mod '" + def.modId()
+                                        + "' NOT registered: '/" + prefix
+                                        + "' is already taken by another command. Rename it to avoid conflicts.");
+                        return;
+                    }
+                }
+                return;
+            }
+            case REGISTER -> {
+                // Fall through to node building below.
             }
         }
 
         LuaCommandWrapper wrapper = new LuaCommandWrapper(def.name());
-        dispatcher.register(buildLuaPathNode(wrapper, segments, 0));
+        dispatcher.register(buildLuaPathNode(wrapper, segmentsOf(path), 0));
         occupied.add(path);
+        justAdded.add(path);
+        registeredLuaPaths.add(path);
+    }
+
+    private static String[] segmentsOf(String path) {
+        return path.split("/");
     }
 
     /** Builds nested literals for a path; the deepest literal carries the args node. */

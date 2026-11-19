@@ -150,22 +150,23 @@ public class ContentLuaBinding {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 1) throw new IllegalArgumentException("startup:createStairs requires (id, [baseBlockId])");
             String id = args[off].asString();
-            String baseId = (args.length - off >= 2) ? args[off + 1].asString() : id;
-            ILuaValue callbackVal = (args.length - off >= 3 && args[off + 2].isFunction()) ? args[off + 2] : null;
+            String baseId = (args.length - off >= 2 && !args[off + 1].isFunction()) ? args[off + 1].asString() : null;
+            ILuaValue callbackVal = (args.length - off >= 2 && args[off + 1].isFunction())
+                    ? args[off + 1]
+                    : ((args.length - off >= 3 && args[off + 2].isFunction()) ? args[off + 2] : null);
             final ILuaValue finalCb = callbackVal;
-            contentService.createBlock(id, builder -> {
-                builder.model("minecraft:block/stairs");
-                builder.creativeTab("ruby_tab");
-                if (finalCb != null && finalCb.isFunction()) {
-                    ILuaTable blockTable = engine.createTable();
-                    bindBlockBuilderMethods(engine, blockTable, builder, datapackService);
-                    try {
-                        engine.callFunction(finalCb, blockTable);
-                    } catch (Exception e) {
-                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error in stairs builder callback: " + e.getMessage());
-                    }
+            IBlockBuilder builder = contentService.createStairs(id, baseId);
+            builder.model("minecraft:block/stairs");
+            builder.creativeTab("ruby_tab");
+            if (finalCb != null && finalCb.isFunction()) {
+                ILuaTable blockTable = engine.createTable();
+                bindBlockBuilderMethods(engine, blockTable, builder, datapackService);
+                try {
+                    engine.callFunction(finalCb, blockTable);
+                } catch (Exception e) {
+                    LuaTweakerLog.get().error(LogStage.SYSTEM, "Error in stairs builder callback: " + e.getMessage());
                 }
-            });
+            }
             LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom Stairs: " + id);
             return null;
         });
@@ -175,22 +176,23 @@ public class ContentLuaBinding {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 1) throw new IllegalArgumentException("startup:createSlab requires (id, [baseBlockId])");
             String id = args[off].asString();
-            String baseId = (args.length - off >= 2) ? args[off + 1].asString() : id;
-            ILuaValue callbackVal = (args.length - off >= 3 && args[off + 2].isFunction()) ? args[off + 2] : null;
+            String baseId = (args.length - off >= 2 && !args[off + 1].isFunction()) ? args[off + 1].asString() : null;
+            ILuaValue callbackVal = (args.length - off >= 2 && args[off + 1].isFunction())
+                    ? args[off + 1]
+                    : ((args.length - off >= 3 && args[off + 2].isFunction()) ? args[off + 2] : null);
             final ILuaValue finalCb = callbackVal;
-            contentService.createBlock(id, builder -> {
-                builder.model("minecraft:block/slab");
-                builder.creativeTab("ruby_tab");
-                if (finalCb != null && finalCb.isFunction()) {
-                    ILuaTable blockTable = engine.createTable();
-                    bindBlockBuilderMethods(engine, blockTable, builder, datapackService);
-                    try {
-                        engine.callFunction(finalCb, blockTable);
-                    } catch (Exception e) {
-                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error in slab builder callback: " + e.getMessage());
-                    }
+            IBlockBuilder builder = contentService.createSlab(id, baseId);
+            builder.model("minecraft:block/slab");
+            builder.creativeTab("ruby_tab");
+            if (finalCb != null && finalCb.isFunction()) {
+                ILuaTable blockTable = engine.createTable();
+                bindBlockBuilderMethods(engine, blockTable, builder, datapackService);
+                try {
+                    engine.callFunction(finalCb, blockTable);
+                } catch (Exception e) {
+                    LuaTweakerLog.get().error(LogStage.SYSTEM, "Error in slab builder callback: " + e.getMessage());
                 }
-            });
+            }
             LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom Slab: " + id);
             return null;
         });
@@ -200,22 +202,23 @@ public class ContentLuaBinding {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 1) throw new IllegalArgumentException("startup:createWall requires (id, [baseBlockId])");
             String id = args[off].asString();
-            String baseId = (args.length - off >= 2) ? args[off + 1].asString() : id;
-            ILuaValue callbackVal = (args.length - off >= 3 && args[off + 2].isFunction()) ? args[off + 2] : null;
+            String baseId = (args.length - off >= 2 && !args[off + 1].isFunction()) ? args[off + 1].asString() : null;
+            ILuaValue callbackVal = (args.length - off >= 2 && args[off + 1].isFunction())
+                    ? args[off + 1]
+                    : ((args.length - off >= 3 && args[off + 2].isFunction()) ? args[off + 2] : null);
             final ILuaValue finalCb = callbackVal;
-            contentService.createBlock(id, builder -> {
-                builder.model("minecraft:block/wall");
-                builder.creativeTab("ruby_tab");
-                if (finalCb != null && finalCb.isFunction()) {
-                    ILuaTable blockTable = engine.createTable();
-                    bindBlockBuilderMethods(engine, blockTable, builder, datapackService);
-                    try {
-                        engine.callFunction(finalCb, blockTable);
-                    } catch (Exception e) {
-                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error in wall builder callback: " + e.getMessage());
-                    }
+            IBlockBuilder builder = contentService.createWall(id, baseId);
+            builder.model("minecraft:block/wall");
+            builder.creativeTab("ruby_tab");
+            if (finalCb != null && finalCb.isFunction()) {
+                ILuaTable blockTable = engine.createTable();
+                bindBlockBuilderMethods(engine, blockTable, builder, datapackService);
+                try {
+                    engine.callFunction(finalCb, blockTable);
+                } catch (Exception e) {
+                    LuaTweakerLog.get().error(LogStage.SYSTEM, "Error in wall builder callback: " + e.getMessage());
                 }
-            });
+            }
             LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom Wall: " + id);
             return null;
         });
@@ -721,37 +724,6 @@ public class ContentLuaBinding {
             }
             return table;
         });
-        bindMethod(table, "glow", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.glow(args[off].asBoolean()); return table; });
-        bindMethod(table, "tooltip", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.tooltip(args[off].asString()); return table; });
-
-        bindMethod(table, "food", args -> {
-            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
-            if (args.length - off >= 2) {
-                builder.food(args[off].asInt(), (float) args[off + 1].asDouble());
-            }
-            return table;
-        });
-
-        bindMethod(table, "alwaysEdible", args -> { builder.alwaysEdible(); return table; });
-
-        bindMethod(table, "onConsume", args -> {
-            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
-            ILuaValue func = args[off];
-            if (func != null && func.isFunction()) {
-                builder.onConsume((player, itemStack) -> {
-                    try {
-                        ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
-                                ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
-                                : engine.toLuaValue(player);
-                        engine.callFunction(func, playerVal, engine.toLuaValue(itemStack));
-                    } catch (Exception e) {
-                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item onConsume callback: " + e.getMessage());
-                    }
-                });
-            }
-            return table;
-        });
-
         bindMethod(table, "glow", args -> {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             boolean enable = args.length - off < 1 || args[off].asBoolean();
@@ -762,6 +734,120 @@ public class ContentLuaBinding {
         bindMethod(table, "tooltip", args -> {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) builder.tooltip(args[off].asString());
+            return table;
+        });
+
+        bindMethod(table, "useAnimation", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.useAnimation(args[off].asString()); return table; });
+        bindMethod(table, "useDuration", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.useDuration(args[off].asInt()); return table; });
+
+        bindMethod(table, "onUseTick", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.onUseTick((player, itemStack, ticksRemaining) -> {
+                    try {
+                        ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
+                                ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
+                                : engine.toLuaValue(player);
+                        engine.callFunction(func, playerVal, engine.toLuaValue(itemStack), engine.wrapNumber(ticksRemaining));
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item onUseTick callback: " + e.getMessage());
+                    }
+                });
+            }
+            return table;
+        });
+
+        bindMethod(table, "onReleaseUsing", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.onReleaseUsing((player, itemStack, timeLeft) -> {
+                    try {
+                        ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
+                                ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
+                                : engine.toLuaValue(player);
+                        engine.callFunction(func, playerVal, engine.toLuaValue(itemStack), engine.wrapNumber(timeLeft));
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item onReleaseUsing callback: " + e.getMessage());
+                    }
+                });
+            }
+            return table;
+        });
+
+        bindMethod(table, "onFinishUsing", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.onFinishUsing((player, itemStack) -> {
+                    try {
+                        ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
+                                ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
+                                : engine.toLuaValue(player);
+                        engine.callFunction(func, playerVal, engine.toLuaValue(itemStack));
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item onFinishUsing callback: " + e.getMessage());
+                    }
+                });
+            }
+            return table;
+        });
+
+        bindMethod(table, "onHurtEnemy", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.onHurtEnemy((targetEntity, attackerPlayer, itemStack) -> {
+                    try {
+                        ILuaValue targetVal = (targetEntity instanceof com.luatweaker.api.entity.IEntity e)
+                                ? com.luatweaker.entities.EntitiesLuaBinding.createEntityLuaTable(engine, e)
+                                : engine.toLuaValue(targetEntity);
+                        ILuaValue attackerVal = (attackerPlayer instanceof com.luatweaker.api.entity.IPlayer p)
+                                ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
+                                : engine.toLuaValue(attackerPlayer);
+                        engine.callFunction(func, targetVal, attackerVal, engine.toLuaValue(itemStack));
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item onHurtEnemy callback: " + e.getMessage());
+                    }
+                });
+            }
+            return table;
+        });
+
+        bindMethod(table, "onMineBlock", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.onMineBlock((player, itemStack, x, y, z) -> {
+                    try {
+                        ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
+                                ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
+                                : engine.toLuaValue(player);
+                        engine.callFunction(func, playerVal, engine.toLuaValue(itemStack), engine.wrapNumber(x), engine.wrapNumber(y), engine.wrapNumber(z));
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item onMineBlock callback: " + e.getMessage());
+                    }
+                });
+            }
+            return table;
+        });
+
+        bindMethod(table, "onSwing", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.onSwing((player, itemStack) -> {
+                    try {
+                        ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
+                                ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
+                                : engine.toLuaValue(player);
+                        engine.callFunction(func, playerVal, engine.toLuaValue(itemStack));
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item onSwing callback: " + e.getMessage());
+                    }
+                });
+            }
             return table;
         });
 
@@ -991,6 +1077,93 @@ public class ContentLuaBinding {
                         engine.callFunction(func, dataTable);
                     } catch (Exception e) {
                         LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing block onTick callback: " + e.getMessage());
+                    }
+                });
+            }
+            return table;
+        });
+
+        bindMethod(table, "box", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 6) {
+                builder.box(args[off].asDouble(), args[off + 1].asDouble(), args[off + 2].asDouble(),
+                        args[off + 3].asDouble(), args[off + 4].asDouble(), args[off + 5].asDouble());
+            }
+            return table;
+        });
+
+        bindMethod(table, "facing", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 1) {
+                builder.facing(args[off].asString());
+            }
+            return table;
+        });
+
+        bindMethod(table, "onRender", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.onRender((rendererObj, dataObj) -> {
+                    try {
+                        ILuaValue rendererVal = (rendererObj instanceof com.luatweaker.api.content.IBlockRenderer r)
+                                ? com.luatweaker.core.bind.LuaBinder.bindTable(engine, r, com.luatweaker.api.content.IBlockRenderer.class)
+                                : engine.toLuaValue(rendererObj);
+                        ILuaValue dataVal = engine.toLuaValue(dataObj);
+                        engine.callFunction(func, rendererVal, dataVal);
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing block onRender callback: " + e.getMessage());
+                    }
+                });
+            }
+            return table;
+        });
+
+        bindMethod(table, "button", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 6) {
+                builder.button(args[off].asString(), args[off + 1].asInt(), args[off + 2].asInt(),
+                        args[off + 3].asInt(), args[off + 4].asInt(), args[off + 5].asString());
+            }
+            return table;
+        });
+
+        bindMethod(table, "label", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 3) {
+                int color = args.length - off >= 4 ? args[off + 3].asInt() : 0xFFFFFF;
+                builder.label(args[off].asInt(), args[off + 1].asInt(), args[off + 2].asString(), color);
+            }
+            return table;
+        });
+
+        bindMethod(table, "onButtonClick", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.onButtonClick((posObj, buttonId) -> {
+                    try {
+                        ILuaValue posVal = engine.toLuaValue(posObj);
+                        engine.callFunction(func, posVal, engine.wrapString(buttonId));
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing block onButtonClick callback: " + e.getMessage());
+                    }
+                });
+            }
+            return table;
+        });
+
+        bindMethod(table, "onNeighborChanged", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.onNeighborChanged((posObj, neighborPosObj) -> {
+                    try {
+                        ILuaValue posVal = engine.toLuaValue(posObj);
+                        ILuaValue neighborVal = engine.toLuaValue(neighborPosObj);
+                        engine.callFunction(func, posVal, neighborVal);
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing block onNeighborChanged callback: " + e.getMessage());
                     }
                 });
             }

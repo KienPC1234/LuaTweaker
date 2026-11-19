@@ -93,50 +93,59 @@ public final class FluidRegistrar {
         });
     }
 
+    private void ensureFluidsCreated(ResourceLocation rl, ResourceLocation flowRl, IFluidBuilder builder) {
+        if (createdFluids.containsKey(rl) && createdFluids.containsKey(flowRl)) {
+            return;
+        }
+        FluidType finalType = getOrCreateFluidType(rl, builder);
+
+        BaseFlowingFluid.Properties props = new BaseFlowingFluid.Properties(
+                () -> finalType,
+                () -> (FlowingFluid) createdFluids.get(rl),
+                () -> (FlowingFluid) createdFluids.get(flowRl)
+        )
+        .slopeFindDistance(builder.getSlopeFindDistance())
+        .levelDecreasePerBlock(builder.getLevelDecreasePerBlock())
+        .tickRate(builder.getTickRate())
+        .explosionResistance(builder.getExplosionResistance());
+
+        ResourceLocation blockRl = locationParser.apply(builder.getId() + "_block");
+
+        props.block(() -> {
+            Block b = createdBlocks.get(blockRl);
+            if (b instanceof LiquidBlock lb) return lb;
+            Block alt = BuiltInRegistries.BLOCK.get(blockRl);
+            if (alt instanceof LiquidBlock lb) return lb;
+            return null;
+        });
+
+        ResourceLocation bucketRl = locationParser.apply(builder.getId() + "_bucket");
+        ResourceLocation altBucketRl = locationParser.apply(builder.getId().replace("_fluid", "") + "_bucket");
+
+        props.bucket(() -> {
+            Item i = createdItems.get(bucketRl);
+            if (i != null) return i;
+            Item alt = createdItems.get(altBucketRl);
+            if (alt != null) return alt;
+            return Items.BUCKET;
+        });
+
+        Fluid stillFluid = new BaseFlowingFluid.Source(props);
+        Fluid flowingFluid = new BaseFlowingFluid.Flowing(props);
+
+        createdFluids.put(rl, stillFluid);
+        createdFluids.put(flowRl, flowingFluid);
+    }
+
     public void registerFluids(RegisterEvent event) {
         for (IFluidBuilder builder : contentService.getRegisteredFluids()) {
             try {
                 ResourceLocation rl = locationParser.apply(builder.getId());
                 ResourceLocation flowRl = locationParser.apply(builder.getId() + "_flowing");
+                ensureFluidsCreated(rl, flowRl, builder);
 
-                FluidType finalType = getOrCreateFluidType(rl, builder);
-
-                BaseFlowingFluid.Properties props = new BaseFlowingFluid.Properties(
-                        () -> finalType,
-                        () -> (FlowingFluid) createdFluids.get(rl),
-                        () -> (FlowingFluid) createdFluids.get(flowRl)
-                )
-                .slopeFindDistance(builder.getSlopeFindDistance())
-                .levelDecreasePerBlock(builder.getLevelDecreasePerBlock())
-                .tickRate(builder.getTickRate())
-                .explosionResistance(builder.getExplosionResistance());
-
-                ResourceLocation blockRl = locationParser.apply(builder.getId() + "_block");
-
-                props.block(() -> {
-                    Block b = createdBlocks.get(blockRl);
-                    if (b instanceof LiquidBlock lb) return lb;
-                    Block alt = BuiltInRegistries.BLOCK.get(blockRl);
-                    if (alt instanceof LiquidBlock lb) return lb;
-                    return null;
-                });
-
-                ResourceLocation bucketRl = locationParser.apply(builder.getId() + "_bucket");
-                ResourceLocation altBucketRl = locationParser.apply(builder.getId().replace("_fluid", "") + "_bucket");
-
-                props.bucket(() -> {
-                    Item i = createdItems.get(bucketRl);
-                    if (i != null) return i;
-                    Item alt = createdItems.get(altBucketRl);
-                    if (alt != null) return alt;
-                    return Items.BUCKET;
-                });
-
-                Fluid stillFluid = new BaseFlowingFluid.Source(props);
-                Fluid flowingFluid = new BaseFlowingFluid.Flowing(props);
-
-                createdFluids.put(rl, stillFluid);
-                createdFluids.put(flowRl, flowingFluid);
+                Fluid stillFluid = createdFluids.get(rl);
+                Fluid flowingFluid = createdFluids.get(flowRl);
 
                 event.register(Registries.FLUID, rl, () -> stillFluid);
                 event.register(Registries.FLUID, flowRl, () -> flowingFluid);
@@ -152,8 +161,10 @@ public final class FluidRegistrar {
         for (IFluidBuilder builder : contentService.getRegisteredFluids()) {
             try {
                 ResourceLocation rl = locationParser.apply(builder.getId());
+                ResourceLocation flowRl = locationParser.apply(builder.getId() + "_flowing");
                 ResourceLocation blockRl = locationParser.apply(builder.getId() + "_block");
 
+                ensureFluidsCreated(rl, flowRl, builder);
                 FlowingFluid fluid = (FlowingFluid) createdFluids.get(rl);
 
                 LiquidBlock block = new LiquidBlock(
@@ -186,9 +197,10 @@ public final class FluidRegistrar {
         for (IFluidBuilder builder : contentService.getRegisteredFluids()) {
             try {
                 ResourceLocation rl = locationParser.apply(builder.getId());
+                ResourceLocation flowRl = locationParser.apply(builder.getId() + "_flowing");
                 ResourceLocation bucketRl = locationParser.apply(builder.getId() + "_bucket");
-                ResourceLocation altBucketRl = locationParser.apply(builder.getId().replace("_fluid", "") + "_bucket");
 
+                ensureFluidsCreated(rl, flowRl, builder);
                 Fluid stillFluid = createdFluids.get(rl);
 
                 BucketItem bucketItem = new BucketItem(

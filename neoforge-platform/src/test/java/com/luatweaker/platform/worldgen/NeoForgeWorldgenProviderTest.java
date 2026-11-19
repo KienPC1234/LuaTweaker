@@ -1,9 +1,17 @@
 package com.luatweaker.platform.worldgen;
 
 import com.luatweaker.content.DatapackServiceImpl;
+import com.luatweaker.core.service.LuaServiceRegistry;
+import com.luatweaker.core.vm.LuaEngineFactory;
+import com.luatweaker.api.event.IEventService;
+import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.worldgen.WorldgenServiceImpl;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -157,5 +165,81 @@ public class NeoForgeWorldgenProviderTest {
         assertNotNull(overworldOre);
         var parsed = com.google.gson.JsonParser.parseString(overworldOre).getAsJsonObject();
         assertEquals(2, parsed.getAsJsonObject("config").getAsJsonArray("targets").size());
+    }
+
+    @Test
+    public void modifyBiomeAndAddFeatureAreMaterializedAsValidJson() {
+        WorldgenServiceImpl service = new WorldgenServiceImpl();
+        ILuaEngine engine = LuaEngineFactory.create(false);
+
+        ILuaTable biomes = engine.createTable();
+        biomes.rawset(1, "minecraft:plains");
+        ILuaTable options = engine.createTable();
+        options.rawset("biomes", biomes);
+        options.rawset("remove", "minecraft:ore_dirt");
+        service.modifyBiome("minecraft:plains", options);
+
+        ILuaTable specBiomes = engine.createTable();
+        specBiomes.rawset(1, "minecraft:plains");
+        ILuaTable spec = engine.createTable();
+        spec.rawset("block", "mymod:ruby_ore");
+        spec.rawset("biomes", specBiomes);
+        service.addFeature("mymod:ruby_vein", spec);
+
+        Map<String, String> files = apply(service);
+
+        assertTrue(files.keySet().stream().anyMatch(k -> k.contains("biome_modifier/modify_")),
+            "modifyBiome must emit a biome modifier file: " + files.keySet());
+        assertTrue(files.keySet().stream().anyMatch(k -> k.contains("biome_modifier/add_")),
+            "addFeature must emit a biome modifier file: " + files.keySet());
+        assertTrue(files.keySet().stream().anyMatch(k -> k.contains("configured_feature/")),
+            "addFeature must emit a configured feature file: " + files.keySet());
+        assertTrue(files.keySet().stream().anyMatch(k -> k.contains("placed_feature/")),
+            "addFeature must emit a placed feature file: " + files.keySet());
+        for (Map.Entry<String, String> entry : files.entrySet()) {
+            assertDoesNotThrow(() -> com.google.gson.JsonParser.parseString(entry.getValue()),
+                "generated JSON must parse: " + entry.getKey() + " = " + entry.getValue());
+        }
+        assertTrue(files.values().stream().anyMatch(j ->
+            j.contains("\"type\":\"neoforge:add_features\"") && j.contains("\"step\":\"underground_ores\"")),
+            "add_features uses the singular step key");
+        assertTrue(files.values().stream().anyMatch(j ->
+            j.contains("\"type\":\"neoforge:remove_features\"") && j.contains("\"steps\":[\"underground_ores\"]")),
+            "remove_features uses the plural steps list");
+    }
+
+    @Test
+    public void worldgenAppliedEventFiresWithCounts() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        List<String> fired = new ArrayList<>();
+        List<ILuaTable> payloads = new ArrayList<>();
+        LuaServiceRegistry.register("Events", new IEventService() {
+            @Override public void listen(String eventName, Object callback) {}
+            @Override public void post(String eventName, ILuaTable payload) {}
+            @Override public void fireEvent(String eventName, ILuaTable payload) {
+                fired.add(eventName);
+                payloads.add(payload);
+            }
+            @Override public boolean fireCancellable(String eventName, ILuaTable payload) { return true; }
+            @Override public ILuaEngine getEngine() { return engine; }
+        });
+        try {
+            WorldgenServiceImpl service = new WorldgenServiceImpl();
+            service.addOre("mymod:ruby_ore", "minecraft:overworld", -64, 32, 8, 10);
+            service.removeOre("minecraft:coal_ore", "minecraft:overworld");
+            apply(service);
+
+            assertTrue(fired.contains("WorldgenApplied"), "WorldgenApplied must fire: " + fired);
+            ILuaTable payload = payloads.get(fired.indexOf("WorldgenApplied"));
+            assertEquals(1, payload.rawget("ores").asInt());
+            assertEquals(1, payload.rawget("removals").asInt());
+        } finally {
+            LuaServiceRegistry.clear();
+        }
+    }
+
+    @AfterEach
+    void clearEventBus() {
+        LuaServiceRegistry.clear();
     }
 }

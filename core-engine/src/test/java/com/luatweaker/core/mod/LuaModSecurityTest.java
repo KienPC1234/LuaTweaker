@@ -21,7 +21,7 @@ class LuaModSecurityTest {
     }
 
     private LuaModManifest manifest(String id, String main) {
-        return new LuaModManifest(id, id, "test", "1", main, "universal", List.of(), List.of(), null);
+        return new LuaModManifest(id, id, "test", "1", main, "universal", List.of(), List.of(), List.of(), null);
     }
 
     @Test

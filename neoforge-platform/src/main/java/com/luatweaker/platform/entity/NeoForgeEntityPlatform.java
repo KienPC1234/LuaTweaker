@@ -70,6 +70,12 @@ public class NeoForgeEntityPlatform implements IPlatformEntity {
 
     @Override
     @Nullable
+    public com.luatweaker.api.entity.IPlayer getLocalPlayer() {
+        return com.luatweaker.api.pal.Platform.getClient().getLocalPlayer();
+    }
+
+    @Override
+    @Nullable
     public Object spawnEntity(@NotNull String entityId, double x, double y, double z) {
         return com.luatweaker.platform.interaction.EntityInteractionHelper.spawnEntity(entityId, x, y, z);
     }

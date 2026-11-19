@@ -25,6 +25,7 @@ public class EntityTablePropertyAliasTest {
         float maxHealth = 20;
         String customName = "";
         double mx, my, mz;
+        final java.util.Map<String, Object> customData = new java.util.HashMap<>();
 
         @Override public String getType() { return "luatweaker:ruby_boss"; }
         @Override public String getName() { return "Boss"; }
@@ -38,9 +39,62 @@ public class EntityTablePropertyAliasTest {
         @Override public double getMotionX() { return mx; }
         @Override public double getMotionY() { return my; }
         @Override public double getMotionZ() { return mz; }
+        @Override public double getLookVectorX() { return 0.0; }
+        @Override public double getLookVectorY() { return 0.0; }
+        @Override public double getLookVectorZ() { return 1.0; }
         @Override public boolean isAlive() { return health > 0; }
         @Override public void remove() {}
         @Override public Object getRawEntity() { return this; }
+        @Override public Object getCustomData(String key) { return customData.get(key); }
+        @Override public void setCustomData(String key, Object value) { customData.put(key, value); }
+
+        String lastAttributeId;
+        String lastModifierId;
+        String lastOperation;
+        double lastAmount;
+        double baseValue = 20;
+
+        @Override public Double getAttributeValue(String attributeId) { return baseValue; }
+        @Override public Double getAttributeBaseValue(String attributeId) { return baseValue; }
+        @Override public boolean setAttributeBaseValue(String attributeId, double value) {
+            baseValue = value;
+            return true;
+        }
+        @Override public boolean addAttributeModifier(String attributeId, String modifierId,
+                                                      double amount, String operation) {
+            lastAttributeId = attributeId;
+            lastModifierId = modifierId;
+            lastAmount = amount;
+            lastOperation = operation;
+            return true;
+        }
+        @Override public boolean removeAttributeModifier(String attributeId, String modifierId) { return true; }
+    }
+
+    @Test
+    public void attributeApiUsesLuaDefaultsAndCamelCaseAliases() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        MockEntity entity = new MockEntity();
+        engine.getGlobalEnvironment().rawset("mob", EntitiesLuaBinding.createEntityLuaTable(engine, entity));
+
+        engine.executeStringOrThrow(
+                "assert(mob:addAttributeModifier('minecraft:generic.armor', 'ruby_bonus', 4) == true)\n" +
+                "assert(mob:AddAttributeModifier('minecraft:generic.armor', 'ruby_bonus', 4) == true)",
+                "attribute_api_default");
+        assertEquals("ADD_VALUE", entity.lastOperation,
+                "omitting the operation must default to ADD_VALUE");
+        assertEquals("ruby_bonus", entity.lastModifierId);
+        assertEquals(4.0, entity.lastAmount, 1e-9);
+
+        engine.executeStringOrThrow(
+                "assert(mob:addAttributeModifier('minecraft:generic.armor', 'ruby_mul', 0.5, 'ADD_MULTIPLIED_BASE') == true)\n" +
+                "assert(mob:getAttributeValue('minecraft:generic.armor') == 20)\n" +
+                "assert(mob:setAttributeBaseValue('minecraft:generic.armor', 30) == true)\n" +
+                "assert(mob:getAttributeBaseValue('minecraft:generic.armor') == 30)",
+                "attribute_api_explicit");
+        assertEquals("ADD_MULTIPLIED_BASE", entity.lastOperation);
+        assertEquals("ruby_mul", entity.lastModifierId);
+        assertEquals(0.5, entity.lastAmount, 1e-9);
     }
 
     @Test
@@ -62,7 +116,10 @@ public class EntityTablePropertyAliasTest {
             "boss.Velocity = { X = 0, Y = 1.2, Z = 0 }\n" +
             "assert(boss.Health == 300, 'Health alias failed: ' .. tostring(boss.Health))\n" +
             "assert(boss.MaxHealth == 300, 'MaxHealth alias failed: ' .. tostring(boss.MaxHealth))\n" +
-            "assert(boss.CustomName == '[Ruby Overseer Boss]', 'CustomName alias failed')\n"
+            "assert(boss.CustomName == '[Ruby Overseer Boss]', 'CustomName alias failed')\n" +
+            "assert(boss.LookVector.Z == 1.0, 'LookVector.Z must be 1.0')\n" +
+            "boss:setCustomData('mana', 250)\n" +
+            "assert(boss:getCustomData('mana') == 250, 'getCustomData must return 250')\n"
         );
         engine.executeScript(file, "TEST");
 

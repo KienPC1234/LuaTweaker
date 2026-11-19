@@ -143,8 +143,10 @@ public class LuaScriptsIntegrationTest {
         // Register all services using LuaServiceBootstrap
         LuaServiceBootstrap.registerAllServices(engine, contentService, storageService, datapackService, recipeManager);
 
-        assertDoesNotThrow(() -> LuaModManager.loadLuaMods(baseDir, engine, "universal"),
-                "Failed executing autonomous LuaMods in " + baseDir.getAbsolutePath());
+        LuaModManager.loadLuaMods(baseDir, engine, "universal");
+        assertTrue(LuaModManager.getLoadErrors().isEmpty(),
+                "Failed executing autonomous LuaMods in " + baseDir.getAbsolutePath()
+                        + ": " + LuaModManager.getLoadErrors());
 
         // Verify Network RemoteEvent Firing & Execution
         Object netService = LuaServiceRegistry.get("NetworkServiceImpl");
@@ -169,7 +171,7 @@ public class LuaScriptsIntegrationTest {
 
         // No server is running in tests: block-state/NBT calls must return
         // nil/false gracefully and never throw.
-        assertDoesNotThrow(() -> engine.executeString(
+        engine.executeStringOrThrow(
                 "local World = require('LuaTweaker.World')\n" +
                 "assert(World:GetBlockState(0, 0, 0) == nil, 'GetBlockState should be nil without server')\n" +
                 "assert(World:GetBlockEntityData(0, 0, 0) == nil, 'GetBlockEntityData should be nil without server')\n" +
@@ -177,8 +179,7 @@ public class LuaScriptsIntegrationTest {
                 "assert(World:SetBlockEntityData(0, 0, 0, {Items = {{id='minecraft:stick', count=1, slot=0}}}) == true, 'SetBlockEntityData should accept valid data')\n" +
                 "assert(World:EjectContainerItem(0, 0, 0, 0, 1) == false, 'EjectContainerItem should fail without server')\n" +
                 "assert(World:ExecuteCommand('say hi') == false, 'ExecuteCommand should fail without server')\n",
-                "testBlockStateAndNbtBindings"),
-                "BlockState/NBT bindings must not throw without a server");
+                "testBlockStateAndNbtBindings");
 
         // Lua array-like tables (Items list) must arrive as Java Lists, not Maps —
         // otherwise NbtCodec would write a CompoundTag instead of a ListTag and

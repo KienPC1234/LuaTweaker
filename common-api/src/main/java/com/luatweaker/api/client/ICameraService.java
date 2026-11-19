@@ -11,4 +11,11 @@ public interface ICameraService {
         returnType = "void"
     )
     void shake(@LuaDefault("1.0") double intensity, @LuaDefault("0.5") double duration);
+
+    @LuaDoc(
+        description = "Stops any active camera shake immediately.",
+        params = {},
+        returnType = "void"
+    )
+    void stop();
 }

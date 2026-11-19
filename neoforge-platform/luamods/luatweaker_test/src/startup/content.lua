@@ -59,6 +59,46 @@ local CrystalSword = Content.NewItem("crystal_sword")
     end)
     :Register()
 
+local CrystalWarhammer = Content.NewItem("crystal_warhammer")
+    :Rarity("EPIC")
+    :Durability(1200)
+    :AttackDamage(11.0)
+    :AttackSpeed(1.0)
+    :MiningSpeed(8.5)
+    :MiningLevel(4)
+    :DisplayName("Crystal Warhammer")
+    :CreativeTab("arcane_tab")
+    :Tooltip("§bHold right-click to charge a seismic ground slam")
+    :UseAnimation("bow")
+    :UseDuration(72000)
+    :OnUseTick(function(player, stack, count)
+        local charged = 72000 - count
+        if charged % 10 == 0 and charged > 0 then
+            local World = require("LuaTweaker.World")
+            World:SpawnParticle("minecraft:crit", player.Position.X, player.Position.Y + 0.5, player.Position.Z, 0.2, 0.2, 0.2, 5, 0.1)
+        end
+    end)
+    :OnReleaseUsing(function(player, stack, timeLeft)
+        local charged = 72000 - timeLeft
+        if charged >= 20 then
+            local World = require("LuaTweaker.World")
+            local pos = player.Position
+            World:SpawnParticle("minecraft:explosion", pos.X, pos.Y, pos.Z, 0.5, 0.1, 0.5, 3, 0.2)
+            player:sendActionBar("§6Boom! Seismic ground slam triggered!")
+        end
+        return true
+    end)
+    :OnHurtEnemy(function(target, attacker)
+        attacker:sendActionBar("§cCrushed enemy armor with Warhammer!")
+    end)
+    :OnMineBlock(function(player, state)
+        player:sendActionBar("§7Shattered block with Warhammer!")
+    end)
+    :OnSwing(function(player, stack)
+        -- custom swing handler
+    end)
+    :Register()
+
 Content.createArmorMaterial("crystal", function(mat)
     mat:layer("luatweaker:crystal")
        :equipSound("minecraft:item.armor.equip_diamond")
@@ -207,6 +247,32 @@ local CrystalAltar = Content.NewBlock("crystal_altar")
     end)
     :Register()
 
+local CrystalInfuser = Content.NewBlock("crystal_infuser")
+    :Hardness(4.0)
+    :Resistance(15.0)
+    :SoundType("METAL")
+    :RequiresTool(true)
+    :MineableWith("pickaxe")
+    :MiningLevel("iron")
+    :DisplayName("Crystal Infuser")
+    :CreativeTab("arcane_tab")
+    :Container(3, 9, "spill")
+    :ContainerTitle("Crystal Infuser")
+    :SlotPosition(0, 44, 30)
+    :SlotPosition(1, 116, 30)
+    :GuiBar("energy_bar", 8, 20, 16, 50, "energy", 0xAA0000)
+    :Button("infuse_btn", 68, 30, 40, 20, "Infuse")
+    :Label(68, 55, "Ready", 0x44FF44)
+    :OnButtonClick(function(blockPos, buttonId)
+        if buttonId == "infuse_btn" then
+            print("[CrystalInfuser] Infusion button clicked at " .. blockPos.X .. ", " .. blockPos.Y .. ", " .. blockPos.Z)
+        end
+    end)
+    :OnNeighborChanged(function(blockPos, neighborPos)
+        -- Redstone signal changed or neighbor updated
+    end)
+    :Register()
+
 -- ==== ENTITY: CRYSTAL GOLEM BOSS ====
 local golemCfg = cfg.boss or {}
 Content.createEntity("crystal_golem", function(entity)
@@ -273,4 +339,4 @@ Content.registerProjectile("crystal_bolt", {
     trailParticle = "minecraft:end_rod"
 })
 
-print("[LuaTweakerTest] Content registered: 10 items, 3 blocks, 1 boss entity, 1 creative tab")
+print("[LuaTweakerTest] Content registered: 11 items, 4 blocks, 1 boss entity, 1 creative tab")

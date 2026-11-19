@@ -1,6 +1,10 @@
 package com.luatweaker.content;
 
 import com.luatweaker.api.content.IItemBuilder;
+import com.luatweaker.api.content.ItemHurtHandler;
+import com.luatweaker.api.content.ItemMineHandler;
+import com.luatweaker.api.content.ItemReleaseHandler;
+import com.luatweaker.api.content.ItemUseTickHandler;
 import java.util.function.BiConsumer;
 
 public class ItemBuilderImpl implements IItemBuilder {
@@ -202,6 +206,15 @@ public class ItemBuilderImpl implements IItemBuilder {
     private boolean glow;
     private final java.util.List<String> tooltips = new java.util.ArrayList<>();
 
+    private String useAnimation = "NONE";
+    private int useDuration = 0;
+    private ItemUseTickHandler onUseTickHandler;
+    private ItemReleaseHandler onReleaseUsingHandler;
+    private BiConsumer<Object, Object> onFinishUsingHandler;
+    private ItemHurtHandler onHurtEnemyHandler;
+    private ItemMineHandler onMineBlockHandler;
+    private BiConsumer<Object, Object> onSwingHandler;
+
     @Override
     public IItemBuilder food(int hunger, float saturation) {
         this.foodHunger = hunger;
@@ -230,6 +243,54 @@ public class ItemBuilderImpl implements IItemBuilder {
     @Override
     public IItemBuilder tooltip(String text) {
         if (text != null && !text.isBlank()) this.tooltips.add(text);
+        return this;
+    }
+
+    @Override
+    public IItemBuilder useAnimation(String animation) {
+        if (animation != null) this.useAnimation = animation.toUpperCase();
+        return this;
+    }
+
+    @Override
+    public IItemBuilder useDuration(int ticks) {
+        this.useDuration = ticks;
+        return this;
+    }
+
+    @Override
+    public IItemBuilder onUseTick(ItemUseTickHandler handler) {
+        this.onUseTickHandler = handler;
+        return this;
+    }
+
+    @Override
+    public IItemBuilder onReleaseUsing(ItemReleaseHandler handler) {
+        this.onReleaseUsingHandler = handler;
+        return this;
+    }
+
+    @Override
+    public IItemBuilder onFinishUsing(BiConsumer<Object, Object> handler) {
+        this.onFinishUsingHandler = handler;
+        return this;
+    }
+
+    @Override
+    public IItemBuilder onHurtEnemy(ItemHurtHandler handler) {
+        this.onHurtEnemyHandler = handler;
+        return this;
+    }
+
+    @Override
+    public IItemBuilder onMineBlock(ItemMineHandler handler) {
+        this.onMineBlockHandler = handler;
+        return this;
+    }
+
+    @Override
+    public IItemBuilder onSwing(BiConsumer<Object, Object> handler) {
+        this.onSwingHandler = handler;
         return this;
     }
 
@@ -264,6 +325,15 @@ public class ItemBuilderImpl implements IItemBuilder {
     @Override public BiConsumer<Object, Object> getOnConsumeHandler() { return onConsumeHandler; }
     @Override public boolean isGlow() { return glow; }
     @Override public java.util.List<String> getTooltips() { return tooltips; }
+
+    @Override public String getUseAnimation() { return useAnimation; }
+    @Override public int getUseDuration() { return useDuration; }
+    @Override public ItemUseTickHandler getOnUseTickHandler() { return onUseTickHandler; }
+    @Override public ItemReleaseHandler getOnReleaseUsingHandler() { return onReleaseUsingHandler; }
+    @Override public BiConsumer<Object, Object> getOnFinishUsingHandler() { return onFinishUsingHandler; }
+    @Override public ItemHurtHandler getOnHurtEnemyHandler() { return onHurtEnemyHandler; }
+    @Override public ItemMineHandler getOnMineBlockHandler() { return onMineBlockHandler; }
+    @Override public BiConsumer<Object, Object> getOnSwingHandler() { return onSwingHandler; }
 }
 
 

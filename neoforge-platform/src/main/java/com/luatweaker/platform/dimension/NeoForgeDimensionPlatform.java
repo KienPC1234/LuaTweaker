@@ -95,6 +95,17 @@ public class NeoForgeDimensionPlatform implements IPlatformDimension {
         return resolveLevel(dimensionId);
     }
 
+    @Override
+    @Nullable
+    public String getEntityDimensionId(@NotNull Object rawEntity) {
+        if (rawEntity instanceof net.minecraft.world.entity.Entity entity) {
+            return entity.level().dimension().location().toString();
+        }
+        LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                "getEntityDimensionId requires a platform Entity, got: " + rawEntity);
+        return null;
+    }
+
     @Nullable
     private ServerLevel resolveLevel(String dimensionId) {
         ResourceLocation id = ResourceLocation.tryParse(dimensionId);

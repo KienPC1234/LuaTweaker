@@ -28,10 +28,6 @@ import java.util.Map;
 import java.util.function.Function;
 
 public final class BlockRegistrar {
-    /** Default pipe geometry when :ConnectionState(true) is used without :Container(...). */
-    private static final int PIPE_DEFAULT_ROWS = 1;
-    private static final int PIPE_DEFAULT_COLS = 1;
-    private static final String PIPE_DEFAULT_DROP = "none";
     /** Vanilla default block friction; only applied when the Lua builder overrides it. */
     private static final float DEFAULT_BLOCK_FRICTION = 0.6f;
 
@@ -202,6 +198,7 @@ public final class BlockRegistrar {
                 }
 
                 String id = builder.getId().toLowerCase();
+                String shape = builder.getEffectiveShape();
 
                 // Lua-configured inventory container: use the generic container block.
                 // MUST be decided before the plain-block branch: every Block
@@ -209,21 +206,20 @@ public final class BlockRegistrar {
                 // instance that never gets registered crashes registry freeze.
                 // ConnectionState blocks (pipes) are containers too: a 1x1 buffer
                 // with "none" drops unless :Container(...) was configured.
-                boolean containerBlock = builder.isContainer() || builder.isConnectionState();
+                boolean hasBe = builder.isContainer() || builder.isConnectionState()
+                        || builder.getTickHandler() != null || builder.getRenderHandler() != null
+                        || builder.getEnergyCapacity() > 0 || builder.getFluidCapacity() > 0;
+                boolean hasCustomShapeOrFacing = !builder.getBoxes().isEmpty()
+                        || (builder.getFacing() != null && !"NONE".equalsIgnoreCase(builder.getFacing()));
                 Block block;
-                if (containerBlock) {
-                    int rows = builder.isContainer() ? builder.getContainerRows() : PIPE_DEFAULT_ROWS;
-                    int cols = builder.isContainer() ? builder.getContainerCols() : PIPE_DEFAULT_COLS;
-                    String dropMode = builder.isContainer() ? builder.getContainerDropMode() : PIPE_DEFAULT_DROP;
+                if (hasBe) {
+                    com.luatweaker.platform.container.ContainerSpec spec =
+                            com.luatweaker.platform.container.ContainerSpec.from(builder);
+                    int rows = spec.rows();
+                    int cols = spec.cols();
+                    String dropMode = spec.dropMode();
                     String crateTitle = builder.getContainerTitle() != null && !builder.getContainerTitle().isBlank()
                             ? builder.getContainerTitle() : toTitle(rl.getPath());
-                    com.luatweaker.platform.container.ContainerSpec spec = new com.luatweaker.platform.container.ContainerSpec(
-                            rows, cols, dropMode, builder.getContainerTexture(),
-                            builder.getContainerUseDistance(),
-                            builder.getSlotPositions(), builder.getLockedSlots(), builder.getSlotTexture(),
-                            builder.getEnergyCapacity(), builder.getEnergyMaxReceive(), builder.getEnergyMaxExtract(),
-                            builder.getFluidCapacity(), builder.getGuiBars(), builder.getBooleanState(),
-                            builder.isConnectionState(), builder.getTickHandler());
                     block = new com.luatweaker.platform.container.CustomContainerBlock(
                             props, rl.toString(), crateTitle, spec,
                             builder.getRightClickHandler(), builder.getItemFilter());
@@ -238,28 +234,44 @@ public final class BlockRegistrar {
                                     + ", bars=" + builder.getGuiBars().size()
                                     + ", state=" + (builder.getBooleanState() != null ? builder.getBooleanState().property() : "none")
                                     + ", connections=" + builder.isConnectionState()
-                                    + ", tick=" + (builder.getTickHandler() != null) + ")");
-                } else if (id.endsWith("_stairs") || id.contains("stairs")) {
-                    block = createBlockWithHook(builder, props, (p, b) -> new StairBlock(Blocks.STONE.defaultBlockState(), p) {
+                                    + ", tick=" + (builder.getTickHandler() != null)
+                                    + ", render=" + (builder.getRenderHandler() != null) + ")");
+                } else if ("STAIRS".equals(shape)) {
+                    BlockState baseState = resolveBaseState(builder);
+                    block = createBlockWithHook(builder, props, (p, b) -> new StairBlock(baseState, p) {
                         @Override public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
                             InteractionResult r = handleBlockUse(level, pos, player, b);
                             return r != null ? r : super.useWithoutItem(state, level, pos, player, hitResult);
                         }
                     });
-                } else if (id.endsWith("_slab") || id.contains("slab")) {
+                } else if ("SLAB".equals(shape)) {
                     block = createBlockWithHook(builder, props, (p, b) -> new SlabBlock(p) {
                         @Override public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
                             InteractionResult r = handleBlockUse(level, pos, player, b);
                             return r != null ? r : super.useWithoutItem(state, level, pos, player, hitResult);
                         }
                     });
-                } else if (id.endsWith("_wall") || id.contains("wall")) {
+                } else if ("WALL".equals(shape)) {
                     block = createBlockWithHook(builder, props, (p, b) -> new WallBlock(p) {
                         @Override public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
                             InteractionResult r = handleBlockUse(level, pos, player, b);
                             return r != null ? r : super.useWithoutItem(state, level, pos, player, hitResult);
                         }
                     });
+                } else if (hasCustomShapeOrFacing) {
+                    // CustomBlock supplies the shape/facing overrides; the use hook needs the
+                    // real level/pos from the interaction, which only the override provides.
+                    block = createBlockWithHook(builder, props, (p, b) ->
+                            new com.luatweaker.platform.container.CustomBlock(
+                                    p, rl.toString(), builder.getFacing(), builder.getBoxes(), null) {
+                                @Override
+                                public InteractionResult useWithoutItem(BlockState state, Level level,
+                                                                        BlockPos pos, Player player,
+                                                                        BlockHitResult hitResult) {
+                                    InteractionResult r = handleBlockUse(level, pos, player, b);
+                                    return r != null ? r : super.useWithoutItem(state, level, pos, player, hitResult);
+                                }
+                            });
                 } else {
                     block = createBlockWithHook(builder, props, (p, b) -> new Block(p) {
                         @Override public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
@@ -272,6 +284,19 @@ public final class BlockRegistrar {
                 Block finalBlock = block;
                 event.register(Registries.BLOCK, rl, () -> finalBlock);
                 createdBlocks.put(rl, block);
+                com.luatweaker.platform.container.CustomContainerRegistry.CREATED_BLOCKS.put(rl, block);
+                if (builder.getButtonClickHandler() != null) {
+                    com.luatweaker.platform.container.CustomContainerRegistry.BUTTON_HANDLERS.put(block, builder.getButtonClickHandler());
+                }
+                if (builder.getNeighborChangedHandler() != null) {
+                    com.luatweaker.platform.container.CustomContainerRegistry.NEIGHBOR_HANDLERS.put(block, builder.getNeighborChangedHandler());
+                }
+                if (builder.getButtonClickHandler() != null) {
+                    com.luatweaker.platform.container.CustomContainerRegistry.BUTTON_HANDLERS.put(block, builder.getButtonClickHandler());
+                }
+                if (builder.getNeighborChangedHandler() != null) {
+                    com.luatweaker.platform.container.CustomContainerRegistry.NEIGHBOR_HANDLERS.put(block, builder.getNeighborChangedHandler());
+                }
                 LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom Block to NeoForge: " + rl);
             } catch (Exception e) {
                 LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed to register block " + builder.getId() + ": " + e.getMessage());
@@ -298,7 +323,10 @@ public final class BlockRegistrar {
 
     public void registerContainerBlockEntities(RegisterEvent event) {
         for (IBlockBuilder builder : contentService.getRegisteredBlocks()) {
-            if (!builder.isContainer() && !builder.isConnectionState()) continue;
+            boolean hasBe = builder.isContainer() || builder.isConnectionState()
+                    || builder.getTickHandler() != null || builder.getRenderHandler() != null
+                    || builder.getEnergyCapacity() > 0 || builder.getFluidCapacity() > 0;
+            if (!hasBe) continue;
             ResourceLocation rl = locationParser.apply(builder.getId());
             Block block = createdBlocks.get(rl);
             if (block == null) block = BuiltInRegistries.BLOCK.get(rl);
@@ -309,6 +337,10 @@ public final class BlockRegistrar {
             com.luatweaker.platform.container.CustomContainerRegistry.TYPE_BY_BLOCK.put(
                     (com.luatweaker.platform.container.CustomContainerBlock) block, type);
             com.luatweaker.platform.container.CustomContainerRegistry.CONTAINER_BE_TYPES.put(rl, type);
+            com.luatweaker.platform.container.CustomContainerRegistry.BLOCKS.put(
+                    rl, (com.luatweaker.platform.container.CustomContainerBlock) block);
+            com.luatweaker.platform.container.CustomContainerRegistry.BLOCK_BY_TYPE.put(
+                    type, (com.luatweaker.platform.container.CustomContainerBlock) block);
             event.register(Registries.BLOCK_ENTITY_TYPE, rl, () -> type);
         }
     }
@@ -317,8 +349,10 @@ public final class BlockRegistrar {
         for (IBlockBuilder builder : contentService.getRegisteredBlocks()) {
             if (!builder.isContainer() && !builder.isConnectionState()) continue;
             ResourceLocation rl = locationParser.apply(builder.getId());
-            int rows = builder.isContainer() ? builder.getContainerRows() : PIPE_DEFAULT_ROWS;
-            int cols = builder.isContainer() ? builder.getContainerCols() : PIPE_DEFAULT_COLS;
+            com.luatweaker.platform.container.ContainerSpec menuSpec =
+                    com.luatweaker.platform.container.ContainerSpec.from(builder);
+            int rows = menuSpec.rows();
+            int cols = menuSpec.cols();
             int slotCount = rows * cols;
             net.minecraft.world.inventory.MenuType<com.luatweaker.platform.container.CustomContainerMenu>[] ref =
                     new net.minecraft.world.inventory.MenuType[1];
@@ -342,6 +376,14 @@ public final class BlockRegistrar {
                 com.luatweaker.platform.container.CustomContainerRegistry.CONTAINER_BARS.put(
                         menuType, builder.getGuiBars());
             }
+            if (!builder.getButtons().isEmpty()) {
+                com.luatweaker.platform.container.CustomContainerRegistry.CONTAINER_BUTTONS.put(
+                        menuType, builder.getButtons());
+            }
+            if (!builder.getLabels().isEmpty()) {
+                com.luatweaker.platform.container.CustomContainerRegistry.CONTAINER_LABELS.put(
+                        menuType, builder.getLabels());
+            }
             event.register(Registries.MENU, rl, () -> menuType);
         }
     }
@@ -350,6 +392,24 @@ public final class BlockRegistrar {
         String clean = id.substring(id.indexOf(':') + 1).replace('_', ' ');
         if (clean.isEmpty()) return id;
         return Character.toUpperCase(clean.charAt(0)) + clean.substring(1);
+    }
+
+    /** Base state backing a stair block; falls back to stone when the base is not registered. */
+    private static BlockState resolveBaseState(IBlockBuilder builder) {
+        String baseId = builder.getBaseBlockId();
+        if (baseId != null) {
+            ResourceLocation baseRl = ResourceLocation.tryParse(baseId);
+            if (baseRl != null) {
+                Block base = BuiltInRegistries.BLOCK.get(baseRl);
+                if (base != null && base != Blocks.AIR) {
+                    return base.defaultBlockState();
+                }
+            }
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "Stairs '" + builder.getId() + "': base block '" + baseId
+                            + "' is not registered yet; the stair base state falls back to stone");
+        }
+        return Blocks.STONE.defaultBlockState();
     }
 
     private net.minecraft.world.level.block.SoundType parseSoundType(String s) {

@@ -96,4 +96,67 @@ public interface IPlatformInteraction {
 
     /** Executes a command as if typed in the server console (false when no server is running). */
     boolean executeCommand(@NotNull String command);
+
+    @NotNull
+    default com.luatweaker.api.spatial.RaycastResult raycast(
+            @NotNull String dimension,
+            double originX, double originY, double originZ,
+            double dirX, double dirY, double dirZ,
+            @NotNull com.luatweaker.api.spatial.RaycastParams params) {
+        return com.luatweaker.api.spatial.RaycastResult.miss(
+                originX + dirX * params.maxDistance(),
+                originY + dirY * params.maxDistance(),
+                originZ + dirZ * params.maxDistance());
+    }
+
+    default void spawnParticle(@NotNull String dimension, @NotNull String particleId,
+                               double x, double y, double z,
+                               double vx, double vy, double vz,
+                               int count, double speed) {}
+
+    /**
+     * Plays a sound for every player in the dimension.
+     *
+     * <p>Default is a no-op for platforms/test doubles without audio; the NeoForge
+     * implementation overrides it and reports unknown sounds.</p>
+     *
+     * @param source Minecraft sound category (PLAYERS, BLOCKS, HOSTILE, ...)
+     */
+    default void playSound(@NotNull String dimension, @NotNull String soundId,
+                           double x, double y, double z,
+                           float volume, float pitch, @NotNull String source) {
+    }
+
+    /**
+     * Stops every instance of a sound for every player in the dimension.
+     *
+     * @return whether the stop packet was delivered to at least one player
+     */
+    default boolean stopSound(@NotNull String dimension, @NotNull String soundId, @NotNull String source) {
+        return false;
+    }
+
+    default int getRedstoneSignal(@NotNull String dimension, int x, int y, int z, @Nullable String direction) {
+        return 0;
+    }
+
+    default boolean checkPattern(@NotNull String dimension, int originX, int originY, int originZ,
+                                @NotNull java.util.List<java.util.Map<String, Object>> pattern) {
+        return false;
+    }
+
+    default int transferEnergy(@NotNull String dimension, int fromX, int fromY, int fromZ,
+                              int toX, int toY, int toZ, int maxAmount, boolean simulate) {
+        return 0;
+    }
+
+    default int transferFluid(@NotNull String dimension, int fromX, int fromY, int fromZ,
+                             int toX, int toY, int toZ, int maxAmount, boolean simulate) {
+        return 0;
+    }
+
+    default int transferItem(@NotNull String dimension, int fromX, int fromY, int fromZ, int fromSlot,
+                            int toX, int toY, int toZ, int toSlot, int maxCount, boolean simulate) {
+        return 0;
+    }
 }

@@ -227,6 +227,26 @@ public class LuaMod {
         });
         table.rawset("getUpdateStatus", table.rawget("GetUpdateStatus"));
 
+        // mod:HasMod(modId) - low-level presence check for optional interop.
+        table.rawset("HasMod", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 1) throw new IllegalArgumentException("mod:HasMod requires (modId)");
+            return engine.wrapBoolean(loadedModsRegistry.containsKey(args[off].asString()));
+        });
+        table.rawset("hasMod", table.rawget("HasMod"));
+
+        // mod:GetModVersion(modId) - version string of a loaded LuaMod, nil when absent.
+        table.rawset("GetModVersion", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 1) throw new IllegalArgumentException("mod:GetModVersion requires (modId)");
+            LuaMod target = loadedModsRegistry.get(args[off].asString());
+            if (target == null) {
+                return engine.nilValue();
+            }
+            return engine.wrapString(target.getManifest().version());
+        });
+        table.rawset("getModVersion", table.rawget("GetModVersion"));
+
         return table;
     }
 }

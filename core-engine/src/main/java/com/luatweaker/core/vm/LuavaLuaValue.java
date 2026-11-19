@@ -100,6 +100,11 @@ public class LuavaLuaValue implements ILuaValue {
     }
 
     @Override
+    public boolean isBoolean() {
+        return value.isBoolean();
+    }
+
+    @Override
     public boolean isNumber() {
         return value.isNumber() || parseNumericString() != null;
     }

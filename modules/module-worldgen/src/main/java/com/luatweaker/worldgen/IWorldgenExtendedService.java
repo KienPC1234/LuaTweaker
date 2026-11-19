@@ -37,9 +37,15 @@ public interface IWorldgenExtendedService {
             + "add_features biome modifier. Spec table: { block='modid:block' (required), "
             + "biomes={'minecraft:plains', ...} or biome='...' (required), step='underground_ores', "
             + "replace='stone'|'nether'|'end' (target rock, default 'stone'), "
-            + "count=10, size=8, minHeight=-64, maxHeight=32 }.",
+            + "count=10, size=8, minHeight=-64, maxHeight=32, "
+            + "heightType='uniform'|'trapezoid'|'biased_to_bottom'|'very_biased_to_bottom', "
+            + "anchorMin/anchorMax='absolute'|'above_bottom'|'below_top', "
+            + "rarity=N (1-in-N chunk chance, mutually exclusive with count), "
+            + "discardChance=0.0-1.0 (air-exposure thinning), scattered=true (exposed-vein type), "
+            + "inner=8 (biased height inner bound) }. "
+            + "Simple veins need only block+biomes; the rest mirrors vanilla ore distributions.",
         params = {"featureId: string - id for the generated feature (e.g. 'mymod:ruby_vein')",
-                  "spec: table - block/biomes/step/replace/count/size/minHeight/maxHeight as described"},
+                  "spec: table - block/biomes/placement fields as described"},
         returnType = "void"
     )
     void addFeature(@NotNull String featureId, @NotNull ILuaTable spec);
@@ -53,6 +59,20 @@ public interface IWorldgenExtendedService {
         returnType = "void"
     )
     void addVegetationPatch(@NotNull String blockId, double chance, @NotNull String[] biomes);
+
+    @LuaDoc(
+        description = "Register a GTNH-style mixed vein: one blob mixing several ores by weight "
+            + "(custom luatweaker:mixed_vein feature). Spec table: { ores={{block='modid:ore', weight=70}, ...} "
+            + "(required, weight defaults to 1), replace='stone'|'nether'|'end', "
+            + "biomes={'minecraft:plains', ...} or biome='...' (required), step='underground_ores', "
+            + "count=10 (or rarity=N, mutually exclusive), size=24 (1-256), "
+            + "minHeight/maxHeight, heightType/anchorMin/anchorMax, discardChance, inner }. "
+            + "Placement fields behave exactly like addFeature.",
+        params = {"veinId: string - id for the generated vein (e.g. 'mymod:magnetite_vein')",
+                  "spec: table - ores/replace/biomes/placement fields as described"},
+        returnType = "void"
+    )
+    void addMixedVein(@NotNull String veinId, @NotNull ILuaTable spec);
 
     @LuaDoc(
         description = "Register (or override) the placed-feature IDs removed for an ore block. "

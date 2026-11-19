@@ -43,15 +43,68 @@ public class NeoForgeWorldgenProvider {
         int ores = applyOres();
         int vegetation = applyVegetation();
         int removals = applyRemovals();
+        int biomeModifierFiles = applyBiomeModifierFiles();
+        int rawFiles = applyRawFiles();
+        int mixedVeins = applyMixedVeins();
 
         LuaTweakerLog.get().info(LogStage.SYSTEM,
             "[WorldgenProvider] Applied: " + ores + " ore entries, "
             + vegetation + " vegetation entries, "
-            + removals + " removals");
+            + removals + " removals, "
+            + biomeModifierFiles + " biome-modifier/custom-feature files, "
+            + rawFiles + " raw passthrough files, "
+            + mixedVeins + " mixed veins");
+        com.luatweaker.core.service.AppliedEventHelper.fire("WorldgenApplied", java.util.Map.of(
+            "ores", ores,
+            "vegetation", vegetation,
+            "removals", removals,
+            "biomeModifiers", biomeModifierFiles,
+            "raw", rawFiles,
+            "mixedVeins", mixedVeins));
+    }
+
+    /**
+     * Materializes {@code Worldgen:AddMixedVein} registrations: one custom
+     * configured feature ({@code luatweaker:mixed_vein}, registered by the
+     * platform) + placed feature + biome modifier per vein.
+     */
+    private int applyMixedVeins() {
+        java.util.Map<String, String> files = worldgenService.buildMixedVeinFiles();
+        for (java.util.Map.Entry<String, String> file : files.entrySet()) {
+            datapackService.addData(file.getKey(), file.getValue());
+        }
+        return worldgenService.getPendingMixedVeins().size();
+    }
+
+    /**
+     * Materializes raw passthrough JSON (validated at registration, emitted
+     * verbatim). Lets Lua authors use any vanilla configured/placed feature
+     * type without waiting for a dedicated builder.
+     */
+    private int applyRawFiles() {
+        java.util.Map<String, String> files = worldgenService.buildRawFiles();
+        for (java.util.Map.Entry<String, String> file : files.entrySet()) {
+            datapackService.addData(file.getKey(), file.getValue());
+        }
+        return files.size();
+    }
+
+    /**
+     * Materializes {@code Worldgen:ModifyBiome} and {@code Worldgen:AddFeature}
+     * registrations. Previously these were validated and stored but never
+     * emitted, so the Lua calls silently did nothing in-game.
+     */
+    private int applyBiomeModifierFiles() {
+        java.util.Map<String, String> files = worldgenService.buildBiomeModifierFiles();
+        for (java.util.Map.Entry<String, String> file : files.entrySet()) {
+            datapackService.addData(file.getKey(), file.getValue());
+        }
+        return files.size();
     }
 
     private int applyOres() {
         List<WorldgenServiceImpl.OreEntry> ores = worldgenService.getPendingOres();
+        int emitted = 0;
         for (int i = 0; i < ores.size(); i++) {
             WorldgenServiceImpl.OreEntry ore = ores.get(i);
             if (!isSupportedDimension(ore.dimension())) {
@@ -67,8 +120,9 @@ public class NeoForgeWorldgenProvider {
                     buildPlacedOreFeature(featureId, ore));
             datapackService.addData("luatweaker/neoforge/biome_modifier/add_" + featureId + ".json",
                     buildAddFeatureModifier(featureId, ore.dimension(), ore.biomes(), "underground_ores"));
+            emitted++;
         }
-        return ores.size();
+        return emitted;
     }
 
     private int applyVegetation() {
@@ -244,23 +298,11 @@ public class NeoForgeWorldgenProvider {
     }
 
     private String buildConfiguredFlowerFeature(WorldgenServiceImpl.VegetationEntry veg) {
-        return "{"
-            + "\"type\":\"minecraft:flower\","
-            + "\"config\":{"
-            +   "\"tries\":64,"
-            +   "\"xz_spread\":7,"
-            +   "\"y_spread\":3,"
-            +   "\"feature\":{"
-            +     "\"feature\":{"
-            +       "\"type\":\"minecraft:simple_block\","
-            +       "\"config\":{\"to_place\":{\"type\":\"minecraft:simple_state_provider\","
-            +       "\"state\":{\"Name\":\"" + escapeJson(veg.blockId()) + "\"}}}"
-            +     "},"
-            +     "\"placement\":[{\"type\":\"minecraft:block_predicate_filter\","
-            +       "\"predicate\":{\"type\":\"minecraft:matching_blocks\",\"blocks\":\"minecraft:air\"}}]"
-            +   "}"
-            + "}"
-            + "}";
+        // Delegate to the service builder so flower AND patch kinds keep their
+        // verified shapes (flower_plain vs patch_grass in the 1.21.1 client jar).
+        // A local copy here once hardcoded the flower numbers for every kind,
+        // silently turning AddVegetationPatch into flower distribution.
+        return worldgenService.buildVegetationConfiguredJson(veg);
     }
 
     private String buildPlacedFlowerFeature(String configuredFeatureId,

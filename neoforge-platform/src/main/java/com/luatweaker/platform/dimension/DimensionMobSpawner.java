@@ -90,7 +90,8 @@ public final class DimensionMobSpawner {
             com.luatweaker.api.vm.ILuaValue yVal = et.rawget("y");
             com.luatweaker.api.vm.ILuaValue zVal = et.rawget("z");
             if (entityVal == null || entityVal.isNil() || xVal == null || zVal == null) continue;
-            Optional<EntityType<?>> type = EntityType.byString(entityVal.asString());
+            Optional<EntityType<?>> type =
+                    com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(entityVal.asString());
             if (type.isEmpty()) continue;
             BlockPos pos = new BlockPos(xVal.asInt(), yVal != null && !yVal.isNil() ? yVal.asInt()
                     : level.getHeight(Heightmap.Types.MOTION_BLOCKING, xVal.asInt(), zVal.asInt()) + 1, zVal.asInt());

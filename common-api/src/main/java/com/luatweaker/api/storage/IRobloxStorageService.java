@@ -9,8 +9,25 @@ public interface IRobloxStorageService {
         @LuaDoc(description = "Retrieves a stored value.", params = {"key: string"}, returnType = "any")
         Object GetAsync(String key);
 
-        @LuaDoc(description = "Sets a value.", params = {"key: string", "value: any"})
+        @LuaDoc(description = "Sets a value. Nil removes the key.", params = {"key: string", "value: any"})
         void SetAsync(String key, Object value);
+
+        @LuaDoc(
+            description = "Removes a stored key and returns whether it existed.",
+            params = {"key: string"},
+            returnType = "boolean"
+        )
+        boolean RemoveAsync(String key);
+
+        @LuaDoc(description = "Lists every stored key, sorted.", returnType = "table")
+        java.util.List<String> GetKeys();
+
+        @LuaDoc(
+            description = "Atomically adds delta to a numeric value (missing key starts at 0) and returns the new value. Fails loudly when the stored value is not a number.",
+            params = {"key: string", "delta: number"},
+            returnType = "number"
+        )
+        double IncrementAsync(String key, double delta);
     }
 
     @LuaDoc(description = "Returns the World storage data store.", returnType = "IDataStore")

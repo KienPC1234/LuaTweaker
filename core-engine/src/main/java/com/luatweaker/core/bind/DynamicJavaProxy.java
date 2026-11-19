@@ -27,10 +27,26 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class DynamicJavaProxy {
 
-    // Method cache: Class -> (MethodName -> single best Method)
-    private static final Map<Class<?>, Map<String, Method>> METHOD_CACHE = new ConcurrentHashMap<>();
+    // Method cache: Class -> (MethodName -> single best Method, or empty when it does not exist).
+    // The empty entry is the negative cache: a missing property must not re-scan reflection on
+    // every access (event handlers read the same absent keys every tick).
+    private static final Map<Class<?>, Map<String, java.util.Optional<Method>>> METHOD_CACHE =
+            new ConcurrentHashMap<>();
     // Overload cache: Class -> (MethodName -> all candidates, including remapped ones)
     private static final Map<Class<?>, Map<String, List<Method>>> OVERLOAD_CACHE = new ConcurrentHashMap<>();
+    // Declared public method names per class, computed once.
+    private static final Map<Class<?>, java.util.Set<String>> PUBLIC_METHOD_NAMES = new ConcurrentHashMap<>();
+    // Package blacklist verdict per class (GC-safe, no strong class references).
+    private static final ClassValue<Boolean> PACKAGE_BLOCKED = new ClassValue<>() {
+        @Override
+        protected Boolean computeValue(Class<?> type) {
+            String name = type.getName();
+            for (String blocked : PACKAGE_BLACKLIST) {
+                if (name.startsWith(blocked)) return true;
+            }
+            return false;
+        }
+    };
 
     // Security Blacklist: Block dangerous packages (RCE, Data Exfiltration, DoS, Reflection Escape)
     private static final java.util.Set<String> PACKAGE_BLACKLIST = java.util.Set.of(
@@ -151,26 +167,25 @@ public class DynamicJavaProxy {
     }
 
     private static boolean isClassBlocked(LuaState state, Class<?> clazz) {
-        String className = clazz.getName();
-        for (String blocked : PACKAGE_BLACKLIST) {
-            if (className.startsWith(blocked)) return true;
-        }
+        if (PACKAGE_BLOCKED.get(clazz)) return true;
         JavaAccessPolicy policy = (state != null && state.getJavaAccessPolicy() != null)
                 ? state.getJavaAccessPolicy()
                 : JavaAccessPolicy.active();
-        return policy.isDenied(className);
+        return policy.isDenied(clazz.getName());
     }
 
     private static Method findMethodCached(Class<?> clazz, String methodName) {
         if (isClassBlocked(null, clazz)) return null;
         if (METHOD_BLACKLIST.contains(methodName)) return null;
 
-        Map<String, Method> classCache = METHOD_CACHE.computeIfAbsent(clazz, k -> new ConcurrentHashMap<>());
+        return METHOD_CACHE
+                .computeIfAbsent(clazz, k -> new ConcurrentHashMap<>())
+                .computeIfAbsent(methodName, name -> java.util.Optional.ofNullable(resolveMethod(clazz, name)))
+                .orElse(null);
+    }
 
-        if (classCache.containsKey(methodName)) {
-            return classCache.get(methodName);
-        }
-
+    /** Host-side lookup (reflection + remapper) behind the cached entry. */
+    private static Method resolveMethod(Class<?> clazz, String methodName) {
         // Prefer the overload with the fewest parameters (getters/setters are
         // the common case); getMethods() order is not guaranteed, so caching
         // the first hit would be non-deterministic across overloads.
@@ -183,17 +198,9 @@ public class DynamicJavaProxy {
             }
         }
         if (best != null) {
-            classCache.put(methodName, best);
             return best;
         }
-
-        Method remapped = RuntimeRemapper.getInstance().resolveMethod(clazz, methodName);
-        if (remapped != null) {
-            classCache.put(methodName, remapped);
-            return remapped;
-        }
-
-        return null;
+        return RuntimeRemapper.getInstance().resolveMethod(clazz, methodName);
     }
 
     private static List<Method> findMethodsCached(Class<?> clazz, String methodName) {
@@ -220,10 +227,15 @@ public class DynamicJavaProxy {
     private static boolean hasPublicMethodNamed(Class<?> clazz, String methodName) {
         if (isClassBlocked(null, clazz)) return false;
         if (METHOD_BLACKLIST.contains(methodName)) return false;
-        for (Method m : clazz.getMethods()) {
-            if (m.getName().equals(methodName)) return true;
-        }
-        return false;
+        return PUBLIC_METHOD_NAMES
+                .computeIfAbsent(clazz, k -> {
+                    java.util.Set<String> names = new java.util.HashSet<>();
+                    for (Method m : k.getMethods()) {
+                        names.add(m.getName());
+                    }
+                    return java.util.Set.copyOf(names);
+                })
+                .contains(methodName);
     }
 
     private static boolean sameSignature(Method left, Method right) {

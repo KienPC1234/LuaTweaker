@@ -10,44 +10,19 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.client.event.RenderFrameEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+
+import static org.lwjgl.glfw.GLFW.GLFW_PRESS;
+import static org.lwjgl.glfw.GLFW.GLFW_RELEASE;
+
 @EventBusSubscriber(modid = LuaTweakerMod.MODID, value = Dist.CLIENT)
 public class NeoForgeClientEventListener {
-
-    private static void fireRunServiceSignal(ILuaEngine engine, String signalName, double deltaTime) {
-        try {
-            ILuaTable globals = engine.getGlobalEnvironment();
-            ILuaValue runServiceVal = globals.rawget("RunService");
-            if (runServiceVal != null && runServiceVal.isTable()) {
-                ILuaTable runService = runServiceVal.asTable();
-                ILuaValue signalObj = runService.rawget(signalName);
-                if (signalObj != null && signalObj.isTable()) {
-                    ILuaTable signal = signalObj.asTable();
-                    ILuaValue fireFn = signal.rawget("FireSync");
-                    if (fireFn == null || !fireFn.isFunction()) {
-                        ILuaValue signalClass = globals.rawget("Signal");
-                        if (signalClass != null && signalClass.isTable()) {
-                            fireFn = signalClass.asTable().rawget("FireSync");
-                        }
-                    }
-                    if (fireFn != null && fireFn.isFunction()) {
-                        engine.callFunction(fireFn, signal, engine.wrapNumber(deltaTime));
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            // Never crash the render loop, but do not hide the failure either.
-            com.luatweaker.api.log.LuaTweakerLog.get().debug(
-                    com.luatweaker.api.log.LogStage.SYSTEM,
-                    "RunService signal '" + signalName + "' dispatch failed: " + t.getMessage());
-        }
-    }
 
     @SubscribeEvent
     public static void onRenderFrame(RenderFrameEvent.Pre event) {
         ILuaEngine engine = LuaTweakerMod.getActiveEngine();
         if (engine != null) {
             double deltaTime = (double) net.minecraft.client.Minecraft.getInstance().getTimer().getGameTimeDeltaTicks();
-            fireRunServiceSignal(engine, "RenderStepped", deltaTime);
+            com.luatweaker.platform.runservice.RunServiceDispatcher.fire(engine, "RenderStepped", deltaTime);
             // Tween updates should use real time delta in seconds. Minecraft ticks are 1/20th of a second.
             // But gameTimeDeltaTicks is partial tick fraction? No, getTimer().getGameTimeDeltaTicks() is in ticks (1 tick = 50ms = 0.05s).
             // Actually, for real-time tweening, we should probably use real delta time, but since it's game ticks we just multiply by 0.05.
@@ -58,12 +33,85 @@ public class NeoForgeClientEventListener {
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
         ILuaEngine engine = LuaTweakerMod.getActiveEngine();
-        if (engine != null) {
-            // Standard Minecraft tick is 50ms (0.05s).
-            // NOTE: the Lua task queues are pumped from the SERVER tick only
-            // (LuaTweakerMod.onServerTick); pumping here too would resume
-            // coroutines from a second thread and freeze the game.
-            fireRunServiceSignal(engine, "Heartbeat", 0.05);
+        if (engine == null) {
+            return;
+        }
+        // Single-player shares ONE engine between the integrated server and the client, and
+        // LuaTweakerMod.onServerTick already fires Stepped/Heartbeat for it. Firing here too
+        // would run every listener twice per tick. Remote clients have no local server tick,
+        // so they are the only case that dispatches from the client tick.
+        if (com.luatweaker.api.pal.Platform.isInitialized()
+                && com.luatweaker.api.pal.Platform.getContent().hasLocalServer()) {
+            return;
+        }
+        // Standard Minecraft tick is 50ms (0.05s).
+        // NOTE: the Lua task queues are pumped from the SERVER tick only
+        // (LuaTweakerMod.onServerTick); pumping here too would resume
+        // coroutines from a second thread and freeze the game.
+        com.luatweaker.platform.runservice.RunServiceDispatcher.fire(
+                engine, "Stepped", com.luatweaker.platform.runservice.ServerTickClock.NOMINAL_DELTA_SECONDS);
+        com.luatweaker.platform.runservice.RunServiceDispatcher.fire(
+                engine, "Heartbeat", com.luatweaker.platform.runservice.ServerTickClock.NOMINAL_DELTA_SECONDS);
+    }
+
+    /**
+     * Raw keyboard input. Payload: (inputType, code, action, modifiers, gameProcessed) with
+     * GLFW action codes 1=press, 0=release, 2=repeat. Only press/release are forwarded;
+     * repeats would fire InputBegan several times per held key.
+     */
+    @SubscribeEvent
+    public static void onInputKey(net.neoforged.neoforge.client.event.InputEvent.Key event) {
+        boolean pressed = event.getAction() == GLFW_PRESS;
+        boolean released = event.getAction() == GLFW_RELEASE;
+        if (pressed || released) {
+            updateKeyState(event.getKey(), pressed);
+        }
+        ILuaEngine engine = LuaTweakerMod.getActiveEngine();
+        if (engine == null) {
+            return;
+        }
+        boolean gameProcessed = net.minecraft.client.Minecraft.getInstance().screen != null;
+        if (pressed) {
+            UserInputDispatcher.fire(engine, "InputBegan", UserInputDispatcher.TYPE_KEY,
+                    event.getKey(), event.getAction(), event.getModifiers(), gameProcessed);
+        } else if (released) {
+            UserInputDispatcher.fire(engine, "InputEnded", UserInputDispatcher.TYPE_KEY,
+                    event.getKey(), event.getAction(), event.getModifiers(), gameProcessed);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onMouseButton(net.neoforged.neoforge.client.event.InputEvent.MouseButton.Post event) {
+        boolean pressed = event.getAction() == GLFW_PRESS;
+        boolean released = event.getAction() == GLFW_RELEASE;
+        if (pressed || released) {
+            updateMouseState(event.getButton(), pressed);
+        }
+        ILuaEngine engine = LuaTweakerMod.getActiveEngine();
+        if (engine == null) {
+            return;
+        }
+        boolean gameProcessed = net.minecraft.client.Minecraft.getInstance().screen != null;
+        if (pressed) {
+            UserInputDispatcher.fire(engine, "InputBegan", UserInputDispatcher.TYPE_MOUSE,
+                    event.getButton(), event.getAction(), event.getModifiers(), gameProcessed);
+        } else if (released) {
+            UserInputDispatcher.fire(engine, "InputEnded", UserInputDispatcher.TYPE_MOUSE,
+                    event.getButton(), event.getAction(), event.getModifiers(), gameProcessed);
+        }
+    }
+
+    private static void updateKeyState(int keyCode, boolean pressed) {
+        Object service = com.luatweaker.core.service.LuaServiceRegistry.get("ClientService");
+        if (service instanceof com.luatweaker.client.ClientServiceImpl clientService) {
+            clientService.onKeyPress(keyCode, pressed);
+        }
+    }
+
+    private static void updateMouseState(int button, boolean pressed) {
+        Object service = com.luatweaker.core.service.LuaServiceRegistry.get("ClientService");
+        if (service instanceof com.luatweaker.client.ClientServiceImpl clientService) {
+            clientService.onMouseButton(button, pressed);
         }
     }
 

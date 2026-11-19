@@ -114,6 +114,8 @@ public class LuaTweakerMod {
         Platform.setContent(new com.luatweaker.platform.content.NeoForgeContentPlatform());
         Platform.setStorage(new com.luatweaker.platform.storage.NeoForgeStoragePlatform());
         Platform.setDimension(new com.luatweaker.platform.dimension.NeoForgeDimensionPlatform());
+        Platform.setStructures(new com.luatweaker.platform.structures.NeoForgeStructuresPlatform());
+        Platform.setCapability(new com.luatweaker.platform.interaction.NeoForgeCapabilityPlatform());
         if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) {
             initClientPlatform();
         }
@@ -146,6 +148,7 @@ public class LuaTweakerMod {
         modEventBus.register(luaAssetsPackFinder);        modEventBus.addListener(LuaTweakerMod::registerPayloads);
         modEventBus.addListener(this::onClientSetup);
         modEventBus.addListener(com.luatweaker.platform.dimension.NeoForgeDimensionProvider::registerCodecs);
+        modEventBus.addListener(com.luatweaker.platform.worldgen.MixedVeinRegistrar::registerFeatures);
 
         // Register Game Event Bus listeners (gameplay events)
         NeoForge.EVENT_BUS.register(this);
@@ -213,41 +216,49 @@ public class LuaTweakerMod {
             new com.luatweaker.platform.loot.NeoForgeLootProvider(lootService, datapackService).applyAll();
         }
         com.luatweaker.platform.dimension.NeoForgeDimensionProvider.applyAll(datapackService);
+        Object structureObj = com.luatweaker.core.service.LuaServiceRegistry.get("StructureServiceImpl");
+        if (structureObj instanceof com.luatweaker.structures.StructureServiceImpl structureService) {
+            new com.luatweaker.platform.structures.NeoForgeStructureProvider(
+                    structureService, datapackService, collectStructureDataRoots(getLuaDirectory())).applyAll();
+        }
+    }
+
+    /**
+     * Data roots searched (in order) for {@code data/<ns>/structure/<path>.nbt}
+     * templates, mirroring {@code LuaTweakerVirtualPackResources.resolvePhysicalFile}:
+     * the shared {@code <luaDir>/data} dir first, then every {@code <mod>/data} dir.
+     * Zip-packaged mods have no physical dir and are skipped, same as the runtime
+     * fallback. Sorted by mod id for deterministic emission order.
+     */
+    private static java.util.List<java.io.File> collectStructureDataRoots(java.io.File luaDir) {
+        java.util.List<java.io.File> roots = new java.util.ArrayList<>();
+        roots.add(new java.io.File(luaDir, "data"));
+        java.io.File luamodsDir = "luamods".equalsIgnoreCase(luaDir.getName())
+                ? luaDir : new java.io.File(luaDir, "luamods");
+        java.io.File[] mods = luamodsDir.isDirectory() ? luamodsDir.listFiles(java.io.File::isDirectory) : null;
+        if (mods != null) {
+            java.util.Arrays.sort(mods, java.util.Comparator.comparing(java.io.File::getName));
+            for (java.io.File mod : mods) {
+                roots.add(new java.io.File(mod, "data"));
+            }
+        }
+        return roots;
     }
 
     private void onClientSetup(final net.neoforged.fml.event.lifecycle.FMLClientSetupEvent event) {
-        ILuaEngine engine = activeEngine != null ? activeEngine : LuaEngineFactory.create(isDebugEnabled());
-        engine.setLuaDirectory(getLuaDirectory());
-        activeEngine = engine;
-
-        com.luatweaker.client.ClientServiceImpl clientService = new com.luatweaker.client.ClientServiceImpl();
-        com.luatweaker.client.ClientLuaBinding.registerBindings(engine, clientService);
-
-        ILuaValue clientVal = engine.getGlobalEnvironment().rawget("Client");
-        if (clientVal != null && clientVal.isTable()) {
-            com.luatweaker.platform.client.NeoForgeWorldRenderEventListener.registerRenderService(engine, clientVal.asTable());
+        // Lua mods are loaded in the constructor and LuaServiceBootstrap binds every
+        // service on that same engine. Re-running the bindings here used to replace
+        // Events, GuiService and Client.OnRenderWorld with fresh empty tables, silently
+        // dropping every listener a Lua mod connected during startup (HUD, events, world
+        // rendering, keybinds). The only case that needs work is a missing engine, which
+        // the normal mod-load path never leaves behind.
+        if (activeEngine == null) {
+            ILuaEngine engine = LuaEngineFactory.create(isDebugEnabled());
+            engine.setLuaDirectory(getLuaDirectory());
+            activeEngine = engine;
+            com.luatweaker.platform.bootstrap.LuaServiceBootstrap.registerAllServices(
+                    engine, contentService, storageService, datapackService, new NeoForgeRecipeManager());
         }
-
-        com.luatweaker.math.MathLuaBinding.registerBindings(engine);
-
-        com.luatweaker.tasks.TaskServiceImpl taskService = new com.luatweaker.tasks.TaskServiceImpl();
-        com.luatweaker.tasks.TaskLuaBinding.registerBindings(engine, taskService);
-
-        com.luatweaker.interception.InterceptionServiceImpl interceptionService = new com.luatweaker.interception.InterceptionServiceImpl();
-        com.luatweaker.interception.InterceptionLuaBinding.registerBindings(engine, interceptionService);
-
-        // Reuse the service that loaded the LuaMods. Creating a fresh one here would drop
-        // every RemoteEvent/RemoteFunction registered during startup, so OnClientEvent
-        // handlers would silently never fire on a multiplayer client.
-        Object existingNetwork = com.luatweaker.core.service.LuaServiceRegistry.get("NetworkServiceImpl");
-        com.luatweaker.network.NetworkServiceImpl clientNetService =
-                existingNetwork instanceof com.luatweaker.network.NetworkServiceImpl existing
-                        ? existing
-                        : new com.luatweaker.network.NetworkServiceImpl(engine);
-        setClientNetworkService(clientNetService);
-        com.luatweaker.network.NetworkLuaBinding.registerBindings(engine, clientNetService);
-        com.luatweaker.events.EventLuaBinding.registerBindings(engine);
-        com.luatweaker.interaction.InteractionLuaBinding.registerBindings(engine);
     }
 
     private void initializeUserDirectories() {
@@ -328,6 +339,15 @@ public class LuaTweakerMod {
         // makes e.g. ServerLevel.addFreshEntity run on the client thread, which races
         // with the integrated server and freezes the game.
         tickActiveEngineTasks();
+        // RunService on the server: Stepped (before the tick's world work is done) and
+        // Heartbeat (end of tick), with a real wall-clock delta. Previously only the client
+        // fired these, so server scripts connecting to Heartbeat never ran.
+        ILuaEngine tickEngine = activeEngine;
+        if (tickEngine != null) {
+            double delta = com.luatweaker.platform.runservice.ServerTickClock.nextDelta();
+            com.luatweaker.platform.runservice.RunServiceDispatcher.fire(tickEngine, "Stepped", delta);
+            com.luatweaker.platform.runservice.RunServiceDispatcher.fire(tickEngine, "Heartbeat", delta);
+        }
         com.luatweaker.platform.dimension.DimensionMobSpawner.onServerTick();
     }
 
@@ -472,12 +492,27 @@ public class LuaTweakerMod {
         String dist = net.neoforged.fml.loading.FMLEnvironment.dist.isClient() ? "universal" : "server";
         com.luatweaker.core.mod.LuaModManager.loadLuaMods(getLuaDirectory(), engine, dist);
 
+        // Re-attach registered blocks to the new VM: the registry is frozen, the Lua
+        // closures are not. Without this every :OnTick/:ItemFilter/:OnRightClick kept
+        // calling the engine that was just shut down.
+        com.luatweaker.platform.container.ContainerSpecRebinder.rebindAll(
+                contentService, com.luatweaker.platform.content.NeoForgeContentRegistry::parseLocation);
+
         // Loud warning for keybind payloads that have no matching server RemoteEvent
         // (typo'd names would otherwise silently drop every key press).
         com.luatweaker.platform.bootstrap.KeyBindPayloadValidator.validate();
 
         // Materialize Lua-registered worldgen + loot entries into datapack files.
         applyLuaDatapackProviders();
+
+        if (server != null) {
+            // RegisterCommandsEvent fired once at startup, so brand-new Lua command
+            // paths registered by this reload would 404 until a datapack reload or
+            // restart. Changed handlers need nothing (wrappers resolve live).
+            // Deleted commands are NOT removed here (Brigadier has no unregister);
+            // they stop working on the next datapack reload.
+            commandRegistry.registerNewLuaCommands(server.getCommands().getDispatcher());
+        }
 
         // Kick off declarative update checks for mods that declare update_url.
         com.luatweaker.update.UpdateServiceImpl.checkAll();
@@ -503,81 +538,152 @@ public class LuaTweakerMod {
         registrar.playBidirectional(
                 com.luatweaker.platform.network.LuaTweakerPayload.TYPE,
                 com.luatweaker.platform.network.LuaTweakerPayload.STREAM_CODEC,
-                (payload, context) -> {
-                    com.luatweaker.api.log.LuaTweakerLog.get().info(
-                            com.luatweaker.api.log.LogStage.SYSTEM,
-                            "[Network Packet Received] Channel='" + payload.channelName() + "', Flow=" + context.flow()
-                    );
-                    context.enqueueWork(() -> {
-                        ILuaEngine engine = activeEngine;
-                        if (engine != null) {
-                            ILuaValue[] args = parseJsonToLua(engine, payload.dataJson());
-                            if (context.flow().isServerbound()) {
-                                net.minecraft.world.entity.player.Player player = context.player();
-                                String playerUuid = player != null ? player.getUUID().toString() : "";
-                                com.luatweaker.network.NetworkServiceImpl ns = serverNetworkService;
-                                if (ns != null) {
-                                    ns.OnClientFired(payload.channelName(), playerUuid, args);
-                                } else {
-                                    LOGGER.warn("serverNetworkService is null when handling serverbound payload {}", payload.channelName());
-                                }
-                            } else {
-                                // Clientbound: the OnClientEvent listeners are connected on the
-                                // network service of the CURRENTLY ACTIVE engine (where the mods
-                                // loaded), not on the client setup engine which never loads mods.
-                                Object ns = com.luatweaker.core.service.LuaServiceRegistry.get("NetworkServiceImpl");
-                                if (ns instanceof com.luatweaker.network.NetworkServiceImpl networkService) {
-                                    networkService.OnServerFired(payload.channelName(), "", args);
-                                } else {
-                                    LOGGER.warn("No active NetworkService for clientbound payload {}", payload.channelName());
-                                }
-                            }
-                        }
-                    });
-                });
+                (payload, context) -> context.enqueueWork(() -> handleEventPayload(payload, context)));
+        registrar.playBidirectional(
+                com.luatweaker.platform.network.LuaTweakerRpcPayload.TYPE,
+                com.luatweaker.platform.network.LuaTweakerRpcPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleRpcPayload(payload, context)));
+        registrar.playToServer(
+                com.luatweaker.platform.network.ContainerButtonPayload.TYPE,
+                com.luatweaker.platform.network.ContainerButtonPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleContainerButtonPayload(payload, context)));
     }
 
-    private static ILuaValue[] parseJsonToLua(ILuaEngine engine, String json) {
+    private static void handleContainerButtonPayload(
+            com.luatweaker.platform.network.ContainerButtonPayload payload,
+            net.neoforged.neoforge.network.handling.IPayloadContext context) {
+        if (context.player() instanceof net.minecraft.server.level.ServerPlayer player) {
+            net.minecraft.world.level.Level level = player.level();
+            net.minecraft.core.BlockPos pos = payload.pos();
+            if (level.hasChunkAt(pos)) {
+                net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
+                var handler = com.luatweaker.platform.container.CustomContainerRegistry.BUTTON_HANDLERS.get(state.getBlock());
+                if (handler != null) {
+                    try {
+                        java.util.Map<String, Object> posMap = java.util.Map.of(
+                                "X", pos.getX(), "Y", pos.getY(), "Z", pos.getZ());
+                        handler.accept(posMap, payload.buttonId());
+                    } catch (Exception e) {
+                        com.luatweaker.api.log.LuaTweakerLog.get().error(
+                                com.luatweaker.api.log.LogStage.SYSTEM,
+                                "Failed container button handler for " + payload.buttonId() + ": " + e.getMessage());
+                    }
+                }
+            }
+        }
+    }
+
+    private static void handleEventPayload(com.luatweaker.platform.network.LuaTweakerPayload payload,
+                                           net.neoforged.neoforge.network.handling.IPayloadContext context) {
+        if (!context.flow().isServerbound()) {
+            if ("LuaTweaker:SyncData".equals(payload.channelName())) {
+                handleClientSyncData(payload.dataJson());
+                return;
+            }
+            if ("LuaTweaker:OpenScreen".equals(payload.channelName())) {
+                handleClientOpenScreen(payload.dataJson());
+                return;
+            }
+            if ("LuaTweaker:CloseScreen".equals(payload.channelName())) {
+                com.luatweaker.api.pal.Platform.getClient().closeScreen();
+                return;
+            }
+        }
+
+        ILuaEngine engine = activeEngine;
+        if (engine == null) {
+            return;
+        }
+        ILuaValue[] args;
         try {
-            com.google.gson.JsonArray array = com.google.gson.JsonParser.parseString(json).getAsJsonArray();
-            ILuaValue[] result = new ILuaValue[array.size()];
-            for (int i = 0; i < array.size(); i++) {
-                result[i] = parseElement(engine, array.get(i));
+            args = com.luatweaker.network.NetworkPayloadCodec.decodeArgs(engine, payload.dataJson());
+        } catch (RuntimeException e) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "[Network] Dropped RemoteEvent payload '" + payload.channelName() + "': " + e.getMessage());
+            return;
+        }
+        if (context.flow().isServerbound()) {
+            String playerUuid = context.player() != null ? context.player().getUUID().toString() : "";
+            com.luatweaker.network.NetworkServiceImpl ns = serverNetworkService;
+            if (ns != null) {
+                ns.OnClientFired(payload.channelName(), playerUuid, args);
+            } else {
+                LOGGER.warn("serverNetworkService is null when handling serverbound payload {}",
+                        payload.channelName());
             }
-            return result;
-        } catch (Exception e) {
-            return new ILuaValue[0];
+        } else {
+            // Clientbound: the OnClientEvent listeners are connected on the network service of
+            // the CURRENTLY ACTIVE engine (where the mods loaded), not on the client setup engine
+            // which never loads mods.
+            Object ns = com.luatweaker.core.service.LuaServiceRegistry.get("NetworkServiceImpl");
+            if (ns instanceof com.luatweaker.network.NetworkServiceImpl networkService) {
+                networkService.OnServerFired(payload.channelName(), "", args);
+            } else {
+                LOGGER.warn("No active NetworkService for clientbound payload {}", payload.channelName());
+            }
         }
     }
 
-    private static ILuaValue parseElement(ILuaEngine engine, com.google.gson.JsonElement el) {
-        if (el == null || el.isJsonNull())
-            return engine.nilValue();
-        if (el.isJsonPrimitive()) {
-            com.google.gson.JsonPrimitive p = el.getAsJsonPrimitive();
-            if (p.isBoolean())
-                return engine.wrapBoolean(p.getAsBoolean());
-            if (p.isNumber())
-                return engine.wrapNumber(p.getAsDouble());
-            return engine.wrapString(p.getAsString());
-        }
-        if (el.isJsonObject()) {
-            ILuaTable table = engine.createTable();
-            com.google.gson.JsonObject obj = el.getAsJsonObject();
-            for (String key : obj.keySet()) {
-                table.rawset(key, parseElement(engine, obj.get(key)));
+    private static void handleClientSyncData(String dataJson) {
+        com.luatweaker.api.pal.Platform.getClient().handleClientSyncData(dataJson);
+    }
+
+    private static void handleClientOpenScreen(String dataJson) {
+        try {
+            com.google.gson.JsonObject obj = com.google.gson.JsonParser.parseString(dataJson).getAsJsonObject();
+            String screenId = obj.get("id").getAsString();
+            String title = obj.has("title") ? obj.get("title").getAsString() : "";
+            Object gs = com.luatweaker.core.service.LuaServiceRegistry.get("GuiService");
+            if (gs instanceof com.luatweaker.api.client.IGuiService guiService) {
+                guiService.openScreen(screenId, title, false);
+            } else {
+                com.luatweaker.api.pal.Platform.getClient().openScreen(screenId, title, null, activeEngine, false);
             }
-            return table;
+        } catch (Exception e) {
+            LOGGER.error("Failed to open canvas screen: {}", e.getMessage());
         }
-        if (el.isJsonArray()) {
-            ILuaTable table = engine.createTable();
-            com.google.gson.JsonArray arr = el.getAsJsonArray();
-            for (int i = 0; i < arr.size(); i++) {
-                table.rawset(i + 1, parseElement(engine, arr.get(i)));
+    }
+
+    private static void handleRpcPayload(com.luatweaker.platform.network.LuaTweakerRpcPayload payload,
+                                         net.neoforged.neoforge.network.handling.IPayloadContext context) {
+        boolean serverbound = context.flow().isServerbound();
+        String phase = payload.phase();
+        if (com.luatweaker.api.network.RpcPhase.INVOKE.equals(phase)) {
+            String playerUuid = serverbound && context.player() != null
+                    ? context.player().getUUID().toString() : "";
+            com.luatweaker.network.NetworkServiceImpl ns = rpcService(serverbound);
+            if (ns == null) {
+                LOGGER.warn("No NetworkService to handle RemoteFunction invoke '{}'", payload.functionName());
+                return;
             }
-            return table;
+            ns.OnRpcInvoke(payload.requestId(), payload.functionName(), playerUuid, payload.dataJson());
+            return;
         }
-        return engine.nilValue();
+        if (com.luatweaker.api.network.RpcPhase.RESULT.equals(phase)) {
+            com.luatweaker.network.NetworkServiceImpl ns = rpcService(serverbound);
+            if (ns == null) {
+                LOGGER.warn("No NetworkService to handle RemoteFunction response '{}'", payload.requestId());
+                return;
+            }
+            ns.OnRpcResult(payload.requestId(), payload.dataJson(), payload.error());
+            return;
+        }
+        com.luatweaker.api.log.LuaTweakerLog.get().error(
+                com.luatweaker.api.log.LogStage.SYSTEM,
+                "[Network] Dropped RemoteFunction packet with unknown phase '" + phase + "'");
+    }
+
+    /**
+     * Serverbound packets belong to the server engine; clientbound ones belong to the engine
+     * that actually loaded the mods (the active engine), never to a bare client setup engine.
+     */
+    private static com.luatweaker.network.NetworkServiceImpl rpcService(boolean serverbound) {
+        if (serverbound) {
+            return serverNetworkService;
+        }
+        Object ns = com.luatweaker.core.service.LuaServiceRegistry.get("NetworkServiceImpl");
+        return ns instanceof com.luatweaker.network.NetworkServiceImpl networkService ? networkService : null;
     }
 
     private void generateStubs() {
@@ -608,6 +714,27 @@ public class LuaTweakerMod {
         stubGen.registerClassStub(com.luatweaker.api.entity.IEntity.class, "Entity");
         stubGen.registerClassStub(com.luatweaker.api.entity.IPlayer.class, "Player");
         stubGen.registerClassStub(com.luatweaker.api.command.ICommandSender.class, "CommandSender");
+        stubGen.registerClassStub(com.luatweaker.api.content.IBlockRenderer.class, "BlockRenderer");
+
+        // Out-of-tree Java plugins contribute their @LuaDoc interfaces here so
+        // external APIs get the same EmmyLua autocomplete as built-in services.
+        try {
+            for (com.luatweaker.api.plugin.ILuaTweakerPlugin plugin
+                    : com.luatweaker.core.plugin.LuaTweakerPluginLoader.discoverPlugins()) {
+                for (java.util.Map.Entry<String, Class<?>> stub : plugin.stubServices().entrySet()) {
+                    if (stub.getKey() != null && stub.getValue() != null) {
+                        try {
+                            stubGen.registerService(stub.getKey(), stub.getValue());
+                        } catch (Exception inner) {
+                            LOGGER.warn("Plugin '{}' stub '{}' failed: {}",
+                                plugin.pluginId(), stub.getKey(), inner.getMessage());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.warn("Java plugin stub discovery failed: {}", e.getMessage());
+        }
 
         // Legacy Mod Service Names (Compatibility)
         stubGen.registerService("Recipes", com.luatweaker.api.recipe.IRecipeManagerService.class);

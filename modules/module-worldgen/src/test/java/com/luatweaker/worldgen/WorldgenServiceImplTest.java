@@ -301,6 +301,176 @@ public class WorldgenServiceImplTest {
     }
 
     @Test
+    void testAddFeature_RejectsDuplicateId() {
+        FakeLuaTable spec = new FakeLuaTable()
+                .put("block", "mymod:ruby_ore")
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"));
+        service.addFeature("mymod:ruby_vein", spec);
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+            () -> service.addFeature("mymod:ruby_vein", spec));
+        assertTrue(error.getMessage().contains("already registered"), error.getMessage());
+    }
+
+    // ---- mixed veins (GTNH-style multi-ore blobs) ----
+
+    private FakeLuaTable magnetiteVeinSpec() {
+        FakeLuaTable magnetite = new FakeLuaTable().put("block", "mymod:magnetite_ore").put("weight", 70);
+        FakeLuaTable vanadium = new FakeLuaTable().put("block", "mymod:vanadium_magnetite_ore").put("weight", 20);
+        FakeLuaTable gold = new FakeLuaTable().put("block", "mymod:gold_ore").put("weight", 10);
+        return new FakeLuaTable()
+                .put("ores", FakeLuaTable.listOf(magnetite, vanadium, gold))
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))
+                .put("size", 32)
+                .put("count", 4);
+    }
+
+    @Test
+    void testAddMixedVein_EmitsVeinFeatureFiles() {
+        service.addMixedVein("mymod:magnetite_vein", magnetiteVeinSpec());
+
+        assertEquals(1, service.getPendingMixedVeins().size());
+        Map<String, String> files = service.buildMixedVeinFiles();
+        assertEquals(3, files.size());
+
+        String configured = files.get("luatweaker/worldgen/configured_feature/mymod_magnetite_vein.json");
+        assertNotNull(configured);
+        assertTrue(configured.contains("\"type\":\"luatweaker:mixed_vein\""), configured);
+        assertTrue(configured.contains("\"size\":32"), configured);
+        assertTrue(configured.contains("\"discard_chance_on_air_exposure\":0.0"), configured);
+        assertTrue(configured.contains("\"Name\":\"mymod:magnetite_ore\""), configured);
+        assertTrue(configured.contains("\"Name\":\"mymod:vanadium_magnetite_ore\""), configured);
+        assertTrue(configured.contains("\"Name\":\"mymod:gold_ore\""), configured);
+        assertTrue(configured.contains("\"weight\":70"), configured);
+        assertTrue(configured.contains("\"weight\":20"), configured);
+        assertTrue(configured.contains("\"weight\":10"), configured);
+        assertTrue(configured.contains("minecraft:stone_ore_replaceables"), configured);
+        assertTrue(configured.contains("minecraft:deepslate_ore_replaceables"), configured);
+
+        String placed = files.get("luatweaker/worldgen/placed_feature/mymod_magnetite_vein.json");
+        assertNotNull(placed);
+        assertTrue(placed.contains("\"feature\":\"luatweaker:mymod_magnetite_vein\""), placed);
+        assertTrue(placed.contains("\"count\":4"), placed);
+        assertTrue(placed.contains("\"type\":\"minecraft:uniform\""), placed);
+
+        String modifier = files.get("luatweaker/neoforge/biome_modifier/add_mymod_magnetite_vein.json");
+        assertNotNull(modifier);
+        assertTrue(modifier.contains("\"type\":\"neoforge:add_features\""), modifier);
+        assertTrue(modifier.contains("\"features\":[\"luatweaker:mymod_magnetite_vein\"]"), modifier);
+
+        assertEquals(1, service.getModifications().get("mixedVeins"));
+    }
+
+    @Test
+    void testAddMixedVein_SingleOreAndRarityMode() {
+        FakeLuaTable spec = new FakeLuaTable()
+                .put("ores", new FakeLuaTable().put("block", "mymod:ruby_ore"))
+                .put("biome", "minecraft:desert")
+                .put("rarity", 16)
+                .put("replace", "nether");
+        service.addMixedVein("mymod:ruby_vein", spec);
+
+        Map<String, String> files = service.buildMixedVeinFiles();
+        String configured = files.get("luatweaker/worldgen/configured_feature/mymod_ruby_vein.json");
+        assertTrue(configured.contains("\"weight\":1"), configured);
+        assertTrue(configured.contains("\"block\":\"minecraft:netherrack\""), configured);
+        String placed = files.get("luatweaker/worldgen/placed_feature/mymod_ruby_vein.json");
+        assertTrue(placed.contains("\"type\":\"minecraft:rarity_filter\""), placed);
+        assertTrue(placed.contains("\"chance\":16"), placed);
+        assertFalse(placed.contains("\"count\""), placed);
+    }
+
+    @Test
+    void testAddMixedVein_RejectsBadInput() {
+        assertThrows(IllegalArgumentException.class, () -> service.addMixedVein("mymod:a",
+            new FakeLuaTable().put("biomes", FakeLuaTable.listOf("minecraft:plains"))));
+        assertThrows(IllegalArgumentException.class, () -> service.addMixedVein("mymod:b",
+            new FakeLuaTable().put("ores", FakeLuaTable.listOf())
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))));
+        assertThrows(IllegalArgumentException.class, () -> service.addMixedVein("mymod:c",
+            new FakeLuaTable()
+                .put("ores", FakeLuaTable.listOf(new FakeLuaTable().put("weight", 5)))
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))));
+        assertThrows(IllegalArgumentException.class, () -> service.addMixedVein("mymod:d",
+            new FakeLuaTable()
+                .put("ores", FakeLuaTable.listOf(new FakeLuaTable().put("block", "mymod:x").put("weight", 0)))
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))));
+        assertThrows(IllegalArgumentException.class, () -> service.addMixedVein("mymod:e",
+            magnetiteVeinSpec().put("size", 257)));
+        assertThrows(IllegalArgumentException.class, () -> service.addMixedVein("mymod:f",
+            magnetiteVeinSpec().put("count", 4).put("rarity", 9)));
+        assertThrows(IllegalArgumentException.class, () -> service.addMixedVein("mymod:g",
+            magnetiteVeinSpec().put("replace", "moon")));
+        assertThrows(IllegalArgumentException.class, () -> service.addMixedVein("UPPER:id", magnetiteVeinSpec()));
+
+        service.addMixedVein("mymod:once", magnetiteVeinSpec());
+        assertThrows(IllegalArgumentException.class, () ->
+            service.addMixedVein("mymod:once", magnetiteVeinSpec()));
+        assertThrows(IllegalArgumentException.class, () ->
+            service.addFeature("mymod:once", new FakeLuaTable()
+                .put("block", "mymod:ruby_ore")
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))));
+        assertThrows(IllegalArgumentException.class, () ->
+            service.addMixedVein("mymod:other", magnetiteVeinSpec().put("biomes", FakeLuaTable.listOf())));
+    }
+
+    @Test
+    void testClearAll_ClearsMixedVeins() {
+        service.addMixedVein("mymod:vein", magnetiteVeinSpec());
+        service.clearAll();
+        assertTrue(service.getPendingMixedVeins().isEmpty());
+        assertTrue(service.buildMixedVeinFiles().isEmpty());
+        assertEquals(0, service.getModifications().get("mixedVeins"));
+    }
+
+    // ---- raw passthrough ----
+
+    private static final String RAW_TREE =
+        "{\"type\":\"minecraft:tree\",\"config\":{\"force_dirt\":false,\"minimum_size\":{\"type\":\"minecraft:two_layers_feature_size\"}}}";
+
+    @Test
+    void testAddRawConfiguredFeature_EmitsVerbatimFile() {
+        service.addRawConfiguredFeature("mymod:crystal_tree", RAW_TREE);
+
+        Map<String, String> files = service.buildRawFiles();
+        assertEquals(RAW_TREE, files.get("luatweaker/worldgen/configured_feature/mymod_crystal_tree.json"));
+        assertEquals(1, service.getModifications().get("rawConfigured"));
+    }
+
+    @Test
+    void testAddRawPlacedFeature_RequiresFeatureReference() {
+        service.addRawPlacedFeature("mymod:crystal_patch",
+            "{\"feature\":\"luatweaker:mymod_crystal_tree\",\"placement\":[{\"type\":\"minecraft:biome\"}]}");
+        assertEquals(1, service.buildRawFiles().size());
+        assertEquals(1, service.getModifications().get("rawPlaced"));
+
+        assertThrows(IllegalArgumentException.class, () ->
+            service.addRawPlacedFeature("mymod:bad", "{\"placement\":[]}"));
+        assertThrows(IllegalArgumentException.class, () ->
+            service.addRawPlacedFeature("mymod:broken", "{not json"));
+    }
+
+    @Test
+    void testAddRawConfiguredFeature_RejectsUnknownTypeAndDuplicates() {
+        assertThrows(IllegalArgumentException.class, () ->
+            service.addRawConfiguredFeature("mymod:weird", "{\"type\":\"minecraft:not_a_feature\"}"));
+        assertThrows(IllegalArgumentException.class, () ->
+            service.addRawConfiguredFeature("UPPER:id", RAW_TREE));
+
+        service.addRawConfiguredFeature("mymod:once", RAW_TREE);
+        assertThrows(IllegalArgumentException.class, () ->
+            service.addRawConfiguredFeature("mymod:once", RAW_TREE));
+        assertThrows(IllegalArgumentException.class, () ->
+            service.addFeature("mymod:once", new FakeLuaTable()
+                .put("block", "mymod:ruby_ore")
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))));
+
+        service.clearAll();
+        assertTrue(service.getPendingRawConfigured().isEmpty());
+        assertTrue(service.getPendingRawPlaced().isEmpty());
+        assertTrue(service.buildRawFiles().isEmpty());
+    }
+
+    @Test
     void testAddFeature_NetherReplace_UsesNetherrack() {
         FakeLuaTable spec = new FakeLuaTable()
                 .put("block", "mymod:nether_ruby")
@@ -328,6 +498,135 @@ public class WorldgenServiceImplTest {
                 .put("block", "mymod:ruby_ore")
                 .put("biomes", "minecraft:plains");
         assertThrows(IllegalArgumentException.class, () -> service.addFeature("", spec));
+    }
+
+    // ---- full distribution primitives (vanilla ore patterns) ----
+
+    @Test
+    void testAddFeature_DefaultsKeepLegacyShapes() {
+        FakeLuaTable spec = new FakeLuaTable()
+                .put("block", "mymod:ruby_ore")
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"));
+        service.addFeature("mymod:ruby_vein", spec);
+
+        Map<String, String> files = service.buildBiomeModifierFiles();
+        String configured = files.get("luatweaker/worldgen/configured_feature/mymod_ruby_vein.json");
+        assertTrue(configured.contains("\"type\":\"minecraft:ore\""), configured);
+        assertTrue(configured.contains("\"discard_chance_on_air_exposure\":0.0"), configured);
+
+        String placed = files.get("luatweaker/worldgen/placed_feature/mymod_ruby_vein.json");
+        assertTrue(placed.contains("\"type\":\"minecraft:count\""), placed);
+        assertTrue(placed.contains("\"type\":\"minecraft:uniform\""), placed);
+        assertFalse(placed.contains("rarity_filter"), placed);
+        assertFalse(placed.contains("scattered_ore"), placed + configured);
+        assertFalse(placed.contains("\"inner\""), placed);
+    }
+
+    @Test
+    void testAddFeature_FullDistribution_EmitsVanillaShapes() {
+        // Mirrors vanilla ore_diamond_large (rarity + trapezoid + above_bottom
+        // anchors + discard) but with the scattered ancient-debris vein type.
+        FakeLuaTable spec = new FakeLuaTable()
+                .put("block", "mymod:deep_ruby")
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))
+                .put("heightType", "trapezoid")
+                .put("anchorMin", "above_bottom")
+                .put("anchorMax", "absolute")
+                .put("rarity", 9)
+                .put("discardChance", 0.7)
+                .put("scattered", true)
+                .put("size", 12)
+                .put("minHeight", -80)
+                .put("maxHeight", 80);
+        service.addFeature("mymod:deep_vein", spec);
+
+        Map<String, String> files = service.buildBiomeModifierFiles();
+        String configured = files.get("luatweaker/worldgen/configured_feature/mymod_deep_vein.json");
+        assertNotNull(configured);
+        assertTrue(configured.contains("\"type\":\"minecraft:scattered_ore\""), configured);
+        assertTrue(configured.contains("\"discard_chance_on_air_exposure\":0.7"), configured);
+        assertTrue(configured.contains("\"size\":12"), configured);
+
+        String placed = files.get("luatweaker/worldgen/placed_feature/mymod_deep_vein.json");
+        assertNotNull(placed);
+        assertTrue(placed.contains("\"type\":\"minecraft:rarity_filter\""), placed);
+        assertTrue(placed.contains("\"chance\":9"), placed);
+        assertFalse(placed.contains("\"count\""), placed);
+        assertTrue(placed.contains("\"type\":\"minecraft:trapezoid\""), placed);
+        assertTrue(placed.contains("\"above_bottom\":-80"), placed);
+        assertTrue(placed.contains("\"absolute\":80"), placed);
+        assertFalse(placed.contains("\"inner\""), placed);
+    }
+
+    @Test
+    void testAddFeature_BiasedHeight_EmitsInner() {
+        // Mirrors vanilla spring_lava (very_biased_to_bottom + inner 8).
+        FakeLuaTable spec = new FakeLuaTable()
+                .put("block", "mymod:ruby_ore")
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))
+                .put("heightType", "very_biased_to_bottom");
+        service.addFeature("mymod:biased_vein", spec);
+
+        String placed = service.buildBiomeModifierFiles()
+                .get("luatweaker/worldgen/placed_feature/mymod_biased_vein.json");
+        assertNotNull(placed);
+        assertTrue(placed.contains("\"type\":\"minecraft:very_biased_to_bottom\""), placed);
+        assertTrue(placed.contains("\"inner\":8"), placed);
+
+        service.clearAll();
+        FakeLuaTable custom = new FakeLuaTable()
+                .put("block", "mymod:ruby_ore")
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))
+                .put("heightType", "biased_to_bottom")
+                .put("inner", 4);
+        service.addFeature("mymod:biased_vein2", custom);
+        String placed2 = service.buildBiomeModifierFiles()
+                .get("luatweaker/worldgen/placed_feature/mymod_biased_vein2.json");
+        assertTrue(placed2.contains("\"inner\":4"), placed2);
+    }
+
+    @Test
+    void testAddFeature_RejectsMutuallyExclusiveCountAndRarity() {
+        FakeLuaTable spec = new FakeLuaTable()
+                .put("block", "mymod:ruby_ore")
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))
+                .put("count", 10)
+                .put("rarity", 9);
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+            () -> service.addFeature("mymod:ruby_vein", spec));
+        assertTrue(error.getMessage().contains("mutually exclusive"), error.getMessage());
+    }
+
+    @Test
+    void testAddFeature_RejectsBadDistributionValues() {
+        assertThrows(IllegalArgumentException.class, () -> service.addFeature("mymod:a",
+            new FakeLuaTable().put("block", "mymod:ruby_ore")
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))
+                .put("heightType", "triangle")));
+        assertThrows(IllegalArgumentException.class, () -> service.addFeature("mymod:b",
+            new FakeLuaTable().put("block", "mymod:ruby_ore")
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))
+                .put("anchorMin", "sea_level")));
+        assertThrows(IllegalArgumentException.class, () -> service.addFeature("mymod:c",
+            new FakeLuaTable().put("block", "mymod:ruby_ore")
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))
+                .put("rarity", 0)));
+        assertThrows(IllegalArgumentException.class, () -> service.addFeature("mymod:d",
+            new FakeLuaTable().put("block", "mymod:ruby_ore")
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))
+                .put("discardChance", 1.5)));
+        assertThrows(IllegalArgumentException.class, () -> service.addFeature("mymod:e",
+            new FakeLuaTable().put("block", "mymod:ruby_ore")
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))
+                .put("discardChance", Double.NaN)));
+        assertThrows(IllegalArgumentException.class, () -> service.addFeature("mymod:f",
+            new FakeLuaTable().put("block", "mymod:ruby_ore")
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))
+                .put("scattered", "yes")));
+        assertThrows(IllegalArgumentException.class, () -> service.addFeature("mymod:g",
+            new FakeLuaTable().put("block", "mymod:ruby_ore")
+                .put("biomes", FakeLuaTable.listOf("minecraft:plains"))
+                .put("inner", -1)));
     }
 
     @Test
@@ -557,5 +856,39 @@ public class WorldgenServiceImplTest {
         assertTrue(service.buildBiomeModifierFiles().isEmpty());
         assertEquals(List.of("mymod:ruby_ore_upper"), service.resolveRemovalFeatures("mymod:ruby_ore"));
         assertEquals(Optional.of("#mymod:is_deep"), service.resolveDimensionBiomeTag("mymod:deep"));
+    }
+
+    // ---- query helpers ----
+
+    @Test
+    void testGetRemovalFeatures_ReturnsVanillaDefaults() {
+        List<String> features = service.getRemovalFeatures("minecraft:coal_ore");
+        assertTrue(features.contains("minecraft:ore_coal_upper"), features.toString());
+        assertTrue(features.contains("minecraft:ore_coal_lower"), features.toString());
+    }
+
+    @Test
+    void testGetRemovalFeatures_PrefersOverridesAndEmptyForUnknown() {
+        service.registerRemovalFeatures("mymod:ruby_ore", new String[]{"mymod:ruby_ore_upper"});
+        assertEquals(List.of("mymod:ruby_ore_upper"), service.getRemovalFeatures("mymod:ruby_ore"));
+        assertTrue(service.getRemovalFeatures("mymod:unknown_ore").isEmpty());
+    }
+
+    @Test
+    void testGetRemovalFeatures_RejectsInvalidId() {
+        assertThrows(IllegalArgumentException.class, () -> service.getRemovalFeatures("Not A Resource!"));
+    }
+
+    @Test
+    void testGetDimensionBiomeTag_ReturnsDefaultsAndOverrides() {
+        assertEquals("#minecraft:is_overworld", service.getDimensionBiomeTag("minecraft:overworld"));
+        service.registerDimensionBiomeTag("mymod:deep", "#mymod:is_deep");
+        assertEquals("#mymod:is_deep", service.getDimensionBiomeTag("mymod:deep"));
+        assertNull(service.getDimensionBiomeTag("mymod:unknown_dim"));
+    }
+
+    @Test
+    void testGetDimensionBiomeTag_RejectsInvalidId() {
+        assertThrows(IllegalArgumentException.class, () -> service.getDimensionBiomeTag("Bad Id!"));
     }
 }

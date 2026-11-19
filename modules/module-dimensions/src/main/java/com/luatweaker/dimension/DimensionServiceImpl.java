@@ -118,6 +118,10 @@ public class DimensionServiceImpl implements IDimensionService {
             return false;
         }
         teleportTo(player, target);
+        com.luatweaker.core.service.AppliedEventHelper.fire("PortalUsed", java.util.Map.of(
+            "blockId", blockId,
+            "targetDimension", target,
+            "playerName", player.getName()));
         return true;
     }
 
@@ -296,9 +300,27 @@ public class DimensionServiceImpl implements IDimensionService {
         return configs.get(dimensionId);
     }
 
-    /** Returns all registered dimension ids. */
-    public List<String> getDimensionIds() {
-        return List.copyOf(configs.keySet());
+    /** Returns all registered dimension ids, sorted for deterministic order. */
+    @Override
+    public @NotNull List<String> getDimensionIds() {
+        List<String> ids = new ArrayList<>(configs.keySet());
+        ids.sort(String::compareTo);
+        return List.copyOf(ids);
+    }
+
+    @Override
+    public @Nullable String getEntityDimension(@NotNull IEntity entity) {
+        if (entity == null) {
+            throw new IllegalArgumentException("getEntityDimension requires a valid entity");
+        }
+        Object raw = entity.getRawEntity();
+        if (raw == null) {
+            throw new IllegalArgumentException("getEntityDimension requires a valid entity");
+        }
+        if (!Platform.isInitialized()) {
+            throw new IllegalStateException("Platform is not initialized; cannot query entity dimension (unit-test environment?)");
+        }
+        return Platform.getDimension().getEntityDimensionId(raw);
     }
 
     /** Returns the terrain generator Lua function for the dimension, or null. */

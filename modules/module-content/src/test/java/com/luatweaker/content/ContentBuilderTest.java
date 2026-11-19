@@ -58,6 +58,68 @@ public class ContentBuilderTest {
     }
 
     @Test
+    public void createStairsRecordsShapeAndBaseBlock() {
+        engine.executeStringOrThrow(
+                "startup:createStairs('luatweaker:marble_step', 'luatweaker:marble_block')",
+                "stairs_shape");
+
+        IBlockBuilder stairs = contentService.getRegisteredBlocks().stream()
+                .filter(b -> "luatweaker:marble_step".equals(b.getId()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("createStairs must register the block"));
+        assertEquals("STAIRS", stairs.getEffectiveShape(),
+                "an explicit createStairs id must not need a _stairs suffix");
+        assertEquals("luatweaker:marble_block", stairs.getBaseBlockId(),
+                "the base block must reach the registrar/assets, not be dropped");
+    }
+
+    @Test
+    public void shapeConventionStillAppliesWithoutExplicitShape() {
+        contentService.createBlock("luatweaker:rune_wall", b -> { });
+        IBlockBuilder wall = contentService.getRegisteredBlocks().stream()
+                .filter(b -> "luatweaker:rune_wall".equals(b.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("WALL", wall.getEffectiveShape(),
+                "legacy _wall ids must keep their shape");
+        assertEquals("BLOCK", contentService.createBlock("luatweaker:plain", b -> { }).getEffectiveShape());
+    }
+
+    @Test
+    public void createStairsWithoutBaseBlockLeavesTheConventionInCharge() {
+        engine.executeStringOrThrow("startup:createStairs('luatweaker:ruby_stairs')", "stairs_no_base");
+        IBlockBuilder stairs = contentService.getRegisteredBlocks().stream()
+                .filter(b -> "luatweaker:ruby_stairs".equals(b.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertNull(stairs.getBaseBlockId(),
+                "omitting the base must fall back to <id>_block textures, not repeat the stair id");
+    }
+
+    @Test
+    public void createArmorMaterialKeepsTheDeclaredStats() {
+        engine.executeStringOrThrow(
+                "startup:createArmorMaterial('test_ruby', function(mat)\n" +
+                "    mat:layer('luatweaker:test_ruby')\n" +
+                "       :equipSound('minecraft:item.armor.equip_iron')\n" +
+                "       :defense('helmet', 5)\n" +
+                "       :toughness(4.5)\n" +
+                "       :knockbackResistance(0.2)\n" +
+                "       :enchantability(30)\n" +
+                "end)",
+                "armor_material");
+
+        var definition = contentService.getArmorMaterial("test_ruby");
+        assertNotNull(definition, "createArmorMaterial must register the definition");
+        assertEquals(5, definition.getDefense("helmet"));
+        assertEquals(4.5f, definition.getToughness());
+        assertEquals(0.2f, definition.getKnockbackResistance());
+        assertEquals(30, definition.getEnchantability());
+        assertEquals("luatweaker:test_ruby", definition.getLayer());
+        assertEquals("minecraft:item.armor.equip_iron", definition.getEquipSound());
+    }
+
+    @Test
     public void testCreateItemFromLua() throws IOException {
         String script = """
             startup:createItem("custom_ruby", function(item)
@@ -300,6 +362,40 @@ public class ContentBuilderTest {
     }
 
     @Test
+    public void testBlockBoxesFacingAndOnRenderFromLua() throws IOException {
+        String script = """
+            local Content = require("LuaTweaker.Content")
+            local altar = Content.NewBlock("altar_block")
+                :Facing("horizontal")
+                :Box(0, 0, 0, 16, 4, 16)
+                :Box(4, 4, 4, 12, 12, 12)
+                :OnRender(function(renderer, data)
+                    -- render callback
+                end)
+                :Register()
+        """;
+        File file = createTempScript(script);
+        engine.executeScript(file, "TEST");
+
+        IBlockBuilder builder = null;
+        for (IBlockBuilder b : contentService.getRegisteredBlocks()) {
+            if ("altar_block".equals(b.getId())) {
+                builder = b;
+                break;
+            }
+        }
+        assertNotNull(builder, "altar_block must be registered");
+        assertEquals("HORIZONTAL", builder.getFacing());
+        assertEquals(2, builder.getBoxes().size());
+        assertEquals(0.0, builder.getBoxes().get(0).minX());
+        assertEquals(16.0, builder.getBoxes().get(0).maxX());
+        assertEquals(4.0, builder.getBoxes().get(0).maxY());
+        assertEquals(4.0, builder.getBoxes().get(1).minX());
+        assertEquals(12.0, builder.getBoxes().get(1).maxX());
+        assertNotNull(builder.getRenderHandler(), "render handler must be stored");
+    }
+
+    @Test
     public void testItemOnUseOnBlockFromLua() throws IOException {
         String script = """
             local Content = require("LuaTweaker.Content")
@@ -385,5 +481,72 @@ public class ContentBuilderTest {
         assertTrue(builder.hasSpawnEgg());
         assertEquals(0x00FF00, builder.getPrimaryColor());
         assertEquals(0x0000FF, builder.getSecondaryColor());
+    }
+
+    @Test
+    public void testItemAnimationAndLifecycleCallbacks() throws IOException {
+        String script = """
+            startup:createItem("magic_staff", function(item)
+                item:useAnimation("BOW")
+                    :useDuration(72000)
+                    :onUseTick(function(player, stack, ticks) end)
+                    :onReleaseUsing(function(player, stack, timeLeft) end)
+                    :onFinishUsing(function(player, stack) end)
+                    :onHurtEnemy(function(target, attacker, stack) end)
+                    :onMineBlock(function(player, stack, x, y, z) end)
+                    :onSwing(function(player, stack) end)
+            end)
+        """;
+        File file = createTempScript(script);
+        engine.executeScript(file, "TEST");
+
+        IItemBuilder builder = contentService.getRegisteredItems().stream()
+                .filter(i -> i.getId().equals("magic_staff"))
+                .findFirst().orElse(null);
+        assertNotNull(builder);
+        assertEquals("BOW", builder.getUseAnimation());
+        assertEquals(72000, builder.getUseDuration());
+        assertNotNull(builder.getOnUseTickHandler());
+        assertNotNull(builder.getOnReleaseUsingHandler());
+        assertNotNull(builder.getOnFinishUsingHandler());
+        assertNotNull(builder.getOnHurtEnemyHandler());
+        assertNotNull(builder.getOnMineBlockHandler());
+        assertNotNull(builder.getOnSwingHandler());
+    }
+
+    @Test
+    public void testBlockButtonsLabelsAndCallbacks() throws IOException {
+        String script = """
+            startup:createBlock("advanced_furnace", function(block)
+                block:container(3, 3)
+                     :button("power_btn", 10, 20, 30, 15, "Power")
+                     :label(5, 10, "Heat: {Temp}", 0xFF0000)
+                     :onButtonClick(function(pos, btnId) end)
+                     :onNeighborChanged(function(pos, nPos) end)
+            end)
+        """;
+        File file = createTempScript(script);
+        engine.executeScript(file, "TEST");
+
+        IBlockBuilder builder = contentService.getRegisteredBlocks().stream()
+                .filter(b -> b.getId().equals("advanced_furnace"))
+                .findFirst().orElse(null);
+        assertNotNull(builder);
+        assertEquals(1, builder.getButtons().size());
+        assertEquals("power_btn", builder.getButtons().get(0).id());
+        assertEquals(10, builder.getButtons().get(0).x());
+        assertEquals(20, builder.getButtons().get(0).y());
+        assertEquals(30, builder.getButtons().get(0).width());
+        assertEquals(15, builder.getButtons().get(0).height());
+        assertEquals("Power", builder.getButtons().get(0).label());
+
+        assertEquals(1, builder.getLabels().size());
+        assertEquals(5, builder.getLabels().get(0).x());
+        assertEquals(10, builder.getLabels().get(0).y());
+        assertEquals("Heat: {Temp}", builder.getLabels().get(0).textOrVar());
+        assertEquals(0xFF0000, builder.getLabels().get(0).color());
+
+        assertNotNull(builder.getButtonClickHandler());
+        assertNotNull(builder.getNeighborChangedHandler());
     }
 }

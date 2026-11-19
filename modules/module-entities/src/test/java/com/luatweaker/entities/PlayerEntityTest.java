@@ -24,6 +24,8 @@ public class PlayerEntityTest {
         final List<String> messages = new ArrayList<>();
         final List<String> actionBars = new ArrayList<>();
         final List<String> projectiles = new ArrayList<>();
+        final List<String> screens = new ArrayList<>();
+        final java.util.Map<String, Object> syncedData = new java.util.HashMap<>();
         float health = 20.0f;
         boolean sneaking = false;
 
@@ -47,6 +49,17 @@ public class PlayerEntityTest {
         @Override public void shootProjectile(String projectileType, double speed, double inaccuracy) {
             projectiles.add(projectileType + "@" + speed);
         }
+        @Override public void syncCustomData(String key, Object value) {
+            Object unwrapped = value;
+            if (value instanceof com.luatweaker.api.vm.ILuaValue lv) {
+                if (lv.isNumber()) unwrapped = lv.asDouble();
+                else if (lv.isString()) unwrapped = lv.asString();
+                else if (lv.isBoolean()) unwrapped = lv.asBoolean();
+            }
+            syncedData.put(key, unwrapped);
+        }
+        @Override public void openScreen(String screenId, String title) { screens.add("OPEN:" + screenId + ":" + title); }
+        @Override public void closeScreen() { screens.add("CLOSE"); }
     }
 
     @BeforeEach
@@ -102,5 +115,27 @@ public class PlayerEntityTest {
         engine.executeScript(file, "TEST");
 
         assertEquals(15.0f, mockPlayer.getHealth());
+    }
+
+    @Test
+    public void testPlayerScreenAndCustomDataFromLua() throws IOException {
+        var playerTable = EntitiesLuaBinding.createPlayerLuaTable(engine, mockPlayer);
+        engine.getGlobalEnvironment().rawset("player", playerTable);
+
+        String script = """
+            player:syncCustomData("mana", 100)
+            player:openScreen("quest_book", "Quests")
+            player:closeScreen()
+        """;
+        File file = File.createTempFile("test_player_screen", ".lua");
+        file.deleteOnExit();
+        Files.writeString(file.toPath(), script);
+
+        engine.executeScript(file, "TEST");
+
+        assertEquals(100, ((Number) mockPlayer.syncedData.get("mana")).intValue());
+        assertEquals(2, mockPlayer.screens.size());
+        assertEquals("OPEN:quest_book:Quests", mockPlayer.screens.get(0));
+        assertEquals("CLOSE", mockPlayer.screens.get(1));
     }
 }

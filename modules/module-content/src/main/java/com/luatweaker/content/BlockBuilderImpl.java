@@ -172,6 +172,21 @@ public class BlockBuilderImpl implements IBlockBuilder {
         return this;
     }
 
+    private String shape;
+    private String baseBlockId;
+
+    @Override
+    public IBlockBuilder shape(String shapeName) {
+        this.shape = shapeName != null ? shapeName.toUpperCase() : null;
+        return this;
+    }
+
+    @Override
+    public IBlockBuilder baseBlock(String baseBlockId) {
+        this.baseBlockId = baseBlockId != null && !baseBlockId.isBlank() ? baseBlockId : null;
+        return this;
+    }
+
     @Override
     public IBlockBuilder model(String modelPath) {
         this.model = modelPath;
@@ -362,6 +377,59 @@ public class BlockBuilderImpl implements IBlockBuilder {
     }
 
     private String displayName;
+    private final java.util.List<com.luatweaker.api.content.BoxSpec> boxes = new java.util.ArrayList<>();
+    private String facing = "NONE";
+    private BiConsumer<Object, Object> renderHandler;
+    private final java.util.List<com.luatweaker.api.content.MachineButtonSpec> buttons = new java.util.ArrayList<>();
+    private final java.util.List<com.luatweaker.api.content.MachineLabelSpec> labels = new java.util.ArrayList<>();
+    private BiConsumer<Object, String> buttonClickHandler;
+    private BiConsumer<Object, Object> neighborChangedHandler;
+
+    @Override
+    public IBlockBuilder box(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {
+        this.boxes.add(new com.luatweaker.api.content.BoxSpec(minX, minY, minZ, maxX, maxY, maxZ));
+        return this;
+    }
+
+    @Override
+    public IBlockBuilder facing(String facing) {
+        this.facing = facing != null ? facing.toUpperCase() : "NONE";
+        return this;
+    }
+
+    @Override
+    public IBlockBuilder onRender(BiConsumer<Object, Object> handler) {
+        this.renderHandler = handler;
+        return this;
+    }
+
+    @Override
+    public IBlockBuilder button(String id, int x, int y, int width, int height, String label) {
+        if (id != null && label != null) {
+            this.buttons.add(new com.luatweaker.api.content.MachineButtonSpec(id, x, y, width, height, label));
+        }
+        return this;
+    }
+
+    @Override
+    public IBlockBuilder label(int x, int y, String textOrVar, int color) {
+        if (textOrVar != null) {
+            this.labels.add(new com.luatweaker.api.content.MachineLabelSpec(x, y, textOrVar, color));
+        }
+        return this;
+    }
+
+    @Override
+    public IBlockBuilder onButtonClick(BiConsumer<Object, String> handler) {
+        this.buttonClickHandler = handler;
+        return this;
+    }
+
+    @Override
+    public IBlockBuilder onNeighborChanged(BiConsumer<Object, Object> handler) {
+        this.neighborChangedHandler = handler;
+        return this;
+    }
 
     @Override
     public IBlockBuilder displayName(String name) {
@@ -389,6 +457,8 @@ public class BlockBuilderImpl implements IBlockBuilder {
     @Override public boolean isLiquid() { return liquid; }
     @Override public String getOffsetType() { return offsetType; }
     @Override public Boolean getRedstoneConductor() { return redstoneConductor; }
+    @Override public String getShape() { return shape; }
+    @Override public String getBaseBlockId() { return baseBlockId; }
     @Override public String getModel() { return model; }
     @Override public String getTexture() { return texture; }
     @Override public java.util.List<String> getTags() { return tags; }
@@ -419,6 +489,13 @@ public class BlockBuilderImpl implements IBlockBuilder {
     @Override public boolean isConnectionState() { return connectionState; }
     @Override public java.util.function.BiConsumer<Object, Object> getTickHandler() { return tickHandler; }
     @Override public String getDisplayName() { return displayName; }
+    @Override public java.util.List<com.luatweaker.api.content.BoxSpec> getBoxes() { return java.util.List.copyOf(boxes); }
+    @Override public String getFacing() { return facing; }
+    @Override public BiConsumer<Object, Object> getRenderHandler() { return renderHandler; }
+    @Override public java.util.List<com.luatweaker.api.content.MachineButtonSpec> getButtons() { return java.util.List.copyOf(buttons); }
+    @Override public java.util.List<com.luatweaker.api.content.MachineLabelSpec> getLabels() { return java.util.List.copyOf(labels); }
+    @Override public BiConsumer<Object, String> getButtonClickHandler() { return buttonClickHandler; }
+    @Override public BiConsumer<Object, Object> getNeighborChangedHandler() { return neighborChangedHandler; }
 }
 
 

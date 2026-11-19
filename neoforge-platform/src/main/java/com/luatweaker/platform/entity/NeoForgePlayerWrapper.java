@@ -54,13 +54,29 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
         return player != null && player.isCreative();
     }
 
+    private static ResourceLocation parseItemLocation(String itemId) {
+        if (itemId.contains(":")) {
+            return ResourceLocation.parse(itemId);
+        }
+        ResourceLocation mcLoc = ResourceLocation.fromNamespaceAndPath("minecraft", itemId);
+        if (BuiltInRegistries.ITEM.containsKey(mcLoc)) {
+            return mcLoc;
+        }
+        return ResourceLocation.fromNamespaceAndPath("luatweaker", itemId);
+    }
+
     @Override
     public void giveItem(String itemId, int count) {
         if (player != null && itemId != null) {
-            ResourceLocation rl = itemId.contains(":") ? ResourceLocation.parse(itemId) : ResourceLocation.fromNamespaceAndPath("luatweaker", itemId);
+            ResourceLocation rl = parseItemLocation(itemId);
             Item item = BuiltInRegistries.ITEM.get(rl);
             if (item != null && item != Items.AIR) {
-                player.getInventory().add(new ItemStack(item, Math.max(1, count)));
+                ItemStack stack = new ItemStack(item, Math.max(1, count));
+                boolean added = player.getInventory().add(stack);
+                if (!stack.isEmpty()) {
+                    player.drop(stack, false);
+                }
+                player.containerMenu.broadcastChanges();
             }
         }
     }
@@ -101,7 +117,7 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
     @Override
     public void setMainHandItem(String itemId, int count) {
         if (player != null && itemId != null) {
-            ResourceLocation rl = itemId.contains(":") ? ResourceLocation.parse(itemId) : ResourceLocation.fromNamespaceAndPath("luatweaker", itemId);
+            ResourceLocation rl = parseItemLocation(itemId);
             Item item = BuiltInRegistries.ITEM.get(rl);
             if (item != null) {
                 player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, new ItemStack(item, Math.max(1, count)));
@@ -117,9 +133,79 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
     }
 
     @Override
+    public java.util.List<java.util.Map<String, Object>> getInventory() {
+        if (player == null) {
+            return java.util.List.of();
+        }
+        net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
+        java.util.List<java.util.Map<String, Object>> slots = new java.util.ArrayList<>();
+        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            java.util.Map<String, Object> entry = new java.util.LinkedHashMap<>();
+            entry.put("Slot", slot);
+            entry.putAll(describeStack(stack));
+            slots.add(entry);
+        }
+        return slots;
+    }
+
+    @Override
+    public int countItem(String itemId) {
+        if (player == null || itemId == null) {
+            return 0;
+        }
+        Item item = BuiltInRegistries.ITEM.get(parseItemLocation(itemId));
+        if (item == Items.AIR) {
+            return 0;
+        }
+        int total = 0;
+        net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
+        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (!stack.isEmpty() && stack.getItem() == item) {
+                total += stack.getCount();
+            }
+        }
+        return total;
+    }
+
+    @Override
+    public int removeItem(String itemId, int count) {
+        if (player == null || itemId == null || count <= 0) {
+            return 0;
+        }
+        Item item = BuiltInRegistries.ITEM.get(parseItemLocation(itemId));
+        if (item == Items.AIR) {
+            return 0;
+        }
+        int remaining = count;
+        net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
+        for (int slot = 0; slot < inventory.getContainerSize() && remaining > 0; slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (stack.isEmpty() || stack.getItem() != item) {
+                continue;
+            }
+            int taken = Math.min(remaining, stack.getCount());
+            stack.shrink(taken);
+            remaining -= taken;
+            if (stack.isEmpty()) {
+                inventory.setItem(slot, ItemStack.EMPTY);
+            }
+        }
+        int removed = count - remaining;
+        if (removed > 0) {
+            player.containerMenu.broadcastChanges();
+        }
+        return removed;
+    }
+
+    @Override
     public void dropItem(String itemId, int count) {
         if (player != null && itemId != null) {
-            ResourceLocation rl = itemId.contains(":") ? ResourceLocation.parse(itemId) : ResourceLocation.fromNamespaceAndPath("luatweaker", itemId);
+            ResourceLocation rl = parseItemLocation(itemId);
             Item item = BuiltInRegistries.ITEM.get(rl);
             if (item != null && item != Items.AIR) {
                 player.drop(new ItemStack(item, Math.max(1, count)), false);
@@ -141,26 +227,28 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
 
     @Override
     public void playSound(String soundId, float volume, float pitch) {
-        if (player == null || soundId == null) return;
-        try {
-            ResourceLocation rl = soundId.contains(":")
-                    ? ResourceLocation.parse(soundId)
-                    : ResourceLocation.fromNamespaceAndPath("luatweaker", soundId);
-            SoundEvent sound = BuiltInRegistries.SOUND_EVENT.get(rl);
-            if (sound != null) {
-                player.level().playSound(
-                        null,
-                        player.getX(), player.getY(), player.getZ(),
-                        sound,
-                        SoundSource.PLAYERS,
-                        Math.max(0f, volume),
-                        Math.max(0.1f, pitch)
-                );
-            }
-        } catch (Exception e) {
-            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
-                    "playSound failed for '" + soundId + "': " + e.getMessage());
+        playSoundFrom(soundId, volume, pitch, "PLAYERS");
+    }
+
+    @Override
+    public void playSoundFrom(String soundId, float volume, float pitch, String source) {
+        if (player == null) {
+            return;
         }
+        ResourceLocation location = com.luatweaker.platform.sound.SoundHelper.parseId(soundId);
+        SoundEvent sound = com.luatweaker.platform.sound.SoundHelper.registered(location, "player " + getName());
+        if (sound == null) {
+            return;
+        }
+        SoundSource category = com.luatweaker.platform.sound.SoundHelper.parseSource(source, SoundSource.PLAYERS);
+        player.level().playSound(
+                null,
+                player.getX(), player.getY(), player.getZ(),
+                sound,
+                category,
+                com.luatweaker.platform.sound.SoundHelper.volume(volume),
+                com.luatweaker.platform.sound.SoundHelper.pitch(pitch)
+        );
     }
 
     @Override
@@ -171,13 +259,13 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
     @Override
     public void sendTitle(String title, String subtitle, int fadeInTicks, int stayTicks, int fadeOutTicks) {
         if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-            if (title != null) {
-                serverPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket(Component.literal(title)));
-            }
+            serverPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket(fadeInTicks, stayTicks, fadeOutTicks));
             if (subtitle != null) {
                 serverPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket(Component.literal(subtitle)));
             }
-            serverPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket(fadeInTicks, stayTicks, fadeOutTicks));
+            if (title != null) {
+                serverPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket(Component.literal(title)));
+            }
         }
     }
 
@@ -199,6 +287,52 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
     public void teleport(double x, double y, double z) {
         if (player != null) {
             player.teleportTo(x, y, z);
+        }
+    }
+
+    @Override
+    public void syncCustomData(String key, Object value) {
+        setCustomData(key, value);
+        if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            Object unwrapped = value;
+            if (value instanceof com.luatweaker.api.vm.ILuaValue lv) {
+                if (lv.isNil()) unwrapped = null;
+                else if (lv.isBoolean()) unwrapped = lv.asBoolean();
+                else if (lv.isNumber()) unwrapped = lv.asDouble();
+                else unwrapped = lv.asString();
+            }
+            String valStr = unwrapped != null ? unwrapped.toString() : "null";
+            String type = unwrapped == null ? "null" : (unwrapped instanceof Boolean ? "bool" : (unwrapped instanceof Number ? "num" : "str"));
+            String payloadJson = "{\"key\":\"" + key + "\",\"val\":\"" + valStr + "\",\"type\":\"" + type + "\"}";
+            com.luatweaker.api.pal.Platform.getNetwork().sendPayloadPacket(
+                    serverPlayer.getUUID().toString(),
+                    "LuaTweaker:SyncData",
+                    payloadJson
+            );
+        }
+    }
+
+    @Override
+    public void openScreen(String screenId, String title) {
+        if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            String safeTitle = title != null ? title : "";
+            String json = "{\"id\":\"" + screenId + "\",\"title\":\"" + safeTitle + "\"}";
+            com.luatweaker.api.pal.Platform.getNetwork().sendPayloadPacket(
+                    serverPlayer.getUUID().toString(),
+                    "LuaTweaker:OpenScreen",
+                    json
+            );
+        }
+    }
+
+    @Override
+    public void closeScreen() {
+        if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            com.luatweaker.api.pal.Platform.getNetwork().sendPayloadPacket(
+                    serverPlayer.getUUID().toString(),
+                    "LuaTweaker:CloseScreen",
+                    "{}"
+            );
         }
     }
 }

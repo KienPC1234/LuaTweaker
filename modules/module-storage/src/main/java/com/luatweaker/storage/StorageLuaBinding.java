@@ -29,6 +29,26 @@ public class StorageLuaBinding {
             store.SetAsync(key, val);
             return engine.nilValue();
         });
+        table.rawset("RemoveAsync", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 1) return engine.wrapBoolean(false);
+            return engine.wrapBoolean(store.RemoveAsync(args[off].asString()));
+        });
+        table.rawset("GetKeys", args -> {
+            ILuaTable keys = engine.createTable();
+            java.util.List<String> stored = store.GetKeys();
+            for (int i = 0; i < stored.size(); i++) {
+                keys.rawset(i + 1, engine.wrapString(stored.get(i)));
+            }
+            return keys;
+        });
+        table.rawset("IncrementAsync", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 2) {
+                throw new IllegalArgumentException("IncrementAsync requires (key, delta)");
+            }
+            return engine.wrapNumber(store.IncrementAsync(args[off].asString(), args[off + 1].asDouble()));
+        });
         return table;
     }
 

@@ -92,6 +92,29 @@ public interface IItemBuilder {
     @LuaDoc(description = "Adds a custom tooltip line under the item name.", params = {"text: string"}, returnType = "IItemBuilder")
     IItemBuilder tooltip(String text);
 
+    @LuaDoc(description = "Sets the item use animation ('NONE', 'EAT', 'DRINK', 'BLOCK', 'BOW', 'SPEAR', 'CROSSBOW', 'SPYGLASS', 'TOOT_HORN', 'BRUSH').", params = {"animation: string"}, returnType = "IItemBuilder")
+    IItemBuilder useAnimation(String animation);
+
+    @LuaDoc(description = "Sets the maximum use/charge duration in ticks (e.g. 72000 for bow/shield, 30 for charged wand).", params = {"ticks: integer"}, returnType = "IItemBuilder")
+    IItemBuilder useDuration(int ticks);
+
+    @LuaDoc(description = "Registers a callback invoked every tick while holding right-click to use/charge this item.", params = {"handler: function(player, itemStack, ticksRemaining)"}, returnType = "IItemBuilder")
+    IItemBuilder onUseTick(ItemUseTickHandler handler);
+
+    @LuaDoc(description = "Registers a callback invoked when the player releases right-click after charging.", params = {"handler: function(player, itemStack, timeLeft)"}, returnType = "IItemBuilder")
+    IItemBuilder onReleaseUsing(ItemReleaseHandler handler);
+
+    @LuaDoc(description = "Registers a callback invoked when the full use duration completes without releasing.", params = {"handler: function(player, itemStack)"}, returnType = "IItemBuilder")
+    IItemBuilder onFinishUsing(BiConsumer<Object, Object> handler);
+
+    @LuaDoc(description = "Registers a callback invoked when attacking/hitting an entity with this item.", params = {"handler: function(targetEntity, attackerPlayer, itemStack)"}, returnType = "IItemBuilder")
+    IItemBuilder onHurtEnemy(ItemHurtHandler handler);
+
+    @LuaDoc(description = "Registers a callback invoked when breaking a block with this item.", params = {"handler: function(player, itemStack, x, y, z)"}, returnType = "IItemBuilder")
+    IItemBuilder onMineBlock(ItemMineHandler handler);
+
+    @LuaDoc(description = "Registers a callback invoked when player swings/left-clicks with this item.", params = {"handler: function(player, itemStack)"}, returnType = "IItemBuilder")
+    IItemBuilder onSwing(BiConsumer<Object, Object> handler);
 
     String getId();
     String getType();
@@ -124,6 +147,15 @@ public interface IItemBuilder {
     BiConsumer<Object, Object> getOnConsumeHandler();
     boolean isGlow();
     java.util.List<String> getTooltips();
+
+    String getUseAnimation();
+    int getUseDuration();
+    ItemUseTickHandler getOnUseTickHandler();
+    ItemReleaseHandler getOnReleaseUsingHandler();
+    BiConsumer<Object, Object> getOnFinishUsingHandler();
+    ItemHurtHandler getOnHurtEnemyHandler();
+    ItemMineHandler getOnMineBlockHandler();
+    BiConsumer<Object, Object> getOnSwingHandler();
 }
 
 

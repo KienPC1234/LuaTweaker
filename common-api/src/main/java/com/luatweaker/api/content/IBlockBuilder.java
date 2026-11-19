@@ -63,6 +63,42 @@ public interface IBlockBuilder {
     @LuaDoc(description = "Sets whether the block conducts redstone (true = default for full blocks, false = like glass).", params = {"redstoneConductor: boolean"}, returnType = "IBlockBuilder")
     IBlockBuilder redstoneConductor(boolean redstoneConductor);
 
+    /**
+     * Selects the block shape. The platform registers a real {@code StairBlock}/{@code SlabBlock}/
+     * {@code WallBlock} (collision, placement, blockstate) and generates the matching assets.
+     * IDs ending in {@code _stairs}/{@code _slab}/{@code _wall} still get the shape automatically,
+     * so this is only needed for custom names.
+     *
+     * @param shape {@code "STAIRS"}, {@code "SLAB"}, {@code "WALL"} or {@code "BLOCK"}
+     */
+    @LuaDoc(description = "Selects the block shape: 'BLOCK' (default), 'STAIRS', 'SLAB' or 'WALL'.", params = {"shape: string"}, returnType = "IBlockBuilder")
+    IBlockBuilder shape(String shape);
+
+    /**
+     * Base block whose texture/model feeds the generated shape assets, and whose default state
+     * backs stairs. Falls back to the {@code <id>_block} naming convention when unset.
+     */
+    @LuaDoc(description = "Sets the base block for stairs/slab/wall textures and stair base state (e.g. 'luatweaker:ruby_block').", params = {"baseBlockId: string"}, returnType = "IBlockBuilder")
+    IBlockBuilder baseBlock(String baseBlockId);
+
+    /**
+     * Shape after applying the id convention: an explicit {@link #shape(String)} wins, otherwise
+     * ids ending in {@code _stairs}/{@code _slab}/{@code _wall} keep their historic behavior.
+     *
+     * @return {@code "BLOCK"}, {@code "STAIRS"}, {@code "SLAB"} or {@code "WALL"}
+     */
+    default String getEffectiveShape() {
+        String declared = getShape();
+        if (declared != null && !declared.isBlank() && !"BLOCK".equalsIgnoreCase(declared)) {
+            return declared.toUpperCase();
+        }
+        String id = getId() == null ? "" : getId().toLowerCase();
+        if (id.endsWith("_stairs") || id.contains("stairs")) return "STAIRS";
+        if (id.endsWith("_slab") || id.contains("slab")) return "SLAB";
+        if (id.endsWith("_wall") || id.contains("wall")) return "WALL";
+        return "BLOCK";
+    }
+
     @LuaDoc(description = "Sets custom block model location (e.g. 'luatweaker:block/wood_crate').", params = {"modelPath: string"}, returnType = "IBlockBuilder")
     IBlockBuilder model(String modelPath);
 
@@ -108,10 +144,10 @@ public interface IBlockBuilder {
     @LuaDoc(description = "Locks a container slot so items can neither be placed into it nor taken from it (read-only storage).", params = {"slotIndex: integer (0-based)", "locked: boolean"}, returnType = "IBlockBuilder")
     IBlockBuilder lockSlot(int slotIndex, boolean locked);
 
-    @LuaDoc(description = "Adds an FE (Forge Energy) buffer to this container block: capacity in FE, maxReceive and maxExtract FE per tick. Exposed to other mods through the energy capability and to Lua via World:SetBlockEntityData/GetBlockEntityData (key 'Energy').", params = {"capacity: integer", "maxReceive: integer", "maxExtract: integer"}, returnType = "IBlockBuilder")
+    @LuaDoc(description = "Adds an FE (Forge Energy) buffer to this block and gives it a block entity: capacity in FE, maxReceive and maxExtract FE per tick. Exposed to other mods through the energy capability on every face and to Lua via World:SetBlockEntityData/GetBlockEntityData (key 'Energy') or the World:GetEnergy/InsertEnergy/ExtractEnergy capability primitives.", params = {"capacity: integer", "maxReceive: integer", "maxExtract: integer"}, returnType = "IBlockBuilder")
     IBlockBuilder energyStorage(int capacity, int maxReceive, int maxExtract);
 
-    @LuaDoc(description = "Adds a fluid tank (in millibuckets) to this container block. Exposed to other mods through the fluid capability and to Lua via World:SetBlockEntityData/GetBlockEntityData (keys 'FluidId', 'FluidAmount').", params = {"capacityMB: integer"}, returnType = "IBlockBuilder")
+    @LuaDoc(description = "Adds a single fluid tank (in millibuckets) to this block and gives it a block entity. Exposed to other mods through the fluid capability on every face and to Lua via World:SetBlockEntityData/GetBlockEntityData (keys 'FluidId', 'FluidAmount') or World:GetFluid/FillFluid/DrainFluid.", params = {"capacityMB: integer"}, returnType = "IBlockBuilder")
     IBlockBuilder fluidStorage(int capacityMB);
 
     @LuaDoc(description = "Adds a bar element to the container GUI. source: 'energy' (FE fill), 'fluid' (tank fill) or 'progress' (Lua progress 0..1). Color is ARGB, e.g. 0xFF00E676; 0 = source default.", params = {"id: string", "x: integer", "y: integer", "width: integer", "height: integer", "source: string", "color: integer"}, returnType = "IBlockBuilder")
@@ -123,11 +159,32 @@ public interface IBlockBuilder {
     @LuaDoc(description = "Turns the block into a connectable pipe: 6 connection properties (north/east/south/west/up/down) are added, connections are computed automatically when neighbors of the same block type are placed/removed, and the full 64-variant blockstate plus pipe models are generated automatically. The pipe texture is taken from :Texture(id). Transport logic is NOT built in - write it yourself with :OnTick + the World block-entity APIs.", params = {"connections: boolean"}, returnType = "IBlockBuilder")
     IBlockBuilder connectionState(boolean connections);
 
-    @LuaDoc(description = "Registers a per-tick behavior handler for this block (machines, pipes, generators...). The handler receives a table {X, Y, Z, Energy, EnergyCapacity, FluidId, FluidAmount, FluidCapacity, Progress} of the block entity every tick and can read/write it via World:GetBlockEntityData / World:SetBlockEntityData, eject items with World:EjectContainerItem and toggle block states with World:SetBlockState. Only blocks with a handler tick, so no performance cost otherwise.", params = {"handler: function(data) -> void"}, returnType = "IBlockBuilder")
+    @LuaDoc(description = "Registers a per-tick behavior handler for this block (machines, pipes, generators...). The handler receives a table {X, Y, Z, Energy, EnergyCapacity, FluidId, FluidAmount, FluidCapacity, Progress} of the block entity every tick and can read/write it via World:GetBlockEntityData / World:SetBlockEntityData, move resources through other blocks with World:InsertEnergy/ExtractEnergy, World:InsertItem/ExtractItem, World:FillFluid/DrainFluid, eject items with World:EjectContainerItem and toggle block states with World:SetBlockState. Only blocks with a handler tick, so no performance cost otherwise.", params = {"handler: function(data) -> void"}, returnType = "IBlockBuilder")
     IBlockBuilder onTick(java.util.function.BiConsumer<Object, Object> handler);
 
     @LuaDoc(description = "Sets the display name of the block.", params = {"name: string"}, returnType = "IBlockBuilder")
     IBlockBuilder displayName(String name);
+
+    @LuaDoc(description = "Defines a custom bounding box (0-16 voxel coords). Can be chained multiple times to create compound shapes.", params = {"minX: number", "minY: number", "minZ: number", "maxX: number", "maxY: number", "maxZ: number"}, returnType = "IBlockBuilder")
+    IBlockBuilder box(double minX, double minY, double minZ, double maxX, double maxY, double maxZ);
+
+    @LuaDoc(description = "Sets block facing rotation behavior upon placement: 'NONE' (default), 'HORIZONTAL' (faces player horizontally), or 'DIRECTIONAL'/'6WAY' (faces 6 directions).", params = {"facing: string"}, returnType = "IBlockBuilder")
+    IBlockBuilder facing(String facing);
+
+    @LuaDoc(description = "Registers a client-side BlockEntityRenderer (BER) callback for dynamic rendering and animation.", params = {"handler: function(renderer, data)"}, returnType = "IBlockBuilder")
+    IBlockBuilder onRender(BiConsumer<Object, Object> handler);
+
+    @LuaDoc(description = "Adds an interactive button widget to this container screen.", params = {"id: string", "x: integer", "y: integer", "width: integer", "height: integer", "label: string"}, returnType = "IBlockBuilder")
+    IBlockBuilder button(String id, int x, int y, int width, int height, String label);
+
+    @LuaDoc(description = "Adds a dynamic text label widget to this container screen (supports '{Key}' placeholders from extra NBT).", params = {"x: integer", "y: integer", "textOrVar: string", "color: integer"}, returnType = "IBlockBuilder")
+    IBlockBuilder label(int x, int y, String textOrVar, int color);
+
+    @LuaDoc(description = "Registers a callback invoked on the server when a player clicks a container button.", params = {"handler: function(pos, buttonId, player)"}, returnType = "IBlockBuilder")
+    IBlockBuilder onButtonClick(BiConsumer<Object, String> handler);
+
+    @LuaDoc(description = "Registers a callback invoked when a neighbor block changes or redstone signal updates.", params = {"handler: function(pos, neighborPos)"}, returnType = "IBlockBuilder")
+    IBlockBuilder onNeighborChanged(BiConsumer<Object, Object> handler);
 
     String getId();
     float getHardness();
@@ -149,6 +206,8 @@ public interface IBlockBuilder {
     boolean isLiquid();
     String getOffsetType();
     Boolean getRedstoneConductor();
+    String getShape();
+    String getBaseBlockId();
     String getModel();
     String getTexture();
     java.util.List<String> getTags();
@@ -179,6 +238,13 @@ public interface IBlockBuilder {
     boolean isConnectionState();
     java.util.function.BiConsumer<Object, Object> getTickHandler();
     String getDisplayName();
+    java.util.List<BoxSpec> getBoxes();
+    String getFacing();
+    BiConsumer<Object, Object> getRenderHandler();
+    java.util.List<MachineButtonSpec> getButtons();
+    java.util.List<MachineLabelSpec> getLabels();
+    BiConsumer<Object, String> getButtonClickHandler();
+    BiConsumer<Object, Object> getNeighborChangedHandler();
 }
 
 

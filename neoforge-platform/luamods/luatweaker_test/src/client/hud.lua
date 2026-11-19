@@ -5,6 +5,13 @@
 local GuiService = require("LuaTweaker.GuiService")
 local Network = require("LuaTweaker.Network")
 local Storage = require("LuaTweaker.Storage")
+
+-- A universal mod's main.lua also runs on a dedicated server, where GuiService has no
+-- OnRenderHUD signal. Bail out instead of failing the whole mod load.
+if type(GuiService.OnRenderHUD) ~= "table" then
+    print("[LuaTweakerTest] Client HUD skipped: no HUD renderer on this side")
+    return true
+end
 local sessionStorage = Storage:GetSessionStorage()
 
 local THIS_MOD = mod

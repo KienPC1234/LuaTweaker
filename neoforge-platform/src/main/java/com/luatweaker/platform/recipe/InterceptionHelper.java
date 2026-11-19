@@ -44,6 +44,22 @@ public class InterceptionHelper {
     /** Pending anvil operations (stored for inspection; anvil has no vanilla recipe type) */
     private static final List<NeoForgeRecipeManager.AnvilData> PENDING_ANVIL = new CopyOnWriteArrayList<>();
 
+    /**
+     * Vanilla recipe state before any Lua modification, keyed by RecipeManager. A reload must
+     * not inherit the previous reload's removals: every apply starts from this snapshot.
+     */
+    private static final Map<RecipeManager, RecipeSnapshot> RECIPE_SNAPSHOTS =
+            Collections.synchronizedMap(new WeakHashMap<>());
+
+    /** The field instances we wrote last, so our own writes are not mistaken for a datapack reload. */
+    private static final Map<RecipeManager, Object[]> LAST_WRITTEN_MAPS =
+            Collections.synchronizedMap(new WeakHashMap<>());
+
+    private record RecipeSnapshot(Object byTypeIdentity, Object byNameIdentity,
+                                  Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> byType,
+                                  Map<ResourceLocation, RecipeHolder<?>> byName) {
+    }
+
     public static List<NeoForgeRecipeManager.TradeData> getPendingTrades() { return Collections.unmodifiableList(PENDING_TRADES); }
     public static List<NeoForgeRecipeManager.BrewingData> getPendingBrewing() { return Collections.unmodifiableList(PENDING_BREWING); }
     public static List<NeoForgeRecipeManager.AnvilData> getPendingAnvil() { return Collections.unmodifiableList(PENDING_ANVIL); }
@@ -69,16 +85,6 @@ public class InterceptionHelper {
     @SuppressWarnings("unchecked")
     public static void applyModifications(RecipeManager recipeManager, List<NeoForgeRecipeManager.RecipeModification> modifications) {
         try {
-            com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.RECIPE_APPLY, "Inspecting RecipeManager fields:");
-            for (Field f : RecipeManager.class.getDeclaredFields()) {
-                f.setAccessible(true);
-                Object val = f.get(recipeManager);
-                com.luatweaker.api.log.LuaTweakerLog.get().info(
-                    com.luatweaker.api.log.LogStage.RECIPE_APPLY,
-                    "Field: " + f.getName() + " | Type: " + f.getType().getName() + " | ValClass: " + (val != null ? val.getClass().getName() : "null")
-                );
-            }
-
             Field byTypeField = findRecipesByTypeField(recipeManager);
             Field byNameField = findByNameMapField(recipeManager);
 
@@ -173,12 +179,31 @@ public class InterceptionHelper {
                 );
             }
 
-            Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> newRecipes = new HashMap<>();
-            for (Map.Entry<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> entry : baseRecipes.entrySet()) {
-                newRecipes.put(entry.getKey(), new HashMap<>(entry.getValue()));
+            Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> baseSnapshot;
+            Map<ResourceLocation, RecipeHolder<?>> nameSnapshot;
+            synchronized (RECIPE_SNAPSHOTS) {
+                RecipeSnapshot snapshot = RECIPE_SNAPSHOTS.get(recipeManager);
+                Object[] lastWritten = LAST_WRITTEN_MAPS.get(recipeManager);
+                boolean vanillaRestored = snapshot == null
+                        || (snapshot.byTypeIdentity() != byTypeRaw
+                            && (lastWritten == null || lastWritten[0] != byTypeRaw))
+                        || (snapshot.byNameIdentity() != byNameRaw
+                            && (lastWritten == null || lastWritten[1] != byNameRaw));
+                if (vanillaRestored) {
+                    snapshot = new RecipeSnapshot(byTypeRaw, byNameRaw,
+                            copyByType(baseRecipes), new HashMap<>(byName));
+                    RECIPE_SNAPSHOTS.put(recipeManager, snapshot);
+                    com.luatweaker.api.log.LuaTweakerLog.get().info(
+                        com.luatweaker.api.log.LogStage.RECIPE_APPLY,
+                        "Captured vanilla recipe snapshot (" + byName.size() + " recipes) for RecipeManager@"
+                            + System.identityHashCode(recipeManager));
+                }
+                baseSnapshot = snapshot.byType();
+                nameSnapshot = snapshot.byName();
             }
+            Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> newRecipes = copyByType(baseSnapshot);
             HolderLookup.Provider registries = findRegistries(recipeManager);
-            Map<ResourceLocation, RecipeHolder<?>> newByName = new HashMap<>(byName);
+            Map<ResourceLocation, RecipeHolder<?>> newByName = new HashMap<>(nameSnapshot);
 
             for (NeoForgeRecipeManager.RecipeModification mod : modifications) {
                 // One malformed recipe must not discard every other mod's changes.
@@ -214,16 +239,21 @@ public class InterceptionHelper {
             }
 
             // Write back in original field format
+            Object writtenByType;
             if (Multimap.class.isAssignableFrom(byTypeField.getType())) {
                 ArrayListMultimap<RecipeType<?>, RecipeHolder<?>> newMulti = ArrayListMultimap.create();
                 for (Map.Entry<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> entry : newRecipes.entrySet()) {
                     newMulti.putAll(entry.getKey(), entry.getValue().values());
                 }
-                byTypeField.set(recipeManager, newMulti);
+                writtenByType = newMulti;
             } else {
-                byTypeField.set(recipeManager, newRecipes);
+                writtenByType = newRecipes;
             }
+            byTypeField.set(recipeManager, writtenByType);
             byNameField.set(recipeManager, newByName);
+            // Remember our own writes so the next apply keeps the vanilla snapshot instead of
+            // capturing the already-modified state as "vanilla".
+            LAST_WRITTEN_MAPS.put(recipeManager, new Object[]{writtenByType, newByName});
 
             com.luatweaker.api.log.LuaTweakerLog.get().info(
                 com.luatweaker.api.log.LogStage.RECIPE_APPLY,
@@ -556,8 +586,8 @@ public class InterceptionHelper {
      */
     public static void applyPendingAnvil(AnvilUpdateEvent event) {
         for (NeoForgeRecipeManager.AnvilData data : PENDING_ANVIL) {
-            Ingredient left = parseIngredient(data.leftInput().descriptor());
-            Ingredient right = parseIngredient(data.rightInput().descriptor());
+            Ingredient left = parseIngredient(data.leftInput());
+            Ingredient right = parseIngredient(data.rightInput());
 
             boolean leftMatch = left.test(event.getLeft());
             boolean rightMatch = right.test(event.getRight());
@@ -696,7 +726,7 @@ public class InterceptionHelper {
 
         NonNullList<Ingredient> ingredients = NonNullList.create();
         for (IngredientWrapper wrap : data.ingredients()) {
-            ingredients.add(parseIngredient(wrap.descriptor()));
+            ingredients.add(parseIngredient(wrap));
         }
 
         ShapelessRecipe recipe = new ShapelessRecipe("", CraftingBookCategory.MISC, outputStack, ingredients);
@@ -720,7 +750,7 @@ public class InterceptionHelper {
         Map<Character, Ingredient> keyMap = new HashMap<>();
         for (Map.Entry<String, IngredientWrapper> entry : data.keys().entrySet()) {
             if (!entry.getKey().isEmpty()) {
-                keyMap.put(entry.getKey().charAt(0), parseIngredient(entry.getValue().descriptor()));
+                keyMap.put(entry.getKey().charAt(0), parseIngredient(entry.getValue()));
             }
         }
 
@@ -750,7 +780,7 @@ public class InterceptionHelper {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
         if (outputStack.isEmpty()) return;
-        SmeltingRecipe recipe = new SmeltingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input().descriptor()), outputStack, data.xp(), data.cookTime());
+        SmeltingRecipe recipe = new SmeltingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input()), outputStack, data.xp(), data.cookTime());
         RecipeHolder<SmeltingRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
         recipes.computeIfAbsent(RecipeType.SMELTING, k -> new HashMap<>()).put(id, holder);
@@ -760,7 +790,7 @@ public class InterceptionHelper {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
         if (outputStack.isEmpty()) return;
-        BlastingRecipe recipe = new BlastingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input().descriptor()), outputStack, data.xp(), data.cookTime());
+        BlastingRecipe recipe = new BlastingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input()), outputStack, data.xp(), data.cookTime());
         RecipeHolder<BlastingRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
         recipes.computeIfAbsent(RecipeType.BLASTING, k -> new HashMap<>()).put(id, holder);
@@ -770,7 +800,7 @@ public class InterceptionHelper {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
         if (outputStack.isEmpty()) return;
-        SmokingRecipe recipe = new SmokingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input().descriptor()), outputStack, data.xp(), data.cookTime());
+        SmokingRecipe recipe = new SmokingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input()), outputStack, data.xp(), data.cookTime());
         RecipeHolder<SmokingRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
         recipes.computeIfAbsent(RecipeType.SMOKING, k -> new HashMap<>()).put(id, holder);
@@ -780,7 +810,7 @@ public class InterceptionHelper {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
         if (outputStack.isEmpty()) return;
-        CampfireCookingRecipe recipe = new CampfireCookingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input().descriptor()), outputStack, data.xp(), data.cookTime());
+        CampfireCookingRecipe recipe = new CampfireCookingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input()), outputStack, data.xp(), data.cookTime());
         RecipeHolder<CampfireCookingRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
         recipes.computeIfAbsent(RecipeType.CAMPFIRE_COOKING, k -> new HashMap<>()).put(id, holder);
@@ -790,7 +820,7 @@ public class InterceptionHelper {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
         if (outputStack.isEmpty()) return;
-        StonecutterRecipe recipe = new StonecutterRecipe("", parseIngredient(data.input().descriptor()), outputStack);
+        StonecutterRecipe recipe = new StonecutterRecipe("", parseIngredient(data.input()), outputStack);
         RecipeHolder<StonecutterRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
         recipes.computeIfAbsent(RecipeType.STONECUTTING, k -> new HashMap<>()).put(id, holder);
@@ -801,9 +831,9 @@ public class InterceptionHelper {
         ItemStack resultStack = createItemStack(data.result());
         if (resultStack.isEmpty()) return;
         SmithingTransformRecipe recipe = new SmithingTransformRecipe(
-            parseIngredient(data.template().descriptor()),
-            parseIngredient(data.base().descriptor()),
-            parseIngredient(data.addition().descriptor()),
+            parseIngredient(data.template()),
+            parseIngredient(data.base()),
+            parseIngredient(data.addition()),
             resultStack
         );
         RecipeHolder<SmithingTransformRecipe> holder = new RecipeHolder<>(id, recipe);
@@ -919,5 +949,42 @@ public class InterceptionHelper {
         }
         Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(normalized));
         return Ingredient.of(item);
+    }
+
+    /**
+     * Builds the Minecraft ingredient for a Lua {@code ingredient(...):or(...)} chain. A single
+     * descriptor keeps tag semantics; alternatives are expanded into an explicit item list.
+     */
+    private static Ingredient parseIngredient(IngredientWrapper wrapper) {
+        if (wrapper.alternatives().isEmpty()) {
+            return parseIngredient(wrapper.descriptor());
+        }
+        List<ItemStack> stacks = new ArrayList<>();
+        collectIngredientStacks(wrapper, stacks);
+        return stacks.isEmpty() ? Ingredient.EMPTY : Ingredient.of(stacks.toArray(new ItemStack[0]));
+    }
+
+    private static void collectIngredientStacks(IngredientWrapper wrapper, List<ItemStack> out) {
+        String normalized = IngredientWrapper.normalizeDescriptor(wrapper.descriptor());
+        if (normalized.startsWith("#")) {
+            TagKey<Item> tagKey = TagKey.create(Registries.ITEM, ResourceLocation.parse(normalized.substring(1)));
+            for (net.minecraft.core.Holder<Item> holder : BuiltInRegistries.ITEM.getTagOrEmpty(tagKey)) {
+                out.add(new ItemStack(holder.value()));
+            }
+        } else {
+            out.add(new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(normalized))));
+        }
+        for (IngredientWrapper alternative : wrapper.alternatives()) {
+            collectIngredientStacks(alternative, out);
+        }
+    }
+
+    private static Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> copyByType(
+            Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> source) {
+        Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> copy = new HashMap<>();
+        for (Map.Entry<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> entry : source.entrySet()) {
+            copy.put(entry.getKey(), new HashMap<>(entry.getValue()));
+        }
+        return copy;
     }
 }

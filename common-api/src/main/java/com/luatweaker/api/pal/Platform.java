@@ -8,6 +8,8 @@ public class Platform {
     private static IPlatformStorage storage;
     private static IPlatformClient client;
     private static IPlatformDimension dimension;
+    private static IPlatformStructures structures;
+    private static IPlatformCapability capability;
 
     public static void setNetwork(IPlatformNetwork instance) { network = instance; }
     public static void setEntity(IPlatformEntity instance) { entity = instance; }
@@ -16,6 +18,8 @@ public class Platform {
     public static void setStorage(IPlatformStorage instance) { storage = instance; }
     public static void setClient(IPlatformClient instance) { client = instance; }
     public static void setDimension(IPlatformDimension instance) { dimension = instance; }
+    public static void setStructures(IPlatformStructures instance) { structures = instance; }
+    public static void setCapability(IPlatformCapability instance) { capability = instance; }
 
     public static IPlatformNetwork getNetwork() {
         if (network == null) throw new IllegalStateException("Platform network helper is not initialized!");
@@ -47,11 +51,37 @@ public class Platform {
         return client;
     }
 
+    /**
+     * Nullable accessor for client-only helpers.
+     *
+     * <p>Dedicated servers never call {@link #setClient}, so probing with
+     * {@code getClient() != null} throws instead of reporting "no client". Services that
+     * are also registered on dedicated servers (client effects, GUI) must use this method.</p>
+     */
+    public static IPlatformClient getClientOrNull() {
+        return client;
+    }
+
     public static IPlatformDimension getDimension() {
         if (dimension == null) throw new IllegalStateException("Platform dimension helper is not initialized!");
         return dimension;
     }
-    
+
+    public static IPlatformStructures getStructures() {
+        if (structures == null) throw new IllegalStateException("Platform structures helper is not initialized!");
+        return structures;
+    }
+
+    public static IPlatformCapability getCapability() {
+        if (capability == null) throw new IllegalStateException("Platform capability helper is not initialized!");
+        return capability;
+    }
+
+    /** Nullable accessor: lightweight test platforms may not bridge block capabilities at all. */
+    public static IPlatformCapability getCapabilityOrNull() {
+        return capability;
+    }
+
     public static boolean isInitialized() {
         return content != null;
     }

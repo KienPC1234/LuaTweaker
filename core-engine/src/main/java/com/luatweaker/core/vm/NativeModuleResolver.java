@@ -7,6 +7,7 @@ import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Resolves {@code require("LuaTweaker.X")} module names to the global value that backs them.
@@ -16,8 +17,26 @@ import java.util.Map;
 public final class NativeModuleResolver {
 
     private static final Map<String, String[]> MODULE_GLOBALS = buildModuleGlobals();
+    private static final Map<String, String[]> DYNAMIC_ALIASES = new ConcurrentHashMap<>();
 
     private NativeModuleResolver() {}
+
+    /**
+     * Registers an extra {@code require()} alias contributed by a Java plugin.
+     * Plugin aliases never override built-in keys; when the name already exists
+     * the built-in mapping wins so core behaviour stays stable.
+     */
+    public static void registerAlias(String modName, String[] globalKeys) {
+        if (modName == null || modName.isBlank() || globalKeys == null || globalKeys.length == 0) {
+            return;
+        }
+        DYNAMIC_ALIASES.putIfAbsent(modName, globalKeys.clone());
+    }
+
+    /** Test-only hook to isolate unit tests sharing this static map. */
+    public static void clearDynamicAliasesForTests() {
+        DYNAMIC_ALIASES.clear();
+    }
 
     private static Map<String, String[]> buildModuleGlobals() {
         Map<String, String[]> m = new HashMap<>();
@@ -125,6 +144,9 @@ public final class NativeModuleResolver {
      */
     public static org.luava.runtime.LuaValue resolveLuava(ILuaTable globals, String modName) {
         String[] keys = MODULE_GLOBALS.get(modName);
+        if (keys == null) {
+            keys = DYNAMIC_ALIASES.get(modName);
+        }
         if (keys == null || globals == null) return org.luava.runtime.LuaNil.NIL;
         for (String key : keys) {
             ILuaValue val = globals.rawget(key);

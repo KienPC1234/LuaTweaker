@@ -188,6 +188,15 @@ public class LuaModManager {
                 continue;
             }
 
+            List<String> missingOptional = dm.manifest().optionalDependencies().stream()
+                    .filter(dep -> !LOADED_MODS.containsKey(dep))
+                    .toList();
+            if (!missingOptional.isEmpty()) {
+                LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                        "[LuaModManager] Mod '" + modId + "' optional dependencies not loaded: "
+                                + String.join(", ", missingOptional) + " - continuing.");
+            }
+
             String modEnv = dm.manifest().environment();
             if (!shouldLoadInEnvironment(modEnv, currentEnv)) {
                 LuaTweakerLog.get().info(LogStage.SYSTEM,
@@ -359,6 +368,12 @@ public class LuaModManager {
 
         visiting.add(id);
         for (String dep : mod.manifest().dependencies()) {
+            DiscoveredMod depMod = modMap.get(dep);
+            if (depMod != null) {
+                visitMod(depMod, modMap, sorted, visited, visiting);
+            }
+        }
+        for (String dep : mod.manifest().optionalDependencies()) {
             DiscoveredMod depMod = modMap.get(dep);
             if (depMod != null) {
                 visitMod(depMod, modMap, sorted, visited, visiting);

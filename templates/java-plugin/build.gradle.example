@@ -1,0 +1,23 @@
+plugins {
+    id 'java-library'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+repositories {
+    mavenLocal()
+    maven { url = 'https://maven.neoforged.net/releases' }
+}
+
+dependencies {
+    // Compile against the published LuaTweaker artifacts (adjust GAV to your publish setup).
+    compileOnly 'com.luatweaker:common-api:1.0.0'
+    compileOnly 'com.luatweaker:core-engine:1.0.0'
+    compileOnly 'org.jetbrains:annotations:24.1.0'
+}
+
+// Path B (plain jar): ServiceLoader file above is packaged automatically.
+// Path A (NeoForge mod): add your mods.toml + call
+// LuaTweakerPluginRegistry.register(new MyAddonPlugin()) from the mod constructor.

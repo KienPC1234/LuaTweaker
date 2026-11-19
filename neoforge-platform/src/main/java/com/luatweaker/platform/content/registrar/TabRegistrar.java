@@ -32,6 +32,18 @@ public final class TabRegistrar {
         this.locationParser = locationParser;
     }
 
+    private ResourceLocation parseTabLocation(String tabId) {
+        if (tabId == null || tabId.isBlank()) return locationParser.apply("custom_items");
+        if (tabId.contains(":")) {
+            return ResourceLocation.parse(tabId);
+        }
+        ResourceLocation mcLoc = ResourceLocation.fromNamespaceAndPath("minecraft", tabId.toLowerCase());
+        if (BuiltInRegistries.CREATIVE_MODE_TAB.containsKey(mcLoc)) {
+            return mcLoc;
+        }
+        return locationParser.apply(tabId);
+    }
+
     public void registerCreativeTab(RegisterEvent event) {
         createdCustomTabs.clear();
         var userTabs = contentService.getRegisteredTabs();
@@ -51,21 +63,21 @@ public final class TabRegistrar {
                         .displayItems((parameters, output) -> {
                             for (IItemBuilder itemBuilder : contentService.getRegisteredItems()) {
                                 String tId = itemBuilder.getCreativeTab();
-                                if (tId != null && locationParser.apply(tId).equals(tabLoc)) {
+                                if (tId != null && parseTabLocation(tId).equals(tabLoc)) {
                                     Item itemObj = createdItems.get(locationParser.apply(itemBuilder.getId()));
                                     if (itemObj != null) output.accept(itemObj);
                                 }
                             }
                             for (IBlockBuilder blockBuilder : contentService.getRegisteredBlocks()) {
                                 String tId = blockBuilder.getCreativeTab();
-                                if (tId != null && locationParser.apply(tId).equals(tabLoc)) {
+                                if (tId != null && parseTabLocation(tId).equals(tabLoc)) {
                                     Item blockItem = createdItems.get(locationParser.apply(blockBuilder.getId()));
                                     if (blockItem != null) output.accept(blockItem);
                                 }
                             }
                             for (IFluidBuilder fluidBuilder : contentService.getRegisteredFluids()) {
                                 String tId = fluidBuilder.getCreativeTab();
-                                if (tId != null && locationParser.apply(tId).equals(tabLoc)) {
+                                if (tId != null && parseTabLocation(tId).equals(tabLoc)) {
                                     ResourceLocation bucketRl = locationParser.apply(fluidBuilder.getId() + "_bucket");
                                     Item bucketItem = createdItems.get(bucketRl);
                                     if (bucketItem != null) output.accept(bucketItem);
@@ -78,7 +90,7 @@ public final class TabRegistrar {
                             for (IEntityBuilder entityBuilder : contentService.getRegisteredEntities()) {
                                 if (entityBuilder.hasSpawnEgg()) {
                                     String tId = entityBuilder.getCreativeTab();
-                                    if (tId != null && locationParser.apply(tId).equals(tabLoc)) {
+                                    if (tId != null && parseTabLocation(tId).equals(tabLoc)) {
                                         ResourceLocation eggRl = locationParser.apply(entityBuilder.getId() + "_spawn_egg");
                                         Item eggItem = createdItems.get(eggRl);
                                         if (eggItem != null) output.accept(eggItem);
@@ -117,7 +129,7 @@ public final class TabRegistrar {
                 ResourceLocation rl = locationParser.apply(item.getId());
                 Item itemObj = createdItems.get(rl);
                 if (itemObj != null && item.getCreativeTab() != null) {
-                    ResourceLocation tabRl = locationParser.apply(item.getCreativeTab());
+                    ResourceLocation tabRl = parseTabLocation(item.getCreativeTab());
                     if (event.getTabKey().location().equals(tabRl)) {
                         event.accept(itemObj);
                     }
@@ -129,7 +141,7 @@ public final class TabRegistrar {
                 ResourceLocation rl = locationParser.apply(block.getId());
                 Item itemObj = createdItems.get(rl);
                 if (itemObj != null && block.getCreativeTab() != null) {
-                    ResourceLocation tabRl = locationParser.apply(block.getCreativeTab());
+                    ResourceLocation tabRl = parseTabLocation(block.getCreativeTab());
                     if (event.getTabKey().location().equals(tabRl)) {
                         event.accept(itemObj);
                     }
@@ -141,7 +153,7 @@ public final class TabRegistrar {
                 ResourceLocation bucketRl = locationParser.apply(fluid.getId() + "_bucket");
                 Item bucketObj = createdItems.get(bucketRl);
                 if (fluid.getCreativeTab() != null) {
-                    ResourceLocation tabRl = locationParser.apply(fluid.getCreativeTab());
+                    ResourceLocation tabRl = parseTabLocation(fluid.getCreativeTab());
                     if (event.getTabKey().location().equals(tabRl) && bucketObj != null) {
                         event.accept(bucketObj);
                     }
@@ -158,7 +170,7 @@ public final class TabRegistrar {
                 Item eggItem = createdItems.get(eggRl);
                 if (eggItem != null) {
                     if (!isCustomTab && entity.getCreativeTab() != null) {
-                        ResourceLocation tabRl = locationParser.apply(entity.getCreativeTab());
+                        ResourceLocation tabRl = parseTabLocation(entity.getCreativeTab());
                         if (event.getTabKey().location().equals(tabRl)) {
                             event.accept(eggItem);
                         }

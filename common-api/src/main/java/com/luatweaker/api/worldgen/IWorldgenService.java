@@ -69,6 +69,38 @@ public interface IWorldgenService {
     @NotNull
     java.util.Map<String, Object> getModifications();
 
+    @LuaDoc(
+        description = "Register a raw configured feature from verbatim JSON (any vanilla type: tree, geode, random_patch, ...). The JSON must parse and carry a string 'type'; the type is checked against the 1.21.1 vanilla list so typos fail fast. Reference it as 'luatweaker:<id>' from ModifyBiome add or a biome features list; pair it with AddRawPlacedFeature for a working pipeline.",
+        params = {"featureId: string - id (e.g. 'mymod:crystal_tree')",
+                  "json: string - verbatim configured-feature JSON"},
+        returnType = "void"
+    )
+    void addRawConfiguredFeature(@NotNull String featureId, @NotNull String json);
+
+    @LuaDoc(
+        description = "Register a raw placed feature from verbatim JSON. The JSON must parse and carry a string 'feature' reference. Pair with AddRawConfiguredFeature (or a vanilla configured feature) and reference it as 'luatweaker:<id>' from ModifyBiome add.",
+        params = {"featureId: string - id for the placed file (e.g. 'mymod:crystal_tree_patch')",
+                  "json: string - verbatim placed-feature JSON"},
+        returnType = "void"
+    )
+    void addRawPlacedFeature(@NotNull String featureId, @NotNull String json);
+
+    @LuaDoc(
+        description = "List the placed-feature IDs a removeOre call would strip for an ore block (user overrides first, then vanilla defaults). Empty when the block is unknown.",
+        params = {"blockId: string - ore block (e.g. 'minecraft:coal_ore')"},
+        returnType = "table"
+    )
+    @NotNull
+    java.util.List<String> getRemovalFeatures(@NotNull String blockId);
+
+    @LuaDoc(
+        description = "Get the biome tag (or single biome) a dimension maps to for ore/feature placement, or nil when the dimension is not registered.",
+        params = {"dimension: string - dimension ID (e.g. 'minecraft:overworld')"},
+        returnType = "string|nil"
+    )
+    @org.jetbrains.annotations.Nullable
+    String getDimensionBiomeTag(@NotNull String dimension);
+
     @LuaDoc(description = "Clear all pending modifications.", returnType = "void")
     void clearAll();
 }

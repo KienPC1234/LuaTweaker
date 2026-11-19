@@ -24,4 +24,14 @@ public interface IPlatformDimension {
      */
     @Nullable
     Object getLevel(@NotNull String dimensionId);
+
+    /**
+     * Returns the id of the dimension a raw platform entity is currently in
+     * (e.g. {@code "minecraft:overworld"}), or null when it cannot be
+     * determined on this side.
+     *
+     * @param rawEntity the platform entity (e.g. {@code Entity})
+     */
+    @Nullable
+    String getEntityDimensionId(@NotNull Object rawEntity);
 }

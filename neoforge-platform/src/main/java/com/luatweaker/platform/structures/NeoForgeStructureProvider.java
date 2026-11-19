@@ -83,6 +83,9 @@ public class NeoForgeStructureProvider {
 
         LuaTweakerLog.get().info(LogStage.SYSTEM,
                 "[StructureProvider] Applied: " + emitted + " structures, " + skipped + " skipped (missing template)");
+        com.luatweaker.core.service.AppliedEventHelper.fire("StructuresApplied", java.util.Map.of(
+            "applied", emitted,
+            "skipped", skipped));
     }
 
     private void emit(StructureServiceImpl.StructureEntry entry) {
@@ -93,7 +96,7 @@ public class NeoForgeStructureProvider {
         String tagReference = "#" + namespace + ":has_structure/" + path;
 
         datapackService.addData(namespace + "/worldgen/structure/" + path + ".json",
-                buildStructureJson(tagReference, namespace + ":" + path));
+                buildStructureJson(tagReference, namespace + ":" + path, entry));
         datapackService.addData(namespace + "/worldgen/template_pool/" + path + ".json",
                 buildPoolJson(templateLocation));
         datapackService.addData(namespace + "/worldgen/structure_set/" + path + ".json",
@@ -104,21 +107,22 @@ public class NeoForgeStructureProvider {
 
     // ===== JSON builders (field names verified against the vanilla 1.21.1 datapack) =====
 
-    private String buildStructureJson(String tagReference, String poolReference) {
+    private String buildStructureJson(String tagReference, String poolReference,
+                                        StructureServiceImpl.StructureEntry entry) {
         JsonObject json = new JsonObject();
         json.addProperty("type", "minecraft:jigsaw");
         json.addProperty("biomes", tagReference);
         json.addProperty("start_pool", poolReference);
-        json.addProperty("size", 1);
+        json.addProperty("size", entry.size());
         JsonObject startHeight = new JsonObject();
-        startHeight.addProperty("absolute", 0);
+        startHeight.addProperty("absolute", entry.startHeight());
         json.add("start_height", startHeight);
-        json.addProperty("project_start_to_heightmap", "WORLD_SURFACE_WG");
-        json.addProperty("max_distance_from_center", 80);
-        json.addProperty("use_expansion_hack", false);
-        json.addProperty("terrain_adaptation", "beard_thin");
+        json.addProperty("project_start_to_heightmap", entry.heightmap());
+        json.addProperty("max_distance_from_center", entry.maxDistance());
+        json.addProperty("use_expansion_hack", entry.useExpansionHack());
+        json.addProperty("terrain_adaptation", entry.terrainAdaptation());
         json.add("spawn_overrides", new JsonObject());
-        json.addProperty("step", "surface_structures");
+        json.addProperty("step", entry.step());
         return json.toString();
     }
 
@@ -147,7 +151,7 @@ public class NeoForgeStructureProvider {
     private String buildStructureSetJson(StructureServiceImpl.StructureEntry entry) {
         JsonObject placement = new JsonObject();
         placement.addProperty("type", "minecraft:random_spread");
-        placement.addProperty("salt", entry.structureId().hashCode() & 0x7fffffff);
+        placement.addProperty("salt", entry.salt());
         placement.addProperty("separation", entry.separation());
         placement.addProperty("spacing", entry.spacing());
 

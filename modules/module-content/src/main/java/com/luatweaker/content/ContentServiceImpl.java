@@ -139,23 +139,17 @@ public class ContentServiceImpl implements IContentService {
 
     @Override
     public IBlockBuilder createStairs(String id, String baseBlockId) {
-        return createBlock(id, b -> {
-            b.model("minecraft:block/stairs");
-        });
+        return createBlock(id, b -> b.shape("STAIRS").baseBlock(baseBlockId));
     }
 
     @Override
     public IBlockBuilder createSlab(String id, String baseBlockId) {
-        return createBlock(id, b -> {
-            b.model("minecraft:block/slab");
-        });
+        return createBlock(id, b -> b.shape("SLAB").baseBlock(baseBlockId));
     }
 
     @Override
     public IBlockBuilder createWall(String id, String baseBlockId) {
-        return createBlock(id, b -> {
-            b.model("minecraft:block/wall");
-        });
+        return createBlock(id, b -> b.shape("WALL").baseBlock(baseBlockId));
     }
 
 

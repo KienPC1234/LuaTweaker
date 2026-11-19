@@ -123,17 +123,13 @@ public final class LuaServiceBootstrap {
         com.luatweaker.client.KeyBindServiceImpl keyBindService = new com.luatweaker.client.KeyBindServiceImpl();
         
         boolean isDedicatedServer = com.luatweaker.api.pal.Platform.isInitialized() && com.luatweaker.api.pal.Platform.getContent().isDedicatedServer();
-        com.luatweaker.api.client.IGuiService guiService = null;
-        
-        if (!isDedicatedServer) {
-            try {
-                guiService = (com.luatweaker.api.client.IGuiService) com.luatweaker.platform.client.NeoForgeGuiService.class.getDeclaredConstructor().newInstance();
-            } catch (Exception e) {
-                com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
-                        "NeoForgeGuiService not available: " + e.getMessage());
-            }
-        }
-        
+        // One GuiService surface everywhere. The client implementation references
+        // client-only Minecraft classes, so a dedicated server gets the Minecraft-free
+        // headless implementation instead of loading it.
+        com.luatweaker.api.client.IGuiService guiService = isDedicatedServer
+                ? new com.luatweaker.client.HeadlessGuiService()
+                : new com.luatweaker.platform.client.NeoForgeGuiService();
+
         ClientLuaBinding.registerBindings(engine, clientService, keyBindService, guiService);
         engine.registerService("KeyBindService", keyBindService);
 
@@ -154,5 +150,14 @@ public final class LuaServiceBootstrap {
         ILuaTable recipesTable = engine.createTable();
         RecipesLuaBinding.bind(engine, recipesTable, recipeManager);
         engine.registerService("Recipes", recipesTable);
+
+        // 12. Out-of-tree Java plugins (no fork required).
+        // Built-ins above always register first so plugin overrides are explicit.
+        try {
+            com.luatweaker.core.plugin.LuaTweakerPluginLoader.loadPlugins(engine);
+        } catch (Exception e) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.SYSTEM,
+                    "[LuaServiceBootstrap] Java plugin loading failed: " + e.getMessage());
+        }
     }
 }

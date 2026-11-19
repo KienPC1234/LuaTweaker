@@ -1,23 +1,37 @@
 package com.luatweaker.network;
 
+import com.luatweaker.api.log.LogStage;
+import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.api.network.IRocketNetworkService;
+import com.luatweaker.api.network.RpcPhase;
 import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 public class NetworkServiceImpl implements IRocketNetworkService {
-    private static final com.google.gson.Gson GSON = new com.google.gson.Gson();
-    /** Matches the payload codec bound: {@code ByteBufCodecs.STRING_UTF8} caps at 32767 chars. */
-    private static final int MAX_PAYLOAD_CHARS = 32_767;
-    /** UTF-8 can use up to three bytes per char in the codec's bound. */
-    private static final int MAX_PAYLOAD_BYTES = MAX_PAYLOAD_CHARS * 3;
+
+    /** Upper bound on outstanding request/response round trips in this VM. */
+    private static final int MAX_PENDING_RPC = 256;
+    /** A request nobody polls (dead coroutine, reload) is dropped after this. */
+    private static final long PENDING_RPC_TTL_NANOS = TimeUnit.SECONDS.toNanos(60);
+    /** Invoke flood protection: burst size per player. */
+    private static final double RPC_BURST = 60.0;
+    /** Invoke flood protection: sustained requests per second per player. */
+    private static final double RPC_REFILL_PER_SECOND = 30.0;
+
     private final ILuaEngine engine;
     private final Map<String, ILuaTable> remoteEvents = new ConcurrentHashMap<>();
     private final Map<String, ILuaTable> remoteFunctions = new ConcurrentHashMap<>();
+    private final Map<String, PendingRpc> pendingRpcs = new ConcurrentHashMap<>();
+    private final Map<String, RpcBudget> rpcBudgets = new ConcurrentHashMap<>();
 
     public NetworkServiceImpl(ILuaEngine engine) {
         this.engine = engine;
@@ -60,7 +74,7 @@ public class NetworkServiceImpl implements IRocketNetworkService {
      * Unpacks a Lua vararg-style table into a positional array, preserving order.
      * (asMap() is a HashMap whose iteration order scrambles positional args.)
      */
-    private ILuaValue[] unpackTable(ILuaTable tbl) {
+    static ILuaValue[] unpackTable(ILuaTable tbl) {
         java.util.ArrayList<ILuaValue> list = new java.util.ArrayList<>();
         for (int i = 1; i <= tbl.length(); i++) {
             ILuaValue val = tbl.rawget(i);
@@ -79,10 +93,10 @@ public class NetworkServiceImpl implements IRocketNetworkService {
             }
             ILuaValue newFn = remoteEventClass.asTable().rawget("new");
             ILuaValue res = engine.callFunction(newFn, remoteEventClass, engine.wrapString(name), createServiceTable());
-            com.luatweaker.api.log.LuaTweakerLog.get().info(
-                com.luatweaker.api.log.LogStage.SYSTEM,
-                "[Network Registry] [NetService@" + System.identityHashCode(this) + " / Engine@" + System.identityHashCode(engine) + "] Registered RemoteEvent '" + channelName + "'. All channels in this instance: " + remoteEvents.keySet()
-            );
+            LuaTweakerLog.get().debug(LogStage.SYSTEM,
+                    "[Network Registry] [NetService@" + System.identityHashCode(this)
+                            + " / Engine@" + System.identityHashCode(engine) + "] Registered RemoteEvent '"
+                            + channelName + "'. All channels in this instance: " + remoteEvents.keySet());
             return res.asTable();
         });
         return resTable;
@@ -106,131 +120,339 @@ public class NetworkServiceImpl implements IRocketNetworkService {
         return java.util.Set.copyOf(remoteEvents.keySet());
     }
 
+    // ==== RemoteFunction request/response ====
+
     @Override
-    public ILuaValue InvokeServer(String functionName, ILuaValue[] args) {
-        ILuaTable remoteFn = remoteFunctions.get(functionName);
-        if (remoteFn != null) {
-            ILuaValue callback = remoteFn.rawget("OnServerInvoke");
-            if (callback != null && !callback.isNil()) {
-                return engine.callFunction(callback, args);
-            }
+    public String RpcInvokeServer(String functionName, ILuaValue[] args) {
+        requireRegisteredFunction(functionName);
+        String requestId = registerRequest();
+        try {
+            String json = NetworkPayloadCodec.encodeArgs(args != null ? args : new ILuaValue[0]);
+            Platform.getNetwork().sendRpcPacketToServer(requestId, RpcPhase.INVOKE, functionName, json, "");
+        } catch (RuntimeException e) {
+            pendingRpcs.remove(requestId);
+            throw e;
         }
-        return engine.nilValue();
+        return requestId;
     }
 
     @Override
-    public ILuaValue InvokeClient(String functionName, String playerUuid, ILuaValue[] args) {
-        ILuaTable remoteFn = remoteFunctions.get(functionName);
-        if (remoteFn != null) {
-            ILuaValue callback = remoteFn.rawget("OnClientInvoke");
-            if (callback != null && !callback.isNil()) {
-                return engine.callFunction(callback, args);
+    public String RpcInvokeClient(String functionName, String playerUuid, ILuaValue[] args) {
+        requireRegisteredFunction(functionName);
+        if (playerUuid == null || playerUuid.isBlank()) {
+            throw new IllegalArgumentException(
+                    "RemoteFunction:InvokeClient() requires a player (string uuid or Player object)");
+        }
+        String requestId = registerRequest();
+        try {
+            String json = NetworkPayloadCodec.encodeArgs(args != null ? args : new ILuaValue[0]);
+            Platform.getNetwork().sendRpcPacket(playerUuid, requestId, RpcPhase.INVOKE, functionName, json, "");
+        } catch (RuntimeException e) {
+            pendingRpcs.remove(requestId);
+            throw e;
+        }
+        return requestId;
+    }
+
+    @Override
+    public ILuaTable RpcPoll(String requestId) {
+        ILuaTable result = engine.createTable();
+        PendingRpc pending = requestId == null ? null : pendingRpcs.get(requestId);
+        if (pending == null) {
+            result.rawset("Status", engine.wrapString("error"));
+            result.rawset("Error", engine.wrapString("RemoteFunction request is unknown or already completed"));
+            return result;
+        }
+        if (pending.state == RpcState.PENDING
+                && System.nanoTime() - pending.createdAtNanos > PENDING_RPC_TTL_NANOS) {
+            pendingRpcs.remove(requestId);
+            result.rawset("Status", engine.wrapString("error"));
+            result.rawset("Error", engine.wrapString("RemoteFunction request expired before a response arrived"));
+            return result;
+        }
+        switch (pending.state) {
+            case PENDING -> result.rawset("Status", engine.wrapString("pending"));
+            case DONE -> {
+                // One-shot: the Lua wrapper consumes the value exactly once.
+                pendingRpcs.remove(requestId);
+                result.rawset("Status", engine.wrapString("done"));
+                result.rawset("Value", pending.value != null ? pending.value : engine.nilValue());
+            }
+            case ERROR -> {
+                pendingRpcs.remove(requestId);
+                result.rawset("Status", engine.wrapString("error"));
+                result.rawset("Error", engine.wrapString(
+                        pending.error != null ? pending.error : "RemoteFunction call failed"));
             }
         }
-        return engine.nilValue();
+        return result;
     }
+
+    @Override
+    public void RpcCancel(String requestId) {
+        if (requestId != null) {
+            pendingRpcs.remove(requestId);
+        }
+    }
+
+    @Override
+    public void OnRpcInvoke(String requestId, String functionName, String playerUuid, String argsJson) {
+        boolean fromClient = playerUuid != null && !playerUuid.isBlank();
+        if (requestId == null || requestId.isBlank() || functionName == null || functionName.isBlank()) {
+            LuaTweakerLog.get().error(LogStage.SYSTEM,
+                    "[Network] Dropped malformed RemoteFunction request (id='" + requestId
+                            + "', function='" + functionName + "')");
+            return;
+        }
+
+        // Rate-limit before anything else: unknown function names must not bypass the bucket
+        // and turn the server into an error-packet amplifier.
+        if (fromClient && !consumeBudget(playerUuid)) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[Network] Rate-limited RemoteFunction '" + functionName + "' from player " + playerUuid);
+            respondRpc(requestId, fromClient, playerUuid, functionName, null,
+                    "Too many RemoteFunction requests; slow down");
+            return;
+        }
+
+        ILuaTable remoteFn = remoteFunctions.get(functionName);
+        String handlerName = fromClient ? "OnServerInvoke" : "OnClientInvoke";
+        ILuaValue callback = remoteFn == null ? null : remoteFn.rawget(handlerName);
+        if (callback == null || !callback.isFunction()) {
+            respondRpc(requestId, fromClient, playerUuid, functionName, null,
+                    "RemoteFunction '" + functionName + "' has no " + handlerName + " handler");
+            return;
+        }
+
+        ILuaValue[] args;
+        try {
+            args = NetworkPayloadCodec.decodeArgs(engine, argsJson == null ? "" : argsJson);
+        } catch (RuntimeException e) {
+            respondRpc(requestId, fromClient, playerUuid, functionName, null,
+                    "Malformed RemoteFunction request payload: " + e.getMessage());
+            return;
+        }
+
+        ILuaValue result;
+        try {
+            ILuaValue[] callArgs = args;
+            if (fromClient) {
+                ILuaValue player = resolvePlayerTable(playerUuid);
+                if (player == null) {
+                    respondRpc(requestId, fromClient, playerUuid, functionName, null,
+                            "Player '" + playerUuid + "' is no longer online");
+                    return;
+                }
+                callArgs = new ILuaValue[args.length + 1];
+                callArgs[0] = player;
+                System.arraycopy(args, 0, callArgs, 1, args.length);
+            }
+            result = engine.callFunction(callback, callArgs);
+        } catch (RuntimeException e) {
+            respondRpc(requestId, fromClient, playerUuid, functionName, null,
+                    "RemoteFunction '" + functionName + "' raised: " + e.getMessage());
+            return;
+        }
+
+        String resultJson;
+        try {
+            resultJson = NetworkPayloadCodec.encodeArgs(new ILuaValue[]{result});
+        } catch (RuntimeException e) {
+            respondRpc(requestId, fromClient, playerUuid, functionName, null,
+                    "Return value of RemoteFunction '" + functionName + "' cannot be sent: " + e.getMessage());
+            return;
+        }
+        respondRpc(requestId, fromClient, playerUuid, functionName, resultJson, "");
+    }
+
+    @Override
+    public void OnRpcResult(String requestId, String resultJson, String error) {
+        PendingRpc pending = requestId == null ? null : pendingRpcs.get(requestId);
+        if (pending == null) {
+            // Late answer for a timed-out/cancelled request, or a spoofed id.
+            LuaTweakerLog.get().debug(LogStage.SYSTEM,
+                    "[Network] Ignored RemoteFunction response for unknown request " + requestId);
+            return;
+        }
+        if (pending.state != RpcState.PENDING) {
+            LuaTweakerLog.get().debug(LogStage.SYSTEM,
+                    "[Network] Ignored duplicate RemoteFunction response " + requestId);
+            return;
+        }
+        if (error != null && !error.isEmpty()) {
+            pending.error = error;
+            pending.state = RpcState.ERROR;
+            return;
+        }
+        try {
+            ILuaValue[] values = NetworkPayloadCodec.decodeArgs(engine, resultJson == null ? "" : resultJson);
+            pending.value = values.length > 0 ? values[0] : engine.nilValue();
+            pending.state = RpcState.DONE;
+        } catch (RuntimeException e) {
+            pending.error = "Malformed RemoteFunction response payload: " + e.getMessage();
+            pending.state = RpcState.ERROR;
+        }
+    }
+
+    private void requireRegisteredFunction(String functionName) {
+        if (functionName == null || functionName.isBlank()) {
+            throw new IllegalArgumentException("RemoteFunction name must not be empty");
+        }
+        if (!remoteFunctions.containsKey(functionName)) {
+            throw new IllegalArgumentException("RemoteFunction '" + functionName
+                    + "' is not registered on this side; call NetworkService:GetOrCreateRemoteFunction('"
+                    + functionName + "') first");
+        }
+    }
+
+    private String registerRequest() {
+        pruneExpiredRequests();
+        if (pendingRpcs.size() >= MAX_PENDING_RPC) {
+            throw new IllegalStateException("Too many unanswered RemoteFunction requests ("
+                    + MAX_PENDING_RPC + "); responses were never polled. Use RpcCancel on timeout.");
+        }
+        String requestId = UUID.randomUUID().toString();
+        pendingRpcs.put(requestId, new PendingRpc());
+        return requestId;
+    }
+
+    private void pruneExpiredRequests() {
+        long now = System.nanoTime();
+        pendingRpcs.entrySet().removeIf(entry ->
+                entry.getValue().state == RpcState.PENDING
+                        && now - entry.getValue().createdAtNanos > PENDING_RPC_TTL_NANOS);
+    }
+
+    private boolean consumeBudget(String playerUuid) {
+        return rpcBudgets.computeIfAbsent(playerUuid, ignored -> new RpcBudget()).tryConsume();
+    }
+
+    private @Nullable ILuaValue resolvePlayerTable(String playerUuid) {
+        if (!Platform.isInitialized()) {
+            return null;
+        }
+        com.luatweaker.api.entity.IPlayer player = Platform.getEntity().getPlayer(playerUuid);
+        if (player == null) {
+            return null;
+        }
+        return com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, player);
+    }
+
+    private void respondRpc(String requestId, boolean toClient, String playerUuid, String functionName,
+                            @Nullable String resultJson, @Nullable String error) {
+        String safeJson = resultJson == null ? "" : resultJson;
+        String safeError = error == null ? "" : error;
+        try {
+            if (toClient) {
+                Platform.getNetwork().sendRpcPacket(playerUuid, requestId, RpcPhase.RESULT,
+                        functionName, safeJson, safeError);
+            } else {
+                Platform.getNetwork().sendRpcPacketToServer(requestId, RpcPhase.RESULT,
+                        functionName, safeJson, safeError);
+            }
+        } catch (RuntimeException e) {
+            LuaTweakerLog.get().error(LogStage.SYSTEM,
+                    "[Network] Failed to answer RemoteFunction '" + functionName + "': " + e.getMessage());
+        }
+    }
+
+    // ==== RemoteEvents ====
 
     @Override
     public void FireClient(String channelName, String playerUuid, ILuaValue[] args) {
-        String json = serializeArgs(args);
+        String json = NetworkPayloadCodec.encodeArgs(args != null ? args : new ILuaValue[0]);
         Platform.getNetwork().sendPayloadPacket(playerUuid, channelName, json);
     }
 
     @Override
     public void FireAllClients(String channelName, ILuaValue[] args) {
-        String json = serializeArgs(args);
+        String json = NetworkPayloadCodec.encodeArgs(args != null ? args : new ILuaValue[0]);
         Platform.getNetwork().broadcastPayloadPacket(channelName, json);
     }
 
     @Override
     public void FireServer(String channelName, ILuaValue[] args) {
-        String json = serializeArgs(args);
+        String json = NetworkPayloadCodec.encodeArgs(args != null ? args : new ILuaValue[0]);
         Platform.getNetwork().sendPayloadPacketToServer(channelName, json);
     }
 
     @Override
     public void OnClientFired(String channelName, String playerUuid, ILuaValue[] args) {
-        com.luatweaker.api.log.LuaTweakerLog.get().debug(
-            com.luatweaker.api.log.LogStage.SYSTEM,
-            "[Network OnClientFired] Looking up channel '" + channelName + "'. Available channels: "
-                + remoteEvents.keySet()
-        );
         ILuaTable remoteEvent = remoteEvents.get(channelName);
-        if (remoteEvent != null) {
-            ILuaValue onServerEvent = remoteEvent.rawget("OnServerEvent");
-            if (onServerEvent != null && !onServerEvent.isNil()) {
-                ILuaValue signalClass = engine.getGlobalEnvironment().rawget("Signal");
-                if (signalClass != null && signalClass.isTable()) {
-                    // Dispatch synchronously on the calling (main) thread: network handlers
-                    // mutate world/player state and must not run on a deferred coroutine
-                    // virtual thread. Fall back to Fire on an engine without FireSync.
-                    ILuaValue fireFn = signalClass.asTable().rawget("FireSync");
-                    if (fireFn == null || fireFn.isNil()) {
-                        fireFn = signalClass.asTable().rawget("Fire");
-                    }
-                    if (fireFn != null && !fireFn.isNil()) {
-                        ILuaValue player = engine.nilValue();
-                        com.luatweaker.api.entity.IPlayer p = null;
-                        if (Platform.isInitialized()) {
-                            p = Platform.getEntity().getPlayer(playerUuid);
-                            if (p != null) {
-                                player = com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p);
-                            } else {
-                                com.luatweaker.api.log.LuaTweakerLog.get().warn(
-                                    com.luatweaker.api.log.LogStage.SYSTEM,
-                                    "[Network Error] OnClientFired aborted: Player UUID '" + playerUuid + "' not found on server."
-                                );
-                                return;
-                            }
-                        }
-
-                        com.luatweaker.api.log.LuaTweakerLog.get().debug(
-                            com.luatweaker.api.log.LogStage.SYSTEM,
-                            "[Network] OnClientFired firing RemoteEvent '" + channelName
-                                + "' for player: " + (p != null ? p.getName() : "Unknown")
-                        );
-
-                        ILuaValue[] fireArgs = new ILuaValue[args.length + 1];
-                        fireArgs[0] = player;
-                        System.arraycopy(args, 0, fireArgs, 1, args.length);
-                        engine.callFunction(fireFn, appendThis(onServerEvent, fireArgs));
-                    }
-                }
-            } else {
-                com.luatweaker.api.log.LuaTweakerLog.get().warn(
-                    com.luatweaker.api.log.LogStage.SYSTEM,
-                    "[Network Error] RemoteEvent '" + channelName + "' exists but OnServerEvent is NIL!"
-                );
-            }
-        } else {
-            com.luatweaker.api.log.LuaTweakerLog.get().warn(
-                com.luatweaker.api.log.LogStage.SYSTEM,
-                "[Network Error] RemoteEvent '" + channelName + "' was NOT registered in remoteEvents map! Registered channels: " + remoteEvents.keySet()
-            );
+        if (remoteEvent == null) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[Network Error] RemoteEvent '" + channelName
+                            + "' was NOT registered in remoteEvents map! Registered channels: "
+                            + remoteEvents.keySet());
+            return;
         }
+        ILuaValue onServerEvent = remoteEvent.rawget("OnServerEvent");
+        if (onServerEvent == null || onServerEvent.isNil()) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[Network Error] RemoteEvent '" + channelName + "' exists but OnServerEvent is NIL!");
+            return;
+        }
+        ILuaValue fireFn = resolveFireSync();
+        if (fireFn == null) {
+            return;
+        }
+        ILuaValue player = engine.nilValue();
+        com.luatweaker.api.entity.IPlayer resolved = null;
+        if (Platform.isInitialized()) {
+            resolved = Platform.getEntity().getPlayer(playerUuid);
+            if (resolved == null) {
+                LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                        "[Network Error] OnClientFired aborted: Player UUID '" + playerUuid
+                                + "' not found on server.");
+                return;
+            }
+            player = com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, resolved);
+        }
+
+        LuaTweakerLog.get().debug(LogStage.SYSTEM,
+                "[Network] OnClientFired firing RemoteEvent '" + channelName
+                        + "' for player: " + (resolved != null ? resolved.getName() : "Unknown"));
+
+        ILuaValue[] fireArgs = new ILuaValue[args.length + 1];
+        fireArgs[0] = player;
+        System.arraycopy(args, 0, fireArgs, 1, args.length);
+        engine.callFunction(fireFn, appendThis(onServerEvent, fireArgs));
     }
 
     @Override
     public void OnServerFired(String channelName, String playerUuid, ILuaValue[] args) {
         ILuaTable remoteEvent = remoteEvents.get(channelName);
-        if (remoteEvent != null) {
-            ILuaValue onClientEvent = remoteEvent.rawget("OnClientEvent");
-            if (onClientEvent != null && !onClientEvent.isNil()) {
-                ILuaValue signalClass = engine.getGlobalEnvironment().rawget("Signal");
-                if (signalClass != null && signalClass.isTable()) {
-                    // Dispatch synchronously on the calling (main) thread: network handlers
-                    // mutate world/player state and must not run on a deferred coroutine
-                    // virtual thread. Fall back to Fire on an engine without FireSync.
-                    ILuaValue fireFn = signalClass.asTable().rawget("FireSync");
-                    if (fireFn == null || fireFn.isNil()) {
-                        fireFn = signalClass.asTable().rawget("Fire");
-                    }
-                    if (fireFn != null && !fireFn.isNil()) {
-                        engine.callFunction(fireFn, appendThis(onClientEvent, args));
-                    }
-                }
-            }
+        if (remoteEvent == null) {
+            LuaTweakerLog.get().debug(LogStage.SYSTEM,
+                    "[Network] Clientbound RemoteEvent '" + channelName
+                            + "' has no listener on this client. Registered channels: "
+                            + remoteEvents.keySet());
+            return;
         }
+        ILuaValue onClientEvent = remoteEvent.rawget("OnClientEvent");
+        if (onClientEvent == null || onClientEvent.isNil()) {
+            return;
+        }
+        ILuaValue fireFn = resolveFireSync();
+        if (fireFn != null) {
+            engine.callFunction(fireFn, appendThis(onClientEvent, args));
+        }
+    }
+
+    /**
+     * Network handlers mutate world/player state and must run synchronously on the calling
+     * (main) thread, never on a deferred coroutine virtual thread.
+     */
+    private @Nullable ILuaValue resolveFireSync() {
+        ILuaValue signalClass = engine.getGlobalEnvironment().rawget("Signal");
+        if (signalClass == null || !signalClass.isTable()) {
+            return null;
+        }
+        ILuaValue fireFn = signalClass.asTable().rawget("FireSync");
+        if (fireFn == null || fireFn.isNil()) {
+            fireFn = signalClass.asTable().rawget("Fire");
+        }
+        return fireFn == null || fireFn.isNil() ? null : fireFn;
     }
 
     private ILuaValue[] appendThis(ILuaValue self, ILuaValue[] args) {
@@ -240,70 +462,33 @@ public class NetworkServiceImpl implements IRocketNetworkService {
         return result;
     }
 
-    private String serializeArgs(ILuaValue[] args) {
-        com.google.gson.JsonArray array = new com.google.gson.JsonArray();
-        for (ILuaValue val : args != null ? args : new ILuaValue[0]) {
-            array.add(convertToTree(val));
-        }
-        String json = GSON.toJson(array);
-        int bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-        // The packet codec rejects strings longer than MAX_PAYLOAD_CHARS on the Netty thread,
-        // which tears the connection down instead of raising a Lua error. Enforce the same
-        // bound before the packet is queued so a script sees a normal error.
-        if (json.length() > MAX_PAYLOAD_CHARS || bytes > MAX_PAYLOAD_BYTES) {
-            throw new IllegalArgumentException("Network payload is too large: " + json.length()
-                    + " chars / " + bytes + " bytes (limit " + MAX_PAYLOAD_CHARS + " chars, "
-                    + MAX_PAYLOAD_BYTES + " bytes)");
-        }
-        return json;
+    private enum RpcState {
+        PENDING,
+        DONE,
+        ERROR
     }
 
-    private static final int MAX_NESTING = 32;
-
-    private com.google.gson.JsonElement convertToTree(ILuaValue val) {
-        return convertToTree(val, 0);
+    private static final class PendingRpc {
+        private final long createdAtNanos = System.nanoTime();
+        private volatile RpcState state = RpcState.PENDING;
+        private volatile ILuaValue value;
+        private volatile String error;
     }
 
-    private com.google.gson.JsonElement convertToTree(ILuaValue val, int depth) {
-        if (val == null || val.isNil()) return com.google.gson.JsonNull.INSTANCE;
-        if (depth > MAX_NESTING) {
-            throw new IllegalArgumentException(
-                    "Network payload nesting is too deep (max " + MAX_NESTING + " levels)");
+    private static final class RpcBudget {
+        private double tokens = RPC_BURST;
+        private long lastRefillNanos = System.nanoTime();
+
+        private synchronized boolean tryConsume() {
+            long now = System.nanoTime();
+            double elapsedSeconds = (now - lastRefillNanos) / 1_000_000_000.0;
+            lastRefillNanos = now;
+            tokens = Math.min(RPC_BURST, tokens + elapsedSeconds * RPC_REFILL_PER_SECOND);
+            if (tokens < 1.0) {
+                return false;
+            }
+            tokens -= 1.0;
+            return true;
         }
-        if (val.isTable()) {
-            ILuaTable table = val.asTable();
-            int length = table.length();
-            Map<ILuaValue, ILuaValue> entries = table.asMap();
-            boolean isArray = length > 0 && entries.size() == length;
-            if (isArray) {
-                for (ILuaValue key : entries.keySet()) {
-                    if (!key.isNumber() || key.asInt() < 1 || key.asInt() > length) {
-                        isArray = false;
-                        break;
-                    }
-                }
-            }
-            if (isArray) {
-                // JSON arrays round-trip as Lua arrays (1..n); objects would arrive as
-                // string-keyed tables and break #t / ipairs on the receiver.
-                com.google.gson.JsonArray array = new com.google.gson.JsonArray();
-                for (int i = 1; i <= length; i++) {
-                    array.add(convertToTree(table.rawget(i), depth + 1));
-                }
-                return array;
-            }
-            com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
-            for (Map.Entry<ILuaValue, ILuaValue> entry : entries.entrySet()) {
-                obj.add(entry.getKey().asString(), convertToTree(entry.getValue(), depth + 1));
-            }
-            return obj;
-        }
-        Object raw = val.toJavaObject();
-        if (raw instanceof String s) return new com.google.gson.JsonPrimitive(s);
-        if (raw instanceof Number n) return new com.google.gson.JsonPrimitive(n);
-        if (raw instanceof Boolean b) return new com.google.gson.JsonPrimitive(b);
-        throw new IllegalArgumentException(
-                "Network payloads only support booleans, numbers, strings and tables of those; got "
-                        + val.getClass().getSimpleName());
     }
 }

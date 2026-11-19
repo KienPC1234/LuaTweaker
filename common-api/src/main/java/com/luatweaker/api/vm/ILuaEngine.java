@@ -16,7 +16,29 @@ public interface ILuaEngine {
     void registerGlobal(String name, ILuaValue value);
     void registerGlobal(String name, ILuaFunction function);
     void executeScript(File file, String context);
+
+    /**
+     * Executes a chunk and records failures in {@link #getAndClearLastExecutionError()} instead
+     * of throwing. Game code relies on this so one broken script cannot abort the load loop.
+     */
     void executeString(String code, String name);
+
+    /**
+     * Executes a chunk and throws when it fails. Use this in tests and fail-fast bootstrapping:
+     * {@link #executeString} swallows the VM error, so an assertion wrapped around it can never
+     * fail.
+     *
+     * @throws IllegalStateException carrying the engine's error message
+     */
+    default void executeStringOrThrow(String code, String name) {
+        // Drop a stale error so only this chunk decides the outcome.
+        getAndClearLastExecutionError();
+        executeString(code, name);
+        String error = getAndClearLastExecutionError();
+        if (error != null) {
+            throw new IllegalStateException("Lua chunk '" + name + "' failed: " + error);
+        }
+    }
     
     ILuaTable createTable();
     ILuaValue wrapUserdata(Object userdata);

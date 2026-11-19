@@ -71,4 +71,24 @@ public interface INoiseService {
         returnType = "void"
     )
     void setSeed(long seed);
+
+    @LuaDoc(
+        description = "3D single-octave simplex noise for caves, floating islands and overhangs. Range approximately [-1, 1].",
+        params = {"x: number", "y: number", "z: number", "frequency: number - input frequency (default 1.0)"},
+        returnType = "number"
+    )
+    double simplex3(double x, double y, double z,
+                    @LuaDefault("1.0") double frequency);
+
+    @LuaDoc(
+        description = "3D Fractional Brownian Motion noise: sum of simplex octaves, normalized to [-1, 1].",
+        params = {"x: number", "y: number", "z: number", "octaves: number - number of octaves (>= 1)",
+                  "lacunarity: number - frequency multiplier per octave (default 2.0)",
+                  "gain: number - amplitude multiplier per octave (default 0.5)"},
+        returnType = "number"
+    )
+    double fbm3(double x, double y, double z,
+                @LuaDefault("4") int octaves,
+                @LuaDefault("2.0") double lacunarity,
+                @LuaDefault("0.5") double gain);
 }

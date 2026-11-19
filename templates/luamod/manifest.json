@@ -1,0 +1,11 @@
+{
+  "id": "my_mod",
+  "name": "My Mod",
+  "author": "YourName",
+  "version": "1.0.0",
+  "main": "main.lua",
+  "environment": "universal",
+  "dependencies": [],
+  "optional_dependencies": [],
+  "permissions": []
+}

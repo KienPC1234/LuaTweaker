@@ -51,6 +51,26 @@ public interface IPlayer extends IEntity {
     @LuaDoc(description = "Clears all items from the player's inventory.")
     default void clearInventory() {}
 
+    @LuaDoc(
+        description = "Lists every non-empty inventory slot as a table of {Slot, Id, Count, Name?, Damage?}. Slot is the raw inventory index (0-based).",
+        returnType = "table"
+    )
+    default java.util.List<java.util.Map<String, Object>> getInventory() { return java.util.List.of(); }
+
+    @LuaDoc(
+        description = "Counts how many of the item the player carries (all inventory slots, including armor and offhand).",
+        params = {"itemId: string"},
+        returnType = "integer"
+    )
+    default int countItem(String itemId) { return 0; }
+
+    @LuaDoc(
+        description = "Removes up to count of the item from the inventory and returns how many were actually removed.",
+        params = {"itemId: string", "count: integer"},
+        returnType = "integer"
+    )
+    default int removeItem(String itemId, @LuaDefault("1") int count) { return 0; }
+
     @LuaDoc(description = "Drops specified item from the player.", params = {"itemId: string", "count: integer"})
     default void dropItem(String itemId, @LuaDefault("1") int count) {}
 
@@ -72,4 +92,13 @@ public interface IPlayer extends IEntity {
 
     @LuaDoc(description = "Teleports player to target coordinates.", params = {"x: number", "y: number", "z: number"})
     default void teleport(double x, double y, double z) {}
+
+    @LuaDoc(description = "Synchronizes a custom data value to the player's client for client-side HUD/scripts.", params = {"key: string", "value: any"})
+    default void syncCustomData(String key, Object value) {}
+
+    @LuaDoc(description = "Opens a custom canvas screen on the player's client.", params = {"screenId: string", "[title: string]"})
+    default void openScreen(String screenId, @LuaDefault("") String title) {}
+
+    @LuaDoc(description = "Closes any custom canvas screen on the player's client.")
+    default void closeScreen() {}
 }

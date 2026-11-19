@@ -80,6 +80,9 @@ public class EntitiesLuaBinding {
                 case "Velocity", "velocity" -> {
                     return buildVector3(engine, entity.getMotionX(), entity.getMotionY(), entity.getMotionZ());
                 }
+                case "LookVector", "lookVector" -> {
+                    return buildVector3(engine, entity.getLookVectorX(), entity.getLookVectorY(), entity.getLookVectorZ());
+                }
                 default -> {
                     ILuaValue existing = table.rawget(key);
                     if (existing != null && !existing.isNil()) {
@@ -284,6 +287,25 @@ public class EntitiesLuaBinding {
         };
         playersTable.rawset("GetPlayers", getPlayersFn);
         playersTable.rawset("getPlayers", getPlayersFn);
+
+        ILuaFunction getLocalPlayerFn = args -> {
+            com.luatweaker.api.entity.IPlayer lp = com.luatweaker.api.pal.Platform.getEntity().getLocalPlayer();
+            return lp != null ? createPlayerLuaTable(engine, lp) : engine.nilValue();
+        };
+        playersTable.rawset("GetLocalPlayer", getLocalPlayerFn);
+        playersTable.rawset("getLocalPlayer", getLocalPlayerFn);
+
+        ILuaTable meta = engine.createTable();
+        meta.rawset("__index", (ILuaFunction) args -> {
+            String key = args[1].asString();
+            if ("LocalPlayer".equals(key) || "localPlayer".equals(key)) {
+                com.luatweaker.api.entity.IPlayer lp = com.luatweaker.api.pal.Platform.getEntity().getLocalPlayer();
+                return lp != null ? createPlayerLuaTable(engine, lp) : engine.nilValue();
+            }
+            return playersTable.rawget(key);
+        });
+        playersTable.setMetatable(meta);
+
         engine.registerService("Players", playersTable);
         engine.registerGlobal("Players", playersTable);
     }

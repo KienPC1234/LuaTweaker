@@ -109,9 +109,24 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
         extraNbt = tag.getCompound(TAG_EXTRA);
         energyStored = tag.getInt(TAG_ENERGY);
         fluidId = tag.getString(TAG_FLUID_ID);
+        if (!fluidId.isEmpty() && !fluidId.contains(":")) {
+            fluidId = "minecraft:" + fluidId;
+        }
         fluidAmount = tag.getInt(TAG_FLUID_AMOUNT);
         progress = tag.getFloat(TAG_PROGRESS);
         clampMachineState();
+    }
+
+    @Override
+    public net.minecraft.network.protocol.Packet<net.minecraft.network.protocol.game.ClientGamePacketListener> getUpdatePacket() {
+        return net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket.create(this);
+    }
+
+    @Override
+    public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
+        CompoundTag tag = new CompoundTag();
+        saveAdditional(tag, registries);
+        return tag;
     }
 
     private void clampMachineState() {
@@ -190,7 +205,7 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
             fluidId = "";
             fluidAmount = 0;
         } else {
-            fluidId = id;
+            fluidId = id.contains(":") ? id : "minecraft:" + id;
             fluidAmount = Math.max(0, Math.min(amount, capacity));
         }
         setChanged();
@@ -203,16 +218,6 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
     public void setProgress(float value) {
         progress = value < 0f ? 0f : Math.min(value, 1f);
         setChanged();
-    }
-
-    @Override
-    public net.minecraft.nbt.CompoundTag getUpdateTag(net.minecraft.core.HolderLookup.Provider registries) {
-        return saveWithoutMetadata(registries);
-    }
-
-    @Override
-    public net.minecraft.network.protocol.Packet<net.minecraft.network.protocol.game.ClientGamePacketListener> getUpdatePacket() {
-        return net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket.create(this);
     }
 
     /** Extra NBT written by Lua via World:SetBlockEntityData (preserved across saves). */

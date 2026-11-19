@@ -100,6 +100,89 @@ public class StorageServiceImplTest {
     }
 
     @Test
+    void removeAsyncDeletesAndPersistsTheRemoval() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        StorageServiceImpl first = new StorageServiceImpl(engine);
+        IRobloxStorageService.IDataStore world = first.GetWorldStorage();
+        world.SetAsync("keep", 1);
+        world.SetAsync("drop", 2);
+
+        assertTrue(world.RemoveAsync("drop"), "removing an existing key must report true");
+        assertFalse(world.RemoveAsync("drop"), "removing a missing key must report false");
+        assertNull(world.GetAsync("drop"));
+
+        StorageServiceImpl second = new StorageServiceImpl(engine);
+        assertNull(second.GetWorldStorage().GetAsync("drop"), "the removal must be written to disk");
+        assertEquals(1.0, ((Number) second.GetWorldStorage().GetAsync("keep")).doubleValue());
+    }
+
+    @Test
+    void getKeysReturnsStoredKeysSorted() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        StorageServiceImpl storageService = new StorageServiceImpl(engine);
+        IRobloxStorageService.IDataStore world = storageService.GetWorldStorage();
+        world.SetAsync("zeta", 1);
+        world.SetAsync("alpha", 2);
+        world.SetAsync("mid", 3);
+
+        java.util.List<String> keys = world.GetKeys();
+        assertTrue(keys.containsAll(java.util.List.of("alpha", "mid", "zeta")), "keys=" + keys);
+        java.util.List<String> sorted = new java.util.ArrayList<>(keys);
+        java.util.Collections.sort(sorted);
+        assertEquals(sorted, keys, "GetKeys must be sorted");
+
+        IRobloxStorageService.IDataStore player = storageService.GetPlayerStorage("uuid-keys");
+        assertTrue(player.GetKeys().isEmpty(), "an untouched player store must have no keys");
+        player.SetAsync("coins", 5);
+        assertEquals(java.util.List.of("coins"), player.GetKeys());
+    }
+
+    @Test
+    void incrementAsyncAddsAndCreatesTheKey() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        StorageServiceImpl storageService = new StorageServiceImpl(engine);
+        IRobloxStorageService.IDataStore world = storageService.GetWorldStorage();
+
+        assertEquals(1.0, world.IncrementAsync("counter", 1.0), 1e-9, "missing keys start at 0");
+        assertEquals(3.5, world.IncrementAsync("counter", 2.5), 1e-9);
+        assertEquals(3.5, ((Number) world.GetAsync("counter")).doubleValue(), 1e-9);
+
+        IRobloxStorageService.IDataStore session = storageService.GetSessionStorage();
+        assertEquals(-2.0, session.IncrementAsync("balance", -2.0), 1e-9);
+    }
+
+    @Test
+    void incrementAsyncRejectsNonNumericValues() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        StorageServiceImpl storageService = new StorageServiceImpl(engine);
+        IRobloxStorageService.IDataStore world = storageService.GetWorldStorage();
+        world.SetAsync("label", "not a number");
+
+        assertThrows(IllegalStateException.class, () -> world.IncrementAsync("label", 1.0),
+                "incrementing a string must fail loudly instead of overwriting it");
+        assertEquals("not a number", world.GetAsync("label"), "the stored value must be untouched");
+    }
+
+    @Test
+    void luaBindingExposesRemoveKeysAndIncrement() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        StorageServiceImpl storageService = new StorageServiceImpl(engine);
+        StorageLuaBinding.registerBindings(engine, storageService);
+
+        engine.executeStringOrThrow(
+                "local s = Storage:GetSessionStorage()\n" +
+                "s:SetAsync('a', 1)\n" +
+                "s:SetAsync('b', 'x')\n" +
+                "assert(s:IncrementAsync('a', 2) == 3, 'IncrementAsync must return the new value')\n" +
+                "local keys = s:GetKeys()\n" +
+                "assert(type(keys) == 'table' and #keys == 2, 'GetKeys must return a Lua array')\n" +
+                "assert(s:RemoveAsync('b') == true, 'RemoveAsync must report the removal')\n" +
+                "assert(s:GetAsync('b') == nil, 'the removed key must be gone')\n" +
+                "assert(s:RemoveAsync('b') == false, 'removing twice must report false')",
+                "storage_binding");
+    }
+
+    @Test
     void tableAndArrayValuesRoundTrip() {
         ILuaEngine engine = LuaEngineFactory.create(false);
         StorageServiceImpl storageService = new StorageServiceImpl(engine);

@@ -168,14 +168,38 @@ public final class EntityInteractionHelper {
         }
     }
 
+    public static java.util.Optional<net.minecraft.world.entity.EntityType<?>> resolveEntityType(String entityId) {
+        if (entityId == null || entityId.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        if (entityId.contains(":")) {
+            net.minecraft.resources.ResourceLocation rl = net.minecraft.resources.ResourceLocation.tryParse(entityId);
+            return rl != null ? net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getOptional(rl) : java.util.Optional.empty();
+        }
+        net.minecraft.resources.ResourceLocation mcRl = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("minecraft", entityId);
+        if (net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.containsKey(mcRl)) {
+            return net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getOptional(mcRl);
+        }
+        net.minecraft.resources.ResourceLocation ltRl = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("luatweaker", entityId);
+        if (net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.containsKey(ltRl)) {
+            return net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getOptional(ltRl);
+        }
+        return java.util.Optional.empty();
+    }
+
     public static Object spawnEntity(@NotNull String entityId, double x, double y, double z) {
         var server = ServerLifecycleHooks.getCurrentServer();
         if (server != null) {
-            net.minecraft.resources.ResourceLocation rl = entityId.contains(":") ? net.minecraft.resources.ResourceLocation.parse(entityId) : net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("luatweaker", entityId);
-            net.minecraft.world.entity.EntityType<?> type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.get(rl);
-            if (type != null) {
+            java.util.Optional<net.minecraft.world.entity.EntityType<?>> optType = resolveEntityType(entityId);
+            if (optType.isPresent()) {
                 ServerLevel level = server.overworld();
-                Entity entity = type.create(level);
+                for (ServerLevel sl : server.getAllLevels()) {
+                    if (!sl.getPlayers(p -> p.distanceToSqr(x, y, z) < 4096).isEmpty()) {
+                        level = sl;
+                        break;
+                    }
+                }
+                Entity entity = optType.get().create(level);
                 if (entity != null) {
                     entity.moveTo(x, y, z, 0.0f, 0.0f);
                     level.addFreshEntity(entity);

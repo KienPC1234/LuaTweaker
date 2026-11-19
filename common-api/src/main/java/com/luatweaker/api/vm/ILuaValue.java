@@ -10,6 +10,7 @@ public interface ILuaValue {
     boolean isFunction();
     boolean isNumber();
     boolean isString();
+    default boolean isBoolean() { return false; }
     ILuaTable asTable();
     Object toJavaObject();
 }

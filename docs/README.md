@@ -18,6 +18,7 @@ LuaTweaker is a high-performance Lua 5.4 (luava) scripting engine for Minecraft 
 
 ### Static Content & Recipe Registration
 * [**CUSTOM_CONTENT.md**](CUSTOM_CONTENT.md) — `Content` Builder DSL for Items (`Content.NewItem`), Blocks (`Content.NewBlock`), Fluids (`Content.NewFluid`), Storage, and Datapacks.
+* [**BLOCK_CAPABILITY_API.md**](BLOCK_CAPABILITY_API.md) — RF/FE machines and pipes: energy/fluid/item capabilities, `World:GetEnergy`/`InsertEnergy`/`InsertItem`/`FillFluid` primitives, and `/lt reload` rebinding.
 * [**RECIPES.md**](RECIPES.md) — `Recipe` Builder DSL for Shaped (`Recipe.Shaped`), Shapeless, Smelting, Smithing, Anvil, Brewing, and Replacements.
 * [**WORLDGEN.md**](WORLDGEN.md) — Ore generation, structure placement, and biome feature management.
 * [**LUA_MOD_SYSTEM.md**](LUA_MOD_SYSTEM.md) — Autonomous `luamods/` architecture: single `main.lua` entrypoint, unified config, sandbox & inter-mod IPC, and 5-step execution pipeline.

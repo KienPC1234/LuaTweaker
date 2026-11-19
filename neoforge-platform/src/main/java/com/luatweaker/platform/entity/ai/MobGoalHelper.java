@@ -81,15 +81,31 @@ public final class MobGoalHelper {
 
     public static void addNearestAttackableTargetGoal(@NotNull IEntity entity, int priority, @NotNull String targetTypeStr) {
         if (entity.getRawEntity() instanceof Mob mob) {
-            Class<? extends net.minecraft.world.entity.LivingEntity> targetClass = net.minecraft.world.entity.player.Player.class;
-            if (targetTypeStr.equalsIgnoreCase("monster") || targetTypeStr.equalsIgnoreCase("mob")) {
-                targetClass = net.minecraft.world.entity.monster.Monster.class;
-            } else if (targetTypeStr.equalsIgnoreCase("animal")) {
-                targetClass = net.minecraft.world.entity.animal.Animal.class;
-            } else if (targetTypeStr.equalsIgnoreCase("living")) {
-                targetClass = net.minecraft.world.entity.LivingEntity.class;
+            String lower = targetTypeStr.trim().toLowerCase();
+            if (lower.equals("player") || lower.equals("players")) {
+                mob.targetSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal<>(mob, net.minecraft.world.entity.player.Player.class, true));
+            } else if (lower.equals("monster") || lower.equals("mob") || lower.equals("monsters") || lower.equals("mobs")) {
+                mob.targetSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal<>(mob, net.minecraft.world.entity.monster.Monster.class, true));
+            } else if (lower.equals("animal") || lower.equals("animals")) {
+                mob.targetSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal<>(mob, net.minecraft.world.entity.animal.Animal.class, true));
+            } else if (lower.equals("villager") || lower.equals("villagers")) {
+                mob.targetSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal<>(mob, net.minecraft.world.entity.npc.AbstractVillager.class, true));
+            } else if (lower.equals("iron_golem") || lower.equals("golem")) {
+                mob.targetSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal<>(mob, net.minecraft.world.entity.animal.IronGolem.class, true));
+            } else if (lower.equals("living")) {
+                mob.targetSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal<>(mob, net.minecraft.world.entity.LivingEntity.class, true));
+            } else {
+                java.util.Optional<net.minecraft.world.entity.EntityType<?>> optType =
+                        com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(targetTypeStr);
+                if (optType.isPresent()) {
+                    net.minecraft.world.entity.EntityType<?> expectedType = optType.get();
+                    mob.targetSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal<>(
+                            mob, net.minecraft.world.entity.LivingEntity.class, 10, true, false, living -> living.getType() == expectedType));
+                } else {
+                    com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                            "Cannot add NearestAttackableTargetGoal: Unknown target type '" + targetTypeStr + "' for entity " + entity);
+                }
             }
-            mob.targetSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal<>(mob, targetClass, true));
         } else {
             com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Cannot add NearestAttackableTargetGoal: Entity " + entity + " is not a Mob!");
         }

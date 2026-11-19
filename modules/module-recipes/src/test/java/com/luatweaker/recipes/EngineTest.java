@@ -187,6 +187,38 @@ public class EngineTest {
     }
 
     @Test
+    public void ingredientAlternativesSurviveTheRecipeBinding() {
+        com.luatweaker.api.vm.ILuaEngine engine = LuaEngineFactory.create(false);
+        com.luatweaker.api.vm.ILuaTable recipesTable = engine.createTable();
+
+        final List<IngredientWrapper> capturedInputs = new ArrayList<>();
+        IRecipeManagerService capturing = new MockRecipeService() {
+            @Override
+            public void addShapeless(String recipeId, ItemCount output, List<IngredientWrapper> ingredients) {
+                capturedInputs.addAll(ingredients);
+            }
+        };
+        RecipesLuaBinding.bind(engine, recipesTable, capturing);
+
+        engine.executeStringOrThrow(
+                "Recipe.Shapeless('alt_test')\n" +
+                "    :Inputs({ ingredient('minecraft:stick'):orIngredient('minecraft:blaze_rod')"
+                        + ":alt('#minecraft:planks') })\n" +
+                "    :Output('minecraft:bread')\n" +
+                "    :Register()",
+                "alt_recipe");
+
+        assertEquals(1, capturedInputs.size(), "one ingredient was registered");
+        IngredientWrapper wrapper = capturedInputs.get(0);
+        assertEquals("minecraft:stick", wrapper.descriptor());
+        assertEquals(2, wrapper.alternatives().size(),
+                "or()/alt() must be preserved for the platform ingredient builder: "
+                        + wrapper.alternatives());
+        assertEquals("minecraft:blaze_rod", wrapper.alternatives().get(0).descriptor());
+        assertEquals("#minecraft:planks", wrapper.alternatives().get(1).descriptor());
+    }
+
+    @Test
     public void testSyntaxErrorTraceback() throws IOException, InterruptedException {
         com.luatweaker.api.vm.ILuaEngine engine = LuaEngineFactory.create(false);
         

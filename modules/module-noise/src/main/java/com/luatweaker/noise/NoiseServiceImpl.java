@@ -3,8 +3,10 @@ package com.luatweaker.noise;
 import com.luatweaker.api.noise.INoiseService;
 import com.luatweaker.noise.internal.DomainWarp;
 import com.luatweaker.noise.internal.FBMNoise;
+import com.luatweaker.noise.internal.FBMNoise3D;
 import com.luatweaker.noise.internal.RidgedNoise;
 import com.luatweaker.noise.internal.SimplexNoise;
+import com.luatweaker.noise.internal.SimplexNoise3D;
 import com.luatweaker.noise.internal.VoronoiNoise;
 import org.jetbrains.annotations.NotNull;
 
@@ -22,7 +24,9 @@ public class NoiseServiceImpl implements INoiseService {
             FBMNoise fbm,
             RidgedNoise ridged,
             DomainWarp domainWarp,
-            VoronoiNoise voronoi
+            VoronoiNoise voronoi,
+            SimplexNoise3D simplex3d,
+            FBMNoise3D fbm3d
     ) {}
 
     private volatile NoiseState state;
@@ -79,14 +83,31 @@ public class NoiseServiceImpl implements INoiseService {
     }
 
     @Override
+    public double simplex3(double x, double y, double z, double frequency) {
+        validatePositive("frequency", frequency);
+        return state.simplex3d.noise(x * frequency, y * frequency, z * frequency);
+    }
+
+    @Override
+    public double fbm3(double x, double y, double z, int octaves, double lacunarity, double gain) {
+        validateOctaves(octaves);
+        validatePositive("lacunarity", lacunarity);
+        validatePositive("gain", gain);
+        return state.fbm3d.noise(x, y, z, octaves, lacunarity, gain);
+    }
+
+    @Override
     public void setSeed(long seed) {
         SimplexNoise simplex = new SimplexNoise(seed);
+        SimplexNoise3D simplex3d = new SimplexNoise3D(seed);
         state = new NoiseState(
                 simplex,
                 new FBMNoise(simplex),
                 new RidgedNoise(simplex),
                 new DomainWarp(simplex),
-                new VoronoiNoise(seed)
+                new VoronoiNoise(seed),
+                simplex3d,
+                new FBMNoise3D(simplex3d)
         );
     }
 

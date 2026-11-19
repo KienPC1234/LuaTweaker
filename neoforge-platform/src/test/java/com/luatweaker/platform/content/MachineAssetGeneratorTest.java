@@ -95,4 +95,43 @@ public class MachineAssetGeneratorTest {
         Map<String, String> files = generate(null, false);
         assertTrue(files.isEmpty(), "plain blocks must not generate machine assets");
     }
+
+    @Test
+    public void facingHorizontalGeneratesFourRotations() {
+        DatapackServiceImpl datapack = new DatapackServiceImpl();
+        MachineAssetGenerator.generate(datapack, "luatweaker", "altar", null, false, "HORIZONTAL", "luatweaker:block/altar", null);
+        Map<String, String> files = datapack.getVirtualFiles();
+
+        assertValidJson(files);
+        String blockstate = files.get("assets/luatweaker/blockstates/altar.json");
+        assertNotNull(blockstate);
+        assertTrue(blockstate.contains("\"facing=north\""));
+        assertTrue(blockstate.contains("\"facing=east\""));
+        assertTrue(blockstate.contains("\"facing=south\""));
+        assertTrue(blockstate.contains("\"facing=west\""));
+        assertTrue(blockstate.contains("\"y\": 90"));
+        assertTrue(blockstate.contains("\"y\": 180"));
+        assertTrue(blockstate.contains("\"y\": 270"));
+        assertTrue(files.containsKey("assets/luatweaker/models/block/altar.json"));
+        assertTrue(files.containsKey("assets/luatweaker/models/item/altar.json"));
+    }
+
+    @Test
+    public void facingDirectionalGeneratesSixRotations() {
+        DatapackServiceImpl datapack = new DatapackServiceImpl();
+        MachineAssetGenerator.generate(datapack, "luatweaker", "pipe_end", null, false, "DIRECTIONAL", "luatweaker:block/pipe_end", null);
+        Map<String, String> files = datapack.getVirtualFiles();
+
+        assertValidJson(files);
+        String blockstate = files.get("assets/luatweaker/blockstates/pipe_end.json");
+        assertNotNull(blockstate);
+        assertTrue(blockstate.contains("\"facing=down\""));
+        assertTrue(blockstate.contains("\"facing=up\""));
+        assertTrue(blockstate.contains("\"facing=north\""));
+        assertTrue(blockstate.contains("\"facing=south\""));
+        assertTrue(blockstate.contains("\"facing=west\""));
+        assertTrue(blockstate.contains("\"facing=east\""));
+        assertTrue(blockstate.contains("\"x\": 90"));
+        assertTrue(blockstate.contains("\"x\": 270"));
+    }
 }

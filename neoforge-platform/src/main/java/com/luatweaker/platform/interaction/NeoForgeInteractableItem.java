@@ -199,6 +199,48 @@ public class NeoForgeInteractableItem implements IInteractableItem {
 
     @Override
     @Nullable
+    public Object getCustomData(@NotNull String key) {
+        ItemStack stack = getItemStack();
+        if (stack.has(net.minecraft.core.component.DataComponents.CUSTOM_DATA)) {
+            net.minecraft.world.item.component.CustomData customData = stack.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
+            if (customData != null && customData.contains(key)) {
+                net.minecraft.nbt.CompoundTag tag = customData.copyTag();
+                net.minecraft.nbt.Tag valTag = tag.get(key);
+                if (valTag instanceof net.minecraft.nbt.NumericTag num) {
+                    if (valTag instanceof net.minecraft.nbt.ByteTag bt && (bt.getAsByte() == 0 || bt.getAsByte() == 1)) {
+                        return bt.getAsByte() == 1;
+                    }
+                    return num.getAsDouble();
+                } else if (valTag instanceof net.minecraft.nbt.StringTag str) {
+                    return str.getAsString();
+                } else if (valTag != null) {
+                    return valTag.getAsString();
+                }
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public void setCustomData(@NotNull String key, @Nullable Object value) {
+        ItemStack stack = getItemStack();
+        if (!stack.isEmpty()) {
+            net.minecraft.world.item.component.CustomData.update(net.minecraft.core.component.DataComponents.CUSTOM_DATA, stack, t -> {
+                if (value == null) {
+                    t.remove(key);
+                } else if (value instanceof Boolean b) {
+                    t.putBoolean(key, b);
+                } else if (value instanceof Number num) {
+                    t.putDouble(key, num.doubleValue());
+                } else {
+                    t.putString(key, value.toString());
+                }
+            });
+        }
+    }
+
+    @Override
+    @Nullable
     public String getAttribute(@NotNull String key) {
         ItemStack stack = getItemStack();
         if (stack.has(net.minecraft.core.component.DataComponents.CUSTOM_DATA)) {

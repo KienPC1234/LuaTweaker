@@ -101,7 +101,37 @@ end)
 
 ---
 
-## 4. Headless Server Execution Rules (`Dist.DEDICATED_SERVER`)
+## 4. Pipeline Notification Events (Listen bus)
+
+Datapack materialization and portal use fire string-named events on the shared
+bus after the work completes. Subscribe with `Listen` (same bus as
+`DimensionEntered`):
+
+```lua
+local Events = require("LuaTweaker.Events")
+
+Events:Listen("WorldgenApplied", function(p)
+    -- { ores=.., vegetation=.., removals=.., biomeModifiers=.. }
+    print("worldgen files: " .. tostring(p.biomeModifiers))
+end)
+
+Events:Listen("StructuresApplied", function(p)
+    -- { applied=.., skipped=.. } (skipped = template NBT missing)
+    print("structures: " .. tostring(p.applied))
+end)
+
+Events:Listen("DimensionsMaterialized", function(p)
+    -- { dimensions = { "arcane:crystal_realm", ... } }
+    print("dimensions: " .. tostring(#p.dimensions))
+end)
+
+Events:Listen("PortalUsed", function(p)
+    -- { blockId=.., targetDimension=.., playerName=.. }
+    print(p.playerName .. " used portal " .. p.blockId)
+end)
+```
+
+## 5. Headless Server Execution Rules (`Dist.DEDICATED_SERVER`)
 
 LuaTweaker automatically detects whether the runtime is executing on a **Dedicated Headless Server** or a **Singleplayer / Client** instance:
 

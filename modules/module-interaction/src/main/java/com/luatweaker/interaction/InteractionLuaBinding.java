@@ -9,9 +9,23 @@ import org.jetbrains.annotations.NotNull;
 public class InteractionLuaBinding {
 
     private static final String DEFAULT_DIMENSION = "minecraft:overworld";
+    /** Historical default for world sounds: category-level volume follows the Players slider. */
+    private static final String DEFAULT_SOUND_SOURCE = "PLAYERS";
+    /** Mirrors {@code net.minecraft.sounds.SoundSource}; used only to disambiguate StopSound args. */
+    private static final java.util.Set<String> SOUND_SOURCE_NAMES = java.util.Set.of(
+            "MASTER", "MUSIC", "RECORDS", "WEATHER", "BLOCKS", "HOSTILE", "NEUTRAL", "PLAYERS",
+            "AMBIENT", "VOICE");
 
     public static void registerBindings(@NotNull ILuaEngine engine) {
         IInteractionService service = new InteractionServiceImpl();
+
+        // One Lua shape for every raycast source: World:Raycast and IEntity:Raycast both
+        // return this table (the raw record would otherwise arrive as opaque userdata).
+        com.luatweaker.core.bind.LuaBinder.registerReturnConverter(
+                com.luatweaker.api.spatial.RaycastResult.class,
+                (returnEngine, value) -> value instanceof com.luatweaker.api.spatial.RaycastResult result
+                        ? wrapRaycastResult(returnEngine, service, null, result)
+                        : returnEngine.nilValue());
         
         // 1. Workspace Service
         ILuaTable workspaceTable = engine.createTable();
@@ -263,6 +277,576 @@ public class InteractionLuaBinding {
         });
         workspaceTable.rawset("executeCommand", workspaceTable.rawget("ExecuteCommand"));
 
+        // ===== Raycast API =====
+        workspaceTable.rawset("Raycast", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            int dimOff = -1;
+            if (args.length - off >= 1 && args[off].toJavaObject() instanceof String && (args.length - off < 2 || !args[off + 1].isTable())) {
+                dimOff = off;
+                off = off + 1;
+            }
+            double ox = 0, oy = 0, oz = 0;
+            double dx = 0, dy = 0, dz = 0;
+            double maxDist = 64.0;
+            boolean ignoreLiquids = true;
+            boolean ignorePassable = false;
+            java.util.List<IEntity> ignoreEntities = null;
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : DEFAULT_DIMENSION;
+
+            if (args.length - off >= 2 && args[off].isTable() && args[off + 1].isTable()) {
+                double[] origin = readVector(args[off]);
+                double[] direction = readVector(args[off + 1]);
+                if (origin == null || direction == null) {
+                    warn("World:Raycast needs Vector3 tables with numeric X/Y/Z");
+                    return engine.nilValue();
+                }
+                ox = origin[0];
+                oy = origin[1];
+                oz = origin[2];
+                dx = direction[0];
+                dy = direction[1];
+                dz = direction[2];
+                if (args.length - off >= 3 && args[off + 2].isTable()) {
+                    ILuaTable pt = args[off + 2].asTable();
+                    ILuaValue md = pt.rawget("MaxDistance");
+                    if (md != null && !md.isNil()) maxDist = md.asDouble();
+                    ILuaValue il = pt.rawget("IgnoreLiquids");
+                    if (il != null && !il.isNil()) ignoreLiquids = il.asBoolean();
+                    ILuaValue ip = pt.rawget("IgnorePassableBlocks");
+                    if (ip != null && !ip.isNil()) ignorePassable = ip.asBoolean();
+                    ILuaValue ilist = pt.rawget("IgnoreList");
+                    if (ilist != null && ilist.isTable()) {
+                        ignoreEntities = new java.util.ArrayList<>();
+                        for (int i = 1; i <= ilist.asTable().length(); i++) {
+                            IEntity ent = EntitiesLuaBinding.getEntityFromTable(ilist.asTable().rawget(i));
+                            if (ent != null) ignoreEntities.add(ent);
+                        }
+                    }
+                }
+            } else if (args.length - off >= 6) {
+                double[] numbers = readNumbers(args, off, 6);
+                if (numbers == null) {
+                    warn("World:Raycast needs six numbers (origin xyz, direction xyz)");
+                    return engine.nilValue();
+                }
+                ox = numbers[0];
+                oy = numbers[1];
+                oz = numbers[2];
+                dx = numbers[3];
+                dy = numbers[4];
+                dz = numbers[5];
+                if (args.length - off >= 7) maxDist = args[off + 6].asDouble();
+                if (args.length - off >= 8) ignoreLiquids = args[off + 7].asBoolean();
+            } else {
+                return engine.nilValue();
+            }
+
+            com.luatweaker.api.spatial.RaycastParams p = new com.luatweaker.api.spatial.RaycastParams(
+                    maxDist, ignoreLiquids, ignorePassable, ignoreEntities);
+            com.luatweaker.api.spatial.RaycastResult res =
+                    com.luatweaker.api.pal.Platform.getInteraction().raycast(dimension, ox, oy, oz, dx, dy, dz, p);
+            return wrapRaycastResult(engine, service, dimension, res);
+        });
+        workspaceTable.rawset("raycast", workspaceTable.rawget("Raycast"));
+
+        // ===== SpawnParticle API =====
+        // SpawnParticle(id, pos[, velocity][, count][, speed])
+        // SpawnParticle(id, x, y, z[, vx, vy, vz][, count][, speed])
+        // A leading dimension string (dimension, id, ...) overrides the default dimension.
+        workspaceTable.rawset("SpawnParticle", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            int dimOff = resolveDimensionPrefix(args, off);
+            if (dimOff >= 0) {
+                off++;
+            }
+            if (args.length - off < 2) {
+                warn("World:SpawnParticle requires a particle id and a position");
+                return engine.nilValue();
+            }
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : DEFAULT_DIMENSION;
+            String particleId = args[off].asString();
+
+            int cursor = off + 1;
+            double[] position;
+            if (args[cursor].isTable()) {
+                position = readVector(args[cursor++]);
+            } else {
+                position = readNumbers(args, cursor, 3);
+                cursor += 3;
+            }
+            if (position == null) {
+                warn("World:SpawnParticle('" + particleId + "') needs a Vector3 position or three numbers");
+                return engine.nilValue();
+            }
+
+            double[] velocity = { 0.0, 0.0, 0.0 };
+            if (cursor < args.length && args[cursor].isTable()) {
+                double[] parsed = readVector(args[cursor]);
+                if (parsed == null) {
+                    warn("World:SpawnParticle('" + particleId + "') received an invalid velocity vector");
+                    return engine.nilValue();
+                }
+                velocity = parsed;
+                cursor++;
+            } else if (args.length - cursor >= 3 && args[cursor].isNumber()) {
+                double[] parsed = readNumbers(args, cursor, 3);
+                if (parsed != null) {
+                    velocity = parsed;
+                    cursor += 3;
+                }
+            }
+
+            int count = 1;
+            double speed = 0.0;
+            if (cursor < args.length && args[cursor].isNumber()) {
+                count = args[cursor++].asInt();
+            }
+            if (cursor < args.length && args[cursor].isNumber()) {
+                speed = args[cursor++].asDouble();
+            }
+            warnExtraArgs("World:SpawnParticle", cursor, args.length);
+
+            com.luatweaker.api.pal.Platform.getInteraction().spawnParticle(
+                    dimension, particleId,
+                    position[0], position[1], position[2],
+                    velocity[0], velocity[1], velocity[2], count, speed);
+            return engine.nilValue();
+        });
+        workspaceTable.rawset("spawnParticle", workspaceTable.rawget("SpawnParticle"));
+
+        // ===== PlaySound API =====
+        // PlaySound(id, pos[, volume][, pitch][, source])
+        // PlaySound(id, x, y, z[, volume][, pitch][, source])
+        // source is a Minecraft sound category (PLAYERS, BLOCKS, HOSTILE, ...).
+        workspaceTable.rawset("PlaySound", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            int dimOff = resolveDimensionPrefix(args, off);
+            if (dimOff >= 0) {
+                off++;
+            }
+            if (args.length - off < 2) {
+                warn("World:PlaySound requires a sound id and a position");
+                return engine.nilValue();
+            }
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : DEFAULT_DIMENSION;
+            String soundId = args[off].asString();
+
+            int cursor = off + 1;
+            double[] position;
+            if (args[cursor].isTable()) {
+                position = readVector(args[cursor++]);
+            } else {
+                position = readNumbers(args, cursor, 3);
+                cursor += 3;
+            }
+            if (position == null) {
+                warn("World:PlaySound('" + soundId + "') needs a Vector3 position or three numbers");
+                return engine.nilValue();
+            }
+
+            double volume = 1.0;
+            double pitch = 1.0;
+            if (cursor < args.length && args[cursor].isNumber()) {
+                volume = args[cursor++].asDouble();
+            }
+            if (cursor < args.length && args[cursor].isNumber()) {
+                pitch = args[cursor++].asDouble();
+            }
+            String source = DEFAULT_SOUND_SOURCE;
+            if (cursor < args.length && args[cursor].isString()) {
+                source = args[cursor++].asString();
+            }
+            warnExtraArgs("World:PlaySound", cursor, args.length);
+
+            com.luatweaker.api.pal.Platform.getInteraction().playSound(
+                    dimension, soundId, position[0], position[1], position[2],
+                    (float) volume, (float) pitch, source);
+            return engine.nilValue();
+        });
+        workspaceTable.rawset("playSound", workspaceTable.rawget("PlaySound"));
+
+        // ===== StopSound API =====
+        // StopSound(id[, source]) / StopSound(dimension, id[, source]).
+        // A second string that names a sound category is treated as the source, so
+        // StopSound("id", "PLAYERS") is never mistaken for a dimension.
+        workspaceTable.rawset("StopSound", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            int dimOff = resolveStopSoundDimensionPrefix(args, off);
+            if (dimOff >= 0) {
+                off++;
+            }
+            if (args.length - off < 1) {
+                warn("World:StopSound requires a sound id");
+                return engine.wrapBoolean(false);
+            }
+            String dimension = dimOff >= 0 ? args[dimOff].asString() : DEFAULT_DIMENSION;
+            String soundId = args[off].asString();
+            String source = DEFAULT_SOUND_SOURCE;
+            if (args.length - off >= 2 && args[off + 1].isString()) {
+                source = args[off + 1].asString();
+            }
+            boolean stopped = com.luatweaker.api.pal.Platform.getInteraction()
+                    .stopSound(dimension, soundId, source);
+            return engine.wrapBoolean(stopped);
+        });
+        workspaceTable.rawset("stopSound", workspaceTable.rawget("StopSound"));
+
+        // ===== Block capability primitives =====
+        // Talking to other mods' machines through the standard NeoForge capabilities.
+        // Every call takes an optional leading dimension string; coordinates are required.
+        // side = up/down/north/south/west/east (omitted = unsided lookup).
+        final boolean[] capabilityWarned = { false };
+
+        // GetEnergy(x, y, z [, side]) -> { Stored, Max, CanExtract, CanReceive } | nil
+        workspaceTable.rawset("GetEnergy", args -> {
+            CoordinateArgs pos = readCoordinates(args, "World:GetEnergy");
+            if (pos == null) {
+                return engine.nilValue();
+            }
+            SideParse side = readSide(args, pos.cursor(), args.length);
+            if (side.error()) {
+                warnSide("World:GetEnergy");
+                return engine.nilValue();
+            }
+            com.luatweaker.api.pal.IPlatformCapability capability = capability(capabilityWarned);
+            if (capability == null) {
+                return engine.nilValue();
+            }
+            java.util.Map<String, Object> data = capability.getEnergy(
+                    pos.dimension(), pos.x(), pos.y(), pos.z(), side.name());
+            return data != null ? wrapValue(engine, data) : engine.nilValue();
+        });
+        workspaceTable.rawset("getEnergy", workspaceTable.rawget("GetEnergy"));
+
+        // InsertEnergy(x, y, z, amount [, side]) -> accepted
+        workspaceTable.rawset("InsertEnergy", args -> {
+            CoordinateArgs pos = readCoordinates(args, "World:InsertEnergy");
+            if (pos == null) {
+                return engine.wrapNumber(0);
+            }
+            Integer amount = readIntArg(args, pos.cursor(), args.length);
+            if (amount == null) {
+                warn("World:InsertEnergy requires an integer amount");
+                return engine.wrapNumber(0);
+            }
+            SideParse side = readSide(args, pos.cursor() + 1, args.length);
+            if (side.error()) {
+                warnSide("World:InsertEnergy");
+                return engine.wrapNumber(0);
+            }
+            com.luatweaker.api.pal.IPlatformCapability capability = capability(capabilityWarned);
+            if (capability == null) {
+                return engine.wrapNumber(0);
+            }
+            return engine.wrapNumber(capability.insertEnergy(
+                    pos.dimension(), pos.x(), pos.y(), pos.z(), amount, side.name()));
+        });
+        workspaceTable.rawset("insertEnergy", workspaceTable.rawget("InsertEnergy"));
+
+        // ExtractEnergy(x, y, z, amount [, side]) -> extracted
+        workspaceTable.rawset("ExtractEnergy", args -> {
+            CoordinateArgs pos = readCoordinates(args, "World:ExtractEnergy");
+            if (pos == null) {
+                return engine.wrapNumber(0);
+            }
+            Integer amount = readIntArg(args, pos.cursor(), args.length);
+            if (amount == null) {
+                warn("World:ExtractEnergy requires an integer amount");
+                return engine.wrapNumber(0);
+            }
+            SideParse side = readSide(args, pos.cursor() + 1, args.length);
+            if (side.error()) {
+                warnSide("World:ExtractEnergy");
+                return engine.wrapNumber(0);
+            }
+            com.luatweaker.api.pal.IPlatformCapability capability = capability(capabilityWarned);
+            if (capability == null) {
+                return engine.wrapNumber(0);
+            }
+            return engine.wrapNumber(capability.extractEnergy(
+                    pos.dimension(), pos.x(), pos.y(), pos.z(), amount, side.name()));
+        });
+        workspaceTable.rawset("extractEnergy", workspaceTable.rawget("ExtractEnergy"));
+
+        // GetItemSlots(x, y, z [, side]) -> { { Slot, Id, Count }, ... } | nil
+        workspaceTable.rawset("GetItemSlots", args -> {
+            CoordinateArgs pos = readCoordinates(args, "World:GetItemSlots");
+            if (pos == null) {
+                return engine.nilValue();
+            }
+            SideParse side = readSide(args, pos.cursor(), args.length);
+            if (side.error()) {
+                warnSide("World:GetItemSlots");
+                return engine.nilValue();
+            }
+            com.luatweaker.api.pal.IPlatformCapability capability = capability(capabilityWarned);
+            if (capability == null) {
+                return engine.nilValue();
+            }
+            java.util.List<java.util.Map<String, Object>> slots = capability.getItemSlots(
+                    pos.dimension(), pos.x(), pos.y(), pos.z(), side.name());
+            return slots != null ? wrapValue(engine, slots) : engine.nilValue();
+        });
+        workspaceTable.rawset("getItemSlots", workspaceTable.rawget("GetItemSlots"));
+
+        // InsertItem(x, y, z, itemId, count [, side]) -> inserted
+        workspaceTable.rawset("InsertItem", args -> {
+            CoordinateArgs pos = readCoordinates(args, "World:InsertItem");
+            if (pos == null) {
+                return engine.wrapNumber(0);
+            }
+            String itemId = readStringArg(args, pos.cursor(), args.length);
+            Integer count = readIntArg(args, pos.cursor() + 1, args.length);
+            if (itemId == null || count == null) {
+                warn("World:InsertItem requires (itemId, count)");
+                return engine.wrapNumber(0);
+            }
+            SideParse side = readSide(args, pos.cursor() + 2, args.length);
+            if (side.error()) {
+                warnSide("World:InsertItem");
+                return engine.wrapNumber(0);
+            }
+            com.luatweaker.api.pal.IPlatformCapability capability = capability(capabilityWarned);
+            if (capability == null) {
+                return engine.wrapNumber(0);
+            }
+            return engine.wrapNumber(capability.insertItem(
+                    pos.dimension(), pos.x(), pos.y(), pos.z(), itemId, count, side.name()));
+        });
+        workspaceTable.rawset("insertItem", workspaceTable.rawget("InsertItem"));
+
+        // ExtractItem(x, y, z, slot, count [, side]) -> { Slot, Id, Count } | nil
+        workspaceTable.rawset("ExtractItem", args -> {
+            CoordinateArgs pos = readCoordinates(args, "World:ExtractItem");
+            if (pos == null) {
+                return engine.nilValue();
+            }
+            Integer slot = readIntArg(args, pos.cursor(), args.length);
+            Integer count = readIntArg(args, pos.cursor() + 1, args.length);
+            if (slot == null || count == null) {
+                warn("World:ExtractItem requires (slot, count)");
+                return engine.nilValue();
+            }
+            SideParse side = readSide(args, pos.cursor() + 2, args.length);
+            if (side.error()) {
+                warnSide("World:ExtractItem");
+                return engine.nilValue();
+            }
+            com.luatweaker.api.pal.IPlatformCapability capability = capability(capabilityWarned);
+            if (capability == null) {
+                return engine.nilValue();
+            }
+            java.util.Map<String, Object> data = capability.extractItem(
+                    pos.dimension(), pos.x(), pos.y(), pos.z(), slot, count, side.name());
+            return data != null ? wrapValue(engine, data) : engine.nilValue();
+        });
+        workspaceTable.rawset("extractItem", workspaceTable.rawget("ExtractItem"));
+
+        // GetFluid(x, y, z [, side]) -> { Id, Amount, Capacity } | nil
+        workspaceTable.rawset("GetFluid", args -> {
+            CoordinateArgs pos = readCoordinates(args, "World:GetFluid");
+            if (pos == null) {
+                return engine.nilValue();
+            }
+            SideParse side = readSide(args, pos.cursor(), args.length);
+            if (side.error()) {
+                warnSide("World:GetFluid");
+                return engine.nilValue();
+            }
+            com.luatweaker.api.pal.IPlatformCapability capability = capability(capabilityWarned);
+            if (capability == null) {
+                return engine.nilValue();
+            }
+            java.util.Map<String, Object> data = capability.getFluid(
+                    pos.dimension(), pos.x(), pos.y(), pos.z(), side.name());
+            return data != null ? wrapValue(engine, data) : engine.nilValue();
+        });
+        workspaceTable.rawset("getFluid", workspaceTable.rawget("GetFluid"));
+
+        // FillFluid(x, y, z, fluidId, amount [, side]) -> accepted
+        workspaceTable.rawset("FillFluid", args -> {
+            CoordinateArgs pos = readCoordinates(args, "World:FillFluid");
+            if (pos == null) {
+                return engine.wrapNumber(0);
+            }
+            String fluidId = readStringArg(args, pos.cursor(), args.length);
+            Integer amount = readIntArg(args, pos.cursor() + 1, args.length);
+            if (fluidId == null || amount == null) {
+                warn("World:FillFluid requires (fluidId, amount)");
+                return engine.wrapNumber(0);
+            }
+            SideParse side = readSide(args, pos.cursor() + 2, args.length);
+            if (side.error()) {
+                warnSide("World:FillFluid");
+                return engine.wrapNumber(0);
+            }
+            com.luatweaker.api.pal.IPlatformCapability capability = capability(capabilityWarned);
+            if (capability == null) {
+                return engine.wrapNumber(0);
+            }
+            return engine.wrapNumber(capability.fillFluid(
+                    pos.dimension(), pos.x(), pos.y(), pos.z(), fluidId, amount, side.name()));
+        });
+        workspaceTable.rawset("fillFluid", workspaceTable.rawget("FillFluid"));
+
+        // DrainFluid(x, y, z, fluidId, amount [, side]) -> drained; fluidId "*" = first non-empty tank
+        workspaceTable.rawset("DrainFluid", args -> {
+            CoordinateArgs pos = readCoordinates(args, "World:DrainFluid");
+            if (pos == null) {
+                return engine.wrapNumber(0);
+            }
+            String fluidId = readStringArg(args, pos.cursor(), args.length);
+            Integer amount = readIntArg(args, pos.cursor() + 1, args.length);
+            if (fluidId == null || amount == null) {
+                warn("World:DrainFluid requires (fluidId, amount); use \"*\" for any fluid");
+                return engine.wrapNumber(0);
+            }
+            SideParse side = readSide(args, pos.cursor() + 2, args.length);
+            if (side.error()) {
+                warnSide("World:DrainFluid");
+                return engine.wrapNumber(0);
+            }
+            com.luatweaker.api.pal.IPlatformCapability capability = capability(capabilityWarned);
+            if (capability == null) {
+                return engine.wrapNumber(0);
+            }
+            return engine.wrapNumber(capability.drainFluid(
+                    pos.dimension(), pos.x(), pos.y(), pos.z(), fluidId, amount, side.name()));
+        });
+        workspaceTable.rawset("drainFluid", workspaceTable.rawget("DrainFluid"));
+
+        // GetRedstoneSignal(x, y, z [, direction]) -> 0..15
+        workspaceTable.rawset("GetRedstoneSignal", args -> {
+            CoordinateArgs pos = readCoordinates(args, "World:GetRedstoneSignal");
+            if (pos == null) return engine.wrapNumber(0);
+            String dir = (pos.cursor() < args.length && !args[pos.cursor()].isNil())
+                    ? args[pos.cursor()].asString() : null;
+            return engine.wrapNumber(com.luatweaker.api.pal.Platform.getInteraction().getRedstoneSignal(
+                    pos.dimension(), pos.x(), pos.y(), pos.z(), dir));
+        });
+        workspaceTable.rawset("getRedstoneSignal", workspaceTable.rawget("GetRedstoneSignal"));
+
+        // CheckPattern(x, y, z, patternTable) -> boolean
+        workspaceTable.rawset("CheckPattern", args -> {
+            CoordinateArgs pos = readCoordinates(args, "World:CheckPattern");
+            if (pos == null || pos.cursor() >= args.length || !args[pos.cursor()].isTable()) {
+                return engine.wrapBoolean(false);
+            }
+            ILuaTable pTable = args[pos.cursor()].asTable();
+            java.util.List<java.util.Map<String, Object>> pattern = new java.util.ArrayList<>();
+            for (int i = 1; ; i++) {
+                ILuaValue item = pTable.rawget(i);
+                if (item == null || item.isNil() || !item.isTable()) break;
+                ILuaTable entry = item.asTable();
+                java.util.Map<String, Object> map = new java.util.HashMap<>();
+                ILuaValue dx = entry.rawget("dx"); if (dx.isNil()) dx = entry.rawget("DX");
+                ILuaValue dy = entry.rawget("dy"); if (dy.isNil()) dy = entry.rawget("DY");
+                ILuaValue dz = entry.rawget("dz"); if (dz.isNil()) dz = entry.rawget("DZ");
+                map.put("dx", dx.isNil() ? 0 : dx.asInt());
+                map.put("dy", dy.isNil() ? 0 : dy.asInt());
+                map.put("dz", dz.isNil() ? 0 : dz.asInt());
+                ILuaValue block = entry.rawget("block"); if (block.isNil()) block = entry.rawget("Block");
+                if (!block.isNil()) map.put("block", block.asString());
+                ILuaValue tag = entry.rawget("tag"); if (tag.isNil()) tag = entry.rawget("Tag");
+                if (!tag.isNil()) map.put("tag", tag.asString());
+                pattern.add(map);
+            }
+            return engine.wrapBoolean(com.luatweaker.api.pal.Platform.getInteraction().checkPattern(
+                    pos.dimension(), pos.x(), pos.y(), pos.z(), pattern));
+        });
+        workspaceTable.rawset("checkPattern", workspaceTable.rawget("CheckPattern"));
+
+        // TransferEnergy(fromPos, toPos, maxAmount [, simulate]) -> transferred
+        workspaceTable.rawset("TransferEnergy", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 3) return engine.wrapNumber(0);
+            int fx, fy, fz, tx, ty, tz, amount;
+            boolean sim = false;
+            int cursor = off;
+            if (args[cursor].isTable()) {
+                ILuaTable f = args[cursor++].asTable();
+                fx = f.rawget("X").asInt(); fy = f.rawget("Y").asInt(); fz = f.rawget("Z").asInt();
+                if (cursor < args.length && args[cursor].isTable()) {
+                    ILuaTable t = args[cursor++].asTable();
+                    tx = t.rawget("X").asInt(); ty = t.rawget("Y").asInt(); tz = t.rawget("Z").asInt();
+                } else return engine.wrapNumber(0);
+            } else if (args.length - off >= 7) {
+                fx = args[cursor++].asInt(); fy = args[cursor++].asInt(); fz = args[cursor++].asInt();
+                tx = args[cursor++].asInt(); ty = args[cursor++].asInt(); tz = args[cursor++].asInt();
+            } else return engine.wrapNumber(0);
+            amount = cursor < args.length ? args[cursor++].asInt() : 0;
+            if (cursor < args.length) sim = args[cursor].asBoolean();
+            return engine.wrapNumber(com.luatweaker.api.pal.Platform.getInteraction().transferEnergy(
+                    DEFAULT_DIMENSION, fx, fy, fz, tx, ty, tz, amount, sim));
+        });
+        workspaceTable.rawset("transferEnergy", workspaceTable.rawget("TransferEnergy"));
+
+        // TransferFluid(fromPos, toPos, maxAmount [, simulate]) -> transferred
+        workspaceTable.rawset("TransferFluid", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 3) return engine.wrapNumber(0);
+            int fx, fy, fz, tx, ty, tz, amount;
+            boolean sim = false;
+            int cursor = off;
+            if (args[cursor].isTable()) {
+                ILuaTable f = args[cursor++].asTable();
+                fx = f.rawget("X").asInt(); fy = f.rawget("Y").asInt(); fz = f.rawget("Z").asInt();
+                if (cursor < args.length && args[cursor].isTable()) {
+                    ILuaTable t = args[cursor++].asTable();
+                    tx = t.rawget("X").asInt(); ty = t.rawget("Y").asInt(); tz = t.rawget("Z").asInt();
+                } else return engine.wrapNumber(0);
+            } else if (args.length - off >= 7) {
+                fx = args[cursor++].asInt(); fy = args[cursor++].asInt(); fz = args[cursor++].asInt();
+                tx = args[cursor++].asInt(); ty = args[cursor++].asInt(); tz = args[cursor++].asInt();
+            } else return engine.wrapNumber(0);
+            amount = cursor < args.length ? args[cursor++].asInt() : 0;
+            if (cursor < args.length) sim = args[cursor].asBoolean();
+            return engine.wrapNumber(com.luatweaker.api.pal.Platform.getInteraction().transferFluid(
+                    DEFAULT_DIMENSION, fx, fy, fz, tx, ty, tz, amount, sim));
+        });
+        workspaceTable.rawset("transferFluid", workspaceTable.rawget("TransferFluid"));
+
+        // TransferItem(fromPos, fromSlot, toPos, toSlot, maxCount [, simulate]) -> transferred
+        workspaceTable.rawset("TransferItem", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 5) return engine.wrapNumber(0);
+            int fx, fy, fz, fromSlot, tx, ty, tz, toSlot, maxCount;
+            boolean sim = false;
+            int cursor = off;
+            if (args[cursor].isTable()) {
+                ILuaTable f = args[cursor++].asTable();
+                fx = f.rawget("X").asInt(); fy = f.rawget("Y").asInt(); fz = f.rawget("Z").asInt();
+                fromSlot = args[cursor++].asInt();
+                if (cursor < args.length && args[cursor].isTable()) {
+                    ILuaTable t = args[cursor++].asTable();
+                    tx = t.rawget("X").asInt(); ty = t.rawget("Y").asInt(); tz = t.rawget("Z").asInt();
+                } else return engine.wrapNumber(0);
+                toSlot = cursor < args.length ? args[cursor++].asInt() : -1;
+            } else if (args.length - off >= 9) {
+                fx = args[cursor++].asInt(); fy = args[cursor++].asInt(); fz = args[cursor++].asInt();
+                fromSlot = args[cursor++].asInt();
+                tx = args[cursor++].asInt(); ty = args[cursor++].asInt(); tz = args[cursor++].asInt();
+                toSlot = args[cursor++].asInt();
+            } else return engine.wrapNumber(0);
+            maxCount = cursor < args.length ? args[cursor++].asInt() : 64;
+            if (cursor < args.length) sim = args[cursor].asBoolean();
+            return engine.wrapNumber(com.luatweaker.api.pal.Platform.getInteraction().transferItem(
+                    DEFAULT_DIMENSION, fx, fy, fz, fromSlot, tx, ty, tz, toSlot, maxCount, sim));
+        });
+        workspaceTable.rawset("transferItem", workspaceTable.rawget("TransferItem"));
+
+        // ===== RaycastParams Class =====
+        ILuaTable raycastParamsClass = engine.createTable();
+        raycastParamsClass.rawset("new", args -> {
+            ILuaTable pt = engine.createTable();
+            pt.rawset("MaxDistance", engine.wrapNumber(64.0));
+            pt.rawset("IgnoreLiquids", engine.wrapBoolean(true));
+            pt.rawset("IgnorePassableBlocks", engine.wrapBoolean(false));
+            pt.rawset("IgnoreList", engine.createTable());
+            return pt;
+        });
+        engine.registerGlobal("RaycastParams", raycastParamsClass);
+
         // 2. EntityService Service
         ILuaTable entityServiceTable = engine.createTable();
         ILuaValue sigClass = engine.getGlobalEnvironment().rawget("Signal");
@@ -508,6 +1092,25 @@ public class InteractionLuaBinding {
             return engine.nilValue();
         });
 
+        methods.rawset("GetCustomData", args -> {
+            if (args.length >= 2) {
+                Object val = item.getCustomData(args[1].asString());
+                return wrapValue(engine, val);
+            }
+            return engine.nilValue();
+        });
+        methods.rawset("getCustomData", methods.rawget("GetCustomData"));
+
+        methods.rawset("SetCustomData", args -> {
+            if (args.length >= 3) {
+                String name = args[1].asString();
+                Object val = args[2].toJavaObject();
+                item.setCustomData(name, val);
+            }
+            return engine.nilValue();
+        });
+        methods.rawset("setCustomData", methods.rawget("SetCustomData"));
+
         meta.rawset("__index", args -> {
             String key = args[1].asString();
             switch (key) {
@@ -646,6 +1249,154 @@ public class InteractionLuaBinding {
         return map;
     }
 
+    /**
+     * A leading dimension is only possible when the first two arguments are strings
+     * (dimension, then id); a position can never be a string.
+     */
+    private static int resolveDimensionPrefix(ILuaValue[] args, int off) {
+        if (args.length - off >= 2
+                && args[off].toJavaObject() instanceof String
+                && args[off + 1].toJavaObject() instanceof String) {
+            return off;
+        }
+        return -1;
+    }
+
+    /** Same as {@link #resolveDimensionPrefix}, but the second string may be a sound category. */
+    private static int resolveStopSoundDimensionPrefix(ILuaValue[] args, int off) {
+        if (args.length - off >= 2
+                && args[off].toJavaObject() instanceof String
+                && args[off + 1].toJavaObject() instanceof String
+                && !isSoundSourceName(args[off + 1].asString())) {
+            return off;
+        }
+        return -1;
+    }
+
+    private static boolean isSoundSourceName(String value) {
+        return value != null && SOUND_SOURCE_NAMES.contains(value.trim().toUpperCase(java.util.Locale.ROOT));
+    }
+
+    // ===== Capability argument parsing =====
+
+    /** Mirrors {@code net.minecraft.core.Direction}; used only to validate Lua input. */
+    private static final java.util.Set<String> SIDE_NAMES = java.util.Set.of(
+            "UP", "DOWN", "NORTH", "SOUTH", "WEST", "EAST");
+
+    private record CoordinateArgs(String dimension, int x, int y, int z, int cursor) {
+    }
+
+    private record SideParse(boolean error, String name) {
+    }
+
+    /**
+     * Reads {@code [dimension,] x, y, z} and returns the cursor of the next argument.
+     * A leading string is a dimension (numbered coordinates can never be one).
+     */
+    private static CoordinateArgs readCoordinates(ILuaValue[] args, String call) {
+        int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+        int dimOff = -1;
+        if (args.length - off >= 2
+                && args[off].toJavaObject() instanceof String
+                && args[off + 1].isNumber()) {
+            dimOff = off;
+            off++;
+        }
+        if (args.length - off < 3
+                || !args[off].isNumber() || !args[off + 1].isNumber() || !args[off + 2].isNumber()) {
+            warn(call + " requires (x, y, z) block coordinates");
+            return null;
+        }
+        String dimension = dimOff >= 0 ? args[dimOff].asString() : DEFAULT_DIMENSION;
+        return new CoordinateArgs(dimension,
+                args[off].asInt(), args[off + 1].asInt(), args[off + 2].asInt(), off + 3);
+    }
+
+    private static SideParse readSide(ILuaValue[] args, int index, int length) {
+        if (index >= length) {
+            return new SideParse(false, null);
+        }
+        ILuaValue value = args[index];
+        if (value == null || !value.isString()) {
+            return new SideParse(true, null);
+        }
+        String raw = value.asString().trim();
+        if (raw.isEmpty() || "NONE".equalsIgnoreCase(raw) || "NULL".equalsIgnoreCase(raw)) {
+            return new SideParse(false, null);
+        }
+        String name = raw.toUpperCase(java.util.Locale.ROOT);
+        return SIDE_NAMES.contains(name) ? new SideParse(false, name) : new SideParse(true, null);
+    }
+
+    private static Integer readIntArg(ILuaValue[] args, int index, int length) {
+        if (index >= length || args[index] == null || !args[index].isNumber()) {
+            return null;
+        }
+        return args[index].asInt();
+    }
+
+    private static String readStringArg(ILuaValue[] args, int index, int length) {
+        if (index >= length || args[index] == null || !args[index].isString()) {
+            return null;
+        }
+        return args[index].asString();
+    }
+
+    private static com.luatweaker.api.pal.IPlatformCapability capability(boolean[] warned) {
+        com.luatweaker.api.pal.IPlatformCapability capability =
+                com.luatweaker.api.pal.Platform.getCapabilityOrNull();
+        if (capability == null && !warned[0]) {
+            warned[0] = true;
+            warn("World capability access is unavailable on this platform");
+        }
+        return capability;
+    }
+
+    private static void warnSide(String call) {
+        warn(call + " side must be one of UP, DOWN, NORTH, SOUTH, WEST, EAST");
+    }
+
+    /** Reads a Vector3-shaped table; {@code null} when any component is missing or not a number. */
+    private static double[] readVector(ILuaValue value) {
+        if (value == null || !value.isTable()) {
+            return null;
+        }
+        ILuaTable table = value.asTable();
+        ILuaValue x = table.rawget("X");
+        ILuaValue y = table.rawget("Y");
+        ILuaValue z = table.rawget("Z");
+        if (x == null || !x.isNumber() || y == null || !y.isNumber() || z == null || !z.isNumber()) {
+            return null;
+        }
+        return new double[] { x.asDouble(), y.asDouble(), z.asDouble() };
+    }
+
+    private static double[] readNumbers(ILuaValue[] args, int start, int count) {
+        if (args.length - start < count) {
+            return null;
+        }
+        double[] values = new double[count];
+        for (int i = 0; i < count; i++) {
+            ILuaValue value = args[start + i];
+            if (value == null || !value.isNumber()) {
+                return null;
+            }
+            values[i] = value.asDouble();
+        }
+        return values;
+    }
+
+    private static void warnExtraArgs(String call, int cursor, int length) {
+        if (cursor < length) {
+            warn(call + " ignored " + (length - cursor) + " extra argument(s) starting at #" + (cursor + 1));
+        }
+    }
+
+    private static void warn(String message) {
+        com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                com.luatweaker.api.log.LogStage.SYSTEM, message);
+    }
+
     private static Object toJavaValue(ILuaValue value) {
         if (value.isTable()) return toJavaTableValue(value.asTable());
         Object raw = value.toJavaObject();
@@ -696,5 +1447,63 @@ public class InteractionLuaBinding {
 
     private static boolean setDynamicFallback(@NotNull ILuaEngine engine, @NotNull Object rawJavaObj, @NotNull String key, @NotNull ILuaValue val) {
         return EntitiesLuaBinding.writeDynamicProperty(engine, rawJavaObj, key, val);
+    }
+
+    /**
+     * Builds the single Lua shape for raycast results. Also registered as the return converter
+     * for {@code RaycastResult}, so {@code entity:raycast()} and {@code World:Raycast()} hand
+     * scripts exactly the same table instead of an opaque userdata.
+     */
+    private static ILuaTable wrapRaycastResult(ILuaEngine engine, IInteractionService service,
+                                               @org.jetbrains.annotations.Nullable String dimension,
+                                               com.luatweaker.api.spatial.RaycastResult res) {
+        ILuaTable table = engine.createTable();
+        table.rawset("IsHit", engine.wrapBoolean(res.isHit()));
+        table.rawset("isHit", engine.wrapBoolean(res.isHit()));
+        table.rawset("HitType", engine.wrapString(res.hitType()));
+        table.rawset("hitType", engine.wrapString(res.hitType()));
+        table.rawset("Distance", engine.wrapNumber(res.distance()));
+        table.rawset("distance", engine.wrapNumber(res.distance()));
+
+        ILuaTable pos = engine.createTable();
+        pos.rawset("X", engine.wrapNumber(res.hitX()));
+        pos.rawset("Y", engine.wrapNumber(res.hitY()));
+        pos.rawset("Z", engine.wrapNumber(res.hitZ()));
+        pos.rawset("x", engine.wrapNumber(res.hitX()));
+        pos.rawset("y", engine.wrapNumber(res.hitY()));
+        pos.rawset("z", engine.wrapNumber(res.hitZ()));
+        table.rawset("Position", pos);
+        table.rawset("position", pos);
+
+        ILuaTable norm = engine.createTable();
+        norm.rawset("X", engine.wrapNumber(res.normalX()));
+        norm.rawset("Y", engine.wrapNumber(res.normalY()));
+        norm.rawset("Z", engine.wrapNumber(res.normalZ()));
+        norm.rawset("x", engine.wrapNumber(res.normalX()));
+        norm.rawset("y", engine.wrapNumber(res.normalY()));
+        norm.rawset("z", engine.wrapNumber(res.normalZ()));
+        table.rawset("Normal", norm);
+        table.rawset("normal", norm);
+
+        if (res.entity() != null) {
+            table.rawset("Entity", EntitiesLuaBinding.createEntityLuaTable(engine, res.entity()));
+            table.rawset("entity", table.rawget("Entity"));
+        } else {
+            table.rawset("Entity", engine.nilValue());
+            table.rawset("entity", engine.nilValue());
+        }
+
+        if (res.block() != null) {
+            String blockDimension = dimension != null ? dimension : res.block().getDimension();
+            IInteractableBlock block = service.GetBlock(blockDimension,
+                    res.block().getX(), res.block().getY(), res.block().getZ());
+            table.rawset("Block", block != null ? wrapBlock(engine, block) : engine.nilValue());
+            table.rawset("block", table.rawget("Block"));
+        } else {
+            table.rawset("Block", engine.nilValue());
+            table.rawset("block", engine.nilValue());
+        }
+
+        return table;
     }
 }

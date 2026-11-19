@@ -1,9 +1,11 @@
 package com.luatweaker.platform.content.registrar;
 
+import com.luatweaker.api.content.IArmorMaterialBuilder;
 import com.luatweaker.api.content.IContentService;
 import com.luatweaker.api.content.IItemBuilder;
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
+import com.luatweaker.platform.entity.NeoForgeEntityWrapper;
 import com.luatweaker.platform.entity.NeoForgePlayerWrapper;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
@@ -26,14 +28,81 @@ public final class ItemRegistrar {
     /** Relative resource path prefix for custom armor layer textures. */
     private static final String ARMOR_TEXTURE_DIR = "textures/models/armor/";
 
+    public static final Map<Item, IItemBuilder> BUILDER_BY_ITEM = new java.util.IdentityHashMap<>();
+
     private final IContentService contentService;
     private final Map<ResourceLocation, Item> createdItems;
     private final Function<String, ResourceLocation> locationParser;
+
+    /** Armor materials built from {@code startup:createArmorMaterial(...)}, keyed by requested id. */
+    private final Map<String, net.minecraft.core.Holder<ArmorMaterial>> armorMaterials = new java.util.HashMap<>();
 
     public ItemRegistrar(IContentService contentService, Map<ResourceLocation, Item> createdItems, Function<String, ResourceLocation> locationParser) {
         this.contentService = contentService;
         this.createdItems = createdItems;
         this.locationParser = locationParser;
+    }
+
+    /**
+     * Resolves the armor material declared by {@code item:armorMaterial("ruby")}. Falls back to
+     * diamond (with a loud warning) when the Lua material was never registered, instead of
+     * silently registering diamond stats under a custom name.
+     */
+    private net.minecraft.core.Holder<ArmorMaterial> resolveArmorMaterial(IItemBuilder builder) {
+        String requested = builder.getArmorMaterial();
+        if (requested == null || requested.isBlank()) {
+            return ArmorMaterials.DIAMOND;
+        }
+        net.minecraft.core.Holder<ArmorMaterial> cached = armorMaterials.get(requested);
+        if (cached != null) {
+            return cached;
+        }
+        IArmorMaterialBuilder definition = contentService.getArmorMaterial(requested);
+        if (definition == null && !requested.contains(":")) {
+            definition = contentService.getArmorMaterial(DEFAULT_NAMESPACE + ":" + requested);
+        }
+        if (definition == null) {
+            LuaTweakerLog.get().error(LogStage.SYSTEM,
+                    "Item '" + builder.getId() + "' requests armor material '" + requested
+                            + "' which startup:createArmorMaterial never defined; falling back to diamond");
+            return ArmorMaterials.DIAMOND;
+        }
+        net.minecraft.core.Holder<ArmorMaterial> material = buildArmorMaterial(definition);
+        armorMaterials.put(requested, material);
+        return material;
+    }
+
+    private static net.minecraft.core.Holder<ArmorMaterial> buildArmorMaterial(IArmorMaterialBuilder definition) {
+        Map<ArmorItem.Type, Integer> defense = new java.util.EnumMap<>(ArmorItem.Type.class);
+        defense.put(ArmorItem.Type.HELMET, definition.getDefense("helmet"));
+        defense.put(ArmorItem.Type.CHESTPLATE, definition.getDefense("chestplate"));
+        defense.put(ArmorItem.Type.LEGGINGS, definition.getDefense("leggings"));
+        defense.put(ArmorItem.Type.BOOTS, definition.getDefense("boots"));
+
+        ResourceLocation layerId = ResourceLocation.tryParse(
+                definition.getLayer() != null ? definition.getLayer() : DEFAULT_NAMESPACE + ":" + definition.getId());
+        if (layerId == null) {
+            layerId = ResourceLocation.fromNamespaceAndPath(DEFAULT_NAMESPACE, definition.getId().toLowerCase());
+        }
+        ResourceLocation soundId = ResourceLocation.tryParse(definition.getEquipSound());
+        net.minecraft.core.Holder<net.minecraft.sounds.SoundEvent> equipSound = soundId == null
+                ? net.minecraft.sounds.SoundEvents.ARMOR_EQUIP_DIAMOND
+                : net.minecraft.core.registries.BuiltInRegistries.SOUND_EVENT.getHolder(soundId)
+                        .map(holder -> (net.minecraft.core.Holder<net.minecraft.sounds.SoundEvent>) holder)
+                        .orElse(net.minecraft.sounds.SoundEvents.ARMOR_EQUIP_DIAMOND);
+
+        ArmorMaterial material = new ArmorMaterial(
+                defense,
+                definition.getEnchantability(),
+                equipSound,
+                () -> net.minecraft.world.item.crafting.Ingredient.EMPTY,
+                java.util.List.of(new ArmorMaterial.Layer(layerId)),
+                definition.getToughness(),
+                definition.getKnockbackResistance());
+        LuaTweakerLog.get().info(LogStage.SYSTEM,
+                "Registered custom armor material '" + definition.getId() + "' (layer " + layerId
+                        + ", toughness " + definition.getToughness() + ")");
+        return net.minecraft.core.Holder.direct(material);
     }
 
     /**
@@ -61,31 +130,148 @@ public final class ItemRegistrar {
         }
     }
 
-    /**
-     * Lua-defined {@code OnRightClick} hook shared by every tool item. Returns
-     * {@code null} when the item has no handler (caller falls back to the item's
-     * default behavior), otherwise the interaction result holder.
-     */
-    private static InteractionResultHolder<ItemStack> handleToolUse(Level level, Player player, ItemStack stack, IItemBuilder builder) {
-        if (!level.isClientSide() && builder.getRightClickHandler() != null) {
-            builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), stack);
-            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
+    public static UseAnim resolveUseAnim(String name) {
+        if (name == null || name.isBlank()) return UseAnim.NONE;
+        return switch (name.toUpperCase()) {
+            case "EAT" -> UseAnim.EAT;
+            case "DRINK" -> UseAnim.DRINK;
+            case "BLOCK" -> UseAnim.BLOCK;
+            case "BOW" -> UseAnim.BOW;
+            case "SPEAR" -> UseAnim.SPEAR;
+            case "CROSSBOW" -> UseAnim.CROSSBOW;
+            case "SPYGLASS" -> UseAnim.SPYGLASS;
+            case "TOOT_HORN" -> UseAnim.TOOT_HORN;
+            case "BRUSH" -> UseAnim.BRUSH;
+            default -> UseAnim.NONE;
+        };
+    }
+
+    public static int resolveUseDuration(IItemBuilder builder) {
+        if (builder.getUseDuration() > 0) return builder.getUseDuration();
+        if (builder.getFoodHunger() > 0) return 32;
+        return 0;
+    }
+
+    public static Tier resolveTier(IItemBuilder builder) {
+        int level = builder.getMiningLevel();
+        Tier base = switch (level) {
+            case 0 -> Tiers.WOOD;
+            case 1 -> Tiers.STONE;
+            case 3 -> Tiers.DIAMOND;
+            case 4, 5, 6, 7, 8, 9, 10 -> Tiers.NETHERITE;
+            default -> Tiers.IRON;
+        };
+        float customSpeed = builder.getMiningSpeed();
+        int customDurability = builder.getDurability();
+        int customEnchant = builder.getEnchantability();
+        if (customSpeed == 4.0f && customDurability <= 0 && customEnchant == 10) {
+            return base;
         }
-        return null;
+        return new Tier() {
+            @Override public int getUses() { return customDurability > 0 ? customDurability : base.getUses(); }
+            @Override public float getSpeed() { return customSpeed > 0 ? customSpeed : base.getSpeed(); }
+            @Override public float getAttackDamageBonus() { return base.getAttackDamageBonus(); }
+            @Override public net.minecraft.tags.TagKey<net.minecraft.world.level.block.Block> getIncorrectBlocksForDrops() {
+                return base.getIncorrectBlocksForDrops();
+            }
+            @Override public int getEnchantmentValue() { return customEnchant > 0 ? customEnchant : base.getEnchantmentValue(); }
+            @Override public net.minecraft.world.item.crafting.Ingredient getRepairIngredient() { return base.getRepairIngredient(); }
+        };
     }
 
-    /**
-     * Wraps a tool item with the shared Lua right-click + use-on-block hooks.
-     * The tool class (SwordItem/PickaxeItem/...) is supplied by the caller so
-     * vanilla tool behavior (mining speed, attack reach) is preserved.
-     */
-    private static Item createToolItem(IItemBuilder builder, Item.Properties props, ToolFactory factory) {
-        return factory.create(props, builder);
+    public static InteractionResultHolder<ItemStack> handleItemUse(Level level, Player player, net.minecraft.world.InteractionHand hand, IItemBuilder builder) {
+        ItemStack stack = player.getItemInHand(hand);
+        if (!level.isClientSide() && builder.getRightClickHandler() != null) {
+            try {
+                builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), stack);
+            } catch (Exception e) {
+                LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed right-click handler for " + builder.getId() + ": " + e.getMessage());
+            }
+        }
+        if (builder.getUseDuration() > 0 || builder.getFoodHunger() > 0) {
+            player.startUsingItem(hand);
+            return InteractionResultHolder.consume(stack);
+        }
+        return builder.getRightClickHandler() != null
+                ? InteractionResultHolder.sidedSuccess(stack, level.isClientSide())
+                : null;
     }
 
-    @FunctionalInterface
-    private interface ToolFactory {
-        Item create(Item.Properties props, IItemBuilder builder);
+    public static void handleUseTick(Level level, LivingEntity entity, ItemStack stack, int count, IItemBuilder builder) {
+        if (!level.isClientSide() && builder.getOnUseTickHandler() != null && entity instanceof Player player) {
+            try {
+                builder.getOnUseTickHandler().accept(new NeoForgePlayerWrapper(player), stack, count);
+            } catch (Exception e) {
+                LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed onUseTick handler for " + builder.getId() + ": " + e.getMessage());
+            }
+        }
+    }
+
+    public static void handleReleaseUsing(ItemStack stack, Level level, LivingEntity entity, int timeLeft, IItemBuilder builder) {
+        if (!level.isClientSide() && builder.getOnReleaseUsingHandler() != null && entity instanceof Player player) {
+            try {
+                builder.getOnReleaseUsingHandler().accept(new NeoForgePlayerWrapper(player), stack, timeLeft);
+            } catch (Exception e) {
+                LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed onReleaseUsing handler for " + builder.getId() + ": " + e.getMessage());
+            }
+        }
+    }
+
+    public static void handleFinishUsing(ItemStack stack, Level level, LivingEntity entity, IItemBuilder builder) {
+        if (!level.isClientSide() && entity instanceof Player player) {
+            if (builder.getOnFinishUsingHandler() != null) {
+                try {
+                    builder.getOnFinishUsingHandler().accept(new NeoForgePlayerWrapper(player), stack);
+                } catch (Exception e) {
+                    LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed onFinishUsing handler for " + builder.getId() + ": " + e.getMessage());
+                }
+            }
+            if (builder.getOnConsumeHandler() != null) {
+                try {
+                    builder.getOnConsumeHandler().accept(new NeoForgePlayerWrapper(player), stack);
+                } catch (Exception e) {
+                    LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed onConsume handler for " + builder.getId() + ": " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    public static void handleHurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker, IItemBuilder builder) {
+        if (!attacker.level().isClientSide() && builder.getOnHurtEnemyHandler() != null && attacker instanceof Player player) {
+            try {
+                builder.getOnHurtEnemyHandler().accept(
+                        new NeoForgeEntityWrapper(target),
+                        new NeoForgePlayerWrapper(player),
+                        stack);
+            } catch (Exception e) {
+                LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed onHurtEnemy handler for " + builder.getId() + ": " + e.getMessage());
+            }
+        }
+    }
+
+    public static void handleMineBlock(ItemStack stack, Level level, net.minecraft.world.level.block.state.BlockState state, net.minecraft.core.BlockPos pos, LivingEntity entity, IItemBuilder builder) {
+        if (!level.isClientSide() && builder.getOnMineBlockHandler() != null && entity instanceof Player player) {
+            try {
+                builder.getOnMineBlockHandler().accept(
+                        new NeoForgePlayerWrapper(player),
+                        stack,
+                        pos.getX(), pos.getY(), pos.getZ());
+            } catch (Exception e) {
+                LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed onMineBlock handler for " + builder.getId() + ": " + e.getMessage());
+            }
+        }
+    }
+
+    public static void handleSwing(Player player, ItemStack stack) {
+        if (player == null || stack == null || stack.isEmpty() || player.level().isClientSide()) return;
+        IItemBuilder builder = BUILDER_BY_ITEM.get(stack.getItem());
+        if (builder != null && builder.getOnSwingHandler() != null) {
+            try {
+                builder.getOnSwingHandler().accept(new NeoForgePlayerWrapper(player), stack);
+            } catch (Exception e) {
+                LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed onSwing handler for " + builder.getId() + ": " + e.getMessage());
+            }
+        }
     }
 
     public void registerItems(RegisterEvent event) {
@@ -106,116 +292,255 @@ public final class ItemRegistrar {
                     props.food(foodBuilder.build());
                 }
 
+                Tier tier = resolveTier(builder);
                 float dmg = builder.getAttackDamage();
                 float spd = builder.getAttackSpeed() != 0 ? builder.getAttackSpeed() : DEFAULT_ATTACK_SPEED;
                 if (dmg > 0) {
-                    // createAttributes(attackDamageModifier, ...) ADDS the tier's base
-                    // attack bonus, so the modifier must be (requestedDamage - baseBonus)
-                    // to honor the Lua value exactly - including fractional damage.
-                    // Tiers.IRON matches the tool tier used below (was DIAMOND, which
-                    // shifted the base bonus by +1 and made the damage wrong).
-                    float baseBonus = Tiers.IRON.getAttackDamageBonus();
-                    props.attributes(SwordItem.createAttributes(Tiers.IRON, Math.max(-baseBonus, dmg - baseBonus), spd));
+                    float baseBonus = tier.getAttackDamageBonus();
+                    props.attributes(SwordItem.createAttributes(tier, Math.max(-baseBonus, dmg - baseBonus), spd));
                 }
 
                 String type = builder.getType() != null ? builder.getType().toUpperCase() : "SIMPLE";
 
                 Item item = switch (type) {
-                    case "SWORD" -> createToolItem(builder, props, (p, b) -> new SwordItem(Tiers.IRON, p) {
-                        @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            InteractionResultHolder<ItemStack> r = handleToolUse(level, player, player.getItemInHand(hand), b);
-                            return r != null ? r : super.use(level, player, hand);
-                        }
-                        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
-                            InteractionResult r = handleUseOnBlock(context, b);
-                            return r != null ? r : super.useOn(context);
-                        }
-                    });
-                    case "PICKAXE" -> createToolItem(builder, props, (p, b) -> new PickaxeItem(Tiers.IRON, p) {
-                        @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            InteractionResultHolder<ItemStack> r = handleToolUse(level, player, player.getItemInHand(hand), b);
-                            return r != null ? r : super.use(level, player, hand);
-                        }
-                        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
-                            InteractionResult r = handleUseOnBlock(context, b);
-                            return r != null ? r : super.useOn(context);
-                        }
-                    });
-                    case "AXE" -> createToolItem(builder, props, (p, b) -> new AxeItem(Tiers.IRON, p) {
-                        @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            InteractionResultHolder<ItemStack> r = handleToolUse(level, player, player.getItemInHand(hand), b);
-                            return r != null ? r : super.use(level, player, hand);
-                        }
-                        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
-                            InteractionResult r = handleUseOnBlock(context, b);
-                            return r != null ? r : super.useOn(context);
-                        }
-                    });
-                    case "SHOVEL" -> createToolItem(builder, props, (p, b) -> new ShovelItem(Tiers.IRON, p) {
-                        @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            InteractionResultHolder<ItemStack> r = handleToolUse(level, player, player.getItemInHand(hand), b);
-                            return r != null ? r : super.use(level, player, hand);
-                        }
-                        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
-                            InteractionResult r = handleUseOnBlock(context, b);
-                            return r != null ? r : super.useOn(context);
-                        }
-                    });
-                    case "HOE" -> createToolItem(builder, props, (p, b) -> new HoeItem(Tiers.IRON, p) {
-                        @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            InteractionResultHolder<ItemStack> r = handleToolUse(level, player, player.getItemInHand(hand), b);
-                            return r != null ? r : super.use(level, player, hand);
-                        }
-                        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
-                            InteractionResult r = handleUseOnBlock(context, b);
-                            return r != null ? r : super.useOn(context);
-                        }
-                    });
-                    case "HELMET" -> new CustomArmorItem(ArmorMaterials.DIAMOND, ArmorItem.Type.HELMET, props, builder);
-                    case "CHESTPLATE" -> new CustomArmorItem(ArmorMaterials.DIAMOND, ArmorItem.Type.CHESTPLATE, props, builder);
-                    case "LEGGINGS" -> new CustomArmorItem(ArmorMaterials.DIAMOND, ArmorItem.Type.LEGGINGS, props, builder);
-                    case "BOOTS" -> new CustomArmorItem(ArmorMaterials.DIAMOND, ArmorItem.Type.BOOTS, props, builder);
-                    default -> new Item(props) {
-                        @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
-                            if (!level.isClientSide() && builder.getRightClickHandler() != null) {
-                                try {
-                                    builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), player.getItemInHand(hand));
-                                } catch (Exception e) {
-                                    LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed right-click handler for " + builder.getId() + ": " + e.getMessage());
-                                }
-                            }
-                            if (builder.getFoodHunger() > 0) {
-                                player.startUsingItem(hand);
-                                return InteractionResultHolder.consume(player.getItemInHand(hand));
-                            }
-                            return builder.getRightClickHandler() != null
-                                    ? InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide())
-                                    : super.use(level, player, hand);
-                        }
-
-                        @Override public ItemStack finishUsingItem(ItemStack stack, Level level, LivingEntity entity) {
-                            if (!level.isClientSide() && builder.getOnConsumeHandler() != null && entity instanceof Player player) {
-                                try {
-                                    builder.getOnConsumeHandler().accept(new NeoForgePlayerWrapper(player), stack);
-                                } catch (Exception e) {
-                                    LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed onConsume handler for " + builder.getId() + ": " + e.getMessage());
-                                }
-                            }
-                            return super.finishUsingItem(stack, level, entity);
-                        }
-
-                        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
-                            InteractionResult result = handleUseOnBlock(context, builder);
-                            return result != null ? result : super.useOn(context);
-                        }
-                    };
+                    case "SWORD" -> new CustomSwordItem(tier, props, builder);
+                    case "PICKAXE" -> new CustomPickaxeItem(tier, props, builder);
+                    case "AXE" -> new CustomAxeItem(tier, props, builder);
+                    case "SHOVEL" -> new CustomShovelItem(tier, props, builder);
+                    case "HOE" -> new CustomHoeItem(tier, props, builder);
+                    case "HELMET" -> new CustomArmorItem(
+                            resolveArmorMaterial(builder), ArmorItem.Type.HELMET, props, builder);
+                    case "CHESTPLATE" -> new CustomArmorItem(
+                            resolveArmorMaterial(builder), ArmorItem.Type.CHESTPLATE, props, builder);
+                    case "LEGGINGS" -> new CustomArmorItem(
+                            resolveArmorMaterial(builder), ArmorItem.Type.LEGGINGS, props, builder);
+                    case "BOOTS" -> new CustomArmorItem(
+                            resolveArmorMaterial(builder), ArmorItem.Type.BOOTS, props, builder);
+                    default -> new CustomGenericItem(props, builder);
                 };
 
                 event.register(Registries.ITEM, rl, () -> item);
                 createdItems.put(rl, item);
+                BUILDER_BY_ITEM.put(item, builder);
             } catch (Exception e) {
                 LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed to register item " + builder.getId() + ": " + e.getMessage());
             }
+        }
+    }
+
+    public static class CustomSwordItem extends SwordItem {
+        private final IItemBuilder builder;
+        public CustomSwordItem(Tier tier, Properties props, IItemBuilder builder) {
+            super(tier, props);
+            this.builder = builder;
+        }
+        @Override public UseAnim getUseAnimation(ItemStack stack) { return resolveUseAnim(builder.getUseAnimation()); }
+        @Override public int getUseDuration(ItemStack stack, LivingEntity entity) { return resolveUseDuration(builder); }
+        @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
+            InteractionResultHolder<ItemStack> r = handleItemUse(level, player, hand, builder);
+            return r != null ? r : super.use(level, player, hand);
+        }
+        @Override public void onUseTick(Level level, LivingEntity entity, ItemStack stack, int count) {
+            handleUseTick(level, entity, stack, count, builder);
+        }
+        @Override public void releaseUsing(ItemStack stack, Level level, LivingEntity entity, int timeLeft) {
+            handleReleaseUsing(stack, level, entity, timeLeft, builder);
+        }
+        @Override public ItemStack finishUsingItem(ItemStack stack, Level level, LivingEntity entity) {
+            handleFinishUsing(stack, level, entity, builder);
+            return super.finishUsingItem(stack, level, entity);
+        }
+        @Override public boolean hurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker) {
+            handleHurtEnemy(stack, target, attacker, builder);
+            return super.hurtEnemy(stack, target, attacker);
+        }
+        @Override public boolean mineBlock(ItemStack stack, Level level, net.minecraft.world.level.block.state.BlockState state, net.minecraft.core.BlockPos pos, LivingEntity entity) {
+            handleMineBlock(stack, level, state, pos, entity, builder);
+            return super.mineBlock(stack, level, state, pos, entity);
+        }
+        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
+            InteractionResult r = handleUseOnBlock(context, builder);
+            return r != null ? r : super.useOn(context);
+        }
+    }
+
+    public static class CustomPickaxeItem extends PickaxeItem {
+        private final IItemBuilder builder;
+        public CustomPickaxeItem(Tier tier, Properties props, IItemBuilder builder) {
+            super(tier, props);
+            this.builder = builder;
+        }
+        @Override public UseAnim getUseAnimation(ItemStack stack) { return resolveUseAnim(builder.getUseAnimation()); }
+        @Override public int getUseDuration(ItemStack stack, LivingEntity entity) { return resolveUseDuration(builder); }
+        @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
+            InteractionResultHolder<ItemStack> r = handleItemUse(level, player, hand, builder);
+            return r != null ? r : super.use(level, player, hand);
+        }
+        @Override public void onUseTick(Level level, LivingEntity entity, ItemStack stack, int count) {
+            handleUseTick(level, entity, stack, count, builder);
+        }
+        @Override public void releaseUsing(ItemStack stack, Level level, LivingEntity entity, int timeLeft) {
+            handleReleaseUsing(stack, level, entity, timeLeft, builder);
+        }
+        @Override public ItemStack finishUsingItem(ItemStack stack, Level level, LivingEntity entity) {
+            handleFinishUsing(stack, level, entity, builder);
+            return super.finishUsingItem(stack, level, entity);
+        }
+        @Override public boolean hurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker) {
+            handleHurtEnemy(stack, target, attacker, builder);
+            return super.hurtEnemy(stack, target, attacker);
+        }
+        @Override public boolean mineBlock(ItemStack stack, Level level, net.minecraft.world.level.block.state.BlockState state, net.minecraft.core.BlockPos pos, LivingEntity entity) {
+            handleMineBlock(stack, level, state, pos, entity, builder);
+            return super.mineBlock(stack, level, state, pos, entity);
+        }
+        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
+            InteractionResult r = handleUseOnBlock(context, builder);
+            return r != null ? r : super.useOn(context);
+        }
+    }
+
+    public static class CustomAxeItem extends AxeItem {
+        private final IItemBuilder builder;
+        public CustomAxeItem(Tier tier, Properties props, IItemBuilder builder) {
+            super(tier, props);
+            this.builder = builder;
+        }
+        @Override public UseAnim getUseAnimation(ItemStack stack) { return resolveUseAnim(builder.getUseAnimation()); }
+        @Override public int getUseDuration(ItemStack stack, LivingEntity entity) { return resolveUseDuration(builder); }
+        @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
+            InteractionResultHolder<ItemStack> r = handleItemUse(level, player, hand, builder);
+            return r != null ? r : super.use(level, player, hand);
+        }
+        @Override public void onUseTick(Level level, LivingEntity entity, ItemStack stack, int count) {
+            handleUseTick(level, entity, stack, count, builder);
+        }
+        @Override public void releaseUsing(ItemStack stack, Level level, LivingEntity entity, int timeLeft) {
+            handleReleaseUsing(stack, level, entity, timeLeft, builder);
+        }
+        @Override public ItemStack finishUsingItem(ItemStack stack, Level level, LivingEntity entity) {
+            handleFinishUsing(stack, level, entity, builder);
+            return super.finishUsingItem(stack, level, entity);
+        }
+        @Override public boolean hurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker) {
+            handleHurtEnemy(stack, target, attacker, builder);
+            return super.hurtEnemy(stack, target, attacker);
+        }
+        @Override public boolean mineBlock(ItemStack stack, Level level, net.minecraft.world.level.block.state.BlockState state, net.minecraft.core.BlockPos pos, LivingEntity entity) {
+            handleMineBlock(stack, level, state, pos, entity, builder);
+            return super.mineBlock(stack, level, state, pos, entity);
+        }
+        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
+            InteractionResult r = handleUseOnBlock(context, builder);
+            return r != null ? r : super.useOn(context);
+        }
+    }
+
+    public static class CustomShovelItem extends ShovelItem {
+        private final IItemBuilder builder;
+        public CustomShovelItem(Tier tier, Properties props, IItemBuilder builder) {
+            super(tier, props);
+            this.builder = builder;
+        }
+        @Override public UseAnim getUseAnimation(ItemStack stack) { return resolveUseAnim(builder.getUseAnimation()); }
+        @Override public int getUseDuration(ItemStack stack, LivingEntity entity) { return resolveUseDuration(builder); }
+        @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
+            InteractionResultHolder<ItemStack> r = handleItemUse(level, player, hand, builder);
+            return r != null ? r : super.use(level, player, hand);
+        }
+        @Override public void onUseTick(Level level, LivingEntity entity, ItemStack stack, int count) {
+            handleUseTick(level, entity, stack, count, builder);
+        }
+        @Override public void releaseUsing(ItemStack stack, Level level, LivingEntity entity, int timeLeft) {
+            handleReleaseUsing(stack, level, entity, timeLeft, builder);
+        }
+        @Override public ItemStack finishUsingItem(ItemStack stack, Level level, LivingEntity entity) {
+            handleFinishUsing(stack, level, entity, builder);
+            return super.finishUsingItem(stack, level, entity);
+        }
+        @Override public boolean hurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker) {
+            handleHurtEnemy(stack, target, attacker, builder);
+            return super.hurtEnemy(stack, target, attacker);
+        }
+        @Override public boolean mineBlock(ItemStack stack, Level level, net.minecraft.world.level.block.state.BlockState state, net.minecraft.core.BlockPos pos, LivingEntity entity) {
+            handleMineBlock(stack, level, state, pos, entity, builder);
+            return super.mineBlock(stack, level, state, pos, entity);
+        }
+        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
+            InteractionResult r = handleUseOnBlock(context, builder);
+            return r != null ? r : super.useOn(context);
+        }
+    }
+
+    public static class CustomHoeItem extends HoeItem {
+        private final IItemBuilder builder;
+        public CustomHoeItem(Tier tier, Properties props, IItemBuilder builder) {
+            super(tier, props);
+            this.builder = builder;
+        }
+        @Override public UseAnim getUseAnimation(ItemStack stack) { return resolveUseAnim(builder.getUseAnimation()); }
+        @Override public int getUseDuration(ItemStack stack, LivingEntity entity) { return resolveUseDuration(builder); }
+        @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
+            InteractionResultHolder<ItemStack> r = handleItemUse(level, player, hand, builder);
+            return r != null ? r : super.use(level, player, hand);
+        }
+        @Override public void onUseTick(Level level, LivingEntity entity, ItemStack stack, int count) {
+            handleUseTick(level, entity, stack, count, builder);
+        }
+        @Override public void releaseUsing(ItemStack stack, Level level, LivingEntity entity, int timeLeft) {
+            handleReleaseUsing(stack, level, entity, timeLeft, builder);
+        }
+        @Override public ItemStack finishUsingItem(ItemStack stack, Level level, LivingEntity entity) {
+            handleFinishUsing(stack, level, entity, builder);
+            return super.finishUsingItem(stack, level, entity);
+        }
+        @Override public boolean hurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker) {
+            handleHurtEnemy(stack, target, attacker, builder);
+            return super.hurtEnemy(stack, target, attacker);
+        }
+        @Override public boolean mineBlock(ItemStack stack, Level level, net.minecraft.world.level.block.state.BlockState state, net.minecraft.core.BlockPos pos, LivingEntity entity) {
+            handleMineBlock(stack, level, state, pos, entity, builder);
+            return super.mineBlock(stack, level, state, pos, entity);
+        }
+        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
+            InteractionResult r = handleUseOnBlock(context, builder);
+            return r != null ? r : super.useOn(context);
+        }
+    }
+
+    public static class CustomGenericItem extends Item {
+        private final IItemBuilder builder;
+        public CustomGenericItem(Properties props, IItemBuilder builder) {
+            super(props);
+            this.builder = builder;
+        }
+        @Override public UseAnim getUseAnimation(ItemStack stack) { return resolveUseAnim(builder.getUseAnimation()); }
+        @Override public int getUseDuration(ItemStack stack, LivingEntity entity) { return resolveUseDuration(builder); }
+        @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
+            InteractionResultHolder<ItemStack> r = handleItemUse(level, player, hand, builder);
+            return r != null ? r : super.use(level, player, hand);
+        }
+        @Override public void onUseTick(Level level, LivingEntity entity, ItemStack stack, int count) {
+            handleUseTick(level, entity, stack, count, builder);
+        }
+        @Override public void releaseUsing(ItemStack stack, Level level, LivingEntity entity, int timeLeft) {
+            handleReleaseUsing(stack, level, entity, timeLeft, builder);
+        }
+        @Override public ItemStack finishUsingItem(ItemStack stack, Level level, LivingEntity entity) {
+            handleFinishUsing(stack, level, entity, builder);
+            return super.finishUsingItem(stack, level, entity);
+        }
+        @Override public boolean hurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker) {
+            handleHurtEnemy(stack, target, attacker, builder);
+            return super.hurtEnemy(stack, target, attacker);
+        }
+        @Override public boolean mineBlock(ItemStack stack, Level level, net.minecraft.world.level.block.state.BlockState state, net.minecraft.core.BlockPos pos, LivingEntity entity) {
+            handleMineBlock(stack, level, state, pos, entity, builder);
+            return super.mineBlock(stack, level, state, pos, entity);
+        }
+        @Override public InteractionResult useOn(net.minecraft.world.item.context.UseOnContext context) {
+            InteractionResult r = handleUseOnBlock(context, builder);
+            return r != null ? r : super.useOn(context);
         }
     }
 
@@ -225,6 +550,43 @@ public final class ItemRegistrar {
         public CustomArmorItem(net.minecraft.core.Holder<ArmorMaterial> material, Type type, Properties properties, IItemBuilder builder) {
             super(material, type, properties);
             this.builder = builder;
+        }
+
+        @Override public UseAnim getUseAnimation(ItemStack stack) { return resolveUseAnim(builder.getUseAnimation()); }
+        @Override public int getUseDuration(ItemStack stack, LivingEntity entity) { return resolveUseDuration(builder); }
+
+        @Override
+        public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
+            InteractionResultHolder<ItemStack> r = handleItemUse(level, player, hand, builder);
+            return r != null ? r : super.use(level, player, hand);
+        }
+
+        @Override
+        public void onUseTick(Level level, LivingEntity entity, ItemStack stack, int count) {
+            handleUseTick(level, entity, stack, count, builder);
+        }
+
+        @Override
+        public void releaseUsing(ItemStack stack, Level level, LivingEntity entity, int timeLeft) {
+            handleReleaseUsing(stack, level, entity, timeLeft, builder);
+        }
+
+        @Override
+        public ItemStack finishUsingItem(ItemStack stack, Level level, LivingEntity entity) {
+            handleFinishUsing(stack, level, entity, builder);
+            return super.finishUsingItem(stack, level, entity);
+        }
+
+        @Override
+        public boolean hurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker) {
+            handleHurtEnemy(stack, target, attacker, builder);
+            return super.hurtEnemy(stack, target, attacker);
+        }
+
+        @Override
+        public boolean mineBlock(ItemStack stack, Level level, net.minecraft.world.level.block.state.BlockState state, net.minecraft.core.BlockPos pos, LivingEntity entity) {
+            handleMineBlock(stack, level, state, pos, entity, builder);
+            return super.mineBlock(stack, level, state, pos, entity);
         }
 
         @Override

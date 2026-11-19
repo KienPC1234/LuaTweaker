@@ -69,6 +69,48 @@ public class NoiseServiceImplTest {
         assertNotEquals(before, service.simplex(3.0, 4.0, 1.0));
     }
 
+    // ---------- 3D noise ----------
+
+    @Test
+    void simplex3_ReproducesForSameSeedAndVariesWithPosition() {
+        NoiseServiceImpl a = new NoiseServiceImpl();
+        NoiseServiceImpl b = new NoiseServiceImpl();
+        a.setSeed(4242L);
+        b.setSeed(4242L);
+        double first = 0.0;
+        boolean varies = false;
+        for (int i = 0; i < 50; i++) {
+            double x = i * 0.37, y = i * 0.53, z = i * 1.13;
+            double va = a.simplex3(x, y, z, 1.0);
+            assertEquals(va, b.simplex3(x, y, z, 1.0), EPS, "simplex3 must reproduce for same seed");
+            assertTrue(va >= -1.0 - 1e-6 && va <= 1.0 + 1e-6, "simplex3 range violated: " + va);
+            if (i == 0) first = va;
+            if (Math.abs(va - first) > 1e-3) varies = true;
+        }
+        assertTrue(varies, "simplex3 must vary across positions");
+    }
+
+    @Test
+    void fbm3_StaysNormalizedAndReproducible() {
+        NoiseServiceImpl service = new NoiseServiceImpl();
+        service.setSeed(99L);
+        for (int i = 0; i < 50; i++) {
+            double v = service.fbm3(i * 0.31, i * 0.77, i * 1.7, 4, 2.0, 0.5);
+            assertTrue(v >= -1.0 - 1e-9 && v <= 1.0 + 1e-9, "fbm3 must stay normalized: " + v);
+        }
+        NoiseServiceImpl other = new NoiseServiceImpl();
+        other.setSeed(99L);
+        assertEquals(service.fbm3(1.0, 2.0, 3.0, 4, 2.0, 0.5), other.fbm3(1.0, 2.0, 3.0, 4, 2.0, 0.5), EPS);
+    }
+
+    @Test
+    void simplex3_RejectsInvalidInput() {
+        NoiseServiceImpl service = new NoiseServiceImpl();
+        assertThrows(IllegalArgumentException.class, () -> service.simplex3(0, 0, 0, 0.0));
+        assertThrows(IllegalArgumentException.class, () -> service.fbm3(0, 0, 0, 0, 2.0, 0.5));
+        assertThrows(IllegalArgumentException.class, () -> service.fbm3(0, 0, 0, 4, -1.0, 0.5));
+    }
+
     // ---------- simplex ----------
 
     @Test

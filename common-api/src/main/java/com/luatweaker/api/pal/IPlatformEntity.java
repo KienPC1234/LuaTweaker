@@ -20,5 +20,8 @@ public interface IPlatformEntity {
     java.util.List<com.luatweaker.api.entity.IPlayer> getAllPlayers();
 
     @Nullable
+    default com.luatweaker.api.entity.IPlayer getLocalPlayer() { return null; }
+
+    @Nullable
     Object spawnEntity(@NotNull String entityId, double x, double y, double z);
 }

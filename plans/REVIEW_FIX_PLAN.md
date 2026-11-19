@@ -26,14 +26,20 @@ Keep each phase independently testable. Do not commit, publish, or modify real g
    - Reject missing/extra/ambiguous/incompatible arguments instead of silently choosing a method.
    - Preserve blacklist checks and property getter/setter behavior.
    - Tests: overload count/type, numeric conversions, nil, ambiguous input, properties and blacklist.
-5. **RemoteFunction request/response (P1)** — Lua binding fixed; PAL transport design still pending
-   - Complete the network transport contract in a follow-up; no blocking wait on game/VM threads.
-   - Use request IDs, directional routing, authenticated sender identity, timeout and reload cleanup.
-   - Preserve synchronous-looking Lua results through yielding in scheduled coroutines.
-   - Binding-level tests now cover Lua wrapper calls to InvokeServer/InvokeClient.
-   - Transport tests should run from Lua across two isolated engines with a simulated transport, both directions,
-     nil/error response, missing handler, timeout, wrong sender and reload cleanup.
-   - Update API documentation for coroutine usage, timeout and supported result types.
+5. **RemoteFunction request/response (P1)** — DONE
+   - Real transport: `LuaTweakerRpcPayload` (`invoke`/`result` phases) with request ids, directional
+     routing, timeout, one-shot results and an in-flight cap.
+   - `RemoteFunction:InvokeServer/InvokeClient` yield the calling coroutine and poll every 50 ms
+     (10 s cap); outside a coroutine they fail loudly instead of freezing the tick thread.
+   - Server handlers receive the calling player as their first argument; missing handlers,
+     unserializable return values and malformed payloads are answered with an error instead of
+     running partially.
+   - Per-player token bucket (60 burst / 30 per second) limits invoke floods; the server thread
+     never waits on a response.
+   - Tests: `NetworkServiceImplTest` (request/answer/error/unknown/cancel/flood/handler paths),
+     `NetworkPayloadCodecTest` (arrays, nesting, oversized, malformed) and
+     `LuavaCoroutineTaskTest` (immediate answer, yield-until-answer, timeout, no-coroutine error).
+   - UNVERIFIED in-game: two real clients over a network; covered only by unit-level transport doubles.
 6. **Final integration gate** — pending
    - Run Java 21 full build and all tests; inspect actual XML counts and final diff.
    - Review compatibility with bundled Lua mods; document runtime checks not performed.

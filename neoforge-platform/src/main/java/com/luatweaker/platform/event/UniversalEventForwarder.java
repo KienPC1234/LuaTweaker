@@ -44,7 +44,10 @@ public class UniversalEventForwarder {
 
         if (LuaServiceRegistry.get("Events") instanceof com.luatweaker.events.EventServiceImpl eventService) {
             ILuaValue wrapped = engine.wrapDynamicJavaObject(event);
-            eventService.fireRawEvent(alias, wrapped);
+            boolean allowed = eventService.fireRawEvent(alias, wrapped);
+            if (!allowed && event instanceof net.neoforged.bus.api.ICancellableEvent cancellable) {
+                cancellable.setCanceled(true);
+            }
         }
     }
 }

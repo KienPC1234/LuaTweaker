@@ -66,6 +66,11 @@ public class FakeValue implements ILuaValue {
     }
 
     @Override
+    public boolean isBoolean() {
+        return value instanceof Boolean;
+    }
+
+    @Override
     public ILuaTable asTable() {
         return value instanceof ILuaTable t ? t : null;
     }

@@ -1,10 +1,12 @@
 package com.luatweaker.platform.entity;
 
 import com.luatweaker.api.entity.IEntity;
+import com.luatweaker.platform.interaction.NeoForgeSpatialHelper;
 import net.minecraft.core.Holder;
 import net.minecraft.core.particles.ParticleType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
@@ -16,6 +18,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.player.Player;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class NeoForgeEntityWrapper implements IEntity {
 
@@ -75,6 +79,147 @@ public class NeoForgeEntityWrapper implements IEntity {
         if (entity instanceof LivingEntity living) {
             living.hurt(living.damageSources().generic(), amount);
         }
+    }
+
+    @Override
+    public void applyDamage(float amount, String damageTypeId, @Nullable IEntity attacker) {
+        if (entity instanceof LivingEntity living) {
+            Entity attackerEntity = (attacker != null && attacker.getRawEntity() instanceof Entity mcAttacker) ? mcAttacker : null;
+            if (damageTypeId != null && !damageTypeId.isBlank()) {
+                ResourceLocation rl = damageTypeId.contains(":")
+                        ? ResourceLocation.tryParse(damageTypeId)
+                        : ResourceLocation.fromNamespaceAndPath("minecraft", damageTypeId);
+                var registry = rl == null ? java.util.Optional.<net.minecraft.core.Registry<net.minecraft.world.damagesource.DamageType>>empty()
+                        : living.level().registryAccess().registry(net.minecraft.core.registries.Registries.DAMAGE_TYPE);
+                var holder = registry.flatMap(reg -> reg.getHolder(
+                        ResourceKey.create(net.minecraft.core.registries.Registries.DAMAGE_TYPE, rl)));
+                if (holder.isPresent()) {
+                    living.hurt(new net.minecraft.world.damagesource.DamageSource(holder.get(), attackerEntity, attackerEntity), amount);
+                    return;
+                }
+                com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                        "ApplyDamage: unknown damage type '" + damageTypeId
+                                + "'; falling back to a generic " + (attackerEntity != null ? "mob attack" : "hit"));
+            }
+            if (attackerEntity != null) {
+                living.hurt(living.damageSources().mobAttack(attackerEntity instanceof LivingEntity la ? la : null), amount);
+            } else {
+                living.hurt(living.damageSources().generic(), amount);
+            }
+        }
+    }
+
+    @Override
+    public void applyImpulse(double vx, double vy, double vz) {
+        if (entity != null) {
+            entity.push(vx, vy, vz);
+            entity.hasImpulse = true;
+            if (entity instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+                serverPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket(serverPlayer));
+            }
+        }
+    }
+
+    @Override
+    public void setEquipment(String slot, String itemId, int count) {
+        if (!(entity instanceof LivingEntity living) || slot == null) {
+            return;
+        }
+        net.minecraft.world.entity.EquipmentSlot eqSlot = parseEquipmentSlot(slot);
+        if (eqSlot == null) {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                    "SetEquipment ignored: unknown slot '" + slot
+                            + "' (expected mainhand/offhand/head/chest/legs/feet)");
+            return;
+        }
+        if (itemId == null || itemId.isBlank() || itemId.equalsIgnoreCase("minecraft:air")) {
+            living.setItemSlot(eqSlot, net.minecraft.world.item.ItemStack.EMPTY);
+            return;
+        }
+        ResourceLocation rl = itemId.contains(":")
+                ? ResourceLocation.tryParse(itemId)
+                : ResourceLocation.fromNamespaceAndPath("minecraft", itemId);
+        var itemOpt = rl == null ? java.util.Optional.<net.minecraft.world.item.Item>empty()
+                : BuiltInRegistries.ITEM.getOptional(rl);
+        if (itemOpt.isEmpty()) {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                    "SetEquipment ignored: unknown item '" + itemId + "' for slot '" + slot + "'");
+            return;
+        }
+        living.setItemSlot(eqSlot, new net.minecraft.world.item.ItemStack(itemOpt.get(), Math.max(1, count)));
+    }
+
+    @Override
+    public String getEquipment(String slot) {
+        if (entity instanceof LivingEntity living && slot != null) {
+            net.minecraft.world.entity.EquipmentSlot eqSlot = parseEquipmentSlot(slot);
+            if (eqSlot != null) {
+                var stack = living.getItemBySlot(eqSlot);
+                return stack.isEmpty() ? "minecraft:air" : BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+            }
+        }
+        return "minecraft:air";
+    }
+
+    @Override
+    public @Nullable java.util.Map<String, Object> getEquipmentData(String slot) {
+        if (!(entity instanceof LivingEntity living) || slot == null) {
+            return null;
+        }
+        net.minecraft.world.entity.EquipmentSlot eqSlot = parseEquipmentSlot(slot);
+        if (eqSlot == null) {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                    "GetEquipmentData ignored: unknown slot '" + slot
+                            + "' (expected mainhand/offhand/head/chest/legs/feet)");
+            return null;
+        }
+        net.minecraft.world.item.ItemStack stack = living.getItemBySlot(eqSlot);
+        return stack.isEmpty() ? null : describeStack(stack);
+    }
+
+    /** Shared shape for inventory and equipment reads. */
+    static java.util.Map<String, Object> describeStack(net.minecraft.world.item.ItemStack stack) {
+        java.util.Map<String, Object> entry = new java.util.LinkedHashMap<>();
+        entry.put("Id", BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
+        entry.put("Count", stack.getCount());
+        if (stack.has(net.minecraft.core.component.DataComponents.CUSTOM_NAME)) {
+            entry.put("Name", stack.getHoverName().getString());
+        }
+        if (stack.isDamaged()) {
+            entry.put("Damage", stack.getDamageValue());
+        }
+        return entry;
+    }
+
+    private static net.minecraft.world.entity.EquipmentSlot parseEquipmentSlot(String slot) {
+        return switch (slot.toLowerCase().trim()) {
+            case "mainhand", "main_hand", "hand" -> net.minecraft.world.entity.EquipmentSlot.MAINHAND;
+            case "offhand", "off_hand" -> net.minecraft.world.entity.EquipmentSlot.OFFHAND;
+            case "head", "helmet" -> net.minecraft.world.entity.EquipmentSlot.HEAD;
+            case "chest", "chestplate" -> net.minecraft.world.entity.EquipmentSlot.CHEST;
+            case "legs", "leggings" -> net.minecraft.world.entity.EquipmentSlot.LEGS;
+            case "feet", "boots" -> net.minecraft.world.entity.EquipmentSlot.FEET;
+            default -> null;
+        };
+    }
+
+    @Override
+    public com.luatweaker.api.spatial.RaycastResult raycast(double maxDistance, boolean ignoreLiquids) {
+        if (entity != null) {
+            String dim = entity.level().dimension().location().toString();
+            double eyeX = entity.getX();
+            double eyeY = entity.getEyeY();
+            double eyeZ = entity.getZ();
+            net.minecraft.world.phys.Vec3 look = entity.getLookAngle();
+            var params = new com.luatweaker.api.spatial.RaycastParams(
+                    maxDistance > 0 ? maxDistance : 64.0,
+                    ignoreLiquids,
+                    false,
+                    java.util.List.of(this)
+            );
+            return NeoForgeSpatialHelper.raycast(dim, eyeX, eyeY, eyeZ, look.x, look.y, look.z, params);
+        }
+        return com.luatweaker.api.spatial.RaycastResult.miss(getX(), getY(), getZ());
     }
 
     @Override
@@ -140,13 +285,23 @@ public class NeoForgeEntityWrapper implements IEntity {
 
     @Override
     public void playSound(String soundId, float volume, float pitch) {
-        if (entity != null && soundId != null && !soundId.isBlank()) {
-            ResourceLocation rl = soundId.contains(":") ? ResourceLocation.parse(soundId) : ResourceLocation.fromNamespaceAndPath("minecraft", soundId);
-            SoundEvent sound = BuiltInRegistries.SOUND_EVENT.get(rl);
-            if (sound != null) {
-                entity.level().playSound(null, entity.getX(), entity.getY(), entity.getZ(), sound, SoundSource.NEUTRAL, volume, pitch);
-            }
+        playSoundFrom(soundId, volume, pitch, "NEUTRAL");
+    }
+
+    @Override
+    public void playSoundFrom(String soundId, float volume, float pitch, String source) {
+        if (entity == null) {
+            return;
         }
+        ResourceLocation location = com.luatweaker.platform.sound.SoundHelper.parseId(soundId);
+        SoundEvent sound = com.luatweaker.platform.sound.SoundHelper.registered(location, "entity " + getType());
+        if (sound == null) {
+            return;
+        }
+        SoundSource category = com.luatweaker.platform.sound.SoundHelper.parseSource(source, SoundSource.NEUTRAL);
+        entity.level().playSound(null, entity.getX(), entity.getY(), entity.getZ(), sound, category,
+                com.luatweaker.platform.sound.SoundHelper.volume(volume),
+                com.luatweaker.platform.sound.SoundHelper.pitch(pitch));
     }
 
     @Override
@@ -163,10 +318,10 @@ public class NeoForgeEntityWrapper implements IEntity {
     @Override
     public IEntity spawnEntity(String entityId, double offsetX, double offsetY, double offsetZ) {
         if (entity != null && entity.level() instanceof ServerLevel serverLevel && entityId != null) {
-            ResourceLocation rl = entityId.contains(":") ? ResourceLocation.parse(entityId) : ResourceLocation.fromNamespaceAndPath("minecraft", entityId);
-            net.minecraft.world.entity.EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(rl);
-            if (type != null) {
-                Entity newEntity = type.create(serverLevel);
+            java.util.Optional<net.minecraft.world.entity.EntityType<?>> optType =
+                    com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(entityId);
+            if (optType.isPresent()) {
+                Entity newEntity = optType.get().create(serverLevel);
                 if (newEntity != null) {
                     newEntity.moveTo(entity.getX() + offsetX, entity.getY() + offsetY, entity.getZ() + offsetZ, entity.getYRot(), entity.getXRot());
                     serverLevel.addFreshEntity(newEntity);
@@ -284,9 +439,108 @@ public class NeoForgeEntityWrapper implements IEntity {
         com.luatweaker.platform.interaction.EntityInteractionHelper.playAnimation(this, animName, speed, transition);
     }
 
+    // ==== Minecraft attributes (generic RPG stats) ====
+
+    @Override
+    public @Nullable Double getAttributeValue(String attributeId) {
+        net.minecraft.world.entity.ai.attributes.AttributeInstance instance = attributeInstance(attributeId);
+        return instance == null ? null : instance.getValue();
+    }
+
+    @Override
+    public @Nullable Double getAttributeBaseValue(String attributeId) {
+        net.minecraft.world.entity.ai.attributes.AttributeInstance instance = attributeInstance(attributeId);
+        return instance == null ? null : instance.getBaseValue();
+    }
+
+    @Override
+    public boolean setAttributeBaseValue(String attributeId, double value) {
+        net.minecraft.world.entity.ai.attributes.AttributeInstance instance = attributeInstance(attributeId);
+        if (instance == null) {
+            return false;
+        }
+        instance.setBaseValue(value);
+        return true;
+    }
+
+    @Override
+    public boolean addAttributeModifier(String attributeId, String modifierId, double amount, String operation) {
+        net.minecraft.world.entity.ai.attributes.AttributeInstance instance = attributeInstance(attributeId);
+        if (instance == null || modifierId == null || modifierId.isBlank()) {
+            return false;
+        }
+        net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation op = parseModifierOperation(operation);
+        if (op == null) {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                    "AddAttributeModifier ignored: unknown operation '" + operation
+                            + "' (expected ADD_VALUE/ADD_MULTIPLIED_BASE/ADD_MULTIPLIED_TOTAL)");
+            return false;
+        }
+        ResourceLocation rl = modifierId.contains(":")
+                ? ResourceLocation.tryParse(modifierId)
+                : ResourceLocation.fromNamespaceAndPath("luatweaker", modifierId);
+        if (rl == null) {
+            return false;
+        }
+        // addOrReplacePermanentModifier would survive a reload of the entity from NBT twice
+        // over; the transient variant is the script-owned layer and is replaced on re-apply.
+        instance.addOrUpdateTransientModifier(
+                new net.minecraft.world.entity.ai.attributes.AttributeModifier(rl, amount, op));
+        return true;
+    }
+
+    @Override
+    public boolean removeAttributeModifier(String attributeId, String modifierId) {
+        net.minecraft.world.entity.ai.attributes.AttributeInstance instance = attributeInstance(attributeId);
+        if (instance == null || modifierId == null || modifierId.isBlank()) {
+            return false;
+        }
+        ResourceLocation rl = modifierId.contains(":")
+                ? ResourceLocation.tryParse(modifierId)
+                : ResourceLocation.fromNamespaceAndPath("luatweaker", modifierId);
+        return rl != null && instance.removeModifier(rl);
+    }
+
+    /** @return the attribute instance, or {@code null} when the entity lacks that attribute */
+    private @Nullable net.minecraft.world.entity.ai.attributes.AttributeInstance attributeInstance(String attributeId) {
+        if (!(entity instanceof LivingEntity living) || attributeId == null || attributeId.isBlank()) {
+            return null;
+        }
+        ResourceLocation rl = attributeId.contains(":")
+                ? ResourceLocation.tryParse(attributeId)
+                : ResourceLocation.fromNamespaceAndPath("minecraft", attributeId);
+        if (rl == null) {
+            return null;
+        }
+        var holder = BuiltInRegistries.ATTRIBUTE.getHolder(rl);
+        if (holder.isEmpty()) {
+            com.luatweaker.api.log.LuaTweakerLog.get().debug(com.luatweaker.api.log.LogStage.SYSTEM,
+                    "Unknown attribute '" + attributeId + "' on " + getType());
+            return null;
+        }
+        return living.getAttribute(holder.get());
+    }
+
+    private static net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation parseModifierOperation(String operation) {
+        if (operation == null || operation.isBlank()) {
+            return net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation.ADD_VALUE;
+        }
+        try {
+            return net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation
+                    .valueOf(operation.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     @Override
     public void setAttribute(String key, String value) {
-        if (entity != null && key != null) {
+        if (entity == null || key == null) {
+            return;
+        }
+        if (value == null) {
+            entity.getPersistentData().remove(key);
+        } else {
             entity.getPersistentData().putString(key, value);
         }
     }
@@ -300,6 +554,65 @@ public class NeoForgeEntityWrapper implements IEntity {
             return entity.getPersistentData().get(key).getAsString();
         }
         return null;
+    }
+
+    @Override
+    @Nullable
+    public Object getCustomData(@NotNull String key) {
+        if (entity != null && key != null && entity.getPersistentData().contains(key)) {
+            net.minecraft.nbt.Tag valTag = entity.getPersistentData().get(key);
+            if (valTag instanceof net.minecraft.nbt.NumericTag num) {
+                if (valTag instanceof net.minecraft.nbt.ByteTag bt && (bt.getAsByte() == 0 || bt.getAsByte() == 1)) {
+                    return bt.getAsByte() == 1;
+                }
+                return num.getAsDouble();
+            } else if (valTag instanceof net.minecraft.nbt.StringTag str) {
+                return str.getAsString();
+            } else if (valTag != null) {
+                return valTag.getAsString();
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public void setCustomData(@NotNull String key, @Nullable Object value) {
+        if (entity == null || key == null) {
+            return;
+        }
+        net.minecraft.nbt.CompoundTag tag = entity.getPersistentData();
+        if (value == null) {
+            tag.remove(key);
+            return;
+        }
+        if (value instanceof com.luatweaker.api.vm.ILuaValue lv) {
+            if (lv.isNil()) {
+                tag.remove(key);
+            } else if (lv.isBoolean()) {
+                tag.putBoolean(key, lv.asBoolean());
+            } else if (lv.isNumber()) {
+                tag.putDouble(key, lv.asDouble());
+            } else if (lv.isString()) {
+                tag.putString(key, lv.asString());
+            } else {
+                // Storing "table: 0x..." silently loses the value; make the script see the error.
+                throw new IllegalArgumentException("SetCustomData('" + key
+                        + "') only supports strings, numbers and booleans; got a Lua "
+                        + (lv.isTable() ? "table" : lv.isFunction() ? "function" : "value"));
+            }
+            return;
+        }
+        if (value instanceof Boolean flag) {
+            tag.putBoolean(key, flag);
+        } else if (value instanceof Number num) {
+            tag.putDouble(key, num.doubleValue());
+        } else if (value instanceof CharSequence text) {
+            tag.putString(key, text.toString());
+        } else {
+            throw new IllegalArgumentException("SetCustomData('" + key
+                    + "') only supports strings, numbers and booleans; got "
+                    + value.getClass().getSimpleName());
+        }
     }
 
     @Override
