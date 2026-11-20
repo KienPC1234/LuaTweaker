@@ -77,6 +77,16 @@ local function getTimeClock()
     return 0
 end
 
+-- Monotonic seconds for scheduling. getTimeClock() is the wall clock and stays
+-- exposed to scripts (timestamps); using it for deadlines means an NTP correction
+-- or a user changing the system clock can fire a delayed task early or strand it.
+local function monotonicNow()
+    if task and type(task._now) == 'function' then
+        return task._now()
+    end
+    return getTimeClock()
+end
+
 function task.delay(...)
     local rawArgs = {...}
     local sec = rawArgs[1]
@@ -95,7 +105,7 @@ function task.delay(...)
     for i = startIdx, #rawArgs do
         table.insert(passArgs, rawArgs[i])
     end
-    local entry = makeTaskEntry(fn, passArgs, getTimeClock() + sec)
+    local entry = makeTaskEntry(fn, passArgs, monotonicNow() + sec)
     table.insert(delays, entry)
     return entry
 end
@@ -141,7 +151,17 @@ local function runDeferred(fn, args)
     end
 end
 
+-- Per-tick budget: tasks over the limit are carried to the next tick instead of
+-- freezing the server for an unbounded amount of time. Overridable for tuning/tests.
+task._maxPerTick = 1000
+
 function task._tick()
+    -- Hot-tick fast path: most ticks have no deferred/delayed work. Return
+    -- before allocating the snapshot tables and hitting the Java wall clock.
+    if #deferred == 0 and #delays == 0 then
+        task._lastTickExecuted = 0
+        return
+    end
     -- Snapshot both queues up front. A wait() scheduled by a deferred task during
     -- this tick belongs to the next tick, not to the delay pass of this one.
     local def = deferred
@@ -149,30 +169,52 @@ function task._tick()
     local due = delays
     delays = {}
 
+    local budget = tonumber(task._maxPerTick) or 1000
+    if budget < 1 then
+        budget = 1
+    end
+    local executed = 0
+
     for _, item in ipairs(def) do
-        if not item.cancelled then
+        if item.cancelled then
+            -- dropped: task.cancel() ran before it started
+        elseif executed >= budget then
+            -- carried over; it has not started, so task.cancel() still works on it
+            table.insert(deferred, item)
+        else
             item.started = true
+            executed = executed + 1
             runDeferred(item.fn, item.args)
         end
     end
 
-    local now = getTimeClock()
+    local now = monotonicNow()
     for _, item in ipairs(due) do
         if item.cancelled then
             -- dropped: task.cancel() ran before the deadline
+        elseif executed >= budget then
+            table.insert(delays, item)
         elseif now >= item.time then
             item.started = true
+            executed = executed + 1
             runDeferred(item.fn, item.args)
         else
             table.insert(delays, item)
         end
     end
+    task._lastTickExecuted = executed
 end
 
 -- Queue snapshot used by /lt doctor. The deferral/delay queues live in this closure,
 -- so Java cannot read them any other way.
 function task._stats()
-    return { queued = #deferred + #delays, deferred = #deferred, delayed = #delays }
+    return {
+        queued = #deferred + #delays,
+        deferred = #deferred,
+        delayed = #delays,
+        executed = task._lastTickExecuted or 0,
+        budget = task._maxPerTick or 1000,
+    }
 end
 
 _G.task = task
@@ -286,6 +328,7 @@ _G.Signal = Signal
 
 local Client = _G.Client or {}
 Client.OnKeyBindPressed = Signal.new()
+Client.OnKeyBindReleased = Signal.new()
 _G.Client = Client
 
 -- ===================================================================
@@ -362,7 +405,7 @@ local function awaitRpc(net, requestId, label)
     if type(requestId) ~= 'string' or requestId == '' then
         error('[' .. label .. '] transport did not return a request id', 0)
     end
-    local startedAt = getTimeClock()
+    local startedAt = monotonicNow()
     while true do
         local state = net:_RpcPoll(requestId)
         local status = type(state) == 'table' and state.Status or nil
@@ -376,7 +419,7 @@ local function awaitRpc(net, requestId, label)
             net:_RpcCancel(requestId)
             error('[' .. label .. '] transport returned no response state', 0)
         end
-        if getTimeClock() - startedAt >= RPC_TIMEOUT_SECONDS then
+        if monotonicNow() - startedAt >= RPC_TIMEOUT_SECONDS then
             net:_RpcCancel(requestId)
             error('[' .. label .. '] timed out after ' .. RPC_TIMEOUT_SECONDS .. 's', 0)
         end

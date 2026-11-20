@@ -12,6 +12,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
@@ -22,6 +23,9 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -51,6 +55,23 @@ public class CustomContainerBlock extends CustomBlock implements EntityBlock {
         };
     }
 
+    private static final VoxelShape PIPE_CORE = Block.box(4.0, 4.0, 4.0, 12.0, 12.0, 12.0);
+    private static final VoxelShape[] PIPE_ARMS = {
+            Block.box(4.0, 0.0, 4.0, 12.0, 4.0, 12.0), // DOWN
+            Block.box(4.0, 12.0, 4.0, 12.0, 16.0, 12.0), // UP
+            Block.box(4.0, 4.0, 0.0, 12.0, 12.0, 4.0), // NORTH
+            Block.box(4.0, 4.0, 12.0, 12.0, 12.0, 16.0), // SOUTH
+            Block.box(0.0, 4.0, 4.0, 4.0, 12.0, 12.0), // WEST
+            Block.box(12.0, 4.0, 4.0, 16.0, 12.0, 12.0)  // EAST
+    };
+
+    private static final ThreadLocal<ContainerSpec> INIT_SPEC = new ThreadLocal<>();
+
+    private static Properties pushSpec(Properties props, ContainerSpec spec) {
+        INIT_SPEC.set(spec);
+        return props;
+    }
+
     private final String crateTitle;
     /** Replaced on {@code /lt reload}; read every tick/frame, hence volatile. */
     private volatile ContainerSpec spec;
@@ -62,19 +83,29 @@ public class CustomContainerBlock extends CustomBlock implements EntityBlock {
                                 ContainerSpec spec,
                                 @Nullable BiConsumer<Object, Object> rightClickHandler,
                                 @Nullable java.util.function.BiFunction<Object, Object, Boolean> itemFilter) {
-        super(properties, crateId, spec.facing(), spec.boxes(), rightClickHandler);
+        this(pushSpec(properties, spec), crateId, crateTitle, spec, rightClickHandler, itemFilter, true);
+    }
+
+    private CustomContainerBlock(Properties properties, String crateId, String crateTitle,
+                                 ContainerSpec spec,
+                                 @Nullable BiConsumer<Object, Object> rightClickHandler,
+                                 @Nullable java.util.function.BiFunction<Object, Object, Boolean> itemFilter,
+                                 boolean unused) {
+        super(properties, crateId, spec != null ? spec.facing() : null, spec != null ? spec.boxes() : java.util.List.of(), rightClickHandler);
+        INIT_SPEC.remove();
         this.crateTitle = crateTitle;
         this.spec = spec;
         this.itemFilter = itemFilter;
-        BooleanStateSpec stateSpec = spec.booleanState();
-        this.stateProperty = stateSpec != null && stateSpec.property() != null
-                ? BooleanProperty.create(stateSpec.property()) : null;
+        BooleanStateSpec stateSpec = spec != null ? spec.booleanState() : null;
+        this.stateProperty = (stateSpec != null && stateSpec.property() != null)
+                ? (BooleanProperty) this.getStateDefinition().getProperty(stateSpec.property())
+                : null;
 
         BlockState defaultState = defaultBlockState();
         if (stateProperty != null) {
             defaultState = defaultState.setValue(stateProperty, false);
         }
-        if (spec.connections()) {
+        if (spec != null && spec.connections()) {
             for (BooleanProperty p : CONNECTION_PROPS) {
                 defaultState = defaultState.setValue(p, false);
             }
@@ -93,6 +124,14 @@ public class CustomContainerBlock extends CustomBlock implements EntityBlock {
     @NotNull
     public ContainerSpec getSpec() {
         return spec;
+    }
+
+    @Override
+    public net.minecraft.world.level.block.RenderShape getRenderShape(BlockState state) {
+        if (spec.geoModel() != null) {
+            return net.minecraft.world.level.block.RenderShape.ENTITYBLOCK_ANIMATED;
+        }
+        return super.getRenderShape(state);
     }
 
     /**
@@ -171,12 +210,45 @@ public class CustomContainerBlock extends CustomBlock implements EntityBlock {
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         super.createBlockStateDefinition(builder);
-        if (stateProperty != null) {
-            builder.add(stateProperty);
+        ContainerSpec s = this.spec != null ? this.spec : INIT_SPEC.get();
+        if (s != null) {
+            BooleanStateSpec stateSpec = s.booleanState();
+            if (stateSpec != null && stateSpec.property() != null) {
+                builder.add(BooleanProperty.create(stateSpec.property()));
+            }
+            if (s.connections()) {
+                builder.add(CONNECTION_PROPS);
+            }
         }
-        if (spec.connections()) {
-            builder.add(CONNECTION_PROPS);
+    }
+
+    @Override
+    @NotNull
+    public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        if (spec != null && spec.connections()) {
+            VoxelShape shape = PIPE_CORE;
+            for (int i = 0; i < CONNECTION_PROPS.length; i++) {
+                if (state.hasProperty(CONNECTION_PROPS[i]) && Boolean.TRUE.equals(state.getValue(CONNECTION_PROPS[i]))) {
+                    shape = Shapes.or(shape, PIPE_ARMS[i]);
+                }
+            }
+            return shape;
         }
+        return super.getShape(state, level, pos, context);
+    }
+
+    @Override
+    @NotNull
+    public VoxelShape getOcclusionShape(BlockState state, BlockGetter level, BlockPos pos) {
+        if (spec != null && (spec.connections() || spec.geoModel() != null || !spec.boxes().isEmpty())) {
+            return Shapes.empty();
+        }
+        return super.getOcclusionShape(state, level, pos);
+    }
+
+    @Override
+    public boolean useShapeForLightOcclusion(BlockState state) {
+        return spec != null && (spec.connections() || spec.geoModel() != null || !spec.boxes().isEmpty());
     }
 
     @Override
@@ -214,7 +286,7 @@ public class CustomContainerBlock extends CustomBlock implements EntityBlock {
 
     @Override
     protected void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean movedByPiston) {
-        if (!oldState.is(state.getBlock()) && !level.isClientSide()) {
+        if (!oldState.is(state.getBlock()) && !level.isClientSide() && spec != null && spec.connections()) {
             updateConnections(level, pos, state);
         }
     }
@@ -223,19 +295,20 @@ public class CustomContainerBlock extends CustomBlock implements EntityBlock {
     public void neighborChanged(BlockState state, Level level, BlockPos pos, Block neighborBlock,
                                 BlockPos neighborPos, boolean isMoving) {
         super.neighborChanged(state, level, pos, neighborBlock, neighborPos, isMoving);
-        if (!level.isClientSide() && spec.connections()) {
+        if (!level.isClientSide() && spec != null && spec.connections()) {
             updateConnections(level, pos, state);
         }
     }
 
     @Override
     protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean isMoving) {
-        if (!newState.is(state.getBlock()) && spec.connections() && !level.isClientSide()) {
+        if (!newState.is(state.getBlock()) && spec != null && spec.connections() && !level.isClientSide()) {
             for (Direction dir : ALL_DIRECTIONS) {
                 BlockPos neighbor = pos.relative(dir);
                 BlockState neighborState = level.getBlockState(neighbor);
-                if (neighborState.getBlock() == this && neighborState.getValue(getConnectionProp(dir.getOpposite()))) {
-                    level.setBlock(neighbor, neighborState.setValue(getConnectionProp(dir.getOpposite()), false), 3);
+                BooleanProperty oppositeProp = getConnectionProp(dir.getOpposite());
+                if (neighborState.getBlock() == this && neighborState.hasProperty(oppositeProp) && Boolean.TRUE.equals(neighborState.getValue(oppositeProp))) {
+                    level.setBlock(neighbor, neighborState.setValue(oppositeProp, false), 3);
                 }
             }
         }
@@ -243,11 +316,14 @@ public class CustomContainerBlock extends CustomBlock implements EntityBlock {
     }
 
     private void updateConnections(Level level, BlockPos pos, BlockState currentState) {
+        if (spec == null || !spec.connections()) return;
         BlockState updated = currentState;
         for (Direction dir : ALL_DIRECTIONS) {
+            BooleanProperty prop = getConnectionProp(dir);
+            if (!updated.hasProperty(prop)) continue;
             BlockPos neighbor = pos.relative(dir);
             boolean connects = level.getBlockState(neighbor).getBlock() == this;
-            updated = updated.setValue(getConnectionProp(dir), connects);
+            updated = updated.setValue(prop, connects);
         }
         if (updated != currentState) {
             level.setBlock(pos, updated, 3);
@@ -260,7 +336,9 @@ public class CustomContainerBlock extends CustomBlock implements EntityBlock {
         if (!level.isClientSide() && level.getBlockEntity(pos) instanceof CustomContainerBlockEntity container) {
             if (rightClickHandler != null) {
                 try {
-                    rightClickHandler.accept(new NeoForgePlayerWrapper(player), state);
+                    String dim = level.dimension().location().toString();
+                    var blockWrapper = new com.luatweaker.platform.interaction.NeoForgeInteractableBlock(dim, pos.getX(), pos.getY(), pos.getZ());
+                    rightClickHandler.accept(new NeoForgePlayerWrapper(player), blockWrapper);
                 } catch (Exception e) {
                     LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed container right-click handler for " + blockId + ": " + e.getMessage());
                 }

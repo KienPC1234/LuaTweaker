@@ -34,7 +34,34 @@ public class ListCommand implements ILuaTweakerCommand {
     @Override
     public int execute(ICommandSender sender, String[] args) {
         String folder = args.length > 0 ? args[0] : "server";
-        File dir = new File(luaRoot, folder);
+        File dir = resolveInsideRoot(luaRoot, folder);
+        if (dir == null) {
+            sender.sendError("Unknown script folder: lua/" + folder);
+            return 0;
+        }
+        return listScripts(sender, folder, dir);
+    }
+
+    /**
+     * Resolves a user-supplied path strictly inside the lua root. Absolute
+     * paths and ".." escapes return null so any player (this command is
+     * permission level 0) cannot enumerate files outside the mod folder.
+     */
+    static File resolveInsideRoot(File root, String userPath) {
+        try {
+            File canonicalRoot = root.getCanonicalFile();
+            File target = new File(root, userPath).getCanonicalFile();
+            String prefix = canonicalRoot.getPath() + File.separator;
+            if (!target.getPath().startsWith(prefix) && !target.equals(canonicalRoot)) {
+                return null;
+            }
+            return target;
+        } catch (java.io.IOException e) {
+            return null;
+        }
+    }
+
+    private static int listScripts(ICommandSender sender, String folder, File dir) {
 
         if (!dir.exists() || !dir.isDirectory()) {
             sender.sendError("Unknown script folder: lua/" + folder);

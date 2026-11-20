@@ -1,6 +1,7 @@
 package com.luatweaker.content;
 
 import com.luatweaker.api.content.IBlockBuilder;
+import org.jetbrains.annotations.Nullable;
 import java.util.function.BiConsumer;
 
 public class BlockBuilderImpl implements IBlockBuilder {
@@ -354,6 +355,15 @@ public class BlockBuilderImpl implements IBlockBuilder {
     }
 
     @Override
+    public IBlockBuilder customBar(String id, int x, int y, int width, int height, String currentKey, String maxKey, int color, @Nullable String tooltip) {
+        if (id != null && currentKey != null && maxKey != null && width > 0 && height > 0) {
+            this.guiBars.add(new com.luatweaker.api.content.MachineBarSpec(
+                    id, x, y, width, height, "custom", color, tooltip, null, 0, 0, currentKey, maxKey));
+        }
+        return this;
+    }
+
+    @Override
     public IBlockBuilder booleanState(String property, String offTexture, String onTexture) {
         if (property != null && property.matches(VALID_PROPERTY_NAME) && offTexture != null && onTexture != null) {
             this.booleanState = new com.luatweaker.api.content.BooleanStateSpec(property, offTexture, onTexture);
@@ -494,8 +504,17 @@ public class BlockBuilderImpl implements IBlockBuilder {
     @Override public BiConsumer<Object, Object> getRenderHandler() { return renderHandler; }
     @Override public java.util.List<com.luatweaker.api.content.MachineButtonSpec> getButtons() { return java.util.List.copyOf(buttons); }
     @Override public java.util.List<com.luatweaker.api.content.MachineLabelSpec> getLabels() { return java.util.List.copyOf(labels); }
+    private com.luatweaker.api.content.GeoModelSpec geoModel;
+
+    @Override
+    public IBlockBuilder geoModel(String modelPath, String texturePath, String animationPath, @org.jetbrains.annotations.Nullable String defaultAnimation) {
+        this.geoModel = new com.luatweaker.api.content.GeoModelSpec(modelPath, texturePath, animationPath, defaultAnimation);
+        return this;
+    }
+
     @Override public BiConsumer<Object, String> getButtonClickHandler() { return buttonClickHandler; }
     @Override public BiConsumer<Object, Object> getNeighborChangedHandler() { return neighborChangedHandler; }
+    @Override @org.jetbrains.annotations.Nullable public com.luatweaker.api.content.GeoModelSpec getGeoModel() { return geoModel; }
 }
 
 

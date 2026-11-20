@@ -217,4 +217,30 @@ public class DynamicJavaProxyTest {
         );
         assertNull(engine.getAndClearLastExecutionError());
     }
+
+    public static class CustomDataProbe {
+        private final java.util.Map<String, Object> data = new java.util.HashMap<>();
+
+        public Object getCustomData(String key) {
+            return data.get(key);
+        }
+
+        public void setCustomData(String key, Object value) {
+            data.put(key, value);
+        }
+    }
+
+    @Test
+    void testPascalCaseMethodDispatchOnProxy() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        engine.getGlobalEnvironment().rawset("_item", engine.wrapDynamicJavaObject(new CustomDataProbe()));
+
+        engine.executeString(
+            "_item:SetCustomData('Energy', 50)\n" +
+            "local energy = _item:GetCustomData('Energy')\n" +
+            "assert(energy == 50, 'GetCustomData must return 50, got ' .. tostring(energy))",
+            "proxy_pascal_case_repro"
+        );
+        assertNull(engine.getAndClearLastExecutionError());
+    }
 }

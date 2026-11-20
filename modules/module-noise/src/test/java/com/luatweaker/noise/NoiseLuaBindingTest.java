@@ -73,4 +73,28 @@ public class NoiseLuaBindingTest {
             "noise_require_test"
         );
     }
+
+    @Test
+    void batchFillSamplesAWholeGridInOneCall() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        NoiseLuaBinding.registerBindings(engine);
+
+        engine.executeString(
+            "local spec = { kind = 'fbm', octaves = 4 }\n" +
+            "local field = Noise:Fill2D(10, 20, 4, 3, spec)\n" +
+            "assert(#field == 12, 'expected 12 samples, got ' .. #field)\n" +
+            "assert(field[1] == Noise:fBm(10, 20, 4, 2.0, 0.5), 'index 1 mismatch')\n" +
+            "assert(field[2] == Noise:fBm(11, 20, 4, 2.0, 0.5), 'x must be the fastest axis')\n" +
+            "assert(field[5] == Noise:fBm(10, 21, 4, 2.0, 0.5), 'row stride mismatch')\n" +
+            "local volume = Noise:Fill3D(0, 0, 0, 2, 2, 2, { kind = 'fbm3', octaves = 3 })\n" +
+            "assert(#volume == 8, 'expected 8 3D samples, got ' .. #volume)\n" +
+            "assert(volume[1] == Noise:fbm3(0, 0, 0, 3, 2.0, 0.5), '3D index 1 mismatch')\n" +
+            "assert(volume[5] == Noise:fbm3(0, 1, 0, 3, 2.0, 0.5), '3D y stride mismatch')\n" +
+            "assert(not pcall(function() Noise:Fill2D(0, 0, 0, 1, {}) end), 'zero size must fail')\n" +
+            "assert(not pcall(function() Noise:Fill2D(0, 0, 1, 1, { kind = 'nope' }) end), 'unknown kind must fail')\n" +
+            "assert(not pcall(function() Noise:Fill2D(0, 0, 4096, 4096, {}) end), 'oversized request must fail')\n",
+            "noise_batch_test"
+        );
+        assertNull(engine.getAndClearLastExecutionError());
+    }
 }

@@ -46,12 +46,28 @@ public class EventServiceImpl implements IEventService {
             // are kept: multiple modules may listen to one event.
             entries.removeIf(e -> !e.engine().equals(this.engine));
             entries.add(new ListenerEntry(this.engine, lv));
+            return;
         }
+        com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                com.luatweaker.api.log.LogStage.SYSTEM,
+                "Events:Listen('" + eventName + "') ignored a "
+                        + (callback == null ? "null" : callback.getClass().getSimpleName())
+                        + " callback; a Lua function is required");
     }
 
     @Override
     public void post(@NotNull String eventName, @NotNull ILuaTable payload) {
         fireEvent(eventName, payload);
+    }
+
+    /**
+     * Hot-path guard: lets high-frequency forwarders (tick, damage, spawn)
+     * skip payload construction when nothing listens. A {@code false} here
+     * matches what {@link #fireRawEvent} would return for zero listeners.
+     */
+    public boolean hasListeners(@NotNull String eventName) {
+        java.util.List<ListenerEntry> entries = LISTENERS.get(eventName);
+        return entries != null && !entries.isEmpty();
     }
 
     @Override

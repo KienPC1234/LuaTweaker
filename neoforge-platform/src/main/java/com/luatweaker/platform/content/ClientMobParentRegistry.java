@@ -24,7 +24,16 @@ public final class ClientMobParentRegistry {
 
     public static RendererFactory getFactory(String id) {
         if (id == null) return RENDERERS.get("zombie");
-        return RENDERERS.getOrDefault(id.toLowerCase(), RENDERERS.get("zombie"));
+        String clean = id.toLowerCase();
+        RendererFactory factory = RENDERERS.get(clean);
+        if (factory == null && !"zombie".equals(clean)) {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "No custom renderer for parent '" + id + "': falling back to the zombie renderer "
+                            + "(visuals will be wrong). Use rig('humanoid' | 'quadruped') for a texture-driven generic renderer.");
+            return RENDERERS.get("zombie");
+        }
+        return factory != null ? factory : RENDERERS.get("zombie");
     }
 
     private static void registerDefaults() {

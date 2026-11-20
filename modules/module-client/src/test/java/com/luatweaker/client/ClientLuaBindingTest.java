@@ -431,4 +431,79 @@ public class ClientLuaBindingTest {
         assertTrue(gui.calls.contains("open spell_book (Spell Book)"), "MockGuiService should have received open: " + gui.calls);
         assertTrue(gui.calls.contains("close"), "MockGuiService should have received close: " + gui.calls);
     }
+
+    @Test
+    public void registerKeyBinding_AcceptsKeyNamesAndInts() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        KeyBindServiceImpl service = new KeyBindServiceImpl();
+        ClientLuaBinding.registerBindings(engine, new ClientServiceImpl(), service, new MockGuiService());
+
+        engine.executeStringOrThrow(
+            "Client.registerKeyBinding('staff_cast', 'Cast', 'Ruby Mod', 'G', 'StaffCastSkill')\n" +
+            "Client.registerKeyBinding('staff_swap', 'Ruby Mod', 82, 'StaffSwapSkill')\n",
+            "KeyNameTest"
+        );
+
+        assertEquals(71, service.getRegisteredKeyBinds().stream()
+            .filter(e -> e.id().equals("staff_cast")).findFirst().orElseThrow().defaultKey());
+        assertEquals(82, service.getRegisteredKeyBinds().stream()
+            .filter(e -> e.id().equals("staff_swap")).findFirst().orElseThrow().defaultKey());
+    }
+
+    @Test
+    public void registerKeyBinding_RejectsBadInput() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        ClientLuaBinding.registerBindings(engine, new ClientServiceImpl(), new KeyBindServiceImpl(), new MockGuiService());
+
+        // Too few args used to silently no-op; unknown names used to misbind.
+        assertThrows(RuntimeException.class, () -> engine.executeStringOrThrow(
+            "Client.registerKeyBinding('only_id')\n", "KeyArityTest"));
+        assertThrows(RuntimeException.class, () -> engine.executeStringOrThrow(
+            "Client.registerKeyBinding('x', 'Cat', 'NOT_A_KEY', 'P')\n", "KeyNameTypoTest"));
+        assertThrows(RuntimeException.class, () -> engine.executeStringOrThrow(
+            "Client.registerKeyBinding('', 'Cat', 'G', 'P')\n", "KeyBlankIdTest"));
+    }
+
+    @Test
+    public void registerKeyBinding_AcceptsMouseAndModifier() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        KeyBindServiceImpl service = new KeyBindServiceImpl();
+        ClientLuaBinding.registerBindings(engine, new ClientServiceImpl(), service, new MockGuiService());
+
+        engine.executeStringOrThrow(
+            "Client.registerKeyBinding('aoe', 'AoE', 'Cat', 'MOUSE_RIGHT', 'AoePayload', 'shift')\n",
+            "KeyMouseModTest"
+        );
+
+        var entry = service.getRegisteredKeyBinds().stream()
+            .filter(e -> e.id().equals("aoe")).findFirst().orElseThrow();
+        assertEquals("mouse", entry.inputType());
+        assertEquals(1, entry.defaultKey());
+        assertEquals("shift", entry.modifier());
+
+        assertThrows(RuntimeException.class, () -> engine.executeStringOrThrow(
+            "Client.registerKeyBinding('bad', 'Disp', 'Cat', 'G', 'P', 'hyper')\n", "KeyModTypoTest"));
+    }
+
+    @Test
+    public void releaseSignal_DispatchesThroughService() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        KeyBindServiceImpl service = new KeyBindServiceImpl();
+        ClientLuaBinding.registerBindings(engine, new ClientServiceImpl(), service, new MockGuiService());
+
+        engine.executeStringOrThrow(
+            "releasedId = nil\n" +
+            "Client.OnKeyBindReleased:Connect(function(keyBindId, payload)\n" +
+            "    releasedId = keyBindId .. '=' .. payload\n" +
+            "end)\n",
+            "ReleaseConnectTest"
+        );
+        service.registerKeyBind("cast", "Cast", "Cat", 71, "P");
+        service.triggerKeyBindRelease("cast", "P");
+
+        engine.executeStringOrThrow(
+            "assert(releasedId == 'cast=P', 'release listener must fire, got: ' .. tostring(releasedId))",
+            "ReleaseFireTest"
+        );
+    }
 }

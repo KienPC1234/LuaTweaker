@@ -120,17 +120,36 @@ public final class LuaCommandWrapper implements ILuaTweakerCommand {
             );
             if (engine.getAndClearLastExecutionError() != null) {
                 // The handler raised a Lua error: the engine already logged it loudly.
+                sender.sendError("Lua command '/" + name + "' crashed. Check the log for details.");
+                sendUsageHint(sender, def);
                 return 0;
             }
             // Lua truthiness: only false and nil are failures.
             if (result == null || result.isNil()) return 1;
-            if (result.toJavaObject() instanceof Boolean boolResult) return boolResult ? 1 : 0;
+            if (result.toJavaObject() instanceof Boolean boolResult) {
+                if (!boolResult) {
+                    sendUsageHint(sender, def);
+                }
+                return boolResult ? 1 : 0;
+            }
             return 1;
         } catch (Exception e) {
             LuaTweakerLog.get().error(LogStage.COMMAND,
                     "Error executing Lua command '/" + name + "': " + e.getMessage());
             sender.sendError("Lua command '/" + name + "' crashed: " + e.getMessage());
+            sendUsageHint(sender, def);
             return 0;
+        }
+    }
+
+    /**
+     * Sends the definition's {@code Usage} hint, if the mod declared one. Called
+     * on every handler-failure path so the documented "usage hint sent when the
+     * handler fails" contract actually holds.
+     */
+    private static void sendUsageHint(@NotNull ICommandSender sender, @NotNull CommandDefinition def) {
+        if (def.usage() != null && !def.usage().isBlank()) {
+            sender.sendMessage("Usage: " + def.usage());
         }
     }
 

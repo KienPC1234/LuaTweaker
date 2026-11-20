@@ -14,11 +14,14 @@
 -- ==== STARTUP PHASE: Content Registration ====
 require(".src.startup.content")
 require(".src.startup.dimension")
+require(".src.startup.vanilla_worlds")
 
 -- ==== SERVER PHASE: Game Logic ====
 require(".src.server.mana_system")
 require(".src.server.skills")
 require(".src.server.boss_ai")
+require(".src.server.brain_demo")
+require(".src.server.brain_hunt_demo")
 require(".src.server.network_test")
 require(".src.server.storage_test")
 require(".src.server.events_test")
@@ -37,6 +40,7 @@ require(".src.server.multiblock_machine")
 
 -- ==== CLIENT PHASE: HUD & Visuals ====
 require(".src.client.hud")
+require(".src.client.shaders_demo")
 
 -- ==== MOD LIFECYCLE ====
 function mod.OnEnable()

@@ -176,6 +176,14 @@ public class LuaAssetsPackFinder {
             String ns = parts[0], id = parts[1];
             String virtualKey = "assets/" + ns + "/models/item/" + id + ".json";
 
+            if (b.getGeoModel() != null) {
+                String json = "{\n  \"parent\": \"builtin/entity\",\n  \"textures\": {\n    \"particle\": \""
+                        + (b.getTexture() != null ? b.getTexture() : (ns + ":item/" + id))
+                        + "\"\n  }\n}";
+                datapackService.addData(virtualKey, json);
+                continue;
+            }
+
             // If user provided physical file on disk under lua/assets/ or luamods/<mod_id>/assets/, don't override it
             if (isPhysicalAssetPresent(virtualKey)) {
                 continue;
@@ -193,6 +201,11 @@ public class LuaAssetsPackFinder {
                 String parent = isToolType(b.getType()) ? "minecraft:item/handheld" : "minecraft:item/generated";
                 String defaultTex = (id.contains("apple") ? "minecraft:item/apple" : (ns + ":item/" + id));
                 String tex = b.getTexture() != null ? b.getTexture() : defaultTex;
+                if (!isTextureAvailable(tex)) {
+                    LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                            "[LuaAssetsPackFinder] Item texture '" + tex + "' for item '" + b.getId() + "' not found on disk, using safe fallback");
+                    tex = fallbackItemTexture(b.getType());
+                }
                 json = "{\n  \"parent\": \"" + parent + "\",\n  \"textures\": {\n    \"layer0\": \"" + tex + "\"\n  }\n}";
             }
             datapackService.addData(virtualKey, json);
@@ -254,6 +267,11 @@ public class LuaAssetsPackFinder {
                     String bmKey = "assets/" + ns + "/models/block/" + id + ".json";
                     if (!isPhysicalAssetPresent(bmKey)) {
                         String tex = b.getTexture() != null ? b.getTexture() : (ns + ":block/" + id);
+                        if (!isTextureAvailable(tex)) {
+                            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                                    "[LuaAssetsPackFinder] Block texture '" + tex + "' for block '" + b.getId() + "' not found on disk, using safe fallback");
+                            tex = "minecraft:block/stone";
+                        }
                         String bmJson = "{\n  \"parent\": \"minecraft:block/cube_all\",\n  \"textures\": {\n    \"all\": \"" + tex + "\"\n  }\n}";
                         datapackService.addData(bmKey, bmJson);
                     }
@@ -602,5 +620,34 @@ public class LuaAssetsPackFinder {
             }
         }
         return false;
+    }
+
+    private boolean isTextureAvailable(String tex) {
+        if (tex == null || tex.isBlank()) return false;
+        if (tex.startsWith("minecraft:")) return true;
+        String[] parts = parseId(tex);
+        String ns = parts[0];
+        String path = parts[1];
+        if (path.startsWith("textures/")) {
+            path = path.substring("textures/".length());
+        }
+        String fileKey = "assets/" + ns + "/textures/" + path + ".png";
+        return isPhysicalAssetPresent(fileKey);
+    }
+
+    private String fallbackItemTexture(String type) {
+        if (type == null) return "minecraft:item/amethyst_shard";
+        return switch (type.toUpperCase()) {
+            case "SWORD" -> "minecraft:item/iron_sword";
+            case "PICKAXE" -> "minecraft:item/iron_pickaxe";
+            case "AXE" -> "minecraft:item/iron_axe";
+            case "SHOVEL" -> "minecraft:item/iron_shovel";
+            case "HOE" -> "minecraft:item/iron_hoe";
+            case "HELMET" -> "minecraft:item/iron_helmet";
+            case "CHESTPLATE" -> "minecraft:item/iron_chestplate";
+            case "LEGGINGS" -> "minecraft:item/iron_leggings";
+            case "BOOTS" -> "minecraft:item/iron_boots";
+            default -> "minecraft:item/amethyst_shard";
+        };
     }
 }

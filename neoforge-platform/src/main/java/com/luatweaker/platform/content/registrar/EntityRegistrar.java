@@ -5,6 +5,7 @@ import com.luatweaker.api.content.IEntityBuilder;
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.platform.content.MobParentRegistry;
+import com.luatweaker.platform.entity.LuaCustomMob;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -53,19 +54,70 @@ public final class EntityRegistrar {
             try {
                 ResourceLocation rl = locationParser.apply(builder.getId());
                 MobCategory category = parseCategory(builder.getCategory());
-                MobParentRegistry.MobParentAdapter adapter = MobParentRegistry.getAdapter(builder.getParentMob());
-                EntityType.EntityFactory factory = adapter.factory()::create;
+                String rig = builder.getRig() == null ? "parent" : builder.getRig().strip().toLowerCase();
 
-                EntityType<Mob> type = EntityType.Builder.<Mob>of(factory, category)
-                        .sized(builder.getWidth(), builder.getHeight()).build(rl.toString());
+                EntityType.EntityFactory factory;
+                if (builder.getGeoModel() != null) {
+                    com.luatweaker.api.content.GeoModelSpec geoSpec = builder.getGeoModel();
+                    factory = (type, level) -> new com.luatweaker.platform.gecko.LuaGeoMob(type, level, geoSpec);
+                    String goals = resolveDefaultGoals(builder);
+                    com.luatweaker.platform.entity.LuaMobConfigs.put(rl.toString(),
+                            new com.luatweaker.platform.entity.LuaMobConfigs.Snapshot(
+                                    "geo", goals, builder.getAmbientSound(),
+                                    builder.getHurtSound(), builder.getDeathSound()));
+                } else if ("humanoid".equals(rig) || "quadruped".equals(rig)) {
+                    factory = (type, level) -> LuaCustomMob.createGeneric(type, level);
+                    String goals = resolveDefaultGoals(builder);
+                    com.luatweaker.platform.entity.LuaMobConfigs.put(rl.toString(),
+                            new com.luatweaker.platform.entity.LuaMobConfigs.Snapshot(
+                                    rig, goals, builder.getAmbientSound(),
+                                    builder.getHurtSound(), builder.getDeathSound()));
+                } else {
+                    if (!"parent".equals(rig)) {
+                        LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                                "Entity '" + builder.getId() + "' has unknown rig '" + builder.getRig()
+                                        + "': falling back to the legacy 'parent' rig.");
+                    }
+                    MobParentRegistry.MobParentAdapter adapter = MobParentRegistry.getAdapter(builder.getParentMob());
+                    factory = adapter.factory()::create;
+                    LuaTweakerLog.get().info(LogStage.SYSTEM,
+                            "Registered Custom EntityType (Adapter: " + adapter.id() + "): " + rl);
+                }
+
+                EntityType.Builder<Mob> typeBuilder = EntityType.Builder.<Mob>of(factory, category)
+                        .sized(builder.getWidth(), builder.getHeight());
+                if (builder.isFireImmune()) {
+                    typeBuilder.fireImmune();
+                }
+                EntityType<Mob> type = typeBuilder.build(rl.toString());
 
                 event.register(Registries.ENTITY_TYPE, rl, () -> type);
                 createdEntityTypes.put(rl, type);
-                LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom EntityType (Adapter: " + adapter.id() + "): " + rl);
+                if ("humanoid".equals(rig) || "quadruped".equals(rig)) {
+                    LuaTweakerLog.get().info(LogStage.SYSTEM,
+                            "Registered Custom EntityType (Rig: " + rig + "): " + rl);
+                }
             } catch (Exception e) {
                 LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed to register entity type " + builder.getId() + ": " + e.getMessage());
             }
         }
+    }
+
+    /**
+     * Resolves the AI preset for a generic-rig mob: explicit builder value wins,
+     * otherwise MONSTER gets hostile defaults, CREATURE gets animal defaults,
+     * everything else starts motionless.
+     */
+    private static String resolveDefaultGoals(IEntityBuilder builder) {
+        if (builder.getDefaultGoals() != null) {
+            return builder.getDefaultGoals();
+        }
+        String category = builder.getCategory() == null ? "" : builder.getCategory().toUpperCase();
+        return switch (category) {
+            case "MONSTER" -> "monster";
+            case "CREATURE", "AMBIENT", "WATER_CREATURE" -> "animal";
+            default -> "none";
+        };
     }
 
     public void registerEntitySpawnEggs(RegisterEvent event) {

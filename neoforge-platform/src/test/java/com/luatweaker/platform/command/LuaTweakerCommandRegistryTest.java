@@ -74,4 +74,33 @@ public class LuaTweakerCommandRegistryTest {
                 LuaTweakerCommandRegistry.decidePath("hello", Set.of("hello"), new HashSet<>(), live));
         assertTrue(live.contains("hello"));
     }
+
+    @Test
+    void decidePath_siblingUnderOwnLiveRootMerges() {
+        // /shop/buy went live in cycle 1, /shop/info is brand-new in cycle 2
+        // while the live dispatcher still lists the "shop" root.
+        assertEquals(LuaTweakerCommandRegistry.PathDecision.REGISTER,
+                LuaTweakerCommandRegistry.decidePath("shop/info",
+                        Set.of("luatweaker", "lt", "shop", "tell"),
+                        new HashSet<>(), Set.of("shop/buy")));
+        // The already-live sibling still skips quietly.
+        assertEquals(LuaTweakerCommandRegistry.PathDecision.SKIP_ALREADY_LIVE,
+                LuaTweakerCommandRegistry.decidePath("shop/buy",
+                        Set.of("luatweaker", "lt", "shop", "tell"),
+                        new HashSet<>(), Set.of("shop/buy")));
+        // A foreign/vanilla root still rejects loudly (no own-root merge).
+        assertEquals(LuaTweakerCommandRegistry.PathDecision.REJECT_OCCUPIED,
+                LuaTweakerCommandRegistry.decidePath("tell/info",
+                        Set.of("luatweaker", "lt", "shop", "tell"),
+                        new HashSet<>(), Set.of("shop/buy")));
+    }
+
+    @Test
+    void isOwnLiveRoot_matchesExactAndNestedPaths() {
+        assertTrue(LuaTweakerCommandRegistry.isOwnLiveRoot("shop", Set.of("shop/buy", "store")));
+        assertTrue(LuaTweakerCommandRegistry.isOwnLiveRoot("store", Set.of("shop/buy", "store")));
+        assertTrue(LuaTweakerCommandRegistry.isOwnLiveRoot("shop", Set.of("shop")));
+        assertEquals(false, LuaTweakerCommandRegistry.isOwnLiveRoot("tell", Set.of("shop/buy")));
+        assertEquals(false, LuaTweakerCommandRegistry.isOwnLiveRoot("shopkeeper", Set.of("shop/buy")));
+    }
 }

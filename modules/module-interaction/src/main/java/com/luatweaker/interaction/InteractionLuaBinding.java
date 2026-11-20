@@ -89,6 +89,39 @@ public class InteractionLuaBinding {
         });
         workspaceTable.rawset("getEntitiesInRadius", workspaceTable.rawget("GetEntitiesInRadius"));
 
+        workspaceTable.rawset("FindNearest", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 1) return engine.nilValue();
+            IEntity center = EntitiesLuaBinding.getEntityFromTable(args[off]);
+            if (center == null) return engine.nilValue();
+            String typeFilter = null;
+            double radius = 32.0;
+            if (args.length - off >= 2 && args[off + 1].isString()) {
+                typeFilter = args[off + 1].asString();
+                if (args.length - off >= 3 && args[off + 2].isNumber()) {
+                    radius = args[off + 2].asDouble();
+                }
+            } else if (args.length - off >= 2 && args[off + 1].isNumber()) {
+                radius = args[off + 1].asDouble();
+            }
+            if (radius <= 0) return engine.nilValue();
+            java.util.List<IEntity> entities = com.luatweaker.api.pal.Platform.getInteraction().getNearbyEntities(center, radius);
+            IEntity best = null;
+            double bestDist = Double.MAX_VALUE;
+            for (IEntity candidate : entities) {
+                if (candidate == null || candidate.getUuid().equals(center.getUuid())) continue;
+                if (typeFilter != null && !typeFilter.isBlank()
+                        && !candidate.getType().equalsIgnoreCase(typeFilter)) continue;
+                double dist = center.distanceTo(candidate);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = candidate;
+                }
+            }
+            return best != null ? EntitiesLuaBinding.createEntityLuaTable(engine, best) : engine.nilValue();
+        });
+        workspaceTable.rawset("findNearest", workspaceTable.rawget("FindNearest"));
+
         // ===== BlockState API (GetBlockState(x,y,z) or GetBlockState(dim,x,y,z)) =====
         workspaceTable.rawset("GetBlockState", args -> {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
@@ -740,8 +773,11 @@ public class InteractionLuaBinding {
                 ILuaTable entry = item.asTable();
                 java.util.Map<String, Object> map = new java.util.HashMap<>();
                 ILuaValue dx = entry.rawget("dx"); if (dx.isNil()) dx = entry.rawget("DX");
+                if (dx.isNil()) dx = entry.rawget("x"); if (dx.isNil()) dx = entry.rawget("X");
                 ILuaValue dy = entry.rawget("dy"); if (dy.isNil()) dy = entry.rawget("DY");
+                if (dy.isNil()) dy = entry.rawget("y"); if (dy.isNil()) dy = entry.rawget("Y");
                 ILuaValue dz = entry.rawget("dz"); if (dz.isNil()) dz = entry.rawget("DZ");
+                if (dz.isNil()) dz = entry.rawget("z"); if (dz.isNil()) dz = entry.rawget("Z");
                 map.put("dx", dx.isNil() ? 0 : dx.asInt());
                 map.put("dy", dy.isNil() ? 0 : dy.asInt());
                 map.put("dz", dz.isNil() ? 0 : dz.asInt());
@@ -835,6 +871,172 @@ public class InteractionLuaBinding {
         });
         workspaceTable.rawset("transferItem", workspaceTable.rawget("TransferItem"));
 
+        // ValidateCuboid([dim, ] posA, posB, specTable) or (x1, y1, z1, x2, y2, z2, specTable)
+        workspaceTable.rawset("ValidateCuboid", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            String dim = DEFAULT_DIMENSION;
+            int cursor = off;
+            if (cursor < args.length && args[cursor].toJavaObject() instanceof String s && !args[cursor].isTable()) {
+                dim = s;
+                cursor++;
+            }
+            int x1, y1, z1, x2, y2, z2;
+            java.util.Map<String, Object> spec = java.util.Map.of();
+            if (cursor < args.length && args[cursor].isTable()) {
+                ILuaTable a = args[cursor++].asTable();
+                x1 = a.rawget("X").asInt(); y1 = a.rawget("Y").asInt(); z1 = a.rawget("Z").asInt();
+                if (cursor < args.length && args[cursor].isTable()) {
+                    ILuaTable b = args[cursor++].asTable();
+                    x2 = b.rawget("X").asInt(); y2 = b.rawget("Y").asInt(); z2 = b.rawget("Z").asInt();
+                } else return engine.createTable();
+            } else if (cursor + 5 < args.length) {
+                x1 = args[cursor++].asInt(); y1 = args[cursor++].asInt(); z1 = args[cursor++].asInt();
+                x2 = args[cursor++].asInt(); y2 = args[cursor++].asInt(); z2 = args[cursor++].asInt();
+            } else {
+                return engine.createTable();
+            }
+            if (cursor < args.length && args[cursor].isTable()) {
+                spec = toJavaMap(args[cursor].asTable());
+            }
+            java.util.Map<String, Object> result = com.luatweaker.api.pal.Platform.getInteraction()
+                    .validateCuboid(dim, x1, y1, z1, x2, y2, z2, spec);
+            return wrapValue(engine, result);
+        });
+        workspaceTable.rawset("validateCuboid", workspaceTable.rawget("ValidateCuboid"));
+
+        // SetBlockStatesInBox([dim, ] posA, posB, [filterBlockId, ] propertiesTable)
+        workspaceTable.rawset("SetBlockStatesInBox", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            String dim = DEFAULT_DIMENSION;
+            int cursor = off;
+            if (cursor < args.length && args[cursor].toJavaObject() instanceof String s && !args[cursor].isTable()) {
+                dim = s;
+                cursor++;
+            }
+            int x1, y1, z1, x2, y2, z2;
+            String filter = null;
+            java.util.Map<String, Object> props = java.util.Map.of();
+            if (cursor < args.length && args[cursor].isTable()) {
+                ILuaTable a = args[cursor++].asTable();
+                x1 = a.rawget("X").asInt(); y1 = a.rawget("Y").asInt(); z1 = a.rawget("Z").asInt();
+                if (cursor < args.length && args[cursor].isTable()) {
+                    ILuaTable b = args[cursor++].asTable();
+                    x2 = b.rawget("X").asInt(); y2 = b.rawget("Y").asInt(); z2 = b.rawget("Z").asInt();
+                } else return engine.wrapNumber(0);
+            } else if (cursor + 5 < args.length) {
+                x1 = args[cursor++].asInt(); y1 = args[cursor++].asInt(); z1 = args[cursor++].asInt();
+                x2 = args[cursor++].asInt(); y2 = args[cursor++].asInt(); z2 = args[cursor++].asInt();
+            } else {
+                return engine.wrapNumber(0);
+            }
+            if (cursor < args.length && args[cursor].toJavaObject() instanceof String f && !args[cursor].isTable()) {
+                filter = f;
+                cursor++;
+            }
+            if (cursor < args.length && args[cursor].isTable()) {
+                props = toJavaMap(args[cursor].asTable());
+            }
+            int updated = com.luatweaker.api.pal.Platform.getInteraction()
+                    .setBlockStatesInBox(dim, x1, y1, z1, x2, y2, z2, filter, props);
+            return engine.wrapNumber(updated);
+        });
+        workspaceTable.rawset("setBlockStatesInBox", workspaceTable.rawget("SetBlockStatesInBox"));
+
+        // FindBlocks([dim, ] x, y, z, radius, filter [, limit]) or (pos, radius, filter [, limit])
+        workspaceTable.rawset("FindBlocks", args -> {
+            CoordinateArgs pos = readCoordinates(args, "World:FindBlocks");
+            if (pos == null || pos.cursor() >= args.length) return engine.createTable();
+            int cursor = pos.cursor();
+            int radius = args[cursor++].asInt();
+            if (cursor >= args.length || !args[cursor].isString()) return engine.createTable();
+            String filter = args[cursor++].asString();
+            int limit = cursor < args.length ? args[cursor].asInt() : 64;
+            java.util.List<java.util.Map<String, Object>> list = com.luatweaker.api.pal.Platform.getInteraction()
+                    .findBlocks(pos.dimension(), pos.x(), pos.y(), pos.z(), radius, filter, limit);
+            return wrapValue(engine, list);
+        });
+        workspaceTable.rawset("findBlocks", workspaceTable.rawget("FindBlocks"));
+
+        // SetEnergy([dim, ] x, y, z, amount) or (pos, amount) -> boolean
+        workspaceTable.rawset("SetEnergy", args -> {
+            CoordinateArgs pos = readCoordinates(args, "World:SetEnergy");
+            if (pos == null || pos.cursor() >= args.length) return engine.wrapBoolean(false);
+            int amount = args[pos.cursor()].asInt();
+            return engine.wrapBoolean(com.luatweaker.api.pal.Platform.getInteraction()
+                    .setEnergy(pos.dimension(), pos.x(), pos.y(), pos.z(), amount));
+        });
+        workspaceTable.rawset("setEnergy", workspaceTable.rawget("SetEnergy"));
+
+        // ProduceEnergy([dim, ] x, y, z, amount) or (pos, amount) -> actualProduced
+        workspaceTable.rawset("ProduceEnergy", args -> {
+            CoordinateArgs pos = readCoordinates(args, "World:ProduceEnergy");
+            if (pos == null || pos.cursor() >= args.length) return engine.wrapNumber(0);
+            int amount = args[pos.cursor()].asInt();
+            return engine.wrapNumber(com.luatweaker.api.pal.Platform.getInteraction()
+                    .produceEnergy(pos.dimension(), pos.x(), pos.y(), pos.z(), amount));
+        });
+        workspaceTable.rawset("produceEnergy", workspaceTable.rawget("ProduceEnergy"));
+
+        // SetProgress([dim, ] x, y, z, progress) or (pos, progress) -> boolean
+        workspaceTable.rawset("SetProgress", args -> {
+            CoordinateArgs pos = readCoordinates(args, "World:SetProgress");
+            if (pos == null || pos.cursor() >= args.length) return engine.wrapBoolean(false);
+            float progress = (float) args[pos.cursor()].asDouble();
+            return engine.wrapBoolean(com.luatweaker.api.pal.Platform.getInteraction()
+                    .setProgress(pos.dimension(), pos.x(), pos.y(), pos.z(), progress));
+        });
+        workspaceTable.rawset("setProgress", workspaceTable.rawget("SetProgress"));
+
+        // GetProgress([dim, ] x, y, z) or (pos) -> progress
+        workspaceTable.rawset("GetProgress", args -> {
+            CoordinateArgs pos = readCoordinates(args, "World:GetProgress");
+            if (pos == null) return engine.wrapNumber(0.0);
+            return engine.wrapNumber(com.luatweaker.api.pal.Platform.getInteraction()
+                    .getProgress(pos.dimension(), pos.x(), pos.y(), pos.z()));
+        });
+        workspaceTable.rawset("getProgress", workspaceTable.rawget("GetProgress"));
+
+        // GetItem(posOrEntity, slot) or (x, y, z, slot) -> IInteractableItem | nil
+        workspaceTable.rawset("GetItem", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 2) return engine.nilValue();
+            ILuaValue target = args[off];
+            int slot = args[args.length - 1].asInt();
+            IInteractableItem item = null;
+            if (target.isTable() && (target.asTable().rawget("X") != null || target.asTable().rawget("x") != null)) {
+                ILuaTable t = target.asTable();
+                ILuaValue xVal = t.rawget("X"); if (xVal == null || xVal.isNil()) xVal = t.rawget("x");
+                ILuaValue yVal = t.rawget("Y"); if (yVal == null || yVal.isNil()) yVal = t.rawget("y");
+                ILuaValue zVal = t.rawget("Z"); if (zVal == null || zVal.isNil()) zVal = t.rawget("z");
+                ILuaValue dimVal = t.rawget("dimension");
+                if (dimVal == null || dimVal.isNil()) dimVal = t.rawget("Dimension");
+                String dimension = (dimVal != null && !dimVal.isNil()) ? dimVal.asString() : DEFAULT_DIMENSION;
+                var block = service.GetBlock(dimension, xVal.asInt(), yVal.asInt(), zVal.asInt());
+                if (block != null) {
+                    item = service.GetItem(block, slot);
+                }
+            } else if (args.length - off >= 4 && args[off].isNumber()) {
+                int x = args[off].asInt();
+                int y = args[off + 1].asInt();
+                int z = args[off + 2].asInt();
+                var block = service.GetBlock(DEFAULT_DIMENSION, x, y, z);
+                if (block != null) {
+                    item = service.GetItem(block, slot);
+                }
+            } else {
+                Object raw = target.toJavaObject();
+                if (target.isTable()) {
+                    ILuaValue inner = target.asTable().rawget("__entity");
+                    if (inner != null && !inner.isNil()) raw = inner.toJavaObject();
+                }
+                if (raw != null) {
+                    item = service.GetItem(raw, slot);
+                }
+            }
+            return item != null ? wrapItem(engine, item) : engine.nilValue();
+        });
+        workspaceTable.rawset("getItem", workspaceTable.rawget("GetItem"));
+
         // ===== RaycastParams Class =====
         ILuaTable raycastParamsClass = engine.createTable();
         raycastParamsClass.rawset("new", args -> {
@@ -877,6 +1079,50 @@ public class InteractionLuaBinding {
         });
         entityServiceTable.rawset("GetEntity", workspaceTable.rawget("GetEntity"));
         entityServiceTable.rawset("getEntity", workspaceTable.rawget("GetEntity"));
+
+        workspaceTable.rawset("PlayAnimation", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 2) return engine.wrapBoolean(false);
+            ILuaValue targetVal = args[off];
+            String animName = args[off + 1].asString();
+            String ctrl = args.length - off >= 3 ? args[off + 2].asString() : "controller";
+            Object target = null;
+            if (targetVal.isTable()) {
+                ILuaTable tbl = targetVal.asTable();
+                ILuaValue ent = tbl.rawget("__entity");
+                if (ent != null && !ent.isNil()) {
+                    target = ent.toJavaObject();
+                } else {
+                    ILuaValue blk = tbl.rawget("__block");
+                    if (blk != null && !blk.isNil()) {
+                        target = blk.toJavaObject();
+                    } else {
+                        ILuaValue xVal = tbl.rawget("X");
+                        if (xVal == null || xVal.isNil()) xVal = tbl.rawget("x");
+                        ILuaValue yVal = tbl.rawget("Y");
+                        if (yVal == null || yVal.isNil()) yVal = tbl.rawget("y");
+                        ILuaValue zVal = tbl.rawget("Z");
+                        if (zVal == null || zVal.isNil()) zVal = tbl.rawget("z");
+                        if (xVal != null && !xVal.isNil() && yVal != null && !yVal.isNil() && zVal != null && !zVal.isNil()) {
+                            int x = (int) Math.floor(xVal.asDouble());
+                            int y = (int) Math.floor(yVal.asDouble());
+                            int z = (int) Math.floor(zVal.asDouble());
+                            ILuaValue dimVal = tbl.rawget("Dimension");
+                            if (dimVal == null || dimVal.isNil()) dimVal = tbl.rawget("dimension");
+                            String dim = (dimVal != null && !dimVal.isNil()) ? dimVal.asString() : "minecraft:overworld";
+                            target = com.luatweaker.api.pal.Platform.getInteraction().getInteractableBlock(dim, x, y, z);
+                        }
+                    }
+                }
+            } else {
+                target = targetVal.toJavaObject();
+            }
+            if (target == null) return engine.wrapBoolean(false);
+            return engine.wrapBoolean(com.luatweaker.api.pal.Platform.getInteraction().triggerGeoAnimation(target, ctrl, animName, 1.0, false));
+        });
+        workspaceTable.rawset("playAnimation", workspaceTable.rawget("PlayAnimation"));
+        workspaceTable.rawset("TriggerAnimation", workspaceTable.rawget("PlayAnimation"));
+        workspaceTable.rawset("triggerAnimation", workspaceTable.rawget("PlayAnimation"));
 
         // Register services & globals
         engine.registerService("Workspace", workspaceTable);
@@ -948,6 +1194,16 @@ public class InteractionLuaBinding {
             }
             return engine.wrapBoolean(actor != null && block.useBlock(actor));
         });
+        methods.rawset("PlayAnimation", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off < 1) return engine.wrapBoolean(false);
+            String animName = args[off].asString();
+            String ctrl = args.length - off >= 2 ? args[off + 1].asString() : "controller";
+            return engine.wrapBoolean(com.luatweaker.api.pal.Platform.getInteraction().triggerGeoAnimation(block, ctrl, animName, 1.0, false));
+        });
+        methods.rawset("playAnimation", methods.rawget("PlayAnimation"));
+        methods.rawset("TriggerAnimation", methods.rawget("PlayAnimation"));
+        methods.rawset("triggerAnimation", methods.rawget("PlayAnimation"));
 
         meta.rawset("__index", args -> {
             String key = args[1].asString();
@@ -1302,14 +1558,31 @@ public class InteractionLuaBinding {
             dimOff = off;
             off++;
         }
+        if (args.length - off >= 1 && args[off] != null && args[off].isTable()) {
+            ILuaTable t = args[off].asTable();
+            ILuaValue xVal = t.rawget("X"); if (xVal == null || xVal.isNil()) xVal = t.rawget("x");
+            ILuaValue yVal = t.rawget("Y"); if (yVal == null || yVal.isNil()) yVal = t.rawget("y");
+            ILuaValue zVal = t.rawget("Z"); if (zVal == null || zVal.isNil()) zVal = t.rawget("z");
+            if (xVal != null && !xVal.isNil() && yVal != null && !yVal.isNil() && zVal != null && !zVal.isNil()) {
+                ILuaValue dimVal = t.rawget("dimension");
+                if (dimVal == null || dimVal.isNil()) dimVal = t.rawget("Dimension");
+                String dimension = (dimVal != null && !dimVal.isNil()) ? dimVal.asString() : (dimOff >= 0 ? args[dimOff].asString() : DEFAULT_DIMENSION);
+                int x = (int) Math.floor(xVal.asDouble());
+                int y = (int) Math.floor(yVal.asDouble());
+                int z = (int) Math.floor(zVal.asDouble());
+                return new CoordinateArgs(dimension, x, y, z, off + 1);
+            }
+        }
         if (args.length - off < 3
                 || !args[off].isNumber() || !args[off + 1].isNumber() || !args[off + 2].isNumber()) {
             warn(call + " requires (x, y, z) block coordinates");
             return null;
         }
         String dimension = dimOff >= 0 ? args[dimOff].asString() : DEFAULT_DIMENSION;
-        return new CoordinateArgs(dimension,
-                args[off].asInt(), args[off + 1].asInt(), args[off + 2].asInt(), off + 3);
+        int x = (int) Math.floor(args[off].asDouble());
+        int y = (int) Math.floor(args[off + 1].asDouble());
+        int z = (int) Math.floor(args[off + 2].asDouble());
+        return new CoordinateArgs(dimension, x, y, z, off + 3);
     }
 
     private static SideParse readSide(ILuaValue[] args, int index, int length) {

@@ -18,36 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class MultiblockPrimitivesBindingTest {
 
-    private static final class MockInteraction implements IPlatformInteraction {
+    private static final class MockInteraction extends BaseMockPlatformInteraction {
         final List<String> calls = new ArrayList<>();
-
-        @Override public void shootProjectile(@NotNull com.luatweaker.api.entity.IEntity shooter, @NotNull String projectileType, double speed, double inaccuracy) {}
-        @Nullable @Override public com.luatweaker.api.entity.IEntity shootProjectileAt(@NotNull com.luatweaker.api.entity.IEntity shooter, @NotNull String projectileType, @NotNull com.luatweaker.api.entity.IEntity target, double speed) { return null; }
-        @Override public void playAnimation(@NotNull com.luatweaker.api.entity.IEntity entity, @NotNull String animName, double speed, double transition) {}
-        @Override public boolean performBlockBreak(@NotNull com.luatweaker.api.entity.IEntity actor, int x, int y, int z) { return false; }
-        @Override public boolean performBlockPlace(@NotNull com.luatweaker.api.entity.IEntity actor, int x, int y, int z, @NotNull String blockId) { return false; }
-        @Override public boolean performBlockUse(@NotNull com.luatweaker.api.entity.IEntity actor, int x, int y, int z) { return false; }
-        @Override public boolean performItemUse(@NotNull com.luatweaker.api.entity.IEntity actor, int slot) { return false; }
-        @Override public void lookAt(@NotNull com.luatweaker.api.entity.IEntity actor, double x, double y, double z) {}
-        @Override public void lookAt(@NotNull com.luatweaker.api.entity.IEntity actor, @NotNull com.luatweaker.api.entity.IEntity target) {}
-        @Override public boolean moveInventoryItem(@NotNull com.luatweaker.api.entity.IEntity actor, int fromSlot, int toSlot) { return false; }
-        @Override public boolean dropInventoryItem(@NotNull com.luatweaker.api.entity.IEntity actor, int slot, int count) { return false; }
-        @NotNull @Override public List<com.luatweaker.api.objects.IWorldBlock> getNearbyBlocks(@NotNull com.luatweaker.api.entity.IEntity entity, int radius) { return List.of(); }
-        @NotNull @Override public List<com.luatweaker.api.objects.ILocatedItem> getInventoryItems(@NotNull com.luatweaker.api.entity.IEntity entity) { return List.of(); }
-        @NotNull @Override public List<com.luatweaker.api.entity.IEntity> getNearbyEntities(@NotNull com.luatweaker.api.entity.IEntity center, double radius) { return List.of(); }
-        @Nullable @Override public com.luatweaker.api.interaction.IInteractableBlock getInteractableBlock(@NotNull String dimension, int x, int y, int z) { return null; }
-        @Nullable @Override public com.luatweaker.api.interaction.IInteractableItem getInteractableItem(@NotNull Object entityOrBlock, int slot) { return null; }
-        @Nullable @Override public com.luatweaker.api.interaction.IInteractableEntity getInteractableEntity(@NotNull String uuid) { return null; }
-        @Nullable @Override public com.luatweaker.api.interaction.IInteractableEntity getInteractableEntity(@NotNull Object rawEntity) { return null; }
-        @Nullable @Override public Map<String, Object> getBlockState(@NotNull String dimension, int x, int y, int z) { return null; }
-        @Override public boolean setBlockState(@NotNull String dimension, int x, int y, int z, @NotNull String blockId, @Nullable Map<String, Object> properties) { return false; }
-        @Nullable @Override public Map<String, Object> getBlockEntityData(@NotNull String dimension, int x, int y, int z) { return null; }
-        @Override public boolean setBlockEntityData(@NotNull String dimension, int x, int y, int z, @NotNull Map<String, Object> data) { return false; }
-        @Override public boolean ejectContainerItem(@NotNull String dimension, int x, int y, int z, int slot, int count) { return false; }
-        @Override public long fillBlocks(@NotNull String dimension, int x1, int y1, int z1, int x2, int y2, int z2, @NotNull String blockId, @Nullable Map<String, Object> properties) { return 0; }
-        @Override public long replaceBlocks(@NotNull String dimension, int x1, int y1, int z1, int x2, int y2, int z2, @NotNull String fromId, @NotNull String toId) { return 0; }
-        @Override public boolean placeStructure(@NotNull String dimension, @NotNull String templateId, int x, int y, int z, int rotationDegrees) { return false; }
-        @Override public boolean executeCommand(@NotNull String command) { return false; }
 
         @Override
         public int getRedstoneSignal(@NotNull String dimension, int x, int y, int z, @Nullable String direction) {
@@ -81,6 +53,18 @@ public class MultiblockPrimitivesBindingTest {
                                 int toX, int toY, int toZ, int toSlot, int maxCount, boolean simulate) {
             calls.add("transferItem from=" + fromX + "," + fromY + "," + fromZ + "[" + fromSlot + "] to=" + toX + "," + toY + "," + toZ + "[" + toSlot + "] max=" + maxCount + " sim=" + simulate);
             return 16;
+        }
+
+        @Override
+        public @NotNull Map<String, Object> validateCuboid(@NotNull String dimension, int x1, int y1, int z1, int x2, int y2, int z2, @NotNull Map<String, Object> spec) {
+            calls.add("validateCuboid " + x1 + "," + y1 + "," + z1 + " to " + x2 + "," + y2 + "," + z2);
+            return Map.of("valid", true, "width", 3, "height", 3, "depth", 3);
+        }
+
+        @Override
+        public int setBlockStatesInBox(@NotNull String dimension, int x1, int y1, int z1, int x2, int y2, int z2, @Nullable String filterBlockId, @NotNull Map<String, Object> properties) {
+            calls.add("setBlockStatesInBox " + x1 + "," + y1 + "," + z1 + " to " + x2 + "," + y2 + "," + z2 + " filter=" + filterBlockId);
+            return 26;
         }
     }
 
@@ -133,5 +117,29 @@ public class MultiblockPrimitivesBindingTest {
         assertEquals("transferEnergy from=10,64,20 to=11,64,20 max=500 sim=false", interaction.calls.get(2));
         assertEquals("transferFluid from=10,64,20 to=10,65,20 max=1000 sim=false", interaction.calls.get(3));
         assertEquals("transferItem from=10,64,20[0] to=10,63,20[1] max=16 sim=false", interaction.calls.get(4));
+    }
+
+    @Test
+    public void testValidateCuboidAndSetBlockStatesInBox() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        InteractionLuaBinding.registerBindings(engine);
+
+        engine.executeStringOrThrow("""
+            local spec = {
+                frame = "mymod:casing",
+                walls = "mymod:casing",
+                interior = "minecraft:air"
+            }
+            local res = World:ValidateCuboid({X=0, Y=64, Z=0}, {X=2, Y=66, Z=2}, spec)
+            assert(res.valid == true, "validation must succeed")
+            assert(res.width == 3, "width must be 3")
+
+            local updated = World:SetBlockStatesInBox({X=0, Y=64, Z=0}, {X=2, Y=66, Z=2}, "mymod:casing", { formed = true })
+            assert(updated == 26, "updated count must be 26")
+        """, "cuboid_test");
+
+        assertEquals(2, interaction.calls.size());
+        assertEquals("validateCuboid 0,64,0 to 2,66,2", interaction.calls.get(0));
+        assertEquals("setBlockStatesInBox 0,64,0 to 2,66,2 filter=mymod:casing", interaction.calls.get(1));
     }
 }

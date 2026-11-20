@@ -553,11 +553,14 @@ public class WorldgenServiceImpl implements IWorldgenService, IWorldgenExtendedS
 
     @Override
     public @NotNull Map<String, Object> getBiome(@NotNull String biomeId) {
-        String message = "STUB getBiome('" + biomeId + "') is not supported: live biome queries need "
-                + "a platform PAL capability that does not exist yet (follow-up work, see docs/WORLDGEN.md). "
-                + "Use modifyBiome with explicit biome IDs instead.";
-        LuaTweakerLog.get().error(LogStage.SYSTEM, "[Worldgen] " + message);
-        throw new UnsupportedOperationException(message);
+        validateResourceLocation(biomeId, "biomeId");
+        Map<String, Object> info = com.luatweaker.api.pal.Platform.getWorldgen().getBiomeInfo(biomeId);
+        if (info == null) {
+            throw new IllegalArgumentException("Unknown biome '" + biomeId
+                    + "': it is not present in the server biome registry (is a server running?)");
+        }
+        LuaTweakerLog.get().info(LogStage.SYSTEM, "[Worldgen] Queried biome '" + biomeId + "'");
+        return Collections.unmodifiableMap(info);
     }
 
     @Override

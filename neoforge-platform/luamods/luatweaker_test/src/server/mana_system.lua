@@ -16,6 +16,15 @@ local ManaSystem = {}
 
 local manaSyncEvent = Network:GetOrCreateRemoteEvent("ArcaneManaSync")
 
+-- Tick tuning resolved ONCE at load (AGENTS.md 5.8: config-driven, no per-tick
+-- config walks). /lt reload re-runs this file, so edits + reload refresh these.
+local manaCfg = (type(CONFIG) == "table" and type(CONFIG.mana) == "table") and CONFIG.mana or {}
+local MANA_MAX = tonumber(manaCfg.max_mana) or 200
+local START_MANA = tonumber(manaCfg.start_mana) or 50
+local REGEN_INTERVAL = math.max(1, math.floor(tonumber(manaCfg.regen_interval_ticks) or 5))
+local REGEN_PER_ROUND = (tonumber(manaCfg.regen_per_second) or 5) * (REGEN_INTERVAL / 20.0)
+local SYNC_INTERVAL = math.max(1, math.floor(tonumber(manaCfg.sync_interval_ticks) or 20))
+
 local function getConfig()
     return CONFIG
 end
@@ -33,7 +42,7 @@ local function cfgValue(path, fallback)
 end
 
 function ManaSystem:GetMaxMana(player)
-    return cfgValue({ "mana", "max_mana" }, 200)
+    return MANA_MAX
 end
 
 function ManaSystem:GetMana(player)
@@ -80,15 +89,33 @@ function ManaSystem:HasEnough(player, amount)
     return ManaSystem:GetMana(player) >= amount
 end
 
+local syncCounter = 0
+local regenCounter = 0
+
 function ManaSystem:RegenTick()
-    local regenPerTick = cfgValue({ "mana", "regen_per_second" }, 5) / 20.0
-    local maxMana = ManaSystem:GetMaxMana(nil)
+    -- Throttled: one storage read per player per round, one write only when
+    -- the value actually changes. SetAsync clones the whole player doc, so
+    -- doing it every tick (20x/s) is pure write amplification.
+    regenCounter = regenCounter + 1
+    if regenCounter < REGEN_INTERVAL then
+        return
+    end
+    regenCounter = 0
     local allPlayers = Players.GetPlayers()
+    if #allPlayers == 0 then
+        return
+    end
     for i = 1, #allPlayers do
-        local player = allPlayers[i]
-        local current = ManaSystem:GetMana(player)
-        if current < maxMana then
-            ManaSystem:SetMana(player, current + regenPerTick)
+        local store = Storage:GetPlayerStorage(allPlayers[i]:getUuid())
+        local current = store:GetAsync("luatweaker_test.mana")
+        if current == nil then
+            store:SetAsync("luatweaker_test.mana", START_MANA)
+        elseif current < MANA_MAX then
+            local grown = current + REGEN_PER_ROUND
+            if grown > MANA_MAX then
+                grown = MANA_MAX
+            end
+            store:SetAsync("luatweaker_test.mana", grown)
         end
     end
 end
@@ -100,14 +127,12 @@ function ManaSystem:SyncMana(player)
     manaSyncEvent:FireClient(player, current, maxMana)
 end
 
-local syncCounter = 0
 Events:Listen("ServerTick", function()
     ManaSystem:RegenTick()
     -- Sync mana to clients once per sync interval (every 20 ticks by default)
     -- to avoid packet spam; interval comes from config (mana.sync_interval_ticks).
-    local syncInterval = math.max(1, cfgValue({ "mana", "sync_interval_ticks" }, 20))
     syncCounter = syncCounter + 1
-    if syncCounter >= syncInterval then
+    if syncCounter >= SYNC_INTERVAL then
         syncCounter = 0
         local allPlayers = Players.GetPlayers()
         for i = 1, #allPlayers do

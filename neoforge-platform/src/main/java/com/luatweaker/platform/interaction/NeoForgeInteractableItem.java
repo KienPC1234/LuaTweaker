@@ -10,10 +10,20 @@ import org.jetbrains.annotations.Nullable;
 public class NeoForgeInteractableItem implements IInteractableItem {
     private final Object owner;
     private int slot;
+    private final ItemStack directStack;
 
     public NeoForgeInteractableItem(@NotNull Object owner, int slot) {
+        this(owner, slot, null);
+    }
+
+    public NeoForgeInteractableItem(@Nullable Object owner, int slot, @Nullable ItemStack directStack) {
         this.owner = owner;
         this.slot = slot;
+        this.directStack = directStack;
+    }
+
+    public NeoForgeInteractableItem(@NotNull ItemStack directStack) {
+        this(null, -1, directStack);
     }
 
     private ItemStack getItemStack() {
@@ -22,6 +32,9 @@ public class NeoForgeInteractableItem implements IInteractableItem {
             if (slot >= 0 && slot < inv.getContainerSize()) {
                 return inv.getItem(slot);
             }
+        }
+        if (directStack != null) {
+            return directStack;
         }
         return ItemStack.EMPTY;
     }
@@ -43,8 +56,10 @@ public class NeoForgeInteractableItem implements IInteractableItem {
         ItemStack stack = getItemStack();
         if (!stack.isEmpty()) {
             if (count <= 0) {
-                if (owner instanceof Player player) {
+                if (owner instanceof Player player && slot >= 0 && slot < player.getInventory().getContainerSize()) {
                     player.getInventory().setItem(slot, ItemStack.EMPTY);
+                } else {
+                    stack.setCount(0);
                 }
             } else {
                 stack.setCount(count);
@@ -116,8 +131,8 @@ public class NeoForgeInteractableItem implements IInteractableItem {
     public boolean drop(@NotNull Object actorEntity, int count) {
         if (owner instanceof Player player) {
             var inv = player.getInventory();
-            ItemStack stack = inv.getItem(slot);
-            if (!stack.isEmpty()) {
+            ItemStack stack = (slot >= 0 && slot < inv.getContainerSize()) ? inv.getItem(slot) : directStack;
+            if (stack != null && !stack.isEmpty()) {
                 int toDrop = Math.min(count, stack.getCount());
                 ItemStack dropStack = stack.split(toDrop);
                 player.drop(dropStack, false);

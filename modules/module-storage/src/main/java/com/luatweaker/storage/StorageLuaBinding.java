@@ -49,6 +49,14 @@ public class StorageLuaBinding {
             }
             return engine.wrapNumber(store.IncrementAsync(args[off].asString(), args[off + 1].asDouble()));
         });
+        table.rawset("Flush", args -> {
+            store.Flush();
+            return engine.nilValue();
+        });
+        table.rawset("flush", args -> {
+            store.Flush();
+            return engine.nilValue();
+        });
         return table;
     }
 
@@ -88,6 +96,14 @@ public class StorageLuaBinding {
             String key = args[off].asString();
             ILuaValue val = args[off + 1];
             storageService.GetSessionStorage().SetAsync(key, val);
+            return engine.nilValue();
+        });
+        storageTable.rawset("Flush", args -> {
+            storageService.Flush();
+            return engine.nilValue();
+        });
+        storageTable.rawset("flush", args -> {
+            storageService.Flush();
             return engine.nilValue();
         });
 

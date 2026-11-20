@@ -208,6 +208,136 @@ public class NeoForgeClientPlatform implements IPlatformClient {
         return null;
     }
 
+    /** Chain location passed to the last activateShaderPost; uniforms only apply while it is live. */
+    private volatile String expectedShaderChain;
+    /** Own program of the last activated chain, for the vec-uniform mirror. */
+    private volatile String expectedShaderProgram;
+    /** Chain location -> mirror EffectInstance sharing the chain's GL program. */
+    private final Map<String, net.minecraft.client.renderer.EffectInstance> vecMirrors =
+            new ConcurrentHashMap<>();
+
+    @Override
+    public String getRendererBackend() {
+        Minecraft mc = Minecraft.getInstance();
+        // 1.21.1 ships an OpenGL renderer only; a Vulkan future overrides this.
+        return mc.getWindow() != null ? "opengl" : "unknown";
+    }
+
+    @Override
+    public void activateShaderPost(String chainLocation, String programName) {
+        ResourceLocation location = ResourceLocation.tryParse(chainLocation);
+        if (location == null) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[Shaders] refusing to load malformed chain location '" + chainLocation + "'.");
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        // GameRenderer is render-thread owned; execute() runs inline on that thread
+        // and is queued when Lua runs on the integrated server thread.
+        mc.execute(() -> {
+            if (mc.gameRenderer == null) {
+                LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                        "[Shaders] game renderer not ready; pass '" + chainLocation + "' not loaded.");
+                return;
+            }
+            // loadEffect closes any previous chain first, then warns (not throws)
+            // when our virtual files are missing — so a failure stays visible.
+            mc.gameRenderer.loadEffect(location);
+            expectedShaderChain = chainLocation;
+            expectedShaderProgram = programName;
+            vecMirrors.remove(chainLocation);
+            try {
+                // Mirror sharing the chain's GL program (EffectProgram cache): setting
+                // uniforms on it only marks them dirty; the upload happens when the
+                // chain's own pass renders. Safe to write any time on this thread.
+                vecMirrors.put(chainLocation,
+                        new net.minecraft.client.renderer.EffectInstance(
+                                mc.getResourceManager(), programName));
+            } catch (java.io.IOException e) {
+                LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                        "[Shaders] vec-uniform mirror unavailable for '" + chainLocation
+                                + "' (" + e.getMessage() + "); float uniforms still work.");
+            }
+        });
+    }
+
+    @Override
+    public void deactivateShaderPost() {
+        expectedShaderChain = null;
+        expectedShaderProgram = null;
+        Minecraft mc = Minecraft.getInstance();
+        mc.execute(() -> {
+            if (mc.gameRenderer != null) {
+                mc.gameRenderer.shutdownEffect();
+            }
+        });
+    }
+
+    @Override
+    public void setShaderFloat(String uniformName, float value) {
+        if (uniformName == null || uniformName.isBlank()) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        mc.execute(() -> {
+            if (mc.gameRenderer == null) {
+                return;
+            }
+            net.minecraft.client.renderer.PostChain chain = mc.gameRenderer.currentEffect();
+            // Only touch our own chain: vanilla spectator/death shaders own theirs,
+            // and a resource reload may have replaced ours with nothing.
+            if (chain != null && chain.getName().equals(expectedShaderChain)) {
+                chain.setUniform(uniformName, value);
+            }
+        });
+    }
+
+    @Override
+    public void setShaderFloatVec(String uniformName, float[] values) {
+        if (uniformName == null || uniformName.isBlank() || values == null) {
+            return;
+        }
+        float[] copy = values.clone();
+        Minecraft mc = Minecraft.getInstance();
+        mc.execute(() -> {
+            if (mc.gameRenderer == null) {
+                return;
+            }
+            String chainLocation = expectedShaderChain;
+            net.minecraft.client.renderer.PostChain chain = mc.gameRenderer.currentEffect();
+            if (chain == null || !chain.getName().equals(chainLocation)) {
+                return;
+            }
+            net.minecraft.client.renderer.EffectInstance mirror = vecMirrors.get(chainLocation);
+            if (mirror == null) {
+                String programName = expectedShaderProgram;
+                if (programName == null) {
+                    return;
+                }
+                try {
+                    mirror = new net.minecraft.client.renderer.EffectInstance(
+                            mc.getResourceManager(), programName);
+                    vecMirrors.put(chainLocation, mirror);
+                } catch (java.io.IOException e) {
+                    LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                            "[Shaders] vec-uniform mirror unavailable for '" + chainLocation
+                                    + "' (" + e.getMessage() + ").");
+                    return;
+                }
+            }
+            try {
+                // Missing names resolve to a dummy uniform (safe no-op); a wrong
+                // arity throws, so guard loudly instead of crashing the tick.
+                mirror.safeGetUniform(uniformName).set(copy);
+            } catch (RuntimeException e) {
+                LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                        "[Shaders] setShaderFloatVec('" + uniformName + "') failed"
+                                + " (declare it as vec" + copy.length + " in your fragment): "
+                                + e.getMessage());
+            }
+        });
+    }
+
     @Override
     public void handleClientSyncData(String dataJson) {
         Minecraft mc = Minecraft.getInstance();

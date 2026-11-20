@@ -45,7 +45,18 @@ public class LuaModManager {
     /**
      * Scans and loads all autonomous LuaMods from the given luamods directory.
      */
-    public static void loadLuaMods(@NotNull File targetDir, @NotNull ILuaEngine engine, @NotNull String currentEnv) {
+    public static void loadLuaMods(@NotNull File targetDir, @NotNull ILuaEngine engine,
+                                   @NotNull String currentEnv) {
+        loadLuaMods(targetDir, engine, currentEnv, LuaModLoadObserver.NONE);
+    }
+
+    /**
+     * Same as {@link #loadLuaMods(File, ILuaEngine, String)} but reports progress to
+     * {@code observer}. The platform layer uses it to mirror LuaMod loading on the FML
+     * loading screen; core-engine stays free of NeoForge imports.
+     */
+    public static void loadLuaMods(@NotNull File targetDir, @NotNull ILuaEngine engine,
+                                   @NotNull String currentEnv, @NotNull LuaModLoadObserver observer) {
         fireModTeardownHooks(engine);
         LOADED_MODS.clear();
         LOAD_ERRORS.clear();
@@ -169,8 +180,12 @@ public class LuaModManager {
         // Topological Sort by dependencies
         List<DiscoveredMod> sorted = sortModsByDependencies(discovered);
 
+        int totalMods = sorted.size();
+        int modIndex = 0;
         for (DiscoveredMod dm : sorted) {
             String modId = dm.manifest().id();
+            modIndex++;
+            observer.onModStart(modIndex, totalMods, modId);
             if (Boolean.FALSE.equals(modsState.get(modId))) {
                 LuaTweakerLog.get().info(LogStage.SYSTEM,
                         "[LuaModManager] Mod '" + modId + "' is DISABLED in mods_manager.json - Skipping execution.");
@@ -265,6 +280,7 @@ public class LuaModManager {
         }
         LuaTweakerLog.get().info(LogStage.SYSTEM,
                 "[LuaModManager] Successfully initialized " + LOADED_MODS.size() + " active LuaMod(s).");
+        observer.onLoadComplete(LOADED_MODS.size(), totalMods);
         LuaTweakerLog.get().info(LogStage.SYSTEM,
                 "========================================================================");
     }

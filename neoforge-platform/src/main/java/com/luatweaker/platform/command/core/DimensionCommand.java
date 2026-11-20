@@ -2,6 +2,7 @@ package com.luatweaker.platform.command.core;
 
 import com.luatweaker.api.command.ICommandSender;
 import com.luatweaker.api.command.ILuaTweakerCommand;
+import com.luatweaker.dimension.DimensionBenchmark;
 import com.luatweaker.dimension.DimensionConfig;
 import com.luatweaker.dimension.DimensionServiceImpl;
 import com.luatweaker.platform.command.NeoForgeCommandSender;
@@ -11,10 +12,11 @@ import net.minecraft.server.level.ServerPlayer;
 import java.util.List;
 
 /**
- * /luatweaker dimension list | info &lt;id&gt; | tp &lt;id&gt;
+ * /luatweaker dimension list | info &lt;id&gt; | tp &lt;id&gt; | bench &lt;id&gt; [radius]
  *
- * <p>Lists the Lua-registered dimensions, prints a dimension's parsed config
- * and teleports the executing player into a dimension.</p>
+ * <p>Lists the Lua-registered dimensions, prints a dimension's parsed config,
+ * teleports the executing player into a dimension and measures the Lua terrain
+ * pipeline (Lua calls per chunk and milliseconds per chunk).</p>
  */
 public class DimensionCommand implements ILuaTweakerCommand {
 
@@ -22,7 +24,7 @@ public class DimensionCommand implements ILuaTweakerCommand {
     public String getName() { return "dimension"; }
 
     @Override
-    public String getDescription() { return "List, inspect or teleport to Lua-registered dimensions."; }
+    public String getDescription() { return "List, inspect, benchmark or teleport to Lua-registered dimensions."; }
 
     @Override
     public boolean isConsoleAllowed() { return true; }
@@ -30,7 +32,7 @@ public class DimensionCommand implements ILuaTweakerCommand {
     @Override
     public int execute(ICommandSender sender, String[] args) {
         if (args.length == 0) {
-            sender.sendError("Usage: /lt dimension <list|info <id>|tp <id>>");
+            sender.sendError("Usage: /lt dimension <list|info <id>|tp <id>|bench <id> [radius]>");
             return 0;
         }
         DimensionServiceImpl service = currentService();
@@ -42,8 +44,9 @@ public class DimensionCommand implements ILuaTweakerCommand {
             case "list" -> list(sender, service);
             case "info" -> info(sender, service, args);
             case "tp" -> teleport(sender, service, args);
+            case "bench" -> bench(sender, service, args);
             default -> {
-                sender.sendError("Unknown sub-command '" + args[0] + "'. Use list, info or tp.");
+                sender.sendError("Unknown sub-command '" + args[0] + "'. Use list, info, tp or bench.");
                 yield 0;
             }
         };
@@ -58,8 +61,7 @@ public class DimensionCommand implements ILuaTweakerCommand {
         sender.sendMessage("§6=== [LuaTweaker Dimensions] ===");
         for (String id : ids) {
             DimensionConfig config = service.getConfig(id);
-            sender.sendMessage("§6  " + id + " §7- terrain: " + (service.getTerrainGenerator(id) != null ? "lua" : "config")
-                    + ", picker: " + (service.getBlockPicker(id) != null ? "lua" : "none")
+            sender.sendMessage("§6  " + id + " §7- terrain: " + terrainLabel(service, id)
                     + ", biomes: " + config.biomes().size()
                     + ", spawns: " + config.spawnEntities().size());
         }
@@ -85,8 +87,50 @@ public class DimensionCommand implements ILuaTweakerCommand {
         sender.sendMessage("§7  skyLight: §e" + config.hasSkyLight()
                 + " §7natural: §e" + config.natural()
                 + " §7skyColor: §e#" + Integer.toHexString(config.skyColor()));
-        sender.sendMessage("§7  generator: §e" + (service.getTerrainGenerator(config.id()) != null ? "lua" : "config-only"));
+        sender.sendMessage("§7  terrain: §e" + terrainLabel(service, config.id())
+                + " §7biome batch: §e" + (service.hasBiomeBatch(config.id()) ? "yes" : "no"));
         return 1;
+    }
+
+    private int bench(ICommandSender sender, DimensionServiceImpl service, String[] args) {
+        if (args.length < 2) {
+            sender.sendError("Usage: /lt dimension bench <dimensionId> [radius 0-"
+                    + DimensionBenchmark.MAX_RADIUS + "]");
+            return 0;
+        }
+        int radius = DimensionBenchmark.DEFAULT_RADIUS;
+        if (args.length >= 3) {
+            try {
+                radius = Integer.parseInt(args[2]);
+            } catch (NumberFormatException e) {
+                sender.sendError("Radius must be a whole number, got '" + args[2] + "'.");
+                return 0;
+            }
+        }
+        try {
+            DimensionBenchmark.Report report = DimensionBenchmark.run(service, args[1], radius);
+            sender.sendMessage("§6=== [Terrain benchmark: " + report.dimensionId() + "] ===");
+            sender.sendMessage("§7  mode: §e" + report.mode()
+                    + " §7chunks: §e" + report.chunks()
+                    + " §7radius: §e" + report.chunkRadius());
+            sender.sendMessage(String.format("§7  total: §e%.2f ms §7(§e%.3f ms/chunk§7)",
+                    report.totalMillis(), report.millisPerChunk()));
+            sender.sendMessage(String.format("§7  Lua calls: §e%.2f /chunk §7(total §e%d§7)",
+                    report.luaCallsPerChunk(), report.luaCalls()));
+            sender.sendMessage("§8  Block placement/lighting are not included; numbers are the Lua pipeline only.");
+            return 1;
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            sender.sendError(e.getMessage());
+            return 0;
+        }
+    }
+
+    private static String terrainLabel(DimensionServiceImpl service, String dimensionId) {
+        return switch (service.getTerrainMode(dimensionId)) {
+            case CHUNK -> "chunk-batch";
+            case SPEC -> "declarative-spec";
+            case LEGACY -> service.getTerrainGenerator(dimensionId) != null ? "per-column-lua" : "config-only";
+        };
     }
 
     private int teleport(ICommandSender sender, DimensionServiceImpl service, String[] args) {
@@ -108,7 +152,13 @@ public class DimensionCommand implements ILuaTweakerCommand {
             return 0;
         }
         try {
-            com.luatweaker.api.pal.Platform.getDimension().teleportToDimension(player, args[1]);
+            boolean teleported = com.luatweaker.api.pal.Platform.getDimension()
+                    .teleportToDimension(player, args[1]);
+            if (!teleported) {
+                sender.sendError("Could not teleport to dimension '" + args[1]
+                        + "': the server refused (see the log for the safe-spawn check).");
+                return 0;
+            }
             sender.sendSuccess("Teleported to dimension '" + args[1] + "'.");
             return 1;
         } catch (IllegalStateException e) {

@@ -50,5 +50,38 @@ public interface IPlatformClient {
     @org.jetbrains.annotations.Nullable
     default com.luatweaker.api.entity.IPlayer getLocalPlayer() { return null; }
 
+    /**
+     * Renderer backend behind this client. The reference implementation reports
+     * "opengl" (1.21.1 ships GL only); a Vulkan future overrides this to "vulkan".
+     * The default reports "unknown" so thin platforms stay honest.
+     */
+    default String getRendererBackend() { return "unknown"; }
+
+    /**
+     * Loads a vanilla post-chain resource (e.g. "luatweaker:shaders/post/lt_x.json")
+     * through {@code GameRenderer#loadEffect}, replacing any active chain.
+     * {@code programName} (e.g. "luatweaker:lt_x") identifies the chain's own
+     * program so vec uniforms can be written through a mirror EffectInstance.
+     * Default: no client rendering here, so nothing to do.
+     */
+    default void activateShaderPost(String chainLocation, String programName) {}
+
+    /** Closes the active post chain, if any. Default: no-op. */
+    default void deactivateShaderPost() {}
+
+    /**
+     * Sets one single-float uniform on the active post chain (mirrors the chain
+     * API, which only exposes float). Missing uniforms are safe no-ops.
+     * Default: no-op.
+     */
+    default void setShaderFloat(String uniformName, float value) {}
+
+    /**
+     * Sets one vec2/vec3/vec4 uniform on the active pass via a mirror
+     * EffectInstance sharing the chain's GL program. Length must be 2-4.
+     * Default: no-op.
+     */
+    default void setShaderFloatVec(String uniformName, float[] values) {}
+
     default void handleClientSyncData(String dataJson) {}
 }

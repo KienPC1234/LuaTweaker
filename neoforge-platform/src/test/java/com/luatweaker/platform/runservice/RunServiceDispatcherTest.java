@@ -68,6 +68,26 @@ class RunServiceDispatcherTest {
     }
 
     @Test
+    void disconnectEmptiesListenersAndListenerlessFireIsSkipped() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        engine.executeStringOrThrow(
+                "_skipped = 0\n" +
+                "_conn = RunService.Heartbeat:Connect(function() _skipped = _skipped + 1 end)\n",
+                "disconnect_setup");
+
+        // Connected listener: fires normally through the fast-path check.
+        RunServiceDispatcher.fire(engine, "Heartbeat", 0.05);
+        assertEquals(1.0, engine.getGlobalEnvironment().rawget("_skipped").asDouble());
+
+        // After Disconnect the listener list is empty: the dispatcher must skip
+        // the Lua pcall entirely instead of erroring or firing.
+        engine.executeStringOrThrow("_conn:Disconnect()", "disconnect_all");
+        RunServiceDispatcher.fire(engine, "Heartbeat", 0.05);
+        assertEquals(1.0, engine.getGlobalEnvironment().rawget("_skipped").asDouble(),
+                "listenerless signal must be skipped, not fired");
+    }
+
+    @Test
     void tickDeltaIsBounded() {
         double first = ServerTickClock.nextDelta();
         double second = ServerTickClock.nextDelta();

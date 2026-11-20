@@ -1,10 +1,24 @@
 package com.luatweaker.content;
 
+import com.luatweaker.api.content.EntityDeathHandler;
+import com.luatweaker.api.content.EntityDrop;
+import com.luatweaker.api.content.EntityHurtHandler;
+import com.luatweaker.api.content.EntityInteractHandler;
+import com.luatweaker.api.content.EntityTickHandler;
 import com.luatweaker.api.content.IEntityBuilder;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class EntityBuilderImpl implements IEntityBuilder {
     private final String id;
     private String category = "MONSTER";
+    private String rig = "parent";
+    private String defaultGoals;
+    private double renderScale = 1.0;
+    private boolean fireImmune = false;
+    private int tickRate = 5;
     private float width = 0.6f;
     private float height = 1.8f;
     private double maxHealth = 20.0;
@@ -16,17 +30,24 @@ public class EntityBuilderImpl implements IEntityBuilder {
     private boolean hasSpawnEgg = false;
     private int primaryColor = 0x00FF00;
     private int secondaryColor = 0x0000FF;
-    private String model;
     private String texture;
-    private String bbmodel;
     private String ambientSound;
     private String hurtSound;
     private String deathSound;
-    private String dropItemId;
-    private int minDropCount = 1;
-    private int maxDropCount = 1;
+    private final List<EntityDrop> drops = new ArrayList<>();
     private int experience = 5;
+    private boolean explicitExperience = false;
     private String creativeTab;
+    private String parentMob;
+    private String spawnEggTexture;
+    private boolean hasBossBar = false;
+    private String bossBarTitle;
+    private String bossBarColor = "RED";
+    private String bossBarOverlay = "PROGRESS";
+    private EntityTickHandler onTickHandler;
+    private EntityHurtHandler onHurtHandler;
+    private EntityDeathHandler onDeathHandler;
+    private EntityInteractHandler onInteractHandler;
 
     public EntityBuilderImpl(String id) {
         this.id = id;
@@ -37,6 +58,60 @@ public class EntityBuilderImpl implements IEntityBuilder {
         if (category != null && !category.isBlank()) {
             this.category = category.toUpperCase();
         }
+        return this;
+    }
+
+    @Override
+    public IEntityBuilder rig(String rig) {
+        if (rig == null || rig.isBlank()) {
+            throw new IllegalArgumentException("entity '" + id + "' rig must not be blank "
+                    + "(use 'parent', 'humanoid' or 'quadruped')");
+        }
+        String clean = rig.strip().toLowerCase();
+        if (!clean.equals("parent") && !clean.equals("humanoid") && !clean.equals("quadruped")) {
+            throw new IllegalArgumentException("entity '" + id + "' has unknown rig '" + rig
+                    + "' (use 'parent', 'humanoid' or 'quadruped')");
+        }
+        this.rig = clean;
+        return this;
+    }
+
+    @Override
+    public IEntityBuilder defaultGoals(String preset) {
+        if (preset == null || preset.isBlank()) {
+            this.defaultGoals = null;
+            return this;
+        }
+        String clean = preset.strip().toLowerCase();
+        if (!clean.equals("monster") && !clean.equals("animal") && !clean.equals("none")) {
+            throw new IllegalArgumentException("entity '" + id + "' has unknown defaultGoals '" + preset
+                    + "' (use 'monster', 'animal' or 'none')");
+        }
+        this.defaultGoals = clean;
+        return this;
+    }
+
+    @Override
+    public IEntityBuilder renderScale(double scale) {
+        if (scale <= 0.0 || scale > 16.0) {
+            throw new IllegalArgumentException("entity '" + id + "' renderScale must be in (0, 16], got: " + scale);
+        }
+        this.renderScale = scale;
+        return this;
+    }
+
+    @Override
+    public IEntityBuilder fireImmune(boolean immune) {
+        this.fireImmune = immune;
+        return this;
+    }
+
+    @Override
+    public IEntityBuilder tickRate(int intervalTicks) {
+        if (intervalTicks < 1) {
+            throw new IllegalArgumentException("entity '" + id + "' tickRate must be >= 1, got: " + intervalTicks);
+        }
+        this.tickRate = intervalTicks;
         return this;
     }
 
@@ -93,8 +168,8 @@ public class EntityBuilderImpl implements IEntityBuilder {
 
     @Override
     public IEntityBuilder model(String modelPath) {
-        this.model = modelPath;
-        return this;
+        throw new IllegalArgumentException("entity '" + id + "': model() was never implemented by the engine "
+                + "(custom geometry files are not loaded). Use rig('humanoid' | 'quadruped') + texture(path) instead.");
     }
 
     @Override
@@ -105,8 +180,8 @@ public class EntityBuilderImpl implements IEntityBuilder {
 
     @Override
     public IEntityBuilder bbmodel(String bbmodelPath) {
-        this.bbmodel = bbmodelPath;
-        return this;
+        throw new IllegalArgumentException("entity '" + id + "': bbmodel() was never implemented by the engine "
+                + "(Blockbench files are not loaded). Use rig('humanoid' | 'quadruped') + texture(path) instead.");
     }
 
     @Override
@@ -129,15 +204,16 @@ public class EntityBuilderImpl implements IEntityBuilder {
 
     @Override
     public IEntityBuilder drop(String itemId, int minCount, int maxCount) {
-        this.dropItemId = itemId;
-        this.minDropCount = Math.max(1, minCount);
-        this.maxDropCount = Math.max(this.minDropCount, maxCount);
+        int min = Math.max(1, minCount);
+        int max = Math.max(min, maxCount);
+        this.drops.add(new EntityDrop(itemId, min, max));
         return this;
     }
 
     @Override
     public IEntityBuilder experience(int exp) {
         this.experience = Math.max(0, exp);
+        this.explicitExperience = true;
         return this;
     }
 
@@ -146,8 +222,6 @@ public class EntityBuilderImpl implements IEntityBuilder {
         this.creativeTab = tabId;
         return this;
     }
-
-    private String parentMob;
 
     @Override
     public IEntityBuilder parent(String parentMob) {
@@ -164,15 +238,8 @@ public class EntityBuilderImpl implements IEntityBuilder {
     @Override
     public String getParentMob() {
         if (parentMob != null && !parentMob.isBlank()) return parentMob;
-        if (model != null && !model.isBlank()) return model;
         return "zombie";
     }
-
-    private String spawnEggTexture;
-    private boolean hasBossBar = false;
-    private String bossBarTitle;
-    private String bossBarColor = "RED";
-    private String bossBarOverlay = "PROGRESS";
 
     @Override
     public IEntityBuilder spawnEggTexture(String texturePath) {
@@ -190,8 +257,37 @@ public class EntityBuilderImpl implements IEntityBuilder {
         return this;
     }
 
+    @Override
+    public IEntityBuilder onTick(EntityTickHandler handler) {
+        this.onTickHandler = handler;
+        return this;
+    }
+
+    @Override
+    public IEntityBuilder onHurt(EntityHurtHandler handler) {
+        this.onHurtHandler = handler;
+        return this;
+    }
+
+    @Override
+    public IEntityBuilder onDeath(EntityDeathHandler handler) {
+        this.onDeathHandler = handler;
+        return this;
+    }
+
+    @Override
+    public IEntityBuilder onInteract(EntityInteractHandler handler) {
+        this.onInteractHandler = handler;
+        return this;
+    }
+
     @Override public String getId() { return id; }
     @Override public String getCategory() { return category; }
+    @Override public String getRig() { return rig; }
+    @Override public String getDefaultGoals() { return defaultGoals; }
+    @Override public double getRenderScale() { return renderScale; }
+    @Override public boolean isFireImmune() { return fireImmune; }
+    @Override public int getTickRate() { return tickRate; }
     @Override public float getWidth() { return width; }
     @Override public float getHeight() { return height; }
     @Override public double getMaxHealth() { return maxHealth; }
@@ -208,15 +304,27 @@ public class EntityBuilderImpl implements IEntityBuilder {
     @Override public String getBossBarTitle() { return bossBarTitle; }
     @Override public String getBossBarColor() { return bossBarColor; }
     @Override public String getBossBarOverlay() { return bossBarOverlay; }
-    @Override public String getModel() { return model; }
+    @Override public String getModel() { return null; }
     @Override public String getTexture() { return texture; }
-    @Override public String getBbmodel() { return bbmodel; }
+    @Override public String getBbmodel() { return null; }
     @Override public String getAmbientSound() { return ambientSound; }
     @Override public String getHurtSound() { return hurtSound; }
     @Override public String getDeathSound() { return deathSound; }
-    @Override public String getDropItemId() { return dropItemId; }
-    @Override public int getMinDropCount() { return minDropCount; }
-    @Override public int getMaxDropCount() { return maxDropCount; }
+    @Override public List<EntityDrop> getDrops() { return List.copyOf(drops); }
     @Override public int getExperience() { return experience; }
+    @Override public boolean hasExplicitExperience() { return explicitExperience; }
+    @Override public @Nullable EntityTickHandler getOnTickHandler() { return onTickHandler; }
+    @Override public @Nullable EntityHurtHandler getOnHurtHandler() { return onHurtHandler; }
+    @Override public @Nullable EntityDeathHandler getOnDeathHandler() { return onDeathHandler; }
+    private com.luatweaker.api.content.GeoModelSpec geoModel;
+
+    @Override
+    public IEntityBuilder geoModel(String modelPath, String texturePath, String animationPath, @org.jetbrains.annotations.Nullable String defaultAnimation) {
+        this.geoModel = new com.luatweaker.api.content.GeoModelSpec(modelPath, texturePath, animationPath, defaultAnimation);
+        return this;
+    }
+
+    @Override public @Nullable EntityInteractHandler getOnInteractHandler() { return onInteractHandler; }
     @Override public String getCreativeTab() { return creativeTab; }
+    @Override @Nullable public com.luatweaker.api.content.GeoModelSpec getGeoModel() { return geoModel; }
 }

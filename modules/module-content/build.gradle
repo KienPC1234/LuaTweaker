@@ -10,6 +10,7 @@ dependencies {
     api project(':common-api')
     implementation project(':core-engine')
     implementation project(':modules:module-entities')
+    implementation project(':modules:module-interaction')
     implementation 'com.google.code.gson:gson:2.10.1'
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'

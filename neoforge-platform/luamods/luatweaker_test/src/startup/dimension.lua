@@ -21,6 +21,11 @@ local cfg = mod and mod:GetConfig() or {}
 local realm = cfg.crystal_realm or {}
 local dimensionId = realm.dimension_id or "luatweaker:crystal_realm"
 local portalBlockId = "luatweaker:crystal_portal"
+-- Declared here, before the DimensionEntered listeners below: a `local` declared later in
+-- the chunk is NOT in scope inside an earlier closure, so the listener would read the global
+-- `skylands` (nil) and fail at runtime.
+local skylandsId = realm.skylands_id or "luatweaker:crystal_skylands"
+local skylands = cfg.crystal_skylands or {}
 
 -- ==== DIMENSION BLOCKS ====
 Content.NewBlock("crystal_stone")
@@ -435,9 +440,6 @@ end)
 -- ================================================================
 -- SECOND DIMENSION: Crystal Skylands (floating islands)
 -- ================================================================
-local skylandsId = realm.skylands_id or "luatweaker:crystal_skylands"
-local skylands = cfg.crystal_skylands or {}
-
 makePortalBlock("luatweaker:crystal_sky_portal")
 
 Datapack:AddData("luatweaker/worldgen/biome/skyland_plains.json", [[{

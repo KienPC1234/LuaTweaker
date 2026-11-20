@@ -12,7 +12,9 @@ public interface IKeyBindService {
             String displayName,
             String category,
             int defaultKey,
-            String onPressPayload
+            String onPressPayload,
+            String inputType,
+            String modifier
     ) {}
 
     @LuaDoc(
@@ -21,6 +23,18 @@ public interface IKeyBindService {
         returnType = "void"
     )
     void registerKeyBind(String id, String displayName, String category, int defaultKey, String onPressPayload);
+
+    @LuaDoc(
+        description = "Registers a key binding with input type and modifier. "
+            + "inputType: 'key' (keyboard keysym, default) or 'mouse' (GLFW button code). "
+            + "modifier: 'none' (default), 'shift', 'ctrl' or 'alt' — the extra key "
+            + "that must be held for the press to fire. Unknown values throw.",
+        params = {"id: string", "displayName: string", "category: string", "defaultKey: number",
+                  "onPressPayload: string", "inputType: string", "modifier: string"},
+        returnType = "void"
+    )
+    void registerKeyBind(String id, String displayName, String category, int defaultKey,
+                         String onPressPayload, String inputType, String modifier);
 
     @LuaDoc(
         description = "Returns all dynamically registered key bindings.",
@@ -36,5 +50,14 @@ public interface IKeyBindService {
     )
     void triggerKeyBind(String id, String payload);
 
+    @LuaDoc(
+        description = "Triggers a key binding release event on the client.",
+        params = {"id: string", "payload: string"},
+        returnType = "void"
+    )
+    void triggerKeyBindRelease(String id, String payload);
+
     void setKeyBindListener(java.util.function.BiConsumer<String, String> listener);
+
+    void setKeyBindReleaseListener(java.util.function.BiConsumer<String, String> listener);
 }

@@ -26,6 +26,7 @@ public class EventAliasRegistry {
         
         // Interaction
         ALIAS_MAP.put("PlayerInteractBlock", PlayerInteractEvent.RightClickBlock.class);
+        ALIAS_MAP.put("BlockInteract", PlayerInteractEvent.RightClickBlock.class);
         ALIAS_MAP.put("PlayerInteractEntity", PlayerInteractEvent.EntityInteract.class);
         
         // Block

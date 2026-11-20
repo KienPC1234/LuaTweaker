@@ -82,6 +82,14 @@ public class NeoForgeDimensionProviderTest {
         assertTrue(typeJson.contains("\"coordinate_scale\":1.0"), "type JSON must carry coordinate_scale");
         assertTrue(typeJson.contains("\"effects\":\"luatweaker:lua\""), "type JSON must reference the custom sky effects");
 
+        // Parse the generated JSON with the real vanilla codec: this catches missing or
+        // misspelled fields and the DimensionType min_y/height/logical_height constraints.
+        var parsedType = net.minecraft.world.level.dimension.DimensionType.DIRECT_CODEC.parse(
+                com.mojang.serialization.JsonOps.INSTANCE,
+                com.google.gson.JsonParser.parseString(typeJson));
+        assertTrue(parsedType.result().isPresent(),
+                () -> "vanilla DimensionType codec rejected the generated JSON: " + parsedType.error());
+
         String dimensionJson = datapack.files.get("data/arcane/dimension/crystal_realm.json");
         assertNotNull(dimensionJson, "dimension JSON must be written");
         // CRITICAL: the dimension must reference ITS OWN dimension type, so the

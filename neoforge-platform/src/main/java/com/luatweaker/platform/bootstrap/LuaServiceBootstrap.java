@@ -133,6 +133,15 @@ public final class LuaServiceBootstrap {
         ClientLuaBinding.registerBindings(engine, clientService, keyBindService, guiService);
         engine.registerService("KeyBindService", keyBindService);
 
+        // 10c. Screen-space shader effects (named camera/overlay effects + custom
+        // GLSL post passes). The disk cache lives next to the storage directory:
+        // game-scoped on clients, world-scoped on dedicated servers.
+        com.luatweaker.client.ShaderServiceImpl shaderService =
+                new com.luatweaker.client.ShaderServiceImpl(datapackService,
+                        new java.io.File(com.luatweaker.api.pal.Platform.getStorage()
+                                .getStorageDirectory().getParentFile(), "shader-cache"));
+        com.luatweaker.client.ShaderLuaBinding.registerBindings(engine, shaderService);
+
         // 10b. World-space render service + Client.OnRenderWorld signal (all engines,
         // so client scripts loaded on the runtime engine can require it).
         ILuaValue clientVal = engine.getGlobalEnvironment().rawget("Client");

@@ -3,6 +3,7 @@
 -- Items, Blocks, Entity Types, Creative Tabs
 -- ================================================================
 local Content = require("LuaTweaker.Content")
+local Players = require("LuaTweaker.Players")
 
 local cfg = mod and mod:GetConfig() or {}
 local boltCfg = cfg.skills and cfg.skills.crystal_bolt or {}
@@ -25,6 +26,23 @@ local CrystalShard = Content.NewItem("crystal_shard")
     :Tooltip("§bPulses with arcane energy")
     :Register()
 
+local CrystalScythe = Content.NewItem("crystal_scythe")
+    :MaxStackSize(1)
+    :Rarity("EPIC")
+    :Durability(1500)
+    :AttackDamage(12.0)
+    :AttackSpeed(1.2)
+    :DisplayName("Crystal Scythe")
+    :CreativeTab("arcane_tab")
+    :Tooltip("§bAnimated GeckoLib 3D Scythe")
+    :Tooltip("§7Right-click to trigger whirlwind spin animation")
+    :GeoModel("luatweaker:geo/item/crystal_scythe.geo.json", "luatweaker:textures/item/crystal_scythe.png", "luatweaker:animations/item/crystal_scythe.animation.json", "idle")
+    :OnRightClick(function(player, stack)
+        player:triggerAnimation("spin", "controller")
+        player:sendActionBar("§bCasting Scythe Whirlwind Spin!")
+    end)
+    :Register()
+
 local CrystalStaff = Content.NewItem("crystal_staff")
     :MaxStackSize(1)
     :Rarity("EPIC")
@@ -35,6 +53,9 @@ local CrystalStaff = Content.NewItem("crystal_staff")
     :Tooltip("§bChannel the arcane through this crystalline focus")
     :Tooltip("§7Right-click to cast Crystal Bolt")
     :OnRightClick(function(player, itemStack)
+        if player and player.PlayItemAnimation then
+            player:PlayItemAnimation("recoil", 10, 1.2)
+        end
         local Events = require("LuaTweaker.Events")
         Events:Fire("ArcaneCastSkill", { player = player, skill = "crystal_bolt" })
     end)
@@ -198,6 +219,127 @@ local SpellTome = Content.NewItem("spell_tome")
     end)
     :Register()
 
+local CrystalWrench = Content.NewItem("crystal_wrench")
+    :MaxStackSize(1)
+    :DisplayName("Crystal Wrench")
+    :CreativeTab("arcane_tab")
+    :Tooltip("§7Right-click a block face to configure side mode:")
+    :Tooltip("§6[IN] §7-> §a[OUT] §7-> §c[DISABLED]")
+    :OnUseOnBlock(function(player, hit)
+        if not hit or not hit.Face then return false end
+        local World = require("LuaTweaker.World")
+        local data = World:GetBlockEntityData(hit.X, hit.Y, hit.Z) or {}
+        local sideConfig = data.SideConfig or {}
+        local cur = sideConfig[hit.Face] or "NONE"
+        local nextMode = "IN"
+        if cur == "IN" then
+            nextMode = "OUT"
+        elseif cur == "OUT" then
+            nextMode = "DISABLED"
+        elseif cur == "DISABLED" then
+            nextMode = "IN"
+        else
+            nextMode = "IN"
+        end
+        sideConfig[hit.Face] = nextMode
+        data.SideConfig = sideConfig
+        World:SetBlockEntityData(hit.X, hit.Y, hit.Z, data)
+        World:PlaySound("minecraft:block.lever.click", hit.X, hit.Y, hit.Z, 1.0, 1.6)
+        if player and player.sendActionBar then
+            player:sendActionBar("§6[Wrench] §e" .. string.upper(hit.Face) .. " §7face set to: §f[" .. nextMode .. "]")
+        end
+        return true
+    end)
+    :Register()
+
+local CrystalDetector = Content.NewItem("crystal_detector")
+    :MaxStackSize(1)
+    :DisplayName("Crystal Ore & Energy Detector")
+    :CreativeTab("arcane_tab")
+    :Tooltip("§7Right-click to scan nearby area (24 blocks)")
+    :Tooltip("§bHighlights ores and energy machines in 3D")
+    :OnRightClick(function(player, itemStack)
+        local World = require("LuaTweaker.World")
+        local pos = player.Position
+        local ores = World:FindBlocks(pos.X, pos.Y, pos.Z, 24, "#c:ores", 32)
+        local machines = World:FindBlocks(pos.X, pos.Y, pos.Z, 24, "crystal_", 32)
+        local results = {}
+        for _, b in ipairs(ores) do table.insert(results, b) end
+        for _, b in ipairs(machines) do table.insert(results, b) end
+
+        World:PlaySound("minecraft:block.conduit.activate", pos.X, pos.Y, pos.Z, 1.0, 1.5)
+        for _, b in ipairs(results) do
+            local bx = b.x or b.X
+            local by = b.y or b.Y
+            local bz = b.z or b.Z
+            if bx and by and bz then
+                World:SpawnParticle("minecraft:end_rod", bx + 0.5, by + 1.2, bz + 0.5, 0.05, 0.1, 0.05, 3, 0.02)
+            end
+        end
+        local Network = require("LuaTweaker.Network")
+        local highlightEvent = Network:GetOrCreateRemoteEvent("HighlightOres")
+        if highlightEvent and player then
+            highlightEvent:FireClient(player, results)
+        end
+        if player and player.sendActionBar then
+            player:sendActionBar("§a[Detector] Located §e" .. #results .. " §adeposits/machines!")
+        end
+        return true
+    end)
+    :Register()
+
+local CrystalBlaster = Content.NewItem("crystal_blaster")
+    :MaxStackSize(1)
+    :Rarity("RARE")
+    :DisplayName("Crystal Energy Blaster")
+    :CreativeTab("arcane_tab")
+    :Model("luatweaker:item/crystal_blaster")
+    :Tooltip("§bHigh-tech 3D Energy Blaster")
+    :Tooltip("§7Consumes §e200 RF §7per shot (20,000 RF max)")
+    :Tooltip("§aRechargeable: §7place into Crystal Battery slot")
+    :OnRightClick(function(player, itemStack)
+        local World = require("LuaTweaker.World")
+        local curEnergy = itemStack:GetCustomData("Energy")
+        if curEnergy == nil then curEnergy = 20000 end
+        local maxEnergy = itemStack:GetCustomData("MaxEnergy") or 20000
+        if curEnergy >= 200 then
+            itemStack:SetCustomData("Energy", curEnergy - 200)
+            itemStack:SetCustomData("MaxEnergy", maxEnergy)
+            local pos = player.Position
+            World:ShootProjectile(player, "crystal_bolt", 3.8, 0.02)
+            World:PlaySound("minecraft:entity.illusioner.cast_spell", pos.X, pos.Y, pos.Z, 0.8, 1.8)
+            World:PlaySound("minecraft:item.crossbow.shoot", pos.X, pos.Y, pos.Z, 0.6, 1.6)
+            World:SpawnParticle("minecraft:electric_spark", pos.X, pos.Y + 1.2, pos.Z, 0.15, 0.15, 0.15, 8, 0.12)
+            if player and player.PlayItemAnimation then
+                player:PlayItemAnimation("recoil", 6, 1.8)
+            end
+            if player and player.swingArm then
+                player:swingArm()
+            end
+            if player and player.sendActionBar then
+                player:sendActionBar("§b[Blaster] Energy: §e" .. math.floor(curEnergy - 200) .. " / " .. maxEnergy .. " RF")
+            end
+        else
+            local pos = player.Position
+            World:PlaySound("minecraft:block.dispenser.fail", pos.X, pos.Y, pos.Z, 1.0, 1.5)
+            if player and player.sendActionBar then
+                player:sendActionBar("§c[Blaster] Depleted! Charge in a Crystal Battery slot.")
+            end
+        end
+        return true
+    end)
+    :Register()
+
+-- ==== FLUIDS ====
+local LiquidCrystal = Content.NewFluid("liquid_crystal")
+    :DisplayName("Liquid Crystal")
+    :Color(0x33CCFF)
+    :Density(1200)
+    :Viscosity(1500)
+    :LightLevel(8)
+    :CreativeTab("arcane_tab")
+    :Register()
+
 -- ==== BLOCKS ====
 
 local CrystalOre = Content.NewBlock("crystal_ore")
@@ -213,6 +355,9 @@ local CrystalOre = Content.NewBlock("crystal_ore")
     :CreativeTab("arcane_tab")
     :Tag("c:ores/crystal")
     :Register()
+
+local Worldgen = require("LuaTweaker.Worldgen")
+Worldgen:AddOre("luatweaker:crystal_ore", "minecraft:overworld", -64, 48, 8, 12)
 
 local CrystalBlock = Content.NewBlock("crystal_block")
     :Hardness(5.0)
@@ -261,8 +406,10 @@ local CrystalInfuser = Content.NewBlock("crystal_infuser")
     :SlotPosition(0, 44, 30)
     :SlotPosition(1, 116, 30)
     :GuiBar("energy_bar", 8, 20, 16, 50, "energy", 0xAA0000)
-    :Button("infuse_btn", 68, 30, 40, 20, "Infuse")
-    :Label(68, 55, "Ready", 0x44FF44)
+    :CustomBar("flux_gauge", 26, 20, 16, 50, "CurrentFlux", "MaxFlux", 0x33CCFF, "Flux: %d / %d Arcanum")
+    :GuiBar("infusion_progress", 68, 33, 42, 12, "progress", 0x44FF88)
+    :Button("infuse_btn", 180, 30, 48, 20, "Infuse")
+    :Label(68, 48, "Infuser", 0x88FFFF)
     :OnButtonClick(function(blockPos, buttonId)
         if buttonId == "infuse_btn" then
             print("[CrystalInfuser] Infusion button clicked at " .. blockPos.X .. ", " .. blockPos.Y .. ", " .. blockPos.Z)
@@ -270,6 +417,232 @@ local CrystalInfuser = Content.NewBlock("crystal_infuser")
     end)
     :OnNeighborChanged(function(blockPos, neighborPos)
         -- Redstone signal changed or neighbor updated
+    end)
+    :Register()
+
+local CrystalReanimator = Content.NewBlock("crystal_reanimator")
+    :Hardness(3.5)
+    :Resistance(10.0)
+    :LightLevel(10)
+    :DisplayName("Crystal Reanimator")
+    :CreativeTab("arcane_tab")
+    :GeoModel("luatweaker:geo/block/crystal_reanimator.geo.json", "luatweaker:textures/block/crystal_reanimator.png", "luatweaker:animations/block/crystal_reanimator.animation.json", "idle")
+    :OnRightClick(function(player, block)
+        local World = require("LuaTweaker.World")
+        World:PlayAnimation(block, "activate")
+        player:sendActionBar("§bReanimator core energized!")
+    end)
+    :Register()
+
+-- ==== PIPES & MACHINES ====
+
+local CrystalItemPipe = Content.NewBlock("crystal_item_pipe")
+    :Hardness(2.0)
+    :Resistance(5.0)
+    :SoundType("METAL")
+    :DisplayName("Crystal Item Pipe")
+    :CreativeTab("arcane_tab")
+    :Texture("minecraft:block/polished_andesite")
+    :ConnectionState(true)
+    :Container(1, 1, "packed")
+    :OnTick(function(data)
+        local World = require("LuaTweaker.World")
+        local pos = { X = data.X, Y = data.Y, Z = data.Z }
+        local blockData = World:GetBlockEntityData(pos) or {}
+        local sideConfig = blockData.SideConfig or {}
+        local DIRS = {
+            up = { 0, 1, 0 }, down = { 0, -1, 0 },
+            north = { 0, 0, -1 }, south = { 0, 0, 1 },
+            west = { -1, 0, 0 }, east = { 1, 0, 0 }
+        }
+        for side, off in pairs(DIRS) do
+            if sideConfig[side] == "IN" then
+                local neighbor = { X = pos.X + off[1], Y = pos.Y + off[2], Z = pos.Z + off[3] }
+                World:TransferItem(neighbor, -1, pos, 0, 1)
+            end
+        end
+        for side, off in pairs(DIRS) do
+            if sideConfig[side] == "OUT" then
+                local neighbor = { X = pos.X + off[1], Y = pos.Y + off[2], Z = pos.Z + off[3] }
+                World:TransferItem(pos, 0, neighbor, -1, 1)
+            end
+        end
+    end)
+    :Register()
+
+local CrystalEnergyPipe = Content.NewBlock("crystal_energy_pipe")
+    :Hardness(2.0)
+    :Resistance(5.0)
+    :SoundType("METAL")
+    :DisplayName("Crystal Energy Pipe")
+    :CreativeTab("arcane_tab")
+    :Texture("minecraft:block/redstone_block")
+    :ConnectionState(true)
+    :EnergyStorage(10000, 1000, 1000)
+    :OnTick(function(data)
+        local World = require("LuaTweaker.World")
+        local pos = { X = data.X, Y = data.Y, Z = data.Z }
+        local blockData = World:GetBlockEntityData(pos) or {}
+        local sideConfig = blockData.SideConfig or {}
+        local DIRS = {
+            up = { 0, 1, 0 }, down = { 0, -1, 0 },
+            north = { 0, 0, -1 }, south = { 0, 0, 1 },
+            west = { -1, 0, 0 }, east = { 1, 0, 0 }
+        }
+        for side, off in pairs(DIRS) do
+            local mode = sideConfig[side] or "NONE"
+            local neighbor = { X = pos.X + off[1], Y = pos.Y + off[2], Z = pos.Z + off[3] }
+            if mode == "IN" then
+                World:TransferEnergy(neighbor, pos, 200)
+            elseif mode == "OUT" then
+                World:TransferEnergy(pos, neighbor, 200)
+            elseif mode == "NONE" and data.Energy > 0 then
+                World:TransferEnergy(pos, neighbor, 50)
+            end
+        end
+    end)
+    :Register()
+
+local CrystalFluidPipe = Content.NewBlock("crystal_fluid_pipe")
+    :Hardness(2.0)
+    :Resistance(5.0)
+    :SoundType("METAL")
+    :DisplayName("Crystal Fluid Pipe")
+    :CreativeTab("arcane_tab")
+    :Texture("minecraft:block/lapis_block")
+    :ConnectionState(true)
+    :FluidStorage(4000)
+    :OnTick(function(data)
+        local World = require("LuaTweaker.World")
+        local pos = { X = data.X, Y = data.Y, Z = data.Z }
+        local blockData = World:GetBlockEntityData(pos) or {}
+        local sideConfig = blockData.SideConfig or {}
+        local DIRS = {
+            up = { 0, 1, 0 }, down = { 0, -1, 0 },
+            north = { 0, 0, -1 }, south = { 0, 0, 1 },
+            west = { -1, 0, 0 }, east = { 1, 0, 0 }
+        }
+        for side, off in pairs(DIRS) do
+            local mode = sideConfig[side] or "NONE"
+            local neighbor = { X = pos.X + off[1], Y = pos.Y + off[2], Z = pos.Z + off[3] }
+            if mode == "IN" then
+                World:TransferFluid(neighbor, pos, 100)
+            elseif mode == "OUT" then
+                World:TransferFluid(pos, neighbor, 100)
+            elseif mode == "NONE" and data.FluidAmount > 0 then
+                World:TransferFluid(pos, neighbor, 25)
+            end
+        end
+    end)
+    :Register()
+
+local CrystalSmeltery = Content.NewBlock("crystal_smeltery")
+    :Hardness(4.0)
+    :Resistance(15.0)
+    :SoundType("METAL")
+    :MineableWith("pickaxe")
+    :MiningLevel("iron")
+    :DisplayName("Crystal Smeltery")
+    :CreativeTab("arcane_tab")
+    :Texture("minecraft:block/blast_furnace_side")
+    :Container(3, 9, "spill")
+    :ContainerTitle("Crystal Smeltery")
+    :SlotPosition(0, 44, 30)
+    :SlotPosition(1, 116, 30)
+    :EnergyStorage(20000, 500, 0)
+    :FluidStorage(8000)
+    :GuiBar("smelt_progress", 68, 33, 42, 12, "progress", 0xFFAA00)
+    :GuiBar("energy_bar", 8, 20, 16, 50, "energy", 0xAA0000)
+    :GuiBar("fluid_tank", 140, 20, 16, 50, "fluid", 0x33CCFF)
+    :Label(40, 16, "Ore Input", 0xCCCCCC)
+    :Label(112, 16, "Byproduct", 0xCCCCCC)
+    :OnTick(function(data)
+        local World = require("LuaTweaker.World")
+        local pos = { X = data.X, Y = data.Y, Z = data.Z }
+        local inItem = World:GetItem(pos, 0)
+        if inItem and inItem.Count > 0 and data.Energy >= 20 and data.FluidAmount + 250 <= data.FluidCapacity then
+            World:ExtractEnergy(pos.X, pos.Y, pos.Z, 20)
+            local nextProg = data.Progress + 0.05
+            if nextProg >= 1.0 then
+                nextProg = 0.0
+                World:EjectContainerItem(pos.X, pos.Y, pos.Z, 0, 1)
+                World:FillFluid(pos.X, pos.Y, pos.Z, "luatweaker:liquid_crystal", 250)
+                World:SpawnParticle("minecraft:flame", pos.X + 0.5, pos.Y + 0.8, pos.Z + 0.5, 0.05, 0.05, 0.05, 3, 0.02)
+            end
+            World:SetProgress(pos, nextProg)
+        elseif data.Progress > 0 then
+            World:SetProgress(pos, 0.0)
+        end
+    end)
+    :Register()
+
+local CrystalFluidGenerator = Content.NewBlock("crystal_fluid_generator")
+    :Hardness(4.0)
+    :Resistance(15.0)
+    :SoundType("METAL")
+    :DisplayName("Crystal Fluid Generator")
+    :CreativeTab("arcane_tab")
+    :Texture("minecraft:block/copper_block")
+    :Container(1, 1, "packed")
+    :ContainerTitle("Fluid Generator Core")
+    :FluidStorage(16000)
+    :EnergyStorage(100000, 0, 2000)
+    :GuiBar("energy_bar", 8, 20, 16, 50, "energy", 0xAA0000)
+    :GuiBar("fluid_bar", 28, 20, 16, 50, "fluid", 0x33CCFF)
+    :Label(50, 25, "Generator Multiblock", 0xFFFFFF)
+    :Label(50, 40, "Burns Liquid Crystal", 0x33CCFF)
+    :OnTick(function(data)
+        local World = require("LuaTweaker.World")
+        local pos = { X = data.X, Y = data.Y, Z = data.Z }
+        local isBaseFormed = World:CheckPattern(pos.X, pos.Y, pos.Z, {
+            { x = -1, y = -1, z = -1, block = "luatweaker:crystal_block" },
+            { x =  0, y = -1, z = -1, block = "luatweaker:crystal_block" },
+            { x =  1, y = -1, z = -1, block = "luatweaker:crystal_block" },
+            { x = -1, y = -1, z =  0, block = "luatweaker:crystal_block" },
+            { x =  0, y = -1, z =  0, block = "luatweaker:crystal_block" },
+            { x =  1, y = -1, z =  0, block = "luatweaker:crystal_block" },
+            { x = -1, y = -1, z =  1, block = "luatweaker:crystal_block" },
+            { x =  0, y = -1, z =  1, block = "luatweaker:crystal_block" },
+            { x =  1, y = -1, z =  1, block = "luatweaker:crystal_block" },
+        })
+        if isBaseFormed and data.FluidAmount >= 10 and data.Energy + 200 <= data.EnergyCapacity then
+            World:DrainFluid(pos.X, pos.Y, pos.Z, "luatweaker:liquid_crystal", 10)
+            World:ProduceEnergy(pos, 200)
+            World:SpawnParticle("minecraft:portal", pos.X + 0.5, pos.Y + 1.1, pos.Z + 0.5, 0.1, 0.2, 0.1, 2, 0.05)
+        end
+    end)
+    :Register()
+
+local CrystalBattery = Content.NewBlock("crystal_battery")
+    :Hardness(4.0)
+    :Resistance(20.0)
+    :SoundType("METAL")
+    :DisplayName("Crystal Energy Battery")
+    :CreativeTab("arcane_tab")
+    :Texture("minecraft:block/crying_obsidian")
+    :Container(1, 1, "packed")
+    :ContainerTitle("Energy Battery")
+    :SlotPosition(0, 80, 30)
+    :EnergyStorage(500000, 5000, 5000)
+    :GuiBar("energy_bar", 8, 20, 16, 50, "energy", 0x00FF88)
+    :Label(60, 16, "Charging Slot", 0x00FF88)
+    :OnTick(function(data)
+        local World = require("LuaTweaker.World")
+        local pos = { X = data.X, Y = data.Y, Z = data.Z }
+        if data.Energy > 0 then
+            local item = World:GetItem(pos, 0)
+            if item then
+                local cur = item:GetCustomData("Energy")
+                local max = item:GetCustomData("MaxEnergy") or 20000
+                if cur and cur < max then
+                    local charge = math.min(100, math.min(max - cur, data.Energy))
+                    item:SetCustomData("Energy", cur + charge)
+                    item:SetCustomData("MaxEnergy", max)
+                    World:ExtractEnergy(pos.X, pos.Y, pos.Z, charge)
+                    World:SpawnParticle("minecraft:electric_spark", pos.X + 0.5, pos.Y + 0.8, pos.Z + 0.5, 0.05, 0.05, 0.05, 1, 0.02)
+                end
+            end
+        end
     end)
     :Register()
 
@@ -315,6 +688,53 @@ Content.createEntity("crystal_beast", function(entity)
           :creativeTab("arcane_tab")
 end)
 
+-- ==== ENTITY: CRYSTAL WISP (generic quadruped rig: custom sounds + hooks) ====
+-- The beast texture is cow-UV, which matches the quadruped rig's CowModel-based
+-- renderer. defaultGoals resolves to "monster" from the MONSTER category.
+Content.createEntity("crystal_wisp", function(entity)
+    entity:category("MONSTER")
+          :parent("cow")
+          :rig("quadruped")
+          :dimensions(0.9, 1.4)
+          :maxHealth(40)
+          :movementSpeed(0.3)
+          :attackDamage(5.0)
+          :followRange(24.0)
+          :spawnEgg(0x46C9A0, 0xBDFFD9)
+          :texture("luatweaker:textures/entity/crystal_beast.png")
+          :hurtSound("minecraft:entity.cow.hurt")
+          :deathSound("minecraft:entity.cow.death")
+          :drop("luatweaker:crystal_shard", 2, 5)
+          :experience(12)
+          :tickRate(10)
+          :onTick(function(ent)
+              -- Wisps flare up when a player looks at them (sensing primitive demo).
+              -- distanceTo() is pure math; canSee() is a line-of-sight raytrace,
+              -- so the cheap check runs first and tickRate stays at 2x/s.
+              local allPlayers = Players.GetPlayers()
+              for i = 1, #allPlayers do
+                  local player = allPlayers[i]
+                  if ent:distanceTo(player) <= 12.0 and ent:canSee(player) then
+                      ent:spawnParticle("minecraft:end_rod", 1, 0.1)
+                      break
+                  end
+              end
+          end)
+          :onHurt(function(ent, amount, attacker)
+              -- Wisps resist half of every hit; nil would keep the damage.
+              return amount * 0.5
+          end)
+          :onDeath(function(ent, killer)
+              print("[LuaTweakerTest] Crystal Wisp dissipated.")
+              return false
+          end)
+          :onInteract(function(ent, player)
+              player:sendActionBar("§bThe wisp hums softly...")
+              return true
+          end)
+          :creativeTab("arcane_tab")
+end)
+
 -- ==== ENTITY: CRYSTAL CREEPER (native, wastes dweller) ====
 Content.createEntity("crystal_creeper", function(entity)
     entity:category("MONSTER")
@@ -339,4 +759,4 @@ Content.registerProjectile("crystal_bolt", {
     trailParticle = "minecraft:end_rod"
 })
 
-print("[LuaTweakerTest] Content registered: 11 items, 4 blocks, 1 boss entity, 1 creative tab")
+print("[LuaTweakerTest] Content registered: 14 items, 10 blocks, 1 fluid, 1 boss entity, 1 creative tab")

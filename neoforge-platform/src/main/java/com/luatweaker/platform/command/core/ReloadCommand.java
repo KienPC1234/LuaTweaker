@@ -64,14 +64,18 @@ public class ReloadCommand implements ILuaTweakerCommand {
 
     /** Reloads server DataPack (loot tables, recipes, tags). Triggers AddReloadListenerEvent -> Lua re-executes. */
     private void reloadDatapack(MinecraftServer server, ICommandSender sender, Runnable afterDatapack) {
+        // thenRun/exceptionally fire on a background thread: route every sender
+        // call (chat packets are thread-confined) back onto the server thread.
         server.reloadResources(server.getPackRepository().getSelectedIds())
-                .thenRun(() -> {
+                .thenRun(() -> server.execute(() -> {
                     sender.sendSuccess("§a[OK] DataPack reload complete.");
                     if (afterDatapack != null) afterDatapack.run();
-                })
+                }))
                 .exceptionally(ex -> {
-                    sender.sendError("DataPack reload failed: " + ex.getMessage());
-                    AsyncFileLogger.get().error("CMD", "DataPack reload error: " + ex.getMessage(), null);
+                    server.execute(() -> {
+                        sender.sendError("DataPack reload failed: " + ex.getMessage());
+                        AsyncFileLogger.get().error("CMD", "DataPack reload error: " + ex.getMessage(), null);
+                    });
                     return null;
                 });
     }

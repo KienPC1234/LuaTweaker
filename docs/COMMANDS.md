@@ -1,37 +1,48 @@
 # In-Game Commands Guide (`/lt` & `/luatweaker`)
 
-LuaTweaker provides in-game inspection, registry dumping, health diagnostics, and hot-reloading commands for modpack creators (Operator Permission Level 2).
+LuaTweaker provides health diagnostics and hot-reloading for modpack creators, plus top-level commands that Lua mods register themselves via `Commands:Register` (see `ICommandService`).
 
 ---
 
 ## Command Reference Table
 
-| Command | Category | Description |
+| Command | Permission | Description |
 | :--- | :--- | :--- |
-| `/lt hand` | Inspection | Inspects main-hand item (ID, count, NBT). If hand is empty, inspects targeted block in crosshair and outputs copyable Lua code. |
-| `/lt block` | Inspection | Detailed targeted block inspection (ID, state properties, light level, hardness, tile entity NBT). |
-| `/lt tags` | Inspection | Dumps all item or block tags for hand or crosshair target (`/lt tags hand` \| `/lt tags block`). |
-| `/lt inv` | Inspection | Dumps all items in player inventory with slot numbers and DSL snippets. |
-| `/lt doctor` | Diagnostics | Scans scripts for syntax errors, unmapped IDs, dead recipe references, instruction counts, and script health. |
-| `/lt dump mod <modid>` | Dumper | Dumps all items, blocks, and fluids of a specific mod into `lua/dumps/<modid>.txt`. |
-| `/lt dump items [modid]` | Dumper | Dumps registered item IDs to `lua/dumps/items.txt`. |
-| `/lt dump blocks [modid]` | Dumper | Dumps registered block IDs to `lua/dumps/blocks.txt`. |
-| `/lt dump tags` | Dumper | Dumps item and block tags to `lua/dumps/tags.txt`. |
-| `/lt log` | Diagnostics | Displays system memory usage, active custom content counts, and recipe metrics. |
-| `/lt reload` | System | Real-time hot-reloader for scripts, custom content, recipes, tooltips, tags, and commands. |
-| `/lt syntax` | Validation | Scans all stage files (`startup`, `server`, `client`) for compilation errors. |
-| `/lt stubs` | Type Stubs | Re-generates EmmyLua IDE type definition stubs (`.luatweaker/stubs/luatweaker-api.lua`). |
-| `/lt help` | Manual | Displays command help menu. |
+| `/lt reload [data\|resources\|all]` | op (2) | Hot-reload: DataPack + scripts (`data`, default), client resources note (`resources`), or both (`all`). New Lua command paths register live; deleted ones stop on next datapack reload (Brigadier has no unregister). |
+| `/lt hand` | op (2), players only | Inspects main-hand item (ID, count, NBT, tags). Empty hand inspects the targeted block (ID, state, tags) with clickable Lua snippets. |
+| `/lt syntax [path]` | op (2) | Syntax-checks Lua files without executing (default: `lua/server/`). Paths are contained to `lua/`. |
+| `/lt list [folder]` | all (0) | Lists `.lua` scripts in a folder (default: `server`). Paths are contained to `lua/`. |
+| `/lt debug [on\|off]` | owner (4) | Toggles debug mode (no arg prints state). |
+| `/lt doctor` | op (2) | Health diagnostics: engine, loaded mods, per-mod load errors, update checks, services, Lua tasks, Lua-registered commands. |
+| `/lt dimension <list\|info <id>\|tp <id>\|bench <id> [radius]>` | op (2) | Lists Lua-registered dimensions, prints config, teleports the player (`tp` is players only), and measures the Lua terrain pipeline (`bench`, radius 0-8). |
+| `/lt help` | all (0) | Lists core commands plus every live Lua-registered command (`/<name>`, mod, op level). |
+| `/<mod-command> [args]` | per definition | Top-level commands from `Commands:Register("name", {...})`; slash-separated names nest (`shop/buy`). Hidden from tab-complete and rejected at parse time without the required op level. |
+
+---
+
+## Lua-Mod Commands (`Commands:Register`)
+
+```lua
+local Commands = require("LuaTweaker.Commands") -- service name is "Commands"
+
+Commands:Register("greet", {
+    Description = "Say hello",     -- shown in /lt help
+    PermissionLevel = 0,          -- 0 all, 2 op (default), 4 owner; must be an integer
+    ConsoleAllowed = true,         -- false = players only (default true)
+    Usage = "/greet <name>",       -- sent to the sender when the handler fails
+    Aliases = { "hi" },            -- extra paths to the same command
+    Suggestions = { "steve" },     -- or function(sender, args) -> table
+    Handler = function(sender, args, raw)
+        sender:SendMessage("Hi " .. (args[1] or "stranger"))
+        return true                -- false = Brigadier failure (+ Usage hint)
+    end,
+})
+```
+
+Rules: same mod re-registering replaces (reload-safe); another mod's name/path/alias is rejected loudly; reserved names (`lt`, `luatweaker`, `reload`, `hand`, `syntax`, `list`, `debug`, `doctor`, `help`) and vanilla-occupied roots are rejected. `Commands:Unregister("name")` removes the definition and its aliases (aliases resolve to the primary, so unregistering by alias works too); the Brigadier node itself persists until the next datapack reload and reports "not registered" meanwhile.
 
 ---
 
 ## Doctor Diagnostics Output
 
-Running `/lt doctor` performs an in-game health check:
-
-```
-=== LuaTweaker Script Doctor Diagnostics ===
-[SUCCESS] Syntax Check: All stage scripts passed syntax validation!
-[SUCCESS] Active Registrations: Items=2, Blocks=1, Recipes=15, Tooltips=4
-[SUCCESS] Memory Health: System operating within normal RAM thresholds.
-```
+`/lt doctor` prints engine state, loaded LuaMods with per-mod load errors (including `net.http` permission holders), declared/available update checks, service count, Lua task queue stats, and every Lua-registered command with mod, op level, console flag and aliases.

@@ -404,6 +404,117 @@ public class NeoForgeEntityWrapper implements IEntity {
         if (entity instanceof LivingEntity living) living.swing(InteractionHand.MAIN_HAND);
     }
 
+    @Override
+    public void setPose(String pose) {
+        if (entity == null || pose == null || pose.isBlank()) {
+            return;
+        }
+        String clean = pose.strip().toUpperCase();
+        try {
+            entity.setPose(net.minecraft.world.entity.Pose.valueOf(clean));
+        } catch (IllegalArgumentException e) {
+            StringBuilder known = new StringBuilder();
+            for (net.minecraft.world.entity.Pose p : net.minecraft.world.entity.Pose.values()) {
+                if (known.length() > 0) {
+                    known.append(", ");
+                }
+                known.append(p.name());
+            }
+            throw new IllegalArgumentException("unknown pose '" + pose + "' (use one of: " + known + ")");
+        }
+    }
+
+    @Override
+    public String getPose() {
+        if (entity == null) {
+            return "STANDING";
+        }
+        try {
+            net.minecraft.world.entity.Pose pose = entity.getPose();
+            return pose == null ? "STANDING" : pose.name();
+        } catch (Exception e) {
+            return "STANDING";
+        }
+    }
+
+    @Override
+    public boolean canSee(IEntity target) {
+        if (entity instanceof LivingEntity living && target != null
+                && target.getRawEntity() instanceof Entity targetEntity) {
+            try {
+                return living.hasLineOfSight(targetEntity);
+            } catch (Exception e) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public void stopMoving() {
+        if (entity instanceof Mob mob) {
+            try {
+                mob.getNavigation().stop();
+            } catch (Exception e) {
+                com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                        "stopMoving failed: " + e.getMessage());
+            }
+        } else if (entity != null) {
+            entity.setDeltaMovement(0, 0, 0);
+        }
+    }
+
+    @Override
+    public void lookAt(double x, double y, double z) {
+        if (entity != null) {
+            com.luatweaker.platform.interaction.EntityInteractionHelper.lookAt(this, x, y, z);
+        }
+    }
+
+    @Override
+    public void lookAtEntity(@NotNull IEntity target) {
+        if (entity != null && target != null) {
+            com.luatweaker.platform.interaction.EntityInteractionHelper.lookAt(this, target);
+        }
+    }
+
+    @Override
+    public void jump() {
+        if (entity instanceof Mob mob) {
+            try {
+                mob.getJumpControl().jump();
+            } catch (Exception e) {
+                com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                        "jump failed: " + e.getMessage());
+            }
+        }
+    }
+
+    @Override
+    public long getGameTime() {
+        if (entity != null && entity.level() != null) {
+            try {
+                return entity.level().getGameTime();
+            } catch (Exception e) {
+                com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                        "getGameTime failed: " + e.getMessage());
+            }
+        }
+        return 0;
+    }
+
+    @Override
+    public boolean isNavigating() {
+        if (entity instanceof Mob mob) {
+            try {
+                return mob.getNavigation().isInProgress();
+            } catch (Exception e) {
+                return false;
+            }
+        }
+        return false;
+    }
+
     @Override public void setTarget(IEntity target) {
         if (entity instanceof Mob mob) {
             if (target != null && target.getRawEntity() instanceof LivingEntity livingTarget) {

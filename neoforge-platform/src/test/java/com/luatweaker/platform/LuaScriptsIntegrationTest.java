@@ -20,6 +20,9 @@ import org.junit.jupiter.api.Test;
 import java.io.File;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class LuaScriptsIntegrationTest {
@@ -71,9 +74,9 @@ public class LuaScriptsIntegrationTest {
         });
 
         Platform.setNetwork(new com.luatweaker.api.pal.IPlatformNetwork() {
-            public void sendPayloadPacket(String u, String c, String d) {}
-            public void broadcastPayloadPacket(String c, String d) {}
-            public void sendPayloadPacketToServer(String c, String d) {}
+            public void sendPayloadBytes(String u, String c, byte[] d) {}
+            public void broadcastPayloadBytes(String c, byte[] d) {}
+            public void sendPayloadBytesToServer(String c, byte[] d) {}
         });
 
         Platform.setStorage(new com.luatweaker.api.pal.IPlatformStorage() {
@@ -117,6 +120,17 @@ public class LuaScriptsIntegrationTest {
             public void addMeleeAttackGoal(com.luatweaker.api.entity.IEntity e, int p, double s, boolean m) {}
             public void addHurtByTargetGoal(com.luatweaker.api.entity.IEntity e, int p) {}
             public void addNearestAttackableTargetGoal(com.luatweaker.api.entity.IEntity e, int p, String t) {}
+            public void addFloatGoal(com.luatweaker.api.entity.IEntity e, int p) {}
+            public void addWanderGoal(com.luatweaker.api.entity.IEntity e, int p, double s) {}
+            public void addLookAtGoal(com.luatweaker.api.entity.IEntity e, int p, double d, String t) {}
+            public void addLookAroundGoal(com.luatweaker.api.entity.IEntity e, int p) {}
+            public void addPanicGoal(com.luatweaker.api.entity.IEntity e, int p, double s) {}
+            public void addAvoidGoal(com.luatweaker.api.entity.IEntity e, int p, String t, double d, double w, double s) {}
+            public void addLeapGoal(com.luatweaker.api.entity.IEntity e, int p, double s) {}
+            public void addBreakDoorGoal(com.luatweaker.api.entity.IEntity e, int p, boolean h) {}
+            public void addTemptGoal(com.luatweaker.api.entity.IEntity e, int p, double s, String item) {}
+            public void addMoveToTargetGoal(com.luatweaker.api.entity.IEntity e, int p, double s, double m) {}
+            public java.util.List<java.util.Map<String, Object>> listGoals(com.luatweaker.api.entity.IEntity e) { return java.util.List.of(); }
             public com.luatweaker.api.entity.IPlayer getPlayer(String u) { return null; }
             public java.util.List<com.luatweaker.api.entity.IPlayer> getAllPlayers() { return java.util.List.of(); }
             public Object spawnEntity(String e, double x, double y, double z) { return null; }
@@ -148,14 +162,168 @@ public class LuaScriptsIntegrationTest {
                 "Failed executing autonomous LuaMods in " + baseDir.getAbsolutePath()
                         + ": " + LuaModManager.getLoadErrors());
 
+        // Showcase worlds must register through their real pipelines (chunk batch, height spec,
+        // density spec) or the test scripts are silently not exercising the new APIs.
+        Object dimensionService = LuaServiceRegistry.get("DimensionServiceImpl");
+        assertTrue(dimensionService instanceof com.luatweaker.dimension.DimensionServiceImpl,
+                "DimensionServiceImpl should be registered after loading the test mod");
+        com.luatweaker.dimension.DimensionServiceImpl dimensions =
+                (com.luatweaker.dimension.DimensionServiceImpl) dimensionService;
+        assertTrue(dimensions.getDimensionIds().containsAll(java.util.List.of(
+                        "luatweaker:grand_wilds", "luatweaker:alpine_spec", "luatweaker:sky_isles")),
+                "vanilla showcase worlds missing: " + dimensions.getDimensionIds());
+        assertEquals(com.luatweaker.dimension.DimensionServiceImpl.TerrainMode.CHUNK,
+                dimensions.getTerrainMode("luatweaker:grand_wilds"));
+        assertTrue(dimensions.hasBiomeBatch("luatweaker:grand_wilds"));
+        assertEquals(com.luatweaker.dimension.DimensionServiceImpl.TerrainMode.SPEC,
+                dimensions.getTerrainMode("luatweaker:alpine_spec"));
+        assertNotNull(dimensions.getTerrainSpec("luatweaker:alpine_spec"));
+        assertNotNull(dimensions.getTerrainSpec("luatweaker:sky_isles").density(),
+                "sky_isles must use the 3D density pipeline");
+        assertFalse(dimensions.getTerrainSpec("luatweaker:sky_isles").water(),
+                "sky_isles must not fill water below the islands");
+
+        // The callbacks themselves must produce varied terrain (a flat world here means the
+        // chunk cache or a script edit collapsed the noise stack).
+        int wildsMin = Integer.MAX_VALUE;
+        int wildsMax = Integer.MIN_VALUE;
+        int wildsColumns = 0;
+        int wildsOcean = 0;
+        int wildsPeaks = 0;
+        java.util.List<Integer> wildsSamples = new java.util.ArrayList<>();
+        for (int chunkX = -32; chunkX <= 32; chunkX += 8) {
+            for (int chunkZ = -32; chunkZ <= 32; chunkZ += 8) {
+                com.luatweaker.dimension.DimensionServiceImpl.ChunkTerrainResult chunk =
+                        dimensions.computeChunkTerrain("luatweaker:grand_wilds", chunkX, chunkZ);
+                for (int height : chunk.heights()) {
+                    wildsMin = Math.min(wildsMin, height);
+                    wildsMax = Math.max(wildsMax, height);
+                    if (height < 62) wildsOcean++;
+                    if (height > 122) wildsPeaks++;
+                    wildsSamples.add(height);
+                    wildsColumns++;
+                }
+            }
+        }
+        double oceanFraction = (double) wildsOcean / wildsColumns;
+        double peakFraction = (double) wildsPeaks / wildsColumns;
+        java.util.Collections.sort(wildsSamples);
+        int medianHeight = wildsSamples.get(wildsSamples.size() / 2);
+        assertTrue(wildsMax - wildsMin > 50,
+                "grand_wilds terrain is flat: " + wildsMin + ".." + wildsMax);
+        assertTrue(medianHeight > 80 && medianHeight < 170,
+                "grand_wilds median height is not land: " + medianHeight);
+        assertTrue(oceanFraction > 0.03 && oceanFraction < 0.40,
+                "grand_wilds ocean/river fraction out of range: " + oceanFraction);
+        assertTrue(peakFraction > 0.03,
+                "grand_wilds has no high mountains: " + peakFraction);
+
+        com.luatweaker.dimension.TerrainSampler skySampler =
+                dimensions.createTerrainSampler("luatweaker:sky_isles");
+        assertNotNull(skySampler);
+        int minTop = Integer.MAX_VALUE;
+        int maxTop = Integer.MIN_VALUE;
+        int voidColumns = 0;
+        int skyColumns = 0;
+        for (int chunkX = 8; chunkX <= 10; chunkX++) {
+            for (int chunkZ = 8; chunkZ <= 10; chunkZ++) {
+                com.luatweaker.dimension.DensityField field =
+                        skySampler.sampleDensity(chunkX, chunkZ, -64, 320);
+                for (int z = 0; z < 16; z++) {
+                    for (int x = 0; x < 16; x++) {
+                        int top = field.topSolid(x, z);
+                        if (top < -64) {
+                            voidColumns++;
+                        } else {
+                            minTop = Math.min(minTop, top);
+                            maxTop = Math.max(maxTop, top);
+                        }
+                        skyColumns++;
+                    }
+                }
+            }
+        }
+        double voidFraction = (double) voidColumns / skyColumns;
+        assertTrue(maxTop - minTop > 10,
+                "sky_isles density is flat: " + minTop + ".." + maxTop);
+        assertTrue(voidFraction > 0.45 && voidFraction < 0.92,
+                "sky_isles is not an island field, void fraction=" + voidFraction);
+
+        // River/lake quality: a wide, shallow valley must not be a one-block chasm. The old
+        // lake carve produced 130-block drops next to a single water column.
+        int riverChunks = 9;
+        int riverBase = -4;
+        int riverSize = riverChunks * 16;
+        int[][] riverHeights = new int[riverSize][riverSize];
+        for (int cx = 0; cx < riverChunks; cx++) {
+            for (int cz = 0; cz < riverChunks; cz++) {
+                com.luatweaker.dimension.DimensionServiceImpl.ChunkTerrainResult chunk =
+                        dimensions.computeChunkTerrain("luatweaker:grand_wilds",
+                                riverBase + cx, riverBase + cz);
+                for (int z = 0; z < 16; z++) {
+                    for (int x = 0; x < 16; x++) {
+                        riverHeights[cz * 16 + z][cx * 16 + x] = chunk.heights()[z * 16 + x];
+                    }
+                }
+            }
+        }
+        java.util.List<Integer> bankDrops = new java.util.ArrayList<>();
+        java.util.List<Integer> riverWidths = new java.util.ArrayList<>();
+        int waterColumns = 0;
+        for (int z = 0; z < riverSize; z++) {
+            int x = 0;
+            while (x < riverSize) {
+                if (riverHeights[z][x] >= 62) {
+                    x++;
+                    continue;
+                }
+                int start = x;
+                int bed = riverHeights[z][x];
+                while (x < riverSize && riverHeights[z][x] < 62) {
+                    bed = Math.min(bed, riverHeights[z][x]);
+                    waterColumns++;
+                    x++;
+                }
+                int end = x - 1;
+                if (start == 0 || end == riverSize - 1) continue;
+                int width = end - start + 1;
+                if (width > 48) continue; // ocean / large lake
+                int bank = Math.min(riverHeights[z][start - 1], riverHeights[z][end + 1]) - bed;
+                bankDrops.add(bank);
+                riverWidths.add(width);
+            }
+        }
+        java.util.Collections.sort(bankDrops);
+        java.util.Collections.sort(riverWidths);
+        int maxBankDrop = bankDrops.isEmpty() ? 0 : bankDrops.get(bankDrops.size() - 1);
+        int p95BankDrop = bankDrops.isEmpty() ? 0 : bankDrops.get((int) (bankDrops.size() * 0.95));
+        int medianRiverWidth = riverWidths.isEmpty() ? 0 : riverWidths.get(riverWidths.size() / 2);
+        int p95RiverWidth = riverWidths.isEmpty() ? 0 : riverWidths.get((int) (riverWidths.size() * 0.95));
+        int p50BankDrop = bankDrops.isEmpty() ? 0 : bankDrops.get(bankDrops.size() / 2);
+        long narrowRuns = riverWidths.stream().filter(w -> w <= 2).count();
+        double riverWaterFraction = (double) waterColumns / (riverSize * riverSize);
+        assertTrue(bankDrops.size() > 10, "no rivers found in the sample");
+        assertTrue(riverWaterFraction > 0.01 && riverWaterFraction < 0.30,
+                "river/lake water fraction out of range: " + riverWaterFraction);
+        assertTrue(maxBankDrop <= 45,
+                "river/lake bank drop too deep: " + maxBankDrop + " blocks (p95=" + p95BankDrop + ")");
+        assertTrue(p50BankDrop <= 10 && p95BankDrop <= 20,
+                "river banks are cliffs: p50=" + p50BankDrop + " p95=" + p95BankDrop);
+        assertTrue(medianRiverWidth >= 2,
+                "rivers are one-block cuts, median width=" + medianRiverWidth);
+        assertTrue(p95RiverWidth >= 4,
+                "rivers are too narrow, p95 width=" + p95RiverWidth);
+        assertTrue(narrowRuns < riverWidths.size() / 4,
+                "too many one-block rivers: " + narrowRuns + "/" + riverWidths.size());
+
         // Verify Network RemoteEvent Firing & Execution
         Object netService = LuaServiceRegistry.get("NetworkServiceImpl");
         assertTrue(netService instanceof com.luatweaker.network.NetworkServiceImpl, "NetworkServiceImpl should be registered");
 
         com.luatweaker.network.NetworkServiceImpl ns = (com.luatweaker.network.NetworkServiceImpl) netService;
-        assertDoesNotThrow(() -> ns.OnClientFired("StaffSwapSkill", "dummy-uuid", new com.luatweaker.api.vm.ILuaValue[0]),
+        assertDoesNotThrow(() -> ns.OnClientFired("StaffSwapSkill", "dummy-uuid", new byte[0]),
                 "StaffSwapSkill packet firing failed");
-        assertDoesNotThrow(() -> ns.OnClientFired("StaffCastSkill", "dummy-uuid", new com.luatweaker.api.vm.ILuaValue[0]),
+        assertDoesNotThrow(() -> ns.OnClientFired("StaffCastSkill", "dummy-uuid", new byte[0]),
                 "StaffCastSkill packet firing failed");
     }
 

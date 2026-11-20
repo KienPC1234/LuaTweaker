@@ -294,6 +294,20 @@ public class ItemBuilderImpl implements IItemBuilder {
         return this;
     }
 
+    private com.luatweaker.api.content.GeoModelSpec geoModel;
+
+    @Override
+    public IItemBuilder geoModel(String modelPath, String texturePath, String animationPath, @org.jetbrains.annotations.Nullable String defaultAnimation) {
+        this.geoModel = new com.luatweaker.api.content.GeoModelSpec(modelPath, texturePath, animationPath, defaultAnimation);
+        return this;
+    }
+
+    @Override
+    @org.jetbrains.annotations.Nullable
+    public com.luatweaker.api.content.GeoModelSpec getGeoModel() {
+        return geoModel;
+    }
+
     @Override public String getId() { return id; }
     @Override public String getType() { return type; }
     @Override public int getMaxStackSize() { return maxStackSize; }

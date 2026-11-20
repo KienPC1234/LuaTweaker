@@ -217,7 +217,8 @@ public class LuaTweakerCommandRegistry {
     /**
      * Pure reload-diff for one candidate path. Priority: same-cycle duplicates
      * stay loud (a mod typo must not vanish), previous-cycle paths skip quietly,
-     * vanilla-occupied prefixes stay loud.
+     * own live roots merge quietly (a new sibling under our own earlier-cycle
+     * root extends it instead of colliding), everything else occupied stays loud.
      */
     static PathDecision decidePath(String path, Set<String> occupied, Set<String> justAdded,
                                    Set<String> registeredLuaPaths) {
@@ -232,11 +233,29 @@ public class LuaTweakerCommandRegistry {
         for (String segment : segments) {
             if (prefix.length() > 0) prefix.append('/');
             prefix.append(segment);
+            if (prefix.indexOf("/") < 0 && isOwnLiveRoot(prefix.toString(), registeredLuaPaths)) {
+                continue;
+            }
             if (occupied.contains(prefix.toString())) {
                 return PathDecision.REJECT_OCCUPIED;
             }
         }
         return PathDecision.REGISTER;
+    }
+
+    /**
+     * Whether a root literal was registered by Lua in an earlier cycle (i.e. it
+     * is the first segment of a live Lua path). Merging a new sibling under it
+     * is safe; stepping into a vanilla/foreign root is not. Pure string logic
+     * so reload diffing stays unit-testable.
+     */
+    static boolean isOwnLiveRoot(String root, Set<String> registeredLuaPaths) {
+        for (String live : registeredLuaPaths) {
+            if (live.equals(root) || live.startsWith(root + "/")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -296,12 +315,31 @@ public class LuaTweakerCommandRegistry {
     private LiteralArgumentBuilder<CommandSourceStack> buildLuaPathNode(ILuaTweakerCommand cmd,
                                                                         String[] segments,
                                                                         int index) {
-        LiteralArgumentBuilder<CommandSourceStack> literal = Commands.literal(segments[index]);
+        LiteralArgumentBuilder<CommandSourceStack> literal = Commands.literal(segments[index])
+                // Live permission gate: hidden from tab-complete and rejected at
+                // parse time for unauthorized senders (the wrapper re-checks at
+                // execution too, so a /lt reload that changes the level applies
+                // immediately). Without this every op-4 command name and its
+                // suggestions would leak to level-0 players.
+                .requires(src -> hasLuaPermission(src, cmd));
         if (index == segments.length - 1) {
             return literal
                     .then(buildArgsNode(cmd))
                     .executes(ctx -> cmd.executeRaw(new NeoForgeCommandSender(ctx.getSource()), ""));
         }
         return literal.then(buildLuaPathNode(cmd, segments, index + 1));
+    }
+
+    /**
+     * Reads the command's CURRENT permission level (Lua definitions resolve
+     * live, so reloads apply without re-registering nodes). Never throws:
+     * a broken lookup fails closed.
+     */
+    private static boolean hasLuaPermission(CommandSourceStack src, ILuaTweakerCommand cmd) {
+        try {
+            return new NeoForgeCommandSender(src).hasPermission(cmd.getPermissionLevel());
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

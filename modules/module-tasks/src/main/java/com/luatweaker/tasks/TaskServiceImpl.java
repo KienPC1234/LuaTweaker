@@ -10,32 +10,55 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Comparator;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 
 /**
  * Java-side scheduler for Lua callbacks, ticked by {@code task._java_tick}. The bootstrap
  * {@code task.spawn}/{@code task.delay} Lua implementation is the primary scheduler; this
  * service exists for Java code that needs to enqueue a Lua callback without re-entering the
  * Lua scheduler, and it surfaces counters for {@code /lt doctor}.
+ *
+ * <p>Deadlines use {@link System#nanoTime()} (monotonic), not the wall clock: an NTP
+ * correction or a user changing the system clock must not delay, advance or strand a
+ * scheduled callback.</p>
  */
 public class TaskServiceImpl implements ITaskService {
 
     private static final int MAX_QUEUED_TASKS = 10_000;
     private static final int MAX_TASKS_PER_TICK = 1_000;
     private static final long SLOW_TASK_NANOS = 25_000_000L;
+    private static final double NANOS_PER_SECOND = 1_000_000_000.0;
 
+    private final LongSupplier nanoClock;
     private final AtomicLong droppedTasks = new AtomicLong();
     private final AtomicLong slowTasks = new AtomicLong();
     private final AtomicLong executedTasks = new AtomicLong();
     private final Queue<PendingTask> deferredTasks = new ConcurrentLinkedQueue<>();
     private final PriorityBlockingQueue<PendingTask> delayedTasks =
-            new PriorityBlockingQueue<>(11, Comparator.comparingLong(PendingTask::triggerTimeMs));
+            new PriorityBlockingQueue<>(11, Comparator.comparingLong(PendingTask::triggerAtNanos));
+    /**
+     * Maintained by hand because {@link ConcurrentLinkedQueue#size()} walks the whole queue;
+     * calling it on every enqueue made a full queue quadratic.
+     */
+    private final AtomicInteger queuedTasks = new AtomicInteger();
     private volatile int lastTickExecuted;
 
-    private record PendingTask(long triggerTimeMs, ILuaValue task, ILuaValue[] args) {
+    private record PendingTask(long triggerAtNanos, ILuaValue task, ILuaValue[] args) {
+    }
+
+    public TaskServiceImpl() {
+        this(System::nanoTime);
+    }
+
+    /** Injectable clock for tests and for platforms with a different monotonic source. */
+    TaskServiceImpl(@NotNull LongSupplier nanoClock) {
+        this.nanoClock = Objects.requireNonNull(nanoClock, "nanoClock");
     }
 
     @Override
@@ -49,8 +72,11 @@ public class TaskServiceImpl implements ITaskService {
     public void delay(@NotNull ILuaEngine engine, double seconds, @NotNull ILuaValue task,
                       @Nullable ILuaValue[] args) {
         if (task.isFunction()) {
-            long triggerAt = System.currentTimeMillis() + Math.max(0L, (long) (seconds * 1000.0));
-            enqueue(delayedTasks, new PendingTask(triggerAt, task, args));
+            long delayNanos = 0L;
+            if (Double.isFinite(seconds) && seconds > 0.0) {
+                delayNanos = (long) Math.min(seconds * NANOS_PER_SECOND, (double) Long.MAX_VALUE / 4.0);
+            }
+            enqueue(delayedTasks, new PendingTask(nanoClock.getAsLong() + delayNanos, task, args));
         }
     }
 
@@ -63,8 +89,10 @@ public class TaskServiceImpl implements ITaskService {
 
     @Override
     public void cancel(@NotNull ILuaValue task) {
-        deferredTasks.removeIf(pending -> pending.task().equals(task));
-        delayedTasks.removeIf(pending -> pending.task().equals(task));
+        int removed = removeMatching(deferredTasks, task) + removeMatching(delayedTasks, task);
+        if (removed > 0) {
+            queuedTasks.addAndGet(-removed);
+        }
     }
 
     @Override
@@ -72,22 +100,34 @@ public class TaskServiceImpl implements ITaskService {
         int executed = 0;
         PendingTask pending;
         while (executed < MAX_TASKS_PER_TICK && (pending = deferredTasks.poll()) != null) {
+            queuedTasks.decrementAndGet();
             execute(engine, pending, "deferred");
             executed++;
         }
-        long now = System.currentTimeMillis();
-        while (executed < MAX_TASKS_PER_TICK
-                && (pending = delayedTasks.peek()) != null
-                && now >= pending.triggerTimeMs()) {
-            delayedTasks.poll();
-            execute(engine, pending, "delayed");
+        while (executed < MAX_TASKS_PER_TICK) {
+            PendingTask head = delayedTasks.peek();
+            if (head == null || nanoClock.getAsLong() < head.triggerAtNanos()) {
+                break;
+            }
+            PendingTask due = delayedTasks.poll();
+            if (due == null) {
+                break;
+            }
+            // Another thread may have inserted an earlier deadline between peek and poll;
+            // put it back instead of running a callback before its time.
+            if (nanoClock.getAsLong() < due.triggerAtNanos()) {
+                delayedTasks.add(due);
+                break;
+            }
+            queuedTasks.decrementAndGet();
+            execute(engine, due, "delayed");
             executed++;
         }
         lastTickExecuted = executed;
     }
 
     public int getQueuedTaskCount() {
-        return deferredTasks.size() + delayedTasks.size();
+        return queuedTasks.get();
     }
 
     public long getDroppedTaskCount() {
@@ -107,13 +147,28 @@ public class TaskServiceImpl implements ITaskService {
     }
 
     private void enqueue(Queue<PendingTask> queue, PendingTask task) {
-        if (getQueuedTaskCount() >= MAX_QUEUED_TASKS) {
+        if (queuedTasks.get() >= MAX_QUEUED_TASKS) {
             droppedTasks.incrementAndGet();
             LuaTweakerLog.get().warn(LogStage.RUNTIME_ERROR,
                     "Lua task queue limit reached (" + MAX_QUEUED_TASKS + "); dropping new task");
             return;
         }
+        // Count first: both queues are unbounded, so add() cannot fail, and the tick loop can
+        // never poll a task that the counter does not know about yet.
+        queuedTasks.incrementAndGet();
         queue.add(task);
+    }
+
+    private static int removeMatching(Queue<PendingTask> queue, ILuaValue task) {
+        int[] removed = {0};
+        queue.removeIf(pending -> {
+            if (pending.task().equals(task)) {
+                removed[0]++;
+                return true;
+            }
+            return false;
+        });
+        return removed[0];
     }
 
     private void execute(ILuaEngine engine, PendingTask pending, String kind) {

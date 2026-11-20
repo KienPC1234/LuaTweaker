@@ -10,6 +10,7 @@ public class Platform {
     private static IPlatformDimension dimension;
     private static IPlatformStructures structures;
     private static IPlatformCapability capability;
+    private static IPlatformWorldgen worldgen;
 
     public static void setNetwork(IPlatformNetwork instance) { network = instance; }
     public static void setEntity(IPlatformEntity instance) { entity = instance; }
@@ -20,6 +21,7 @@ public class Platform {
     public static void setDimension(IPlatformDimension instance) { dimension = instance; }
     public static void setStructures(IPlatformStructures instance) { structures = instance; }
     public static void setCapability(IPlatformCapability instance) { capability = instance; }
+    public static void setWorldgen(IPlatformWorldgen instance) { worldgen = instance; }
 
     public static IPlatformNetwork getNetwork() {
         if (network == null) throw new IllegalStateException("Platform network helper is not initialized!");
@@ -80,6 +82,11 @@ public class Platform {
     /** Nullable accessor: lightweight test platforms may not bridge block capabilities at all. */
     public static IPlatformCapability getCapabilityOrNull() {
         return capability;
+    }
+
+    public static IPlatformWorldgen getWorldgen() {
+        if (worldgen == null) throw new IllegalStateException("Platform worldgen helper is not initialized!");
+        return worldgen;
     }
 
     public static boolean isInitialized() {

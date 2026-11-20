@@ -94,8 +94,9 @@ public class DynamicJavaProxy {
             String key = args[1].toLuaString();
             if (key.isEmpty()) return LuaNil.NIL;
 
-            if (key.startsWith("is") && key.length() > 2) {
-                Method booleanGetter = findMethodCached(clazz, key);
+            if (key.length() > 2 && (key.startsWith("is") || key.startsWith("Is"))) {
+                String isMethodName = "is" + key.substring(2);
+                Method booleanGetter = findMethodCached(clazz, isMethodName);
                 if (booleanGetter != null && booleanGetter.getParameterCount() == 0
                         && (booleanGetter.getReturnType() == boolean.class
                             || booleanGetter.getReturnType() == Boolean.class)) {
@@ -114,6 +115,24 @@ public class DynamicJavaProxy {
             // like `event.Entity` yields a callable instead of the entity value.
             if (hasPublicMethodNamed(clazz, key)) {
                 return wrapMethod(state, javaObject, key);
+            }
+
+            // 1b. PascalCase method name (e.g. obj:GetCustomData(...) -> getCustomData(...), obj:PlayAnimation(...) -> playAnimation(...))
+            if (key.length() > 0 && Character.isUpperCase(key.charAt(0))) {
+                String decapped = Character.toLowerCase(key.charAt(0)) + key.substring(1);
+                if (hasPublicMethodNamed(clazz, decapped)) {
+                    Method m = findMethodCached(clazz, decapped);
+                    if (m != null && m.getParameterCount() == 0 && m.getReturnType() != void.class
+                            && !key.startsWith("Get") && !key.startsWith("Set")) {
+                        try {
+                            Object result = m.invoke(javaObject);
+                            return result == null ? LuaNil.NIL : wrapResultLuava(state, result);
+                        } catch (ReflectiveOperationException e) {
+                            throw LuaFunction.hostError("Error invoking getter for " + key + ": " + e.getMessage(), e);
+                        }
+                    }
+                    return wrapMethod(state, javaObject, decapped);
+                }
             }
 
             // 2. Property to Getter translation (e.g., "Health" or "health" -> "getHealth" / "isHealth")
@@ -334,6 +353,17 @@ public class DynamicJavaProxy {
 
     private static Object coerceLuaToJava(LuaValue luaVal, Class<?> targetType) {
         if (luaVal == null || luaVal.isNil()) return null;
+        if (targetType == Object.class) {
+            if (luaVal.isString()) return luaVal.toLuaString();
+            if (luaVal.isBoolean()) return luaVal.toBoolean();
+            if (luaVal.isNumber()) {
+                double d = luaVal.toDouble();
+                if (Math.rint(d) == d) return (long) d;
+                return d;
+            }
+            if (luaVal instanceof LuaUserdata userdata) return userdata.getJavaInstance();
+            return LuaDataConverter.toJava(luaVal, Object.class);
+        }
         if (targetType == String.class) return luaVal.toLuaString();
         if (targetType == int.class || targetType == Integer.class) return (int) luaVal.toLong();
         if (targetType == double.class || targetType == Double.class) return luaVal.toDouble();
@@ -345,6 +375,7 @@ public class DynamicJavaProxy {
 
     private static int compatibilityScore(LuaValue luaVal, Class<?> targetType) {
         if (luaVal == null || luaVal.isNil()) return targetType.isPrimitive() ? -1 : 4;
+        if (targetType == Object.class) return 10;
         if (targetType == String.class) return luaVal.isString() ? 0 : -1;
         if (targetType == boolean.class || targetType == Boolean.class) return luaVal.isBoolean() ? 0 : -1;
         if (targetType == int.class || targetType == Integer.class) {

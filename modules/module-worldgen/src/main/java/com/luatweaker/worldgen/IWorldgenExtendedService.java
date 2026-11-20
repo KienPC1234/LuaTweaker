@@ -102,9 +102,10 @@ public interface IWorldgenExtendedService {
     Map<String, String> getKnownDimensions();
 
     @LuaDoc(
-        description = "NOT SUPPORTED: querying live biome data requires a platform PAL capability that does "
-            + "not exist yet. Always throws UnsupportedOperationException (loud STUB); "
-            + "recorded as follow-up work. Use modifyBiome with explicit biome IDs instead.",
+        description = "Read a registered biome's live data from the server registry: temperature, "
+            + "downfall, precipitation, sky/fog/water colors, grass/foliage overrides and "
+            + "per-category spawn entries (entity, weight, minGroup, maxGroup). Throws for an "
+            + "unknown biome id; works only while a server is running.",
         params = {"biomeId: string"},
         returnType = "table"
     )

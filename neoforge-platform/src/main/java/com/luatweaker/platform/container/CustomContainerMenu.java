@@ -10,6 +10,7 @@ import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -44,6 +45,7 @@ public class CustomContainerMenu extends AbstractContainerMenu {
     private int blockPosX;
     private int blockPosY;
     private int blockPosZ;
+    private final Map<String, Integer> customValues = new java.util.HashMap<>();
 
     public CustomContainerMenu(@Nullable MenuType<?> menuType, int containerId, @NotNull Inventory playerInventory,
                               @NotNull Container container, int containerRows, int containerCols) {
@@ -96,6 +98,26 @@ public class CustomContainerMenu extends AbstractContainerMenu {
         addMachineDataSlot(() -> machine != null ? machine.getBlockPos().getX() : 0, v -> blockPosX = v);
         addMachineDataSlot(() -> machine != null ? machine.getBlockPos().getY() : 0, v -> blockPosY = v);
         addMachineDataSlot(() -> machine != null ? machine.getBlockPos().getZ() : 0, v -> blockPosZ = v);
+
+        if (menuType != null) {
+            List<com.luatweaker.api.content.MachineBarSpec> bars = CustomContainerRegistry.CONTAINER_BARS.get(menuType);
+            if (bars != null) {
+                for (com.luatweaker.api.content.MachineBarSpec bar : bars) {
+                    if (bar.currentKey() != null) {
+                        String k = bar.currentKey();
+                        addMachineDataSlot(() -> machine != null ? machine.getCustomNumericValue(k) : 0, v -> customValues.put(k, v));
+                    }
+                    if (bar.maxKey() != null) {
+                        String mk = bar.maxKey();
+                        addMachineDataSlot(() -> machine != null ? machine.getCustomNumericValue(mk) : 0, v -> customValues.put(mk, v));
+                    }
+                }
+            }
+        }
+    }
+
+    public int getCustomValue(@Nullable String key) {
+        return key != null ? customValues.getOrDefault(key, 0) : 0;
     }
 
     private void addMachineDataSlot(java.util.function.IntSupplier reader, java.util.function.IntConsumer writer) {

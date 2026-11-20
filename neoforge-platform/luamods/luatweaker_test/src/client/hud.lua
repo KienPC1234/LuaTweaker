@@ -155,4 +155,39 @@ GuiService.OnRenderHUD:Connect(function(dt)
     end
 end)
 
+-- ==== ORE & ENERGY HIGHLIGHT SCANNER (3D In-World Render) ====
+local highlightOresEvent = Network:GetOrCreateRemoteEvent("HighlightOres")
+local activeHighlights = {}
+
+highlightOresEvent.OnClientEvent:Connect(function(blocks)
+    if type(blocks) == "table" then
+        local now = task.getTimeClock()
+        for _, b in ipairs(blocks) do
+            b._expire = now + 6.0
+            table.insert(activeHighlights, b)
+        end
+    end
+end)
+
+local RenderService = require("LuaTweaker.RenderService")
+if type(Client) == "table" and type(Client.OnRenderWorld) == "table" and RenderService then
+    Client.OnRenderWorld:Connect(function(dt)
+        local now = task.getTimeClock()
+        local remaining = {}
+        for _, b in ipairs(activeHighlights) do
+            if b._expire and b._expire > now then
+                table.insert(remaining, b)
+                local color = 0xAA00FFFF
+                if b.Id and string.find(b.Id, "ore") then
+                    color = 0xAAFFD700
+                elseif b.Id and (string.find(b.Id, "generator") or string.find(b.Id, "battery")) then
+                    color = 0xAA00FF66
+                end
+                RenderService:HighlightBlock(b.X, b.Y, b.Z, color)
+            end
+        end
+        activeHighlights = remaining
+    end)
+end
+
 print("[LuaTweakerTest] Client HUD loaded: Mana bar + 4 skill slots")

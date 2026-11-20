@@ -58,10 +58,15 @@ public class LuavaLuaValue implements ILuaValue {
 
     @Override
     public int asInt() {
+        if (value.isInteger()) {
+            try {
+                return (int) value.toLong();
+            } catch (Exception ignored) {
+                return (int) (long) value.toDouble();
+            }
+        }
         if (value.isNumber()) {
-            // long -> int wraps (Lua 5.1 behavior); double -> int saturates, which
-            // would turn 0xFF00E676 into Integer.MAX_VALUE instead of its bit pattern.
-            return (int) value.toLong();
+            return (int) (long) value.toDouble();
         }
         Double parsed = parseNumericString();
         return parsed != null ? (int) parsed.longValue() : 0;

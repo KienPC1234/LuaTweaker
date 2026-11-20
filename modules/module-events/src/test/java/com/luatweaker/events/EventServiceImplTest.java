@@ -70,4 +70,31 @@ public class EventServiceImplTest {
         assertDoesNotThrow(() -> service.fireEvent("TestEvent", engine.createTable()),
                 "fireEvent must ignore listener return values");
     }
+
+    @Test
+    void listen_IgnoresNonFunctionCallbacks() {
+        service.listen("BadCallbackEvent", "not a function");
+
+        assertDoesNotThrow(() -> service.fireEvent("BadCallbackEvent", engine.createTable()));
+        assertTrue(service.fireCancellable("BadCallbackEvent", engine.createTable()),
+                "a non-function callback must never run or cancel an event");
+        assertFalse(service.hasListeners("BadCallbackEvent"),
+                "a rejected callback must not count as a listener");
+    }
+
+    @Test
+    void hasListeners_TracksListenAcrossEngines() {
+        com.luatweaker.events.EventLuaBinding.registerBindings(engine);
+        assertFalse(service.hasListeners("TickOptProbeEvent"),
+                "fresh event must report no listeners");
+
+        engine.executeString(
+            "Events:Listen('TickOptProbeEvent', function() end)\n",
+            "test_has_listeners");
+        assertTrue(service.hasListeners("TickOptProbeEvent"),
+                "registered listener must be visible to the hot-path guard");
+
+        assertFalse(service.hasListeners("TickOptUnlistenedEvent"),
+                "an event nobody listens to must report no listeners");
+    }
 }

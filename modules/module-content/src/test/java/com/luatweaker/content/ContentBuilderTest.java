@@ -549,4 +549,34 @@ public class ContentBuilderTest {
         assertNotNull(builder.getButtonClickHandler());
         assertNotNull(builder.getNeighborChangedHandler());
     }
+
+    @Test
+    public void testBlockCustomBarFromLua() throws IOException {
+        String script = """
+            local startup = require("LuaTweaker.Startup")
+            startup:createBlock("fusion_reactor", function(block)
+                block:container(3, 3)
+                     :customBar("heat_gauge", 10, 20, 16, 50, "CoreHeat", "MaxHeat", 0xFF4400, "Core: %d / %d C")
+            end)
+        """;
+        File file = createTempScript(script);
+        engine.executeScript(file, "TEST");
+
+        IBlockBuilder builder = contentService.getRegisteredBlocks().stream()
+                .filter(b -> b.getId().equals("fusion_reactor"))
+                .findFirst().orElse(null);
+        assertNotNull(builder);
+        assertEquals(1, builder.getGuiBars().size());
+        var bar = builder.getGuiBars().get(0);
+        assertEquals("heat_gauge", bar.id());
+        assertEquals(10, bar.x());
+        assertEquals(20, bar.y());
+        assertEquals(16, bar.width());
+        assertEquals(50, bar.height());
+        assertEquals("custom", bar.source());
+        assertEquals("CoreHeat", bar.currentKey());
+        assertEquals("MaxHeat", bar.maxKey());
+        assertEquals(0xFF4400, bar.color());
+        assertEquals("Core: %d / %d C", bar.tooltipFormat());
+    }
 }

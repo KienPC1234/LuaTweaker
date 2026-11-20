@@ -2,6 +2,7 @@ package com.luatweaker.api.noise;
 
 import com.luatweaker.api.annotation.LuaDefault;
 import com.luatweaker.api.annotation.LuaDoc;
+import com.luatweaker.api.vm.ILuaValue;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -91,4 +92,36 @@ public interface INoiseService {
                 @LuaDefault("4") int octaves,
                 @LuaDefault("2.0") double lacunarity,
                 @LuaDefault("0.5") double gain);
+
+    @LuaDoc(
+        description = "Sample a 2D noise field over a width x height grid in ONE native call. Returns a "
+            + "1-indexed array, index = z * width + x + 1 (x fastest). spec: "
+            + "{ kind = 'fbm'|'simplex'|'ridged'|'voronoi'|'warped_fbm', octaves, lacunarity, gain, "
+            + "frequency, jitter, returnType, warpStrength (block displacement), warpFrequency }. Use this instead of "
+            + "width * height separate calls when building terrain for a chunk.",
+        params = {"x0: number - world X of the first sample",
+                  "z0: number - world Z of the first sample",
+                  "width: number - samples along X (1..1024)",
+                  "height: number - samples along Z (1..1024)",
+                  "spec: table - noise stack configuration"},
+        returnType = "table"
+    )
+    @NotNull
+    double[] fill2D(double x0, double z0, int width, int height, @NotNull ILuaValue spec);
+
+    @LuaDoc(
+        description = "Sample a 3D noise field over a sizeX x sizeY x sizeZ grid in ONE native call. Returns a "
+            + "1-indexed array, index = (y * sizeZ + z) * sizeX + x + 1 (x fastest). spec: "
+            + "{ kind = 'fbm3'|'simplex3', octaves, lacunarity, gain, frequency }. Use this for caves, "
+            + "overhangs and true 3D terrain instead of per-block calls.",
+        params = {"x0: number", "y0: number", "z0: number",
+                  "sizeX: number - samples along X (1..256)",
+                  "sizeY: number - samples along Y (1..256)",
+                  "sizeZ: number - samples along Z (1..256)",
+                  "spec: table - 3D noise stack configuration"},
+        returnType = "table"
+    )
+    @NotNull
+    double[] fill3D(double x0, double y0, double z0, int sizeX, int sizeY, int sizeZ,
+                    @NotNull ILuaValue spec);
 }

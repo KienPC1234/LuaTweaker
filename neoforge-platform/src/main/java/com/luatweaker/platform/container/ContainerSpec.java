@@ -38,7 +38,8 @@ public record ContainerSpec(
         boolean isContainer,
         String facing,
         List<BoxSpec> boxes,
-        BiConsumer<Object, Object> renderHandler) {
+        BiConsumer<Object, Object> renderHandler,
+        com.luatweaker.api.content.GeoModelSpec geoModel) {
 
     /** Defaults for blocks that have a block entity but no container grid (pipes, simple machines). */
     private static final int DEFAULT_ROWS = 1;
@@ -64,7 +65,33 @@ public record ContainerSpec(
             BiConsumer<Object, Object> tickHandler) {
         this(rows, cols, dropMode, texture, useDistance, slotPositions, lockedSlots, slotTexture,
                 energyCapacity, energyMaxReceive, energyMaxExtract, fluidCapacity, bars, booleanState,
-                connections, tickHandler, rows > 0, "NONE", List.of(), null);
+                connections, tickHandler, rows > 0, "NONE", List.of(), null, null);
+    }
+
+    public ContainerSpec(
+            int rows,
+            int cols,
+            String dropMode,
+            String texture,
+            double useDistance,
+            Map<Integer, int[]> slotPositions,
+            Set<Integer> lockedSlots,
+            String slotTexture,
+            int energyCapacity,
+            int energyMaxReceive,
+            int energyMaxExtract,
+            int fluidCapacity,
+            List<MachineBarSpec> bars,
+            BooleanStateSpec booleanState,
+            boolean connections,
+            BiConsumer<Object, Object> tickHandler,
+            boolean isContainer,
+            String facing,
+            List<BoxSpec> boxes,
+            BiConsumer<Object, Object> renderHandler) {
+        this(rows, cols, dropMode, texture, useDistance, slotPositions, lockedSlots, slotTexture,
+                energyCapacity, energyMaxReceive, energyMaxExtract, fluidCapacity, bars, booleanState,
+                connections, tickHandler, isContainer, facing, boxes, renderHandler, null);
     }
 
     public boolean hasEnergy() {
@@ -90,7 +117,8 @@ public record ContainerSpec(
                 builder.getEnergyCapacity(), builder.getEnergyMaxReceive(), builder.getEnergyMaxExtract(),
                 builder.getFluidCapacity(), builder.getGuiBars(), builder.getBooleanState(),
                 builder.isConnectionState(), builder.getTickHandler(),
-                builder.isContainer(), builder.getFacing(), builder.getBoxes(), builder.getRenderHandler());
+                builder.isContainer(), builder.getFacing(), builder.getBoxes(), builder.getRenderHandler(),
+                builder.getGeoModel());
     }
 
     /**
@@ -112,7 +140,8 @@ public record ContainerSpec(
                 refreshed.fluidCapacity(), refreshed.bars(),
                 previous.booleanState(), previous.connections(),
                 refreshed.tickHandler(), previous.isContainer(),
-                previous.facing(), previous.boxes(), refreshed.renderHandler());
+                previous.facing(), previous.boxes(), refreshed.renderHandler(),
+                refreshed.geoModel());
     }
 
     /** True when a reload tried to change something a live block cannot rebuild. */

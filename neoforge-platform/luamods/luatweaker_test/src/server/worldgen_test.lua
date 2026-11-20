@@ -97,11 +97,29 @@ local okReg = pcall(function()
 end)
 check("RegisterRemovalFeatures rejects empty features", not okReg)
 
--- GetBiome is explicitly not supported (needs a PAL capability that does not exist yet)
-local okBiome = pcall(function()
-    Worldgen:GetBiome("minecraft:plains")
+-- GetBiome reads the live server biome registry (nil at load time: no server yet).
+local okBiome, biome = pcall(function()
+    return Worldgen:GetBiome("minecraft:plains")
 end)
-check("GetBiome reports not-supported loudly", not okBiome)
+if okBiome and type(biome) == "table" then
+    check("GetBiome returns the requested biome", biome.id == "minecraft:plains")
+    check("GetBiome exposes temperature", type(biome.temperature) == "number")
+    check("GetBiome exposes spawners", type(biome.spawners) == "table")
+    check("GetBiome rejects unknown ids", not pcall(function()
+        Worldgen:GetBiome("luatweaker_test:definitely_not_a_biome")
+    end))
+else
+    local Events = require("LuaTweaker.Events")
+    Events:Listen("ServerStarted", function()
+        local okLive, liveBiome = pcall(function() return Worldgen:GetBiome("minecraft:plains") end)
+        check("GetBiome returns a table", okLive and type(liveBiome) == "table")
+        check("GetBiome exposes temperature", okLive and type(liveBiome.temperature) == "number")
+        check("GetBiome exposes spawners", okLive and type(liveBiome.spawners) == "table")
+        check("GetBiome rejects unknown ids", not pcall(function()
+            Worldgen:GetBiome("luatweaker_test:definitely_not_a_biome")
+        end))
+    end)
+end
 
 -- Clear
 Worldgen:ClearAll()

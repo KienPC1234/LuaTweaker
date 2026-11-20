@@ -23,6 +23,11 @@ public class NeoForgeDimensionPlatform implements IPlatformDimension {
 
     @Override
     public boolean teleportToDimension(@NotNull Object rawPlayerEntity, @NotNull String dimensionId) {
+        return teleport(rawPlayerEntity, dimensionId, false);
+    }
+
+    private boolean teleport(@NotNull Object rawPlayerEntity, @NotNull String dimensionId,
+                             boolean chunkMayBeGenerated) {
         if (!(rawPlayerEntity instanceof ServerPlayer player)) {
             LuaTweakerLog.get().warn(LogStage.SYSTEM,
                     "teleportToDimension requires a ServerPlayer, got: " + rawPlayerEntity);
@@ -42,10 +47,33 @@ public class NeoForgeDimensionPlatform implements IPlatformDimension {
             x = spawn.getX();
             z = spawn.getZ();
         }
-        // Skyland-safe: find the nearest non-void column around the spawn point.
+
+        int chunkX = x >> 4;
+        int chunkZ = z >> 4;
+        if (!chunkMayBeGenerated && !target.hasChunk(chunkX, chunkZ)) {
+            // Generating a chunk from inside a Lua callback deadlocks: this thread holds the
+            // engine's execution gate while it waits for the worldgen worker, and the worker
+            // needs that gate to run the Lua terrain callback. Server tasks run outside Lua,
+            // so defer the teleport by one tick instead of blocking here.
+            MinecraftServer server = target.getServer();
+            server.execute(() -> teleport(rawPlayerEntity, dimensionId, true));
+            return true;
+        }
+        // Level#getHeight returns the min build height for chunks that are not loaded yet, so
+        // probing the spawn columns before generating them always reported "void" and the old
+        // fallback teleported the player to the bottom of the world.
+        target.getChunk(chunkX, chunkZ);
         BlockPos safe = findSafeSpawnColumn(target, x, z);
+        if (safe == null) {
+            LuaTweakerLog.get().error(LogStage.SYSTEM,
+                    "Refusing to teleport " + player.getName().getString() + " to dimension '"
+                            + dimensionId + "': no safe ground within 64 blocks of ("
+                            + x + ", " + z + "). Check the dimension's spawn point/terrain generator.");
+            return false;
+        }
         int y = target.getHeight(Heightmap.Types.MOTION_BLOCKING, safe.getX(), safe.getZ());
-        player.teleportTo(target, safe.getX() + 0.5, y + 1, safe.getZ() + 0.5, player.getYRot(), player.getXRot());
+        player.teleportTo(target, safe.getX() + 0.5, y, safe.getZ() + 0.5,
+                player.getYRot(), player.getXRot());
         LuaTweakerLog.get().info(LogStage.SYSTEM,
                 "Teleported " + player.getName().getString() + " to dimension '" + dimensionId
                         + "' at (" + safe.getX() + ", " + safe.getZ() + ")");
@@ -53,31 +81,52 @@ public class NeoForgeDimensionPlatform implements IPlatformDimension {
     }
 
     /**
-     * Scans outward in rings from (x, z) for the first column with actual
-     * ground (height > minBuildHeight + 1) that is NOT water/lava, so
-     * teleports never drop players into the void of a skyland dimension or
-     * under water. Falls back to (x, z) itself.
+     * Scans outward in rings from (x, z) for the first column the player can actually stand on.
+     * Only loaded chunks are inspected: {@code Level#getHeight} silently returns the build floor
+     * for unloaded chunks, and the previous fallback then dropped the player into the void.
+     *
+     * @return the feet position, or {@code null} when no safe ground exists in range
      */
-    private static BlockPos findSafeSpawnColumn(ServerLevel level, int x, int z) {
+    private static @Nullable BlockPos findSafeSpawnColumn(ServerLevel level, int x, int z) {
+        int minY = level.getMinBuildHeight();
         for (int ring = 0; ring <= 64; ring++) {
             for (int dx = -ring; dx <= ring; dx++) {
                 for (int dz = -ring; dz <= ring; dz++) {
                     if (Math.max(Math.abs(dx), Math.abs(dz)) != ring) continue;
                     int cx = x + dx;
                     int cz = z + dz;
+                    if (!level.hasChunk(cx >> 4, cz >> 4)) continue;
                     int height = level.getHeight(Heightmap.Types.MOTION_BLOCKING, cx, cz);
-                    if (height <= level.getMinBuildHeight() + 1) continue; // skyland void column
-                    // The player stands ABOVE the surface; if that spot is
-                    // water/lava the teleport would drop them underwater.
-                    net.minecraft.world.level.block.state.BlockState above =
+                    net.minecraft.world.level.block.state.BlockState ground =
+                            level.getBlockState(new net.minecraft.core.BlockPos(cx, height - 1, cz));
+                    net.minecraft.world.level.block.state.BlockState feet =
+                            level.getBlockState(new net.minecraft.core.BlockPos(cx, height, cz));
+                    net.minecraft.world.level.block.state.BlockState head =
                             level.getBlockState(new net.minecraft.core.BlockPos(cx, height + 1, cz));
-                    if (!above.getFluidState().isEmpty()) continue;
+                    boolean groundSolidAndDry = !ground.isAir() && ground.getFluidState().isEmpty();
+                    if (!isSafeSpawnColumn(height, minY, groundSolidAndDry, feet.isAir(), head.isAir())) {
+                        continue;
+                    }
                     return new BlockPos(cx, height, cz);
                 }
             }
         }
-        int fallbackY = level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
-        return new BlockPos(x, fallbackY, z);
+        return null;
+    }
+
+    /**
+     * Pure policy so the "is this column safe to stand on" rule is testable without a world.
+     *
+     * @param surfaceY         first air block above the ground ({@code Level#getHeight} value)
+     * @param minBuildHeight   dimension floor
+     * @param groundSolidAndDry true when the block at {@code surfaceY - 1} is solid and not fluid
+     * @param feetAir          free space at {@code surfaceY}
+     * @param headAir          free space at {@code surfaceY + 1}
+     */
+    static boolean isSafeSpawnColumn(int surfaceY, int minBuildHeight,
+                                     boolean groundSolidAndDry, boolean feetAir, boolean headAir) {
+        // Above minY + 3 so a leftover bottom-layer artifact can never be treated as ground.
+        return surfaceY > minBuildHeight + 3 && groundSolidAndDry && feetAir && headAir;
     }
 
     @Nullable

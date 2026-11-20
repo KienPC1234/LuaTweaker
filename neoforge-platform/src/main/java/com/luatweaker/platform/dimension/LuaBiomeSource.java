@@ -55,6 +55,13 @@ public class LuaBiomeSource extends BiomeSource {
 
     private final String dimensionId;
     private final List<BiomeHolderEntry> biomes;
+    /** Per-chunk batch biome results, invalidated when the dimension's generation version changes. */
+    private final java.util.Map<Long, String[]> chunkBiomeCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private volatile long cachedGenerationVersion = -1;
+    private volatile DimensionServiceImpl cachedService;
+
+    private static final int MAX_CACHED_BIOME_CHUNKS = 4096;
+    private static final String[] EMPTY_BIOME_CHUNK = new String[0];
 
     private LuaBiomeSource(@NotNull String dimensionId, @NotNull List<BiomeHolderEntry> biomes) {
         this.dimensionId = dimensionId;
@@ -122,7 +129,12 @@ public class LuaBiomeSource extends BiomeSource {
         int blockX = x << 2;
         int blockZ = z << 2;
         DimensionServiceImpl service = currentService();
-        String biomeId = service != null ? service.computeBiomeId(dimensionId, blockX, blockZ) : null;
+        String biomeId = null;
+        if (service != null) {
+            biomeId = service.hasBiomeBatch(dimensionId)
+                    ? batchBiomeAt(service, x, z)
+                    : service.computeBiomeId(dimensionId, blockX, blockZ);
+        }
         if (biomeId != null) {
             for (BiomeHolderEntry entry : biomes) {
                 if (entry.id().equals(biomeId)) return entry.holder();
@@ -135,12 +147,39 @@ public class LuaBiomeSource extends BiomeSource {
     }
 
     /**
+     * Resolves one biome through the batch provider, calling it at most once per chunk.
+     * Quart coordinates are grouped into their owning chunk (4 x 4 quarts).
+     */
+    private String batchBiomeAt(DimensionServiceImpl service, int quartX, int quartZ) {
+        long version = service.getGenerationVersion();
+        if (service != cachedService || version != cachedGenerationVersion) {
+            chunkBiomeCache.clear();
+            cachedService = service;
+            cachedGenerationVersion = version;
+        }
+        int chunkX = Math.floorDiv(quartX, 4);
+        int chunkZ = Math.floorDiv(quartZ, 4);
+        long key = ((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL);
+        String[] ids = chunkBiomeCache.get(key);
+        if (ids == null) {
+            ids = service.computeBiomeBatch(dimensionId, chunkX, chunkZ);
+            if (ids.length == 0) ids = EMPTY_BIOME_CHUNK;
+            String[] existing = chunkBiomeCache.putIfAbsent(key, ids);
+            if (existing != null) ids = existing;
+            if (chunkBiomeCache.size() > MAX_CACHED_BIOME_CHUNKS) {
+                chunkBiomeCache.clear();
+            }
+        }
+        int index = Math.floorMod(quartZ, 4) * 4 + Math.floorMod(quartX, 4);
+        return index < ids.length ? ids[index] : null;
+    }
+
+    /**
      * Deterministic weighted pick from the configured biome list.
      * Columns are grouped into cells of `biomeSize` blocks (from the config)
      * so biomes form regions instead of per-column speckle.
      */
-    private Holder<Biome> weightedPick(int x, int z) {
-        int cellSize = DimensionConfig.DEFAULT_BIOME_SIZE;
+    private Holder<Biome> weightedPick(int x, int z) {        int cellSize = DimensionConfig.DEFAULT_BIOME_SIZE;
         DimensionServiceImpl service = currentService();
         DimensionConfig config = service != null ? service.getConfig(dimensionId) : null;
         if (config != null) {

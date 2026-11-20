@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class DynamicKeyMappingHandlerTest {
 
     private static IKeyBindService.KeyBindEntry entry(String id) {
-        return new IKeyBindService.KeyBindEntry(id, id, "LuaTweaker", 32, "payload:" + id);
+        return new IKeyBindService.KeyBindEntry(id, id, "LuaTweaker", 32, "payload:" + id, "key", "none");
     }
 
     @Test
@@ -40,7 +40,7 @@ public class DynamicKeyMappingHandlerTest {
         List<IKeyBindService.KeyBindEntry> withNulls = new java.util.ArrayList<>();
         withNulls.add(entry("a"));
         withNulls.add(null);
-        withNulls.add(new IKeyBindService.KeyBindEntry(null, "x", "y", 32, "p"));
+        withNulls.add(new IKeyBindService.KeyBindEntry(null, "x", "y", 32, "p", "key", "none"));
         List<IKeyBindService.KeyBindEntry> result = DynamicKeyMappingHandler.collectUnsynced(
                 withNulls, Set.of());
         assertEquals(List.of("a"), result.stream().map(IKeyBindService.KeyBindEntry::id).toList());

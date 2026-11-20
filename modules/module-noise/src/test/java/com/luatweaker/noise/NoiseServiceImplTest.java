@@ -360,4 +360,20 @@ public class NoiseServiceImplTest {
         assertTrue(elapsedMs < 2000, "1M simplex evals took " + elapsedMs + "ms (limit 2000ms)");
         assertTrue(Double.isFinite(sum), "noise sum must be finite");
     }
+    @Test
+    void warpedFbmWarpStrengthIsBlockSpaceAndSmooth() {
+        NoiseServiceImpl service = new NoiseServiceImpl(7L);
+        NoiseLayer layer = new NoiseLayer("warped_fbm", 0.0011, 4, 2.0, 0.5, 0.8, 0, 70.0, 1.0);
+        NoiseServiceImpl.NoiseSampler sampler = service.createSampler();
+
+        double previous = sampler.sample2D(layer, -64, 0);
+        double maxDelta = 0.0;
+        for (int x = -63; x <= 64; x++) {
+            double value = sampler.sample2D(layer, x, 0);
+            maxDelta = Math.max(maxDelta, Math.abs(value - previous));
+            previous = value;
+        }
+        assertTrue(maxDelta < 0.2,
+                "warped_fbm must stay smooth; warpStrength is a block displacement, max delta=" + maxDelta);
+    }
 }

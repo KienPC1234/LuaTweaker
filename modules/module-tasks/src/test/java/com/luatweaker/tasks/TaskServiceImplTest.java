@@ -122,6 +122,93 @@ public class TaskServiceImplTest {
         assertEquals(0, taskService.getQueuedTaskCount());
     }
 
+    @Test
+    public void delayUsesTheMonotonicClock() {
+        java.util.concurrent.atomic.AtomicLong now = new java.util.concurrent.atomic.AtomicLong(5_000_000_000L);
+        ILuaEngine clockEngine = LuaEngineFactory.create(true);
+        TaskServiceImpl service = new TaskServiceImpl(now::get);
+        ILuaTable globals = clockEngine.getGlobalEnvironment();
+        clockEngine.executeStringOrThrow("_clocked = function() _clockRan = true end", "clock_fn");
+        ILuaValue fn = globals.rawget("_clocked");
+
+        service.delay(clockEngine, 1.0, fn, null);
+        service.tick(clockEngine);
+        assertTrue(globals.rawget("_clockRan") == null || globals.rawget("_clockRan").isNil(),
+                "a 1s callback must not run at the same instant it was scheduled");
+        assertEquals(1, service.getQueuedTaskCount());
+
+        now.addAndGet(1_100_000_000L);
+        service.tick(clockEngine);
+        assertTrue(globals.rawget("_clockRan").asBoolean());
+        assertEquals(0, service.getQueuedTaskCount());
+    }
+
+    @Test
+    public void cancelRemovesDelayedCallbacksAndKeepsTheCountAccurate() {
+        ILuaTable globals = engine.getGlobalEnvironment();
+        engine.executeStringOrThrow("_delayedCancel = function() _delayedCancelRan = true end", "cancel_fn");
+        ILuaValue fn = globals.rawget("_delayedCancel");
+
+        taskService.delay(engine, 60.0, fn, null);
+        assertEquals(1, taskService.getQueuedTaskCount());
+
+        taskService.cancel(fn);
+        assertEquals(0, taskService.getQueuedTaskCount(), "the counter must drop with the cancelled task");
+
+        taskService.tick(engine);
+        assertTrue(globals.rawget("_delayedCancelRan") == null
+                        || globals.rawget("_delayedCancelRan").isNil(),
+                "a cancelled delayed callback must not run");
+    }
+
+    @Test
+    public void taskNowIsMonotonic() {
+        ILuaTable taskTable = engine.getGlobalEnvironment().rawget("task").asTable();
+        ILuaValue nowFn = taskTable.rawget("_now");
+        assertNotNull(nowFn, "the scheduler needs a monotonic clock");
+        assertTrue(nowFn.isFunction());
+
+        double first = engine.callFunction(nowFn).asDouble();
+        double second = engine.callFunction(nowFn).asDouble();
+        assertTrue(second >= first, "monotonic clock must never go backwards: " + first + " -> " + second);
+    }
+
+    @Test
+    public void perTickBudgetCarriesTasksOverAndKeepsCancellationWorking() {
+        ILuaTable globals = engine.getGlobalEnvironment();
+        engine.executeStringOrThrow(
+                "task._maxPerTick = 2\n" +
+                "_budgetRan = 0\n" +
+                "_first = task.spawn(function() _budgetRan = _budgetRan + 1 end)\n" +
+                "_second = task.spawn(function() _budgetRan = _budgetRan + 1 end)\n" +
+                "_third = task.spawn(function() _budgetRan = _budgetRan + 1 end)\n" +
+                "_fourth = task.spawn(function() _budgetRan = _budgetRan + 1 end)\n" +
+                "_fifth = task.spawn(function() _budgetRan = _budgetRan + 1 end)",
+                "budget_setup");
+        assertNull(engine.getAndClearLastExecutionError());
+
+        ILuaTable taskTable = globals.rawget("task").asTable();
+        ILuaValue tick = taskTable.rawget("_tick");
+        ILuaValue stats = taskTable.rawget("_stats");
+
+        engine.callFunction(tick);
+        assertEquals(2.0, globals.rawget("_budgetRan").asDouble(),
+                "one tick must stop at the budget");
+        assertEquals(3, engine.callFunction(stats).asTable().rawget("deferred").asInt(),
+                "the rest must be carried over, not dropped");
+
+        // A carried-over task has not started, so it can still be cancelled.
+        engine.executeString("_cancelledCarry = task.cancel(_fifth)", "budget_cancel");
+        assertTrue(globals.rawget("_cancelledCarry").asBoolean());
+
+        engine.callFunction(tick);
+        assertEquals(4.0, globals.rawget("_budgetRan").asDouble());
+        engine.callFunction(tick);
+        assertEquals(4.0, globals.rawget("_budgetRan").asDouble(),
+                "the cancelled carried-over task must never run");
+        assertEquals(0, engine.callFunction(stats).asTable().rawget("queued").asInt());
+    }
+
     private static void sleep(long millis) {
         try {
             Thread.sleep(millis);

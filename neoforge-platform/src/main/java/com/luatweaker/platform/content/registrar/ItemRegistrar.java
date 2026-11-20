@@ -7,6 +7,7 @@ import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.platform.entity.NeoForgeEntityWrapper;
 import com.luatweaker.platform.entity.NeoForgePlayerWrapper;
+import com.luatweaker.platform.interaction.NeoForgeInteractableItem;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionResult;
@@ -179,11 +180,29 @@ public final class ItemRegistrar {
         };
     }
 
+    private static NeoForgeInteractableItem wrapItem(Player player, ItemStack stack) {
+        int slot = -1;
+        if (player != null) {
+            var inv = player.getInventory();
+            if (player.getMainHandItem() == stack) {
+                slot = inv.selected;
+            } else {
+                for (int i = 0; i < inv.getContainerSize(); i++) {
+                    if (inv.getItem(i) == stack) {
+                        slot = i;
+                        break;
+                    }
+                }
+            }
+        }
+        return new NeoForgeInteractableItem(player, slot, stack);
+    }
+
     public static InteractionResultHolder<ItemStack> handleItemUse(Level level, Player player, net.minecraft.world.InteractionHand hand, IItemBuilder builder) {
         ItemStack stack = player.getItemInHand(hand);
         if (!level.isClientSide() && builder.getRightClickHandler() != null) {
             try {
-                builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), stack);
+                builder.getRightClickHandler().accept(new NeoForgePlayerWrapper(player), wrapItem(player, stack));
             } catch (Exception e) {
                 LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed right-click handler for " + builder.getId() + ": " + e.getMessage());
             }
@@ -200,7 +219,7 @@ public final class ItemRegistrar {
     public static void handleUseTick(Level level, LivingEntity entity, ItemStack stack, int count, IItemBuilder builder) {
         if (!level.isClientSide() && builder.getOnUseTickHandler() != null && entity instanceof Player player) {
             try {
-                builder.getOnUseTickHandler().accept(new NeoForgePlayerWrapper(player), stack, count);
+                builder.getOnUseTickHandler().accept(new NeoForgePlayerWrapper(player), wrapItem(player, stack), count);
             } catch (Exception e) {
                 LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed onUseTick handler for " + builder.getId() + ": " + e.getMessage());
             }
@@ -210,7 +229,7 @@ public final class ItemRegistrar {
     public static void handleReleaseUsing(ItemStack stack, Level level, LivingEntity entity, int timeLeft, IItemBuilder builder) {
         if (!level.isClientSide() && builder.getOnReleaseUsingHandler() != null && entity instanceof Player player) {
             try {
-                builder.getOnReleaseUsingHandler().accept(new NeoForgePlayerWrapper(player), stack, timeLeft);
+                builder.getOnReleaseUsingHandler().accept(new NeoForgePlayerWrapper(player), wrapItem(player, stack), timeLeft);
             } catch (Exception e) {
                 LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed onReleaseUsing handler for " + builder.getId() + ": " + e.getMessage());
             }
@@ -219,16 +238,17 @@ public final class ItemRegistrar {
 
     public static void handleFinishUsing(ItemStack stack, Level level, LivingEntity entity, IItemBuilder builder) {
         if (!level.isClientSide() && entity instanceof Player player) {
+            NeoForgeInteractableItem itemWrapper = wrapItem(player, stack);
             if (builder.getOnFinishUsingHandler() != null) {
                 try {
-                    builder.getOnFinishUsingHandler().accept(new NeoForgePlayerWrapper(player), stack);
+                    builder.getOnFinishUsingHandler().accept(new NeoForgePlayerWrapper(player), itemWrapper);
                 } catch (Exception e) {
                     LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed onFinishUsing handler for " + builder.getId() + ": " + e.getMessage());
                 }
             }
             if (builder.getOnConsumeHandler() != null) {
                 try {
-                    builder.getOnConsumeHandler().accept(new NeoForgePlayerWrapper(player), stack);
+                    builder.getOnConsumeHandler().accept(new NeoForgePlayerWrapper(player), itemWrapper);
                 } catch (Exception e) {
                     LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed onConsume handler for " + builder.getId() + ": " + e.getMessage());
                 }
@@ -242,7 +262,7 @@ public final class ItemRegistrar {
                 builder.getOnHurtEnemyHandler().accept(
                         new NeoForgeEntityWrapper(target),
                         new NeoForgePlayerWrapper(player),
-                        stack);
+                        wrapItem(player, stack));
             } catch (Exception e) {
                 LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed onHurtEnemy handler for " + builder.getId() + ": " + e.getMessage());
             }
@@ -254,7 +274,7 @@ public final class ItemRegistrar {
             try {
                 builder.getOnMineBlockHandler().accept(
                         new NeoForgePlayerWrapper(player),
-                        stack,
+                        wrapItem(player, stack),
                         pos.getX(), pos.getY(), pos.getZ());
             } catch (Exception e) {
                 LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed onMineBlock handler for " + builder.getId() + ": " + e.getMessage());
@@ -267,7 +287,7 @@ public final class ItemRegistrar {
         IItemBuilder builder = BUILDER_BY_ITEM.get(stack.getItem());
         if (builder != null && builder.getOnSwingHandler() != null) {
             try {
-                builder.getOnSwingHandler().accept(new NeoForgePlayerWrapper(player), stack);
+                builder.getOnSwingHandler().accept(new NeoForgePlayerWrapper(player), wrapItem(player, stack));
             } catch (Exception e) {
                 LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed onSwing handler for " + builder.getId() + ": " + e.getMessage());
             }
@@ -302,22 +322,27 @@ public final class ItemRegistrar {
 
                 String type = builder.getType() != null ? builder.getType().toUpperCase() : "SIMPLE";
 
-                Item item = switch (type) {
-                    case "SWORD" -> new CustomSwordItem(tier, props, builder);
-                    case "PICKAXE" -> new CustomPickaxeItem(tier, props, builder);
-                    case "AXE" -> new CustomAxeItem(tier, props, builder);
-                    case "SHOVEL" -> new CustomShovelItem(tier, props, builder);
-                    case "HOE" -> new CustomHoeItem(tier, props, builder);
-                    case "HELMET" -> new CustomArmorItem(
-                            resolveArmorMaterial(builder), ArmorItem.Type.HELMET, props, builder);
-                    case "CHESTPLATE" -> new CustomArmorItem(
-                            resolveArmorMaterial(builder), ArmorItem.Type.CHESTPLATE, props, builder);
-                    case "LEGGINGS" -> new CustomArmorItem(
-                            resolveArmorMaterial(builder), ArmorItem.Type.LEGGINGS, props, builder);
-                    case "BOOTS" -> new CustomArmorItem(
-                            resolveArmorMaterial(builder), ArmorItem.Type.BOOTS, props, builder);
-                    default -> new CustomGenericItem(props, builder);
-                };
+                Item item;
+                if (builder.getGeoModel() != null) {
+                    item = new com.luatweaker.platform.gecko.LuaGeoItem(props, builder, builder.getGeoModel());
+                } else {
+                    item = switch (type) {
+                        case "SWORD" -> new CustomSwordItem(tier, props, builder);
+                        case "PICKAXE" -> new CustomPickaxeItem(tier, props, builder);
+                        case "AXE" -> new CustomAxeItem(tier, props, builder);
+                        case "SHOVEL" -> new CustomShovelItem(tier, props, builder);
+                        case "HOE" -> new CustomHoeItem(tier, props, builder);
+                        case "HELMET" -> new CustomArmorItem(
+                                resolveArmorMaterial(builder), ArmorItem.Type.HELMET, props, builder);
+                        case "CHESTPLATE" -> new CustomArmorItem(
+                                resolveArmorMaterial(builder), ArmorItem.Type.CHESTPLATE, props, builder);
+                        case "LEGGINGS" -> new CustomArmorItem(
+                                resolveArmorMaterial(builder), ArmorItem.Type.LEGGINGS, props, builder);
+                        case "BOOTS" -> new CustomArmorItem(
+                                resolveArmorMaterial(builder), ArmorItem.Type.BOOTS, props, builder);
+                        default -> new CustomGenericItem(props, builder);
+                    };
+                }
 
                 event.register(Registries.ITEM, rl, () -> item);
                 createdItems.put(rl, item);
@@ -328,12 +353,44 @@ public final class ItemRegistrar {
         }
     }
 
-    public static class CustomSwordItem extends SwordItem {
-        private final IItemBuilder builder;
+    public interface RebindableItem {
+        void rebind(IItemBuilder newBuilder);
+        IItemBuilder getBuilder();
+    }
+
+    public static int rebindAll(IContentService contentService, Function<String, ResourceLocation> idParser) {
+        if (contentService == null || idParser == null) {
+            return 0;
+        }
+        Map<ResourceLocation, IItemBuilder> newBuilders = new java.util.HashMap<>();
+        for (IItemBuilder b : contentService.getRegisteredItems()) {
+            newBuilders.put(idParser.apply(b.getId()), b);
+        }
+        int rebound = 0;
+        for (Map.Entry<Item, IItemBuilder> entry : new java.util.ArrayList<>(BUILDER_BY_ITEM.entrySet())) {
+            Item item = entry.getKey();
+            IItemBuilder oldBuilder = entry.getValue();
+            ResourceLocation rl = idParser.apply(oldBuilder.getId());
+            IItemBuilder newBuilder = newBuilders.get(rl);
+            if (newBuilder != null) {
+                BUILDER_BY_ITEM.put(item, newBuilder);
+                if (item instanceof RebindableItem rebindable) {
+                    rebindable.rebind(newBuilder);
+                }
+                rebound++;
+            }
+        }
+        return rebound;
+    }
+
+    public static class CustomSwordItem extends SwordItem implements RebindableItem {
+        private volatile IItemBuilder builder;
         public CustomSwordItem(Tier tier, Properties props, IItemBuilder builder) {
             super(tier, props);
             this.builder = builder;
         }
+        @Override public void rebind(IItemBuilder newBuilder) { this.builder = newBuilder; }
+        @Override public IItemBuilder getBuilder() { return this.builder; }
         @Override public UseAnim getUseAnimation(ItemStack stack) { return resolveUseAnim(builder.getUseAnimation()); }
         @Override public int getUseDuration(ItemStack stack, LivingEntity entity) { return resolveUseDuration(builder); }
         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
@@ -364,12 +421,14 @@ public final class ItemRegistrar {
         }
     }
 
-    public static class CustomPickaxeItem extends PickaxeItem {
-        private final IItemBuilder builder;
+    public static class CustomPickaxeItem extends PickaxeItem implements RebindableItem {
+        private volatile IItemBuilder builder;
         public CustomPickaxeItem(Tier tier, Properties props, IItemBuilder builder) {
             super(tier, props);
             this.builder = builder;
         }
+        @Override public void rebind(IItemBuilder newBuilder) { this.builder = newBuilder; }
+        @Override public IItemBuilder getBuilder() { return this.builder; }
         @Override public UseAnim getUseAnimation(ItemStack stack) { return resolveUseAnim(builder.getUseAnimation()); }
         @Override public int getUseDuration(ItemStack stack, LivingEntity entity) { return resolveUseDuration(builder); }
         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
@@ -400,12 +459,14 @@ public final class ItemRegistrar {
         }
     }
 
-    public static class CustomAxeItem extends AxeItem {
-        private final IItemBuilder builder;
+    public static class CustomAxeItem extends AxeItem implements RebindableItem {
+        private volatile IItemBuilder builder;
         public CustomAxeItem(Tier tier, Properties props, IItemBuilder builder) {
             super(tier, props);
             this.builder = builder;
         }
+        @Override public void rebind(IItemBuilder newBuilder) { this.builder = newBuilder; }
+        @Override public IItemBuilder getBuilder() { return this.builder; }
         @Override public UseAnim getUseAnimation(ItemStack stack) { return resolveUseAnim(builder.getUseAnimation()); }
         @Override public int getUseDuration(ItemStack stack, LivingEntity entity) { return resolveUseDuration(builder); }
         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
@@ -436,12 +497,14 @@ public final class ItemRegistrar {
         }
     }
 
-    public static class CustomShovelItem extends ShovelItem {
-        private final IItemBuilder builder;
+    public static class CustomShovelItem extends ShovelItem implements RebindableItem {
+        private volatile IItemBuilder builder;
         public CustomShovelItem(Tier tier, Properties props, IItemBuilder builder) {
             super(tier, props);
             this.builder = builder;
         }
+        @Override public void rebind(IItemBuilder newBuilder) { this.builder = newBuilder; }
+        @Override public IItemBuilder getBuilder() { return this.builder; }
         @Override public UseAnim getUseAnimation(ItemStack stack) { return resolveUseAnim(builder.getUseAnimation()); }
         @Override public int getUseDuration(ItemStack stack, LivingEntity entity) { return resolveUseDuration(builder); }
         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
@@ -472,12 +535,14 @@ public final class ItemRegistrar {
         }
     }
 
-    public static class CustomHoeItem extends HoeItem {
-        private final IItemBuilder builder;
+    public static class CustomHoeItem extends HoeItem implements RebindableItem {
+        private volatile IItemBuilder builder;
         public CustomHoeItem(Tier tier, Properties props, IItemBuilder builder) {
             super(tier, props);
             this.builder = builder;
         }
+        @Override public void rebind(IItemBuilder newBuilder) { this.builder = newBuilder; }
+        @Override public IItemBuilder getBuilder() { return this.builder; }
         @Override public UseAnim getUseAnimation(ItemStack stack) { return resolveUseAnim(builder.getUseAnimation()); }
         @Override public int getUseDuration(ItemStack stack, LivingEntity entity) { return resolveUseDuration(builder); }
         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
@@ -508,12 +573,14 @@ public final class ItemRegistrar {
         }
     }
 
-    public static class CustomGenericItem extends Item {
-        private final IItemBuilder builder;
+    public static class CustomGenericItem extends Item implements RebindableItem {
+        private volatile IItemBuilder builder;
         public CustomGenericItem(Properties props, IItemBuilder builder) {
             super(props);
             this.builder = builder;
         }
+        @Override public void rebind(IItemBuilder newBuilder) { this.builder = newBuilder; }
+        @Override public IItemBuilder getBuilder() { return this.builder; }
         @Override public UseAnim getUseAnimation(ItemStack stack) { return resolveUseAnim(builder.getUseAnimation()); }
         @Override public int getUseDuration(ItemStack stack, LivingEntity entity) { return resolveUseDuration(builder); }
         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, net.minecraft.world.InteractionHand hand) {
@@ -544,14 +611,16 @@ public final class ItemRegistrar {
         }
     }
 
-    public static class CustomArmorItem extends ArmorItem {
-        private final IItemBuilder builder;
+    public static class CustomArmorItem extends ArmorItem implements RebindableItem {
+        private volatile IItemBuilder builder;
 
         public CustomArmorItem(net.minecraft.core.Holder<ArmorMaterial> material, Type type, Properties properties, IItemBuilder builder) {
             super(material, type, properties);
             this.builder = builder;
         }
 
+        @Override public void rebind(IItemBuilder newBuilder) { this.builder = newBuilder; }
+        @Override public IItemBuilder getBuilder() { return this.builder; }
         @Override public UseAnim getUseAnimation(ItemStack stack) { return resolveUseAnim(builder.getUseAnimation()); }
         @Override public int getUseDuration(ItemStack stack, LivingEntity entity) { return resolveUseDuration(builder); }
 

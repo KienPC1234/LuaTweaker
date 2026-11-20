@@ -1,7 +1,9 @@
 package com.luatweaker.worldgen;
 
+import com.luatweaker.api.pal.Platform;
 import com.luatweaker.core.logger.AsyncFileLogger;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -23,6 +25,11 @@ public class WorldgenServiceImplTest {
     @BeforeEach
     void setup() {
         service = new WorldgenServiceImpl();
+    }
+
+    @AfterEach
+    void clearPlatformWorldgen() {
+        Platform.setWorldgen(null);
     }
 
     @Test
@@ -807,14 +814,35 @@ public class WorldgenServiceImplTest {
             service.addVegetationPatch("minecraft:short_grass", 1.5, new String[]{"minecraft:plains"}));
     }
 
-    // ---- getBiome (unsupported stub) ----
+    // ---- getBiome (live server registry) ----
 
     @Test
-    void testGetBiome_ThrowsLoudUnsupported() {
-        UnsupportedOperationException error = assertThrows(UnsupportedOperationException.class, () ->
-            service.getBiome("minecraft:plains"));
-        assertTrue(error.getMessage().contains("STUB"), error.getMessage());
-        assertTrue(error.getMessage().contains("not supported"), error.getMessage());
+    void testGetBiome_ReturnsPlatformRegistryData() {
+        Map<String, Object> info = Map.of(
+                "id", "minecraft:plains",
+                "temperature", 0.8d,
+                "spawners", Map.of());
+        Platform.setWorldgen(id -> "minecraft:plains".equals(id) ? info : null);
+
+        assertEquals(info, service.getBiome("minecraft:plains"));
+    }
+
+    @Test
+    void testGetBiome_RejectsUnknownBiome() {
+        Platform.setWorldgen(id -> null);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.getBiome("minecraft:plains"));
+        assertTrue(error.getMessage().contains("Unknown biome"), error.getMessage());
+    }
+
+    @Test
+    void testGetBiome_RejectsInvalidIdBeforeQuerying() {
+        Platform.setWorldgen(id -> {
+            throw new AssertionError("an invalid id must not reach the platform");
+        });
+
+        assertThrows(IllegalArgumentException.class, () -> service.getBiome("Not A Biome"));
     }
 
     // ---- summary and clear ----

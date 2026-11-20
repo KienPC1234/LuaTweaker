@@ -21,7 +21,7 @@ public class LuaTweakerConfig {
             .define("autoGenerateStubs", true);
 
         SUPPRESS_EXPERIMENTAL_WARNING = builder
-            .comment("Automatically accept Minecraft's 'Warning! These settings are using experimental features' screen when creating a world with LuaTweaker datapacks")
+            .comment("Automatically accept Minecraft's 'experimental features' warnings when creating or opening a world with LuaTweaker datapacks")
             .define("suppressExperimentalWarning", true);
 
         builder.pop();

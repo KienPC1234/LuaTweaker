@@ -53,9 +53,9 @@ public class CrystalRealmDimensionTest {
             @Override public java.util.List<com.luatweaker.api.objects.IRecipe> getAllRecipes() { return java.util.List.of(); }
         });
         Platform.setNetwork(new com.luatweaker.api.pal.IPlatformNetwork() {
-            public void sendPayloadPacket(String u, String c, String d) {}
-            public void broadcastPayloadPacket(String c, String d) {}
-            public void sendPayloadPacketToServer(String c, String d) {}
+            public void sendPayloadBytes(String u, String c, byte[] d) {}
+            public void broadcastPayloadBytes(String c, byte[] d) {}
+            public void sendPayloadBytesToServer(String c, byte[] d) {}
         });
         Platform.setStorage(new com.luatweaker.api.pal.IPlatformStorage() {
             public java.io.File getStorageDirectory() { return new java.io.File("."); }
@@ -96,6 +96,17 @@ public class CrystalRealmDimensionTest {
             public void addMeleeAttackGoal(com.luatweaker.api.entity.IEntity e, int p, double s, boolean m) {}
             public void addHurtByTargetGoal(com.luatweaker.api.entity.IEntity e, int p) {}
             public void addNearestAttackableTargetGoal(com.luatweaker.api.entity.IEntity e, int p, String t) {}
+            public void addFloatGoal(com.luatweaker.api.entity.IEntity e, int p) {}
+            public void addWanderGoal(com.luatweaker.api.entity.IEntity e, int p, double s) {}
+            public void addLookAtGoal(com.luatweaker.api.entity.IEntity e, int p, double d, String t) {}
+            public void addLookAroundGoal(com.luatweaker.api.entity.IEntity e, int p) {}
+            public void addPanicGoal(com.luatweaker.api.entity.IEntity e, int p, double s) {}
+            public void addAvoidGoal(com.luatweaker.api.entity.IEntity e, int p, String t, double d, double w, double s) {}
+            public void addLeapGoal(com.luatweaker.api.entity.IEntity e, int p, double s) {}
+            public void addBreakDoorGoal(com.luatweaker.api.entity.IEntity e, int p, boolean h) {}
+            public void addTemptGoal(com.luatweaker.api.entity.IEntity e, int p, double s, String item) {}
+            public void addMoveToTargetGoal(com.luatweaker.api.entity.IEntity e, int p, double s, double m) {}
+            public java.util.List<java.util.Map<String, Object>> listGoals(com.luatweaker.api.entity.IEntity e) { return java.util.List.of(); }
             public com.luatweaker.api.entity.IPlayer getPlayer(String u) { return null; }
             public java.util.List<com.luatweaker.api.entity.IPlayer> getAllPlayers() { return java.util.List.of(); }
             public Object spawnEntity(String e, double x, double y, double z) { return null; }

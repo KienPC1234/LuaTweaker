@@ -53,49 +53,41 @@ public class ClientLuaBinding {
                 String id = args[off].asString();
                 String displayName = args[off + 1].asString();
                 String category = args[off + 2].asString();
-                int defaultKey = args[off + 3].asInt();
+                com.luatweaker.api.client.KeyNames.KeyRef ref =
+                        com.luatweaker.api.client.KeyNames.parseKeyRef(args[off + 3], "defaultKey");
                 String onPressPayload = args[off + 4].asString();
-                keyBindService.registerKeyBind(id, displayName, category, defaultKey, onPressPayload);
+                String modifier = args.length - off >= 6
+                        ? com.luatweaker.api.client.KeyNames.parseModifier(args[off + 5].asString())
+                        : "none";
+                keyBindService.registerKeyBind(id, displayName, category, ref.code(),
+                        onPressPayload, ref.inputType(), modifier);
             } else if (args.length - off >= 4) {
                 String id = args[off].asString();
                 String category = args[off + 1].asString();
-                int defaultKey = args[off + 2].asInt();
+                com.luatweaker.api.client.KeyNames.KeyRef ref =
+                        com.luatweaker.api.client.KeyNames.parseKeyRef(args[off + 2], "defaultKey");
                 String onPressPayload = args[off + 3].asString();
-                keyBindService.registerKeyBind(id, id, category, defaultKey, onPressPayload);
+                String modifier = args.length - off >= 5
+                        ? com.luatweaker.api.client.KeyNames.parseModifier(args[off + 4].asString())
+                        : "none";
+                keyBindService.registerKeyBind(id, id, category, ref.code(),
+                        onPressPayload, ref.inputType(), modifier);
+            } else {
+                throw new IllegalArgumentException(
+                    "registerKeyBinding requires (id, category, defaultKey, onPressPayload)"
+                    + " or (id, displayName, category, defaultKey, onPressPayload [, modifier]);"
+                    + " the modifier ('none', 'shift', 'ctrl', 'alt') is only read"
+                    + " in the full form, as the 6th argument");
             }
             return engine.nilValue();
         });
         clientTable.rawset("RegisterKeyBind", clientTable.rawget("registerKeyBinding"));
         clientTable.rawset("RegisterKeyBinding", clientTable.rawget("registerKeyBinding"));
 
-        keyBindService.setKeyBindListener((id, payload) -> {
-            // Call the signal directly. Building Lua source with String.format broke on quotes
-            // in the payload and was a self-inflicted source-injection path.
-            com.luatweaker.api.vm.ILuaValue clientValue = engine.getGlobalEnvironment().rawget("Client");
-            if (clientValue == null || !clientValue.isTable()) {
-                return;
-            }
-            com.luatweaker.api.vm.ILuaValue signal = clientValue.asTable().rawget("OnKeyBindPressed");
-            if (signal == null || !signal.isTable()) {
-                return;
-            }
-            com.luatweaker.api.vm.ILuaValue fire = signal.asTable().rawget("FireSync");
-            if (fire == null || !fire.isFunction()) {
-                fire = signal.asTable().rawget("Fire");
-            }
-            if (fire == null || !fire.isFunction()) {
-                return;
-            }
-            try {
-                engine.callFunction(fire, signal, engine.wrapString(id),
-                        engine.wrapString(payload != null ? payload : ""));
-            } catch (RuntimeException e) {
-                com.luatweaker.api.log.LuaTweakerLog.get().error(
-                    com.luatweaker.api.log.LogStage.SYSTEM,
-                    "Failed to dispatch keybind Lua signal '" + id + "': " + e.getMessage()
-                );
-            }
-        });
+        keyBindService.setKeyBindListener((id, payload) ->
+                dispatchKeyBindSignal(engine, "OnKeyBindPressed", id, payload));
+        keyBindService.setKeyBindReleaseListener((id, payload) ->
+                dispatchKeyBindSignal(engine, "OnKeyBindReleased", id, payload));
 
         globals.rawset("Client", clientTable);
         engine.registerService("KeyBindService", keyBindService);
@@ -250,5 +242,78 @@ public class ClientLuaBinding {
         }
 
         engine.registerService("ClientService", clientService);
+    }
+
+    /**
+     * Fires a keybind signal ({@code OnKeyBindPressed} / {@code OnKeyBindReleased})
+     * directly, without building Lua source (string concatenation on payloads was
+     * a self-inflicted source-injection path). A missing signal table is created
+     * on demand so reloads that wipe the Client table cannot wedge listeners.
+     */
+    private static void dispatchKeyBindSignal(@NotNull ILuaEngine engine,
+                                              @NotNull String signalName,
+                                              @NotNull String id,
+                                              @NotNull String payload) {
+        com.luatweaker.api.vm.ILuaValue clientValue = engine.getGlobalEnvironment().rawget("Client");
+        if (clientValue == null || !clientValue.isTable()) {
+            return;
+        }
+        com.luatweaker.api.vm.ILuaTable clientTable = clientValue.asTable();
+        com.luatweaker.api.vm.ILuaValue signal = clientTable.rawget(signalName);
+        if (signal == null || signal.isNil() || !signal.isTable()) {
+            signal = createSignal(engine);
+            if (signal == null || signal.isNil() || !signal.isTable()) {
+                return;
+            }
+            clientTable.rawset(signalName, signal);
+        }
+        // Methods live on the Signal class table (instances only carry
+        // _listeners via metatable), so rawget on the instance always misses:
+        // fall back to the class table like RunServiceDispatcher does.
+        com.luatweaker.api.vm.ILuaValue signalClass =
+                engine.getGlobalEnvironment().rawget("Signal");
+        com.luatweaker.api.vm.ILuaTable signalClassTable =
+                (signalClass != null && !signalClass.isNil() && signalClass.isTable())
+                        ? signalClass.asTable() : null;
+        com.luatweaker.api.vm.ILuaValue fire = signal.asTable().rawget("FireSync");
+        if ((fire == null || fire.isNil() || !fire.isFunction()) && signalClassTable != null) {
+            fire = signalClassTable.rawget("FireSync");
+        }
+        if ((fire == null || fire.isNil() || !fire.isFunction()) && signalClassTable != null) {
+            fire = signalClassTable.rawget("Fire");
+        }
+        if (fire == null || fire.isNil() || !fire.isFunction()) {
+            return;
+        }
+        try {
+            engine.callFunction(fire, signal, engine.wrapString(id),
+                    engine.wrapString(payload != null ? payload : ""));
+        } catch (RuntimeException e) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(
+                com.luatweaker.api.log.LogStage.SYSTEM,
+                "Failed to dispatch keybind Lua signal '" + id + "': " + e.getMessage()
+            );
+        }
+    }
+
+    /** Mirrors the bootstrap ({@code Signal.new()}); null when Signal is unavailable. */
+    private static com.luatweaker.api.vm.ILuaValue createSignal(@NotNull ILuaEngine engine) {
+        try {
+            com.luatweaker.api.vm.ILuaValue signalClass = engine.getGlobalEnvironment().rawget("Signal");
+            if (signalClass == null || signalClass.isNil() || !signalClass.isTable()) {
+                return null;
+            }
+            com.luatweaker.api.vm.ILuaValue newFn = signalClass.asTable().rawget("new");
+            if (newFn == null || newFn.isNil() || !newFn.isFunction()) {
+                return null;
+            }
+            return engine.callFunction(newFn, signalClass);
+        } catch (RuntimeException e) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(
+                com.luatweaker.api.log.LogStage.SYSTEM,
+                "Failed to create keybind signal table: " + e.getMessage()
+            );
+            return null;
+        }
     }
 }

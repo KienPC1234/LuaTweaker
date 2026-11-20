@@ -19,7 +19,6 @@ import net.minecraft.world.phys.EntityHitResult;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterColorHandlersEvent;
-import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsEvent;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
 import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
@@ -53,6 +52,8 @@ public class NeoForgeContentRegistry {
         this.tabRegistrar = new TabRegistrar(contentService, createdItems, createdCustomTabs, NeoForgeContentRegistry::parseLocation);
 
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.register(new GameBusListener());
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.register(
+                new EntityHookDispatcher(contentService, NeoForgeContentRegistry::parseLocation));
     }
 
     public static class BossBarTickHandler {
@@ -183,12 +184,30 @@ public class NeoForgeContentRegistry {
 
         @SuppressWarnings("unchecked")
         @SubscribeEvent
+        public void onRegisterLayerDefinitions(EntityRenderersEvent.RegisterLayerDefinitions event) {
+            com.luatweaker.platform.client.LuaMobRenderers.registerLayerDefinitions(event);
+        }
+
+        @SubscribeEvent
         public void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
             for (com.luatweaker.api.content.IEntityBuilder e : parent.contentService.getRegisteredEntities()) {
                 try {
                     ResourceLocation rl = NeoForgeContentRegistry.parseLocation(e.getId());
                     EntityType<?> rawType = parent.createdEntityTypes.get(rl);
                     if (rawType != null) {
+                        if (e.getGeoModel() != null) {
+                            EntityType entityType = rawType;
+                            com.luatweaker.api.content.GeoModelSpec geoSpec = e.getGeoModel();
+                            event.registerEntityRenderer(entityType, ctx ->
+                                    new com.luatweaker.platform.gecko.LuaGeoEntityRenderer(ctx, geoSpec));
+                            LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered GeckoLib EntityRenderer for: " + rl);
+                            continue;
+                        }
+                        String rig = e.getRig() == null ? "parent" : e.getRig().strip().toLowerCase();
+                        if ("humanoid".equals(rig) || "quadruped".equals(rig)) {
+                            registerGenericRenderer(event, e, rl, rawType, rig);
+                            continue;
+                        }
                         ResourceLocation texLoc = e.getTexture() != null
                                 ? NeoForgeContentRegistry.parseLocation(e.getTexture())
                                 : ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/zombie/zombie.png");
@@ -203,7 +222,22 @@ public class NeoForgeContentRegistry {
             }
 
             for (com.luatweaker.api.content.IBlockBuilder b : parent.contentService.getRegisteredBlocks()) {
-                if (b.getRenderHandler() != null) {
+                if (b.getGeoModel() != null) {
+                    try {
+                        ResourceLocation rl = NeoForgeContentRegistry.parseLocation(b.getId());
+                        net.minecraft.world.level.block.entity.BlockEntityType<?> rawType =
+                                com.luatweaker.platform.container.CustomContainerRegistry.CONTAINER_BE_TYPES.get(rl);
+                        if (rawType != null) {
+                            net.minecraft.world.level.block.entity.BlockEntityType type = rawType;
+                            com.luatweaker.api.content.GeoModelSpec geoSpec = b.getGeoModel();
+                            event.registerBlockEntityRenderer(type, ctx ->
+                                    new com.luatweaker.platform.gecko.LuaGeoBlockRenderer(geoSpec));
+                            LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered GeckoLib BlockEntityRenderer for: " + rl);
+                        }
+                    } catch (Exception ex) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed GeckoLib block entity renderer registration for " + b.getId() + ": " + ex.getMessage());
+                    }
+                } else if (b.getRenderHandler() != null) {
                     try {
                         ResourceLocation rl = NeoForgeContentRegistry.parseLocation(b.getId());
                         net.minecraft.world.level.block.entity.BlockEntityType<?> rawType =
@@ -220,6 +254,40 @@ public class NeoForgeContentRegistry {
                     }
                 }
             }
+        }
+
+        /**
+         * Texture-driven generic renderer for a humanoid/quadruped-rig mob.
+         * A missing texture cannot render correctly, so it warns loudly and
+         * falls back to the zombie texture instead of crashing the client.
+         */
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        private void registerGenericRenderer(EntityRenderersEvent.RegisterRenderers event,
+                                             com.luatweaker.api.content.IEntityBuilder builder,
+                                             ResourceLocation rl, EntityType<?> rawType, String rig) {
+            ResourceLocation texLoc;
+            if (builder.getTexture() != null && !builder.getTexture().isBlank()) {
+                texLoc = NeoForgeContentRegistry.parseLocation(builder.getTexture());
+            } else {
+                LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                        "Custom entity '" + builder.getId() + "' uses rig '" + rig + "' without a texture: "
+                                + "falling back to the zombie texture. Set texture(path) on the builder.");
+                texLoc = ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/zombie/zombie.png");
+            }
+            float shadow = Math.max(0.2f, Math.min(2.0f, builder.getWidth() * 0.5f));
+            double renderScale = builder.getRenderScale();
+            EntityType type = rawType;
+            if ("quadruped".equals(rig)) {
+                event.registerEntityRenderer(type,
+                        ctx -> com.luatweaker.platform.client.LuaMobRenderers.createQuadruped(
+                                ctx, texLoc, shadow, renderScale));
+            } else {
+                event.registerEntityRenderer(type,
+                        ctx -> com.luatweaker.platform.client.LuaMobRenderers.createHumanoid(
+                                ctx, texLoc, shadow, renderScale));
+            }
+            LuaTweakerLog.get().info(LogStage.SYSTEM,
+                    "Registered Generic EntityRenderer (Rig: " + rig + ") for: " + rl);
         }
 
         @SubscribeEvent

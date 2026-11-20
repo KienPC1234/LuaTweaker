@@ -7,6 +7,9 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
+import net.neoforged.neoforge.client.settings.KeyConflictContext;
+import net.neoforged.neoforge.client.settings.KeyModifier;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -16,6 +19,19 @@ public class DynamicKeyMappingHandler {
     private static final Map<String, Boolean> LAST_DOWN_STATE = new ConcurrentHashMap<>();
 
     private record KeyMappingRecord(KeyMapping mapping, String payload) {}
+
+    /**
+     * GLFW modifier codes (verified in LWJGL 3.3.3): left/right variants are
+     * OR-ed so either Shift/Ctrl/Alt satisfies the combo. PRESS = 1 for
+     * {@code glfwGetMouseButton}.
+     */
+    private static final int GLFW_LEFT_SHIFT = 340;
+    private static final int GLFW_RIGHT_SHIFT = 344;
+    private static final int GLFW_LEFT_CONTROL = 341;
+    private static final int GLFW_RIGHT_CONTROL = 345;
+    private static final int GLFW_LEFT_ALT = 342;
+    private static final int GLFW_RIGHT_ALT = 347;
+    private static final int GLFW_PRESS = 1;
 
     public static void onRegisterKeyMappings(RegisterKeyMappingsEvent event) {
         Object service = LuaServiceRegistry.get("KeyBindService");
@@ -45,9 +61,13 @@ public class DynamicKeyMappingHandler {
                 ? entry.displayName() : entry.id();
         String categoryKey = (entry.category() != null && !entry.category().isBlank())
                 ? entry.category() : "LuaTweaker";
+        InputConstants.Type type = "mouse".equals(entry.inputType())
+                ? InputConstants.Type.MOUSE : InputConstants.Type.KEYSYM;
         KeyMapping keyMapping = new KeyMapping(
                 descKey,
-                InputConstants.Type.KEYSYM,
+                KeyConflictContext.UNIVERSAL,
+                toKeyModifier(entry.modifier()),
+                type,
                 entry.defaultKey(),
                 categoryKey
         );
@@ -60,6 +80,23 @@ public class DynamicKeyMappingHandler {
             );
         }
         return REGISTERED_MAPPINGS.get(entry.id());
+    }
+
+    /**
+     * Maps the validated service modifier to the vanilla enum. The service
+     * normalizes unknown values at registration, so this is a total function.
+     */
+    private static KeyModifier toKeyModifier(String modifier) {
+        if ("shift".equals(modifier)) {
+            return KeyModifier.SHIFT;
+        }
+        if ("ctrl".equals(modifier)) {
+            return KeyModifier.CONTROL;
+        }
+        if ("alt".equals(modifier)) {
+            return KeyModifier.ALT;
+        }
+        return KeyModifier.NONE;
     }
 
     /**
@@ -109,19 +146,35 @@ public class DynamicKeyMappingHandler {
     public static void onClientTick(ClientTickEvent.Post event) {
         syncLateKeyBinds();
         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        long window = mc.getWindow().getWindow();
+        // Vanilla parity: physical keys never reach mappings while any screen is
+        // open (KeyboardHandler/MouseHandler skip set+click unless screen == null).
         boolean hasScreen = mc.screen != null;
         for (Map.Entry<String, KeyMappingRecord> mapEntry : REGISTERED_MAPPINGS.entrySet()) {
             String keyBindId = mapEntry.getKey();
             KeyMappingRecord record = mapEntry.getValue();
-            // Edge-trigger: fire exactly once per press. consumeClick() would replay
-            // every queued press while a key is HELD (OS auto-repeat queues several
-            // press events per tick), flooding the server with duplicate packets.
-            boolean isDown = !hasScreen && InputConstants.isKeyDown(
-                    mc.getWindow().getWindow(),
-                    record.mapping().getKey().getValue());
+            // Edge-trigger on the PHYSICAL state (not consumeClick(), which would
+            // replay every queued press while a key is HELD via OS auto-repeat,
+            // flooding the server with duplicate packets).
+            boolean physDown = isPhysicallyDown(window, record.mapping());
             boolean wasDown = Boolean.TRUE.equals(LAST_DOWN_STATE.getOrDefault(keyBindId, false));
-            LAST_DOWN_STATE.put(keyBindId, isDown);
-            if (!isDown || wasDown || !Platform.isInitialized()) {
+            LAST_DOWN_STATE.put(keyBindId, physDown);
+            if (!physDown) {
+                if (wasDown) {
+                    // Release is physical truth and fires even with a GUI open:
+                    // the key genuinely came up.
+                    Object service = LuaServiceRegistry.get("KeyBindService");
+                    if (service instanceof IKeyBindService keyBindService) {
+                        keyBindService.triggerKeyBindRelease(keyBindId, record.payload());
+                    }
+                }
+                continue;
+            }
+            // Combos only count when the modifier is already held as the main
+            // key goes down (same as most games; holding X then Shift will not
+            // retro-fire). Missing modifiers are a service-validated per-mapping
+            // field, read live so Controls-GUI rebinding the modifier just works.
+            if (wasDown || hasScreen || !modifierHeld(window, record.mapping()) || !Platform.isInitialized()) {
                 continue;
             }
 
@@ -141,5 +194,38 @@ public class DynamicKeyMappingHandler {
                 Platform.getNetwork().sendPayloadPacketToServer(record.payload(), "[]");
             }
         }
+    }
+
+    /**
+     * Physical button state. Keyboard goes through GLFW directly (vanilla
+     * {@code InputConstants.isKeyDown}); mouse buttons need
+     * {@code glfwGetMouseButton} since {@code isKeyDown} is keysym-only.
+     */
+    private static boolean isPhysicallyDown(long window, KeyMapping mapping) {
+        if (mapping.getKey().getType() == InputConstants.Type.MOUSE) {
+            return GLFW.glfwGetMouseButton(window, mapping.getKey().getValue()) == GLFW_PRESS;
+        }
+        return InputConstants.isKeyDown(window, mapping.getKey().getValue());
+    }
+
+    /**
+     * Whether the mapping's live modifier (rebindable in the Controls GUI) is
+     * currently held. Either left or right variant satisfies the combo.
+     */
+    private static boolean modifierHeld(long window, KeyMapping mapping) {
+        KeyModifier modifier = mapping.getKeyModifier();
+        if (KeyModifier.SHIFT.equals(modifier)) {
+            return InputConstants.isKeyDown(window, GLFW_LEFT_SHIFT)
+                    || InputConstants.isKeyDown(window, GLFW_RIGHT_SHIFT);
+        }
+        if (KeyModifier.CONTROL.equals(modifier)) {
+            return InputConstants.isKeyDown(window, GLFW_LEFT_CONTROL)
+                    || InputConstants.isKeyDown(window, GLFW_RIGHT_CONTROL);
+        }
+        if (KeyModifier.ALT.equals(modifier)) {
+            return InputConstants.isKeyDown(window, GLFW_LEFT_ALT)
+                    || InputConstants.isKeyDown(window, GLFW_RIGHT_ALT);
+        }
+        return true;
     }
 }

@@ -116,6 +116,13 @@ public interface IItemBuilder {
     @LuaDoc(description = "Registers a callback invoked when player swings/left-clicks with this item.", params = {"handler: function(player, itemStack)"}, returnType = "IItemBuilder")
     IItemBuilder onSwing(BiConsumer<Object, Object> handler);
 
+    @LuaDoc(description = "Sets the GeckoLib skeletal model and animation specs for this item.", params = {"modelPath: string", "texturePath: string", "animationPath: string", "defaultAnimation: string?"}, returnType = "IItemBuilder")
+    IItemBuilder geoModel(String modelPath, String texturePath, String animationPath, @org.jetbrains.annotations.Nullable String defaultAnimation);
+
+    default IItemBuilder geoModel(String modelPath, String texturePath, String animationPath) {
+        return geoModel(modelPath, texturePath, animationPath, null);
+    }
+
     String getId();
     String getType();
     int getMaxStackSize();
@@ -156,6 +163,8 @@ public interface IItemBuilder {
     ItemHurtHandler getOnHurtEnemyHandler();
     ItemMineHandler getOnMineBlockHandler();
     BiConsumer<Object, Object> getOnSwingHandler();
+    @org.jetbrains.annotations.Nullable
+    GeoModelSpec getGeoModel();
 }
 
 

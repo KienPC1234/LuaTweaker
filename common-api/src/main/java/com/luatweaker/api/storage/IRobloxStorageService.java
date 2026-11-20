@@ -28,6 +28,9 @@ public interface IRobloxStorageService {
             returnType = "number"
         )
         double IncrementAsync(String key, double delta);
+
+        @LuaDoc(description = "Flushes any pending debounced writes in this store to disk synchronously.")
+        default void Flush() {}
     }
 
     @LuaDoc(description = "Returns the World storage data store.", returnType = "IDataStore")
@@ -38,4 +41,7 @@ public interface IRobloxStorageService {
 
     @LuaDoc(description = "Returns the Session in-memory storage data store.", returnType = "IDataStore")
     IDataStore GetSessionStorage();
+
+    @LuaDoc(description = "Flushes all pending debounced writes across all stores to disk synchronously.")
+    default void Flush() {}
 }

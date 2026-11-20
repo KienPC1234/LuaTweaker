@@ -12,6 +12,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +23,11 @@ import java.util.concurrent.atomic.AtomicLong;
  * Stores parsed dimension configs, Lua terrain/biome callbacks and portal
  * mappings; teleports players through the platform abstraction layer.
  *
+ * <p>Terrain has three modes per dimension, selected by the last terrain setter called:
+ * {@link TerrainMode#LEGACY} (per-column Lua generator plus pickers),
+ * {@link TerrainMode#CHUNK} (one batch callback per chunk) and
+ * {@link TerrainMode#SPEC} (declarative spec evaluated natively).</p>
+ *
  * <p>Thread-safety: chunk generation runs on worker threads; all maps are
  * concurrent and callbacks are invoked through the (synchronized) engine
  * entry points. {@link #getGenerationVersion()} is bumped whenever terrain
@@ -30,8 +36,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class DimensionServiceImpl implements IDimensionService {
 
     /** Minecraft resource-location charset: [a-z0-9_.-] for path, optional [a-z0-9_.-] namespace. */
-    private static final java.util.regex.Pattern RESOURCE_LOCATION =
-            java.util.regex.Pattern.compile("^[a-z0-9_.-]+(:[a-z0-9_./-]+)?$");
+    private static final java.util.regex.Pattern RESOURCE_LOCATION = LuaTableValues.RESOURCE_LOCATION;
 
     private final ILuaEngine engine;
     private final Map<String, DimensionConfig> configs = new ConcurrentHashMap<>();
@@ -39,12 +44,44 @@ public class DimensionServiceImpl implements IDimensionService {
     private final Map<String, ILuaValue> biomeProviders = new ConcurrentHashMap<>();
     private final Map<String, ILuaValue> blockPickers = new ConcurrentHashMap<>();
     private final Map<String, ILuaValue> strataPickers = new ConcurrentHashMap<>();
+    private final Map<String, ILuaValue> chunkTerrains = new ConcurrentHashMap<>();
+    private final Map<String, ILuaValue> biomeBatches = new ConcurrentHashMap<>();
+    private final Map<String, TerrainSpec> terrainSpecs = new ConcurrentHashMap<>();
+    private final Map<String, TerrainMode> terrainModes = new ConcurrentHashMap<>();
     private final Map<String, SpawnPoint> spawnPoints = new ConcurrentHashMap<>();
     private final Map<String, String> portals = new ConcurrentHashMap<>();
     private final AtomicLong generationVersion = new AtomicLong(1);
 
+    /** Columns in one chunk (16 x 16); a batch terrain callback returns exactly this many heights. */
+    public static final int CHUNK_COLUMNS = 256;
+    /** Cells in the 4 x 4 quart grid a batch biome callback returns. */
+    public static final int BIOME_QUART_CELLS = 16;
+    /**
+     * Upper bound on sparse block overrides returned by one batch terrain callback.
+     * A full 16 x 320 x 16 volume is 81 920 entries; the cap leaves room for taller
+     * dimensions while still rejecting runaway tables before they exhaust the heap.
+     */
+    public static final int MAX_CHUNK_OVERRIDES = 262_144;
+
+    /** Shared empty result for dimensions without a batch biome provider. */
+    private static final String[] EMPTY_BIOME_BATCH = new String[0];
+
+    /**
+     * How a dimension's terrain is produced. The last terrain setter called wins,
+     * so switching a dimension back to the per-column API is always possible.
+     */
+    public enum TerrainMode { LEGACY, CHUNK, SPEC }
+
     /** Custom spawn position for a dimension (overrides the config defaults). */
     public record SpawnPoint(int x, int z) {}
+
+    /**
+     * One chunk produced by the batch terrain callback: raw (absolute) surface Y
+     * per column, the top block id per column and sparse column overrides.
+     */
+    public record ChunkTerrainResult(@NotNull int[] heights,
+                                     @NotNull String[] surfaces,
+                                     @NotNull Map<Integer, Map<Integer, String>> overrides) {}
 
     public DimensionServiceImpl(@NotNull ILuaEngine engine) {
         this.engine = engine;
@@ -52,7 +89,7 @@ public class DimensionServiceImpl implements IDimensionService {
 
     @Override
     public void create(@NotNull String dimensionId, @NotNull ILuaValue config) {
-        validateId("dimensionId", dimensionId);
+        validateDimensionId(dimensionId);
         if (config == null || !config.isTable()) {
             throw new IllegalArgumentException("config must be a table for dimension '" + dimensionId + "'");
         }
@@ -67,24 +104,82 @@ public class DimensionServiceImpl implements IDimensionService {
 
     @Override
     public void setTerrainGenerator(@NotNull String dimensionId, @NotNull Object luaFunction) {
-        validateId("dimensionId", dimensionId);
+        validateDimensionId(dimensionId);
         ILuaValue fn = asFunction(luaFunction, "terrain generator");
         terrainGenerators.put(dimensionId, fn);
+        terrainModes.put(dimensionId, TerrainMode.LEGACY);
         generationVersion.incrementAndGet();
     }
 
     @Override
+    public void setChunkTerrain(@NotNull String dimensionId, @NotNull Object luaFunction) {
+        validateDimensionId(dimensionId);
+        ILuaValue fn = asFunction(luaFunction, "chunk terrain generator");
+        chunkTerrains.put(dimensionId, fn);
+        terrainModes.put(dimensionId, TerrainMode.CHUNK);
+        generationVersion.incrementAndGet();
+        if (terrainGenerators.containsKey(dimensionId) || blockPickers.containsKey(dimensionId)
+                || strataPickers.containsKey(dimensionId)) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "Dimension '" + dimensionId + "' now uses a chunk terrain callback; "
+                            + "SetTerrainGenerator/SetBlockPicker/SetStrataPicker are no longer called");
+        }
+    }
+
+    @Override
+    public void setBiomeBatch(@NotNull String dimensionId, @NotNull Object luaFunction) {
+        validateDimensionId(dimensionId);
+        ILuaValue fn = asFunction(luaFunction, "biome batch provider");
+        if (biomeProviders.containsKey(dimensionId)) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "Dimension '" + dimensionId + "' now uses a batch biome provider; "
+                            + "SetBiomeProvider is no longer called");
+        }
+        biomeBatches.put(dimensionId, fn);
+        biomeProviders.remove(dimensionId);
+        generationVersion.incrementAndGet();
+    }
+
+    @Override
+    public void setTerrainSpec(@NotNull String dimensionId, @NotNull ILuaValue spec) {
+        validateDimensionId(dimensionId);
+        DimensionConfig config = configs.get(dimensionId);
+        if (config == null) {
+            throw new IllegalArgumentException("Unknown dimension '" + dimensionId
+                    + "'; call Dimensions:Create(\"" + dimensionId + "\", {...}) first");
+        }
+        TerrainSpec parsed = TerrainSpecParser.parse(dimensionId, spec, config);
+        if (terrainGenerators.containsKey(dimensionId) || chunkTerrains.containsKey(dimensionId)
+                || blockPickers.containsKey(dimensionId) || strataPickers.containsKey(dimensionId)) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "Dimension '" + dimensionId + "' now uses a declarative terrain spec; "
+                            + "the Lua terrain generator and per-column pickers are no longer called");
+        }
+        terrainSpecs.put(dimensionId, parsed);
+        terrainModes.put(dimensionId, TerrainMode.SPEC);
+        generationVersion.incrementAndGet();
+        LuaTweakerLog.get().info(LogStage.SYSTEM,
+                "Terrain spec registered for '" + dimensionId + "': " + parsed.heightLayers().size()
+                        + " height layer(s), " + parsed.spline().size() + " spline point(s), "
+                        + parsed.surfaceRules().size() + " surface rule(s)"
+                        + (parsed.density() != null
+                            ? ", 3D density (" + parsed.density().layers().size() + " layer(s))"
+                            : ""));
+    }
+
+    @Override
     public void setBiomeProvider(@NotNull String dimensionId, @NotNull Object luaFunction) {
-        validateId("dimensionId", dimensionId);
+        validateDimensionId(dimensionId);
         ILuaValue fn = asFunction(luaFunction, "biome provider");
         biomeProviders.put(dimensionId, fn);
+        biomeBatches.remove(dimensionId);
         generationVersion.incrementAndGet();
     }
 
     @Override
     public void registerPortal(@NotNull String blockId, @NotNull String targetDimension) {
         validateId("blockId", blockId);
-        validateId("targetDimension", targetDimension);
+        validateDimensionId(targetDimension);
         portals.put(blockId, targetDimension);
         LuaTweakerLog.get().info(LogStage.SYSTEM,
                 "Portal registered: " + blockId + " -> " + targetDimension);
@@ -131,16 +226,26 @@ public class DimensionServiceImpl implements IDimensionService {
      * (use "minecraft:air" to carve caves).
      */
     public void setBlockPicker(@NotNull String dimensionId, @NotNull Object luaFunction) {
-        validateId("dimensionId", dimensionId);
+        validateDimensionId(dimensionId);
         ILuaValue fn = asFunction(luaFunction, "block picker");
+        if (getTerrainMode(dimensionId) != TerrainMode.LEGACY) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "Block picker for '" + dimensionId + "' is ignored: the dimension terrain is produced by "
+                            + "a chunk terrain callback or a terrain spec");
+        }
         blockPickers.put(dimensionId, fn);
         generationVersion.incrementAndGet();
     }
 
     @Override
     public void setStrataPicker(@NotNull String dimensionId, @NotNull Object luaFunction) {
-        validateId("dimensionId", dimensionId);
+        validateDimensionId(dimensionId);
         ILuaValue fn = asFunction(luaFunction, "strata picker");
+        if (getTerrainMode(dimensionId) != TerrainMode.LEGACY) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "Strata picker for '" + dimensionId + "' is ignored: the dimension terrain is produced by "
+                            + "a chunk terrain callback or a terrain spec");
+        }
         strataPickers.put(dimensionId, fn);
         generationVersion.incrementAndGet();
     }
@@ -242,7 +347,7 @@ public class DimensionServiceImpl implements IDimensionService {
 
     /** Sets a custom spawn position for the dimension. */
     public void setSpawnPoint(@NotNull String dimensionId, int x, int z) {
-        validateId("dimensionId", dimensionId);
+        validateDimensionId(dimensionId);
         spawnPoints.put(dimensionId, new SpawnPoint(x, z));
         LuaTweakerLog.get().info(LogStage.SYSTEM,
                 "Spawn point set for '" + dimensionId + "': (" + x + ", " + z + ")");
@@ -262,7 +367,7 @@ public class DimensionServiceImpl implements IDimensionService {
 
     @Override
     public void teleportTo(@NotNull IEntity player, @NotNull String dimensionId) {
-        validateId("dimensionId", dimensionId);
+        validateDimensionId(dimensionId);
         if (configs.get(dimensionId) == null) {
             throw new IllegalArgumentException("Unknown dimension '" + dimensionId
                     + "'. Call Dimensions:Create(\"" + dimensionId + "\", {...}) first.");
@@ -284,7 +389,7 @@ public class DimensionServiceImpl implements IDimensionService {
     @Override
     @Nullable
     public Object getDimension(@NotNull String dimensionId) {
-        validateId("dimensionId", dimensionId);
+        validateDimensionId(dimensionId);
         DimensionConfig cfg = configs.get(dimensionId);
         if (cfg == null) return null;
         return buildInfoTable(cfg);
@@ -459,6 +564,282 @@ public class DimensionServiceImpl implements IDimensionService {
     }
 
     // -------------------------------------------------------------------------
+    // Batch terrain / biome (one Lua call per chunk)
+    // -------------------------------------------------------------------------
+
+    /** Effective terrain mode; {@link TerrainMode#LEGACY} when nothing else was registered. */
+    @NotNull
+    public TerrainMode getTerrainMode(@NotNull String dimensionId) {
+        return terrainModes.getOrDefault(dimensionId, TerrainMode.LEGACY);
+    }
+
+    /** True when a batch chunk terrain callback is registered (regardless of the active mode). */
+    public boolean hasChunkTerrain(@NotNull String dimensionId) {
+        return chunkTerrains.containsKey(dimensionId);
+    }
+
+    /** True when a batch biome provider is registered. */
+    public boolean hasBiomeBatch(@NotNull String dimensionId) {
+        return biomeBatches.containsKey(dimensionId);
+    }
+
+    /** True when a declarative terrain spec is registered (regardless of the active mode). */
+    public boolean hasTerrainSpec(@NotNull String dimensionId) {
+        return terrainSpecs.containsKey(dimensionId);
+    }
+
+    /** Returns the registered declarative terrain spec, or null. */
+    @Nullable
+    public TerrainSpec getTerrainSpec(@NotNull String dimensionId) {
+        return terrainSpecs.get(dimensionId);
+    }
+
+    /**
+     * Builds a native sampler for the dimension's terrain spec.
+     *
+     * <p>The sampler snapshots the current noise seed, so a later {@code Noise:SetSeed} takes
+     * effect on the next chunk (a new sampler is built for every chunk cache miss).</p>
+     *
+     * @return null when the dimension has no terrain spec
+     * @throws IllegalStateException when the noise module is not registered
+     */
+    @Nullable
+    public TerrainSampler createTerrainSampler(@NotNull String dimensionId) {
+        TerrainSpec spec = terrainSpecs.get(dimensionId);
+        if (spec == null) return null;
+        DimensionConfig config = configs.get(dimensionId);
+        if (config == null) {
+            throw new IllegalStateException("Dimension '" + dimensionId + "' has a terrain spec but no config");
+        }
+        Object noiseService = com.luatweaker.core.service.LuaServiceRegistry.get("NoiseServiceImpl");
+        if (!(noiseService instanceof com.luatweaker.noise.NoiseServiceImpl noise)) {
+            throw new IllegalStateException("Terrain spec for '" + dimensionId
+                    + "' needs the Noise module; NoiseServiceImpl is not registered");
+        }
+        return new TerrainSampler(spec, noise.createSampler(), config);
+    }
+
+    /**
+     * Runs the batch terrain callback once for a chunk.
+     *
+     * <p>Contract: {@code function(chunkX, chunkZ, ctx) -> heights, surfaces, overrides}.
+     * Missing or non-numeric heights become void columns (documented, logged once per
+     * chunk); a missing heights table aborts chunk generation loudly instead of silently
+     * producing a flat world.</p>
+     */
+    @NotNull
+    public ChunkTerrainResult computeChunkTerrain(@NotNull String dimensionId, int chunkX, int chunkZ) {
+        DimensionConfig cfg = configs.get(dimensionId);
+        if (cfg == null) {
+            throw new IllegalArgumentException("Unknown dimension '" + dimensionId + "' during terrain generation");
+        }
+        ILuaValue generator = chunkTerrains.get(dimensionId);
+        if (generator == null) {
+            throw new IllegalStateException("Dimension '" + dimensionId + "' has no chunk terrain callback");
+        }
+        ILuaValue[] results = engine.callFunctionMulti(generator,
+                engine.wrapNumber(chunkX), engine.wrapNumber(chunkZ),
+                createChunkContext(cfg, chunkX, chunkZ));
+
+        int minY = cfg.minHeight();
+        int maxY = cfg.maxHeight();
+        int[] heights = parseChunkHeights(dimensionId, chunkX, chunkZ, results, minY);
+        String[] surfaces = parseChunkSurfaces(dimensionId, chunkX, chunkZ, results, cfg.surfaceBlock());
+        Map<Integer, Map<Integer, String>> overrides =
+                parseChunkOverrides(dimensionId, chunkX, chunkZ, results, minY, maxY);
+        return new ChunkTerrainResult(heights, surfaces, overrides);
+    }
+
+    private int[] parseChunkHeights(String dimensionId, int chunkX, int chunkZ,
+                                    ILuaValue[] results, int minY) {
+        ILuaValue heightsValue = results.length > 0 ? results[0] : null;
+        if (heightsValue == null || heightsValue.isNil() || !heightsValue.isTable()) {
+            throw new IllegalStateException("Chunk terrain callback for '" + dimensionId
+                    + "' must return a heights table of " + CHUNK_COLUMNS + " numbers for chunk ("
+                    + chunkX + ", " + chunkZ + ")");
+        }
+        int[] heights = new int[CHUNK_COLUMNS];
+        Arrays.fill(heights, minY - 1);
+        ILuaTable table = heightsValue.asTable();
+        int missing = 0;
+        int invalid = 0;
+        for (int i = 1; i <= CHUNK_COLUMNS; i++) {
+            ILuaValue value = table.rawget(i);
+            if (value == null || value.isNil()) {
+                missing++;
+                continue;
+            }
+            if (!value.isNumber() || !Double.isFinite(value.asDouble())) {
+                invalid++;
+                continue;
+            }
+            heights[i - 1] = (int) Math.floor(value.asDouble());
+        }
+        if (missing > 0 || invalid > 0) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "Chunk terrain callback for '" + dimensionId + "' chunk (" + chunkX + ", " + chunkZ
+                            + "): " + (missing + invalid) + " column(s) generate as void ("
+                            + missing + " missing, " + invalid + " not a finite number)");
+        }
+        return heights;
+    }
+
+    private String[] parseChunkSurfaces(String dimensionId, int chunkX, int chunkZ,
+                                        ILuaValue[] results, String defaultBlock) {
+        String[] surfaces = new String[CHUNK_COLUMNS];
+        Arrays.fill(surfaces, defaultBlock);
+        ILuaValue surfacesValue = results.length > 1 ? results[1] : null;
+        if (surfacesValue == null || surfacesValue.isNil()) return surfaces;
+        if (!surfacesValue.isTable()) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "Chunk terrain callback for '" + dimensionId + "' chunk (" + chunkX + ", " + chunkZ
+                            + ") returned a non-table surfaces value; using the config surface block");
+            return surfaces;
+        }
+        ILuaTable table = surfacesValue.asTable();
+        int invalid = 0;
+        for (int i = 1; i <= CHUNK_COLUMNS; i++) {
+            ILuaValue value = table.rawget(i);
+            if (value == null || value.isNil()) continue;
+            if (!value.isString() || !RESOURCE_LOCATION.matcher(value.asString()).matches()) {
+                invalid++;
+                continue;
+            }
+            surfaces[i - 1] = value.asString();
+        }
+        if (invalid > 0) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "Chunk terrain callback for '" + dimensionId + "' chunk (" + chunkX + ", " + chunkZ
+                            + ") returned " + invalid + " invalid surface block id(s); using the config default");
+        }
+        return surfaces;
+    }
+
+    private Map<Integer, Map<Integer, String>> parseChunkOverrides(String dimensionId, int chunkX, int chunkZ,
+                                                                   ILuaValue[] results, int minY, int maxY) {
+        return parseChunkOverrides(dimensionId, chunkX, chunkZ, results, minY, maxY, MAX_CHUNK_OVERRIDES);
+    }
+
+    /** Package-private for tests: the override cap is injected instead of reading the constant. */
+    Map<Integer, Map<Integer, String>> parseChunkOverrides(String dimensionId, int chunkX, int chunkZ,
+                                                           ILuaValue[] results, int minY, int maxY,
+                                                           int maxOverrides) {
+        ILuaValue overridesValue = results.length > 2 ? results[2] : null;
+        if (overridesValue == null || overridesValue.isNil()) return Map.of();
+        if (!overridesValue.isTable()) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "Chunk terrain callback for '" + dimensionId + "' chunk (" + chunkX + ", " + chunkZ
+                            + ") returned a non-table overrides value; ignoring it");
+            return Map.of();
+        }
+        Map<Integer, Map<Integer, String>> overrides = new LinkedHashMap<>();
+        int rejected = 0;
+        int total = 0;
+        for (Map.Entry<ILuaValue, ILuaValue> entry : overridesValue.asTable().asMap().entrySet()) {
+            ILuaValue key = entry.getKey();
+            ILuaValue value = entry.getValue();
+            if (key == null || !key.isNumber() || value == null || !value.isTable()) {
+                rejected++;
+                continue;
+            }
+            int column = key.asInt();
+            if (column < 1 || column > CHUNK_COLUMNS) {
+                rejected++;
+                continue;
+            }
+            Map<Integer, String> columnOverrides = new LinkedHashMap<>();
+            for (Map.Entry<ILuaValue, ILuaValue> blockEntry : value.asTable().asMap().entrySet()) {
+                ILuaValue yKey = blockEntry.getKey();
+                ILuaValue blockValue = blockEntry.getValue();
+                if (yKey == null || !yKey.isNumber() || blockValue == null
+                        || !blockValue.isString()
+                        || !RESOURCE_LOCATION.matcher(blockValue.asString()).matches()) {
+                    rejected++;
+                    continue;
+                }
+                int y = yKey.asInt();
+                if (y < minY || y >= maxY) {
+                    rejected++;
+                    continue;
+                }
+                if (total >= maxOverrides) {
+                    throw new IllegalStateException("Chunk terrain callback for '" + dimensionId + "' chunk ("
+                            + chunkX + ", " + chunkZ + ") returned more than " + maxOverrides
+                            + " block overrides; reduce the overrides or use a block picker");
+                }
+                columnOverrides.put(y, blockValue.asString());
+                total++;
+            }
+            if (!columnOverrides.isEmpty()) {
+                overrides.put(column - 1, Map.copyOf(columnOverrides));
+            }
+        }
+        if (rejected > 0) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "Chunk terrain callback for '" + dimensionId + "' chunk (" + chunkX + ", " + chunkZ
+                            + ") returned " + rejected + " invalid override entr(y/ies); they were ignored");
+        }
+        return Map.copyOf(overrides);
+    }
+
+    /**
+     * Runs the batch biome provider once for a chunk.
+     *
+     * <p>Contract: {@code function(chunkX, chunkZ, ctx) -> table} with up to 16 biome ids
+     * for the 4 x 4 quart grid ({@code index = qz * 4 + qx + 1}); nil entries fall back to
+     * the weighted pick. Returns an empty array when no batch provider is registered.</p>
+     */
+    @NotNull
+    public String[] computeBiomeBatch(@NotNull String dimensionId, int chunkX, int chunkZ) {
+        ILuaValue provider = biomeBatches.get(dimensionId);
+        if (provider == null) return EMPTY_BIOME_BATCH;
+        DimensionConfig cfg = configs.get(dimensionId);
+        if (cfg == null) {
+            throw new IllegalArgumentException("Unknown dimension '" + dimensionId + "' during biome lookup");
+        }
+        ILuaValue result = engine.callFunction(provider,
+                engine.wrapNumber(chunkX), engine.wrapNumber(chunkZ),
+                createChunkContext(cfg, chunkX, chunkZ));
+        if (result == null || result.isNil()) return EMPTY_BIOME_BATCH;
+        if (!result.isTable()) {
+            throw new IllegalStateException("Batch biome provider for '" + dimensionId
+                    + "' must return a table of up to " + BIOME_QUART_CELLS + " biome ids (chunk "
+                    + chunkX + ", " + chunkZ + ")");
+        }
+        String[] ids = new String[BIOME_QUART_CELLS];
+        ILuaTable table = result.asTable();
+        int invalid = 0;
+        for (int i = 1; i <= BIOME_QUART_CELLS; i++) {
+            ILuaValue value = table.rawget(i);
+            if (value == null || value.isNil()) continue;
+            if (!value.isString() || !RESOURCE_LOCATION.matcher(value.asString()).matches()) {
+                invalid++;
+                continue;
+            }
+            ids[i - 1] = value.asString();
+        }
+        if (invalid > 0) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "Batch biome provider for '" + dimensionId + "' chunk (" + chunkX + ", " + chunkZ
+                            + ") returned " + invalid + " invalid biome id(s); falling back to the weighted pick");
+        }
+        return ids;
+    }
+
+    private ILuaTable createChunkContext(DimensionConfig cfg, int chunkX, int chunkZ) {
+        ILuaTable ctx = engine.createTable();
+        ctx.rawset("chunkX", (double) chunkX);
+        ctx.rawset("chunkZ", (double) chunkZ);
+        ctx.rawset("minX", (double) (chunkX * 16));
+        ctx.rawset("minZ", (double) (chunkZ * 16));
+        ctx.rawset("minY", (double) cfg.minHeight());
+        ctx.rawset("maxY", (double) cfg.maxHeight());
+        ctx.rawset("seaLevel", (double) cfg.seaLevel());
+        ctx.rawset("biomeSize", (double) cfg.biomeSize());
+        return ctx;
+    }
+
+    // -------------------------------------------------------------------------
     // Config parsing
     // -------------------------------------------------------------------------
 
@@ -468,8 +849,12 @@ public class DimensionServiceImpl implements IDimensionService {
         boolean ultraWarm = bool(t, "ultraWarm", false);
         boolean natural = bool(t, "natural", true);
         double coordinateScale = number(t, "coordinateScale", 1.0);
-        if (!Double.isFinite(coordinateScale) || coordinateScale <= 0.0) {
-            throw new IllegalArgumentException("coordinateScale must be a positive finite number, got: " + coordinateScale);
+        if (!Double.isFinite(coordinateScale)
+                || coordinateScale < DimensionConfig.MIN_COORDINATE_SCALE
+                || coordinateScale > DimensionConfig.MAX_COORDINATE_SCALE) {
+            throw new IllegalArgumentException("coordinateScale must be between "
+                    + DimensionConfig.MIN_COORDINATE_SCALE + " and " + DimensionConfig.MAX_COORDINATE_SCALE
+                    + " (vanilla DimensionType range), got: " + coordinateScale);
         }
         boolean bedWorks = bool(t, "bedWorks", true);
         boolean respawnAnchorWorks = bool(t, "respawnAnchorWorks", false);
@@ -478,9 +863,15 @@ public class DimensionServiceImpl implements IDimensionService {
         int monsterSpawnLightLevel = intRange(t, "monsterSpawnLightLevel", 7, 0, 15);
         int monsterSpawnBlockLightLimit = intRange(t, "monsterSpawnBlockLightLimit", 0, 0, 15);
         String infiniburn = string(t, "infiniburn", DimensionConfig.DEFAULT_INFINIBURN);
+        if (!infiniburn.startsWith("#") || infiniburn.length() < 2
+                || !RESOURCE_LOCATION.matcher(infiniburn.substring(1)).matches()) {
+            throw new IllegalArgumentException("infiniburn must be a block tag (e.g. '#minecraft:infiniburn_overworld'), got: "
+                    + infiniburn);
+        }
         String effectsLocation = string(t, "effectsLocation", DimensionConfig.DEFAULT_EFFECTS);
-        if (!effectsLocation.contains(":")) {
-            throw new IllegalArgumentException("effectsLocation must be a resource location (e.g. 'minecraft:the_nether'), got: " + effectsLocation);
+        if (!effectsLocation.contains(":") || !RESOURCE_LOCATION.matcher(effectsLocation).matches()) {
+            throw new IllegalArgumentException("effectsLocation must be a namespaced resource location "
+                    + "(e.g. 'minecraft:the_nether'), got: " + effectsLocation);
         }
         Long fixedTime = optionalLong(t, "fixedTime");
 
@@ -497,18 +888,39 @@ public class DimensionServiceImpl implements IDimensionService {
         }
 
         int seaLevel = intRange(t, "seaLevel", DimensionConfig.DEFAULT_SEA_LEVEL, -1000, 1000);
-        int minHeight = intRange(t, "minHeight", DimensionConfig.DEFAULT_MIN_HEIGHT, -2032, 4064);
-        int maxHeight = intRange(t, "maxHeight", DimensionConfig.DEFAULT_MAX_HEIGHT, -2032, 4064);
+        int minHeight = intRange(t, "minHeight", DimensionConfig.DEFAULT_MIN_HEIGHT,
+                DimensionConfig.MIN_WORLD_Y, DimensionConfig.MAX_WORLD_TOP - DimensionConfig.MIN_WORLD_HEIGHT);
+        int maxHeight = intRange(t, "maxHeight", DimensionConfig.DEFAULT_MAX_HEIGHT,
+                DimensionConfig.MIN_WORLD_Y + DimensionConfig.MIN_WORLD_HEIGHT, DimensionConfig.MAX_WORLD_TOP);
         if (minHeight >= maxHeight) {
             throw new IllegalArgumentException("minHeight (" + minHeight + ") must be < maxHeight (" + maxHeight + ")");
+        }
+        int height = maxHeight - minHeight;
+        // Vanilla DimensionType constructor rejects these; validating here turns a broken
+        // datapack into a clear Lua error instead of a world-load crash.
+        if (minHeight % DimensionConfig.WORLD_SECTION != 0) {
+            throw new IllegalArgumentException("minHeight must be a multiple of 16 (vanilla DimensionType), got: "
+                    + minHeight);
+        }
+        if (maxHeight % DimensionConfig.WORLD_SECTION != 0) {
+            throw new IllegalArgumentException("maxHeight must be a multiple of 16 (vanilla DimensionType), got: "
+                    + maxHeight);
+        }
+        if (height < DimensionConfig.MIN_WORLD_HEIGHT) {
+            throw new IllegalArgumentException("build height must be at least 16, got: " + height);
+        }
+        if (minHeight + height > DimensionConfig.MAX_WORLD_TOP) {
+            throw new IllegalArgumentException("minHeight + height must not exceed "
+                    + DimensionConfig.MAX_WORLD_TOP + " (vanilla DimensionType), got: " + (minHeight + height));
         }
         if (seaLevel <= minHeight || seaLevel >= maxHeight) {
             throw new IllegalArgumentException("seaLevel (" + seaLevel + ") must be between minHeight (" + minHeight
                     + ") and maxHeight (" + maxHeight + ")");
         }
-        int logicalHeight = intRange(t, "logicalHeight", maxHeight - minHeight, 0, 4064 - minHeight);
-        if (logicalHeight > maxHeight - minHeight) {
-            logicalHeight = maxHeight - minHeight;
+        int logicalHeight = intRange(t, "logicalHeight", height, 0, DimensionConfig.MAX_WORLD_HEIGHT);
+        if (logicalHeight > height) {
+            throw new IllegalArgumentException("logicalHeight (" + logicalHeight
+                    + ") must be <= height (" + height + "), as required by DimensionType");
         }
 
         String surfaceBlock = resourceId(t, "surfaceBlock", "minecraft:grass_block");
@@ -637,6 +1049,10 @@ public class DimensionServiceImpl implements IDimensionService {
         table.rawset("hasTerrainGenerator", terrainGenerators.containsKey(cfg.id()));
         table.rawset("hasBiomeProvider", biomeProviders.containsKey(cfg.id()));
         table.rawset("hasBlockPicker", blockPickers.containsKey(cfg.id()));
+        table.rawset("terrainMode", getTerrainMode(cfg.id()).name().toLowerCase(java.util.Locale.ROOT));
+        table.rawset("hasChunkTerrain", chunkTerrains.containsKey(cfg.id()));
+        table.rawset("hasBiomeBatch", biomeBatches.containsKey(cfg.id()));
+        table.rawset("hasTerrainSpec", terrainSpecs.containsKey(cfg.id()));
 
         ILuaTable biomesTable = engine.createTable();
         for (int i = 0; i < cfg.biomes().size(); i++) {
@@ -679,17 +1095,11 @@ public class DimensionServiceImpl implements IDimensionService {
     // -------------------------------------------------------------------------
 
     private static boolean bool(ILuaTable t, String key, boolean def) {
-        ILuaValue v = t.rawget(key);
-        return v != null && !v.isNil() ? v.asBoolean() : def;
+        return LuaTableValues.bool(t, key, def);
     }
 
     private static double number(ILuaTable t, String key, double def) {
-        ILuaValue v = t.rawget(key);
-        if (v == null || v.isNil()) return def;
-        if (!v.isNumber()) {
-            throw new IllegalArgumentException(key + " must be a number, got: " + describe(v));
-        }
-        return v.asDouble();
+        return LuaTableValues.number(t, key, def);
     }
 
     private static int intRange(ILuaTable t, String key, int def, int min, int max) {
@@ -709,12 +1119,7 @@ public class DimensionServiceImpl implements IDimensionService {
     }
 
     private static String string(ILuaTable t, String key, String def) {
-        ILuaValue v = t.rawget(key);
-        if (v == null || v.isNil()) return def;
-        if (!v.isString()) {
-            throw new IllegalArgumentException(key + " must be a string, got: " + describe(v));
-        }
-        return v.asString();
+        return LuaTableValues.string(t, key, def);
     }
 
     private static String resourceId(ILuaTable t, String key, String def) {
@@ -729,21 +1134,11 @@ public class DimensionServiceImpl implements IDimensionService {
     }
 
     private static Long optionalLong(ILuaTable t, String key) {
-        ILuaValue v = t.rawget(key);
-        if (v == null || v.isNil()) return null;
-        if (!v.isNumber()) {
-            throw new IllegalArgumentException(key + " must be a number or nil, got: " + describe(v));
-        }
-        return (long) Math.floor(v.asDouble());
+        return LuaTableValues.optionalLong(t, key);
     }
 
     private static Integer optionalInt(ILuaTable t, String key) {
-        ILuaValue v = t.rawget(key);
-        if (v == null || v.isNil()) return null;
-        if (!v.isNumber()) {
-            throw new IllegalArgumentException(key + " must be a number or nil, got: " + describe(v));
-        }
-        return (int) Math.floor(v.asDouble());
+        return LuaTableValues.optionalInt(t, key);
     }
 
     private static ILuaValue asFunction(Object luaFunction, String what) {
@@ -754,8 +1149,11 @@ public class DimensionServiceImpl implements IDimensionService {
         return value;
     }
 
-    private static String describe(ILuaValue v) {
-        return v == null ? "nil" : v.getClass().getSimpleName();
+    private static void validateDimensionId(String id) {
+        if (id == null || id.indexOf(':') <= 0 || !RESOURCE_LOCATION.matcher(id).matches()) {
+            throw new IllegalArgumentException("dimensionId must be a namespaced resource location "
+                    + "(e.g. 'mymod:skylands'), got: " + id);
+        }
     }
 
     private static void validateId(String name, String id) {

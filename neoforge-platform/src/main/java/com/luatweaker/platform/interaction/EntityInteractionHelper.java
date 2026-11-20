@@ -163,8 +163,24 @@ public final class EntityInteractionHelper {
     }
 
     public static void playAnimation(@NotNull IEntity entity, @NotNull String animName, double speed, double transition) {
+        com.luatweaker.api.pal.Platform.getInteraction().triggerGeoAnimation(entity, null, animName, speed, false);
+
         if (entity.getRawEntity() instanceof net.minecraft.world.entity.LivingEntity living) {
-            living.swing(net.minecraft.world.InteractionHand.MAIN_HAND, true);
+            if ("swing".equalsIgnoreCase(animName)) {
+                living.swing(net.minecraft.world.InteractionHand.MAIN_HAND, true);
+            } else if ("offhand_swing".equalsIgnoreCase(animName)) {
+                living.swing(net.minecraft.world.InteractionHand.OFF_HAND, true);
+            } else {
+                int duration = (int) Math.round(transition > 1.0 ? transition : 20.0);
+                if (living.level() instanceof net.minecraft.server.level.ServerLevel) {
+                    var payload = new com.luatweaker.platform.network.ItemAnimationPayload(
+                            living.getId(), animName, duration, (float) (speed > 0 ? speed : 1.0));
+                    net.neoforged.neoforge.network.PacketDistributor.sendToPlayersTrackingEntity(living, payload);
+                    if (living instanceof net.minecraft.server.level.ServerPlayer player) {
+                        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player, payload);
+                    }
+                }
+            }
         }
     }
 

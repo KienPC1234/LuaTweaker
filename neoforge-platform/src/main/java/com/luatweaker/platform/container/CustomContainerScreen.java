@@ -142,7 +142,7 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
         for (com.luatweaker.api.content.MachineBarSpec bar : bars) {
             int bx = x + bar.x();
             int by = y + bar.y();
-            float ratio = barRatio(bar.source());
+            float ratio = barRatio(bar);
             int color = bar.color() > 0 ? bar.color() : defaultBarColor(bar.source());
             guiGraphics.fill(bx, by, bx + bar.width(), by + bar.height(), BAR_BACKGROUND);
             if (ratio > 0f) {
@@ -157,7 +157,14 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
         }
     }
 
-    private float barRatio(String source) {
+    private float barRatio(com.luatweaker.api.content.MachineBarSpec bar) {
+        if (bar == null) return 0f;
+        if (bar.currentKey() != null && bar.maxKey() != null) {
+            int cur = menu.getCustomValue(bar.currentKey());
+            int max = menu.getCustomValue(bar.maxKey());
+            return max > 0 ? Math.min(1f, Math.max(0f, (float) cur / max)) : 0f;
+        }
+        String source = bar.source();
         if (source == null) return 0f;
         return switch (source) {
             case "energy" -> menu.getEnergyCapacity() > 0
@@ -218,6 +225,18 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
     }
 
     private Component formatBarTooltip(com.luatweaker.api.content.MachineBarSpec bar) {
+        if (bar.currentKey() != null && bar.maxKey() != null) {
+            int cur = menu.getCustomValue(bar.currentKey());
+            int max = menu.getCustomValue(bar.maxKey());
+            if (bar.tooltipFormat() != null && !bar.tooltipFormat().isBlank()) {
+                try {
+                    return Component.literal(String.format(bar.tooltipFormat(), cur, max));
+                } catch (Exception e) {
+                    return Component.literal(bar.tooltipFormat());
+                }
+            }
+            return Component.literal(String.format("%,d / %,d", cur, max));
+        }
         if (bar.tooltipFormat() != null && !bar.tooltipFormat().isBlank()) {
             return Component.literal(bar.tooltipFormat());
         }

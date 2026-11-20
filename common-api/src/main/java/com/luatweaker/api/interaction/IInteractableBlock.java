@@ -36,4 +36,12 @@ public interface IInteractableBlock {
     Object getRawBlockState();
 
     default boolean Destroy() { return breakBlock(); }
+
+    default boolean triggerAnimation(@NotNull String animName, @NotNull String controllerName) {
+        return com.luatweaker.api.pal.Platform.getInteraction().triggerGeoAnimation(this, controllerName, animName, 1.0, false);
+    }
+
+    default boolean playAnimation(@NotNull String animName, @NotNull String controllerName) {
+        return triggerAnimation(animName, controllerName);
+    }
 }

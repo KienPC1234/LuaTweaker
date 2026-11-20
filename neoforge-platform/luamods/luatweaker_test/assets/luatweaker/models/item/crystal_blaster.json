@@ -1,0 +1,110 @@
+{
+  "textures": {
+    "particle": "luatweaker:item/crystal_shard",
+    "barrel": "minecraft:block/cyan_terracotta",
+    "core": "luatweaker:item/crystal_shard",
+    "grip": "minecraft:block/deepslate",
+    "trim": "minecraft:block/gold_block"
+  },
+  "elements": [
+    {
+      "name": "grip",
+      "from": [7, 1, 7],
+      "to": [9, 7, 9],
+      "faces": {
+        "north": {"texture": "#grip", "uv": [0, 0, 2, 6]},
+        "south": {"texture": "#grip", "uv": [0, 0, 2, 6]},
+        "east":  {"texture": "#grip", "uv": [0, 0, 2, 6]},
+        "west":  {"texture": "#grip", "uv": [0, 0, 2, 6]},
+        "down":  {"texture": "#grip", "uv": [0, 0, 2, 2]}
+      }
+    },
+    {
+      "name": "receiver",
+      "from": [6.5, 6, 5],
+      "to": [9.5, 9, 11],
+      "faces": {
+        "north": {"texture": "#barrel", "uv": [0, 0, 3, 3]},
+        "south": {"texture": "#barrel", "uv": [0, 0, 3, 3]},
+        "east":  {"texture": "#barrel", "uv": [0, 0, 6, 3]},
+        "west":  {"texture": "#barrel", "uv": [0, 0, 6, 3]},
+        "up":    {"texture": "#barrel", "uv": [0, 0, 3, 6]},
+        "down":  {"texture": "#barrel", "uv": [0, 0, 3, 6]}
+      }
+    },
+    {
+      "name": "barrel",
+      "from": [7, 6.5, 0],
+      "to": [9, 8.5, 5],
+      "faces": {
+        "north": {"texture": "#trim", "uv": [0, 0, 2, 2]},
+        "east":  {"texture": "#barrel", "uv": [0, 0, 5, 2]},
+        "west":  {"texture": "#barrel", "uv": [0, 0, 5, 2]},
+        "up":    {"texture": "#barrel", "uv": [0, 0, 2, 5]},
+        "down":  {"texture": "#barrel", "uv": [0, 0, 2, 5]}
+      }
+    },
+    {
+      "name": "crystal_core",
+      "from": [7.25, 6.75, 6.5],
+      "to": [8.75, 8.25, 9.5],
+      "faces": {
+        "north": {"texture": "#core", "uv": [0, 0, 2, 2]},
+        "south": {"texture": "#core", "uv": [0, 0, 2, 2]},
+        "east":  {"texture": "#core", "uv": [0, 0, 3, 2]},
+        "west":  {"texture": "#core", "uv": [0, 0, 3, 2]},
+        "up":    {"texture": "#core", "uv": [0, 0, 2, 3]},
+        "down":  {"texture": "#core", "uv": [0, 0, 2, 3]}
+      }
+    },
+    {
+      "name": "scope",
+      "from": [7.5, 9, 4],
+      "to": [8.5, 10, 9],
+      "faces": {
+        "north": {"texture": "#trim", "uv": [0, 0, 1, 1]},
+        "south": {"texture": "#trim", "uv": [0, 0, 1, 1]},
+        "east":  {"texture": "#trim", "uv": [0, 0, 5, 1]},
+        "west":  {"texture": "#trim", "uv": [0, 0, 5, 1]},
+        "up":    {"texture": "#trim", "uv": [0, 0, 1, 5]}
+      }
+    }
+  ],
+  "display": {
+    "thirdperson_righthand": {
+      "rotation": [-80, 0, 0],
+      "translation": [0, 2.5, -2.5],
+      "scale": [0.75, 0.75, 0.75]
+    },
+    "thirdperson_lefthand": {
+      "rotation": [-80, 0, 0],
+      "translation": [0, 2.5, -2.5],
+      "scale": [0.75, 0.75, 0.75]
+    },
+    "firstperson_righthand": {
+      "rotation": [0, 0, 0],
+      "translation": [2.5, -2.5, -4.0],
+      "scale": [0.65, 0.65, 0.65]
+    },
+    "firstperson_lefthand": {
+      "rotation": [0, 0, 0],
+      "translation": [-2.5, -2.5, -4.0],
+      "scale": [0.65, 0.65, 0.65]
+    },
+    "ground": {
+      "rotation": [0, 0, 0],
+      "translation": [0, 3, 0],
+      "scale": [0.65, 0.65, 0.65]
+    },
+    "gui": {
+      "rotation": [30, 225, 0],
+      "translation": [0, 0, 0],
+      "scale": [0.8, 0.8, 0.8]
+    },
+    "fixed": {
+      "rotation": [0, 90, 0],
+      "translation": [0, 0, 0],
+      "scale": [0.7, 0.7, 0.7]
+    }
+  }
+}

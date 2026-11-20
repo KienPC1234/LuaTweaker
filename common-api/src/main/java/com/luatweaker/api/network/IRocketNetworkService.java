@@ -72,26 +72,28 @@ public interface IRocketNetworkService {
     void RpcCancel(String requestId);
 
     /**
-     * Handles an incoming {@link RpcPhase#INVOKE} packet: runs {@code OnServerInvoke} (server
+     * Handles an incoming RemoteFunction invoke packet: runs {@code OnServerInvoke} (server
      * side, receives the calling player as first argument) or {@code OnClientInvoke} (client
      * side) and answers with the return value or a serialized failure.
      *
      * @param playerUuid caller uuid on the server; empty on the client
-     * @param argsJson   JSON argument array
+     * @param args       binary Lua argument payload ({@code LuaPayloadCodec})
      */
-    void OnRpcInvoke(String requestId, String functionName, String playerUuid, String argsJson);
+    void OnRpcInvoke(String requestId, String functionName, String playerUuid, byte[] args);
 
     /**
-     * Handles an incoming {@link RpcPhase#RESULT} packet and hands it to the waiting caller.
+     * Handles an incoming RemoteFunction result packet and hands it to the waiting caller.
      *
-     * @param resultJson JSON single-element result array; empty when {@code error} is set
-     * @param error      empty on success, otherwise the failure message
+     * @param payload binary single-element result payload; empty when {@code error} is set
+     * @param error   empty on success, otherwise the failure message
      */
-    void OnRpcResult(String requestId, String resultJson, String error);
+    void OnRpcResult(String requestId, byte[] payload, String error);
 
-    @LuaDoc(description = "Routes a client packet message received by server to active listeners.", params = {"channelName: string", "playerUuid: string", "args: table"})
-    void OnClientFired(String channelName, String playerUuid, ILuaValue[] args);
+    @LuaDoc(description = "Routes a client packet message received by server to active listeners.",
+            params = {"channelName: string", "playerUuid: string", "data: bytes"})
+    void OnClientFired(String channelName, String playerUuid, byte[] data);
 
-    @LuaDoc(description = "Routes a server packet message received by client to active listeners.", params = {"channelName: string", "playerUuid: string", "args: table"})
-    void OnServerFired(String channelName, String playerUuid, ILuaValue[] args);
+    @LuaDoc(description = "Routes a server packet message received by client to active listeners.",
+            params = {"channelName: string", "playerUuid: string", "data: bytes"})
+    void OnServerFired(String channelName, String playerUuid, byte[] data);
 }

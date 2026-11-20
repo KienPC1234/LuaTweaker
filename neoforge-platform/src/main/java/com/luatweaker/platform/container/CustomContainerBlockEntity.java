@@ -21,6 +21,7 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.items.IItemHandler;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Generic Lua-configured container block entity. The slot count is fixed by the
@@ -38,7 +39,29 @@ import org.jetbrains.annotations.NotNull;
  * reads and writes them with the existing {@code World:GetBlockEntityData} /
  * {@code World:SetBlockEntityData} calls.</p>
  */
-public class CustomContainerBlockEntity extends BlockEntity implements Container, MenuProvider, IItemHandler, IEnergyStorage, IFluidHandler {
+public class CustomContainerBlockEntity extends BlockEntity implements Container, MenuProvider, IItemHandler, IEnergyStorage, IFluidHandler, software.bernie.geckolib.animatable.GeoBlockEntity {
+
+    private final software.bernie.geckolib.animatable.instance.AnimatableInstanceCache geoCache =
+            software.bernie.geckolib.util.GeckoLibUtil.createInstanceCache(this);
+
+    @Override
+    public software.bernie.geckolib.animatable.instance.AnimatableInstanceCache getAnimatableInstanceCache() {
+        return this.geoCache;
+    }
+
+    @Override
+    public void registerControllers(software.bernie.geckolib.animation.AnimatableManager.ControllerRegistrar controllers) {
+        controllers.add(new software.bernie.geckolib.animation.AnimationController<>(this, "controller", 0, state -> {
+            ContainerSpec s = resolveSpec();
+            if (s != null && s.geoModel() != null) {
+                String def = s.geoModel().defaultAnimation();
+                if (def != null && !def.isBlank()) {
+                    return state.setAndContinue(software.bernie.geckolib.animation.RawAnimation.begin().thenLoop(def));
+                }
+            }
+            return software.bernie.geckolib.animation.PlayState.STOP;
+        }).receiveTriggeredAnimations());
+    }
 
     private static final String TAG_ITEMS = "Items";
     private static final String TAG_EXTRA = "LuaData";
@@ -229,6 +252,20 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
     public void setExtraNbt(@NotNull CompoundTag extraNbt) {
         this.extraNbt = extraNbt;
         setChanged();
+    }
+
+    public int getCustomNumericValue(@Nullable String key) {
+        if (key == null || extraNbt == null) return 0;
+        if (extraNbt.contains(key, net.minecraft.nbt.Tag.TAG_INT)) {
+            return extraNbt.getInt(key);
+        } else if (extraNbt.contains(key, net.minecraft.nbt.Tag.TAG_DOUBLE)) {
+            return (int) Math.round(extraNbt.getDouble(key));
+        } else if (extraNbt.contains(key, net.minecraft.nbt.Tag.TAG_FLOAT)) {
+            return (int) Math.round(extraNbt.getFloat(key));
+        } else if (extraNbt.contains(key, net.minecraft.nbt.Tag.TAG_LONG)) {
+            return (int) extraNbt.getLong(key);
+        }
+        return 0;
     }
 
     @Override

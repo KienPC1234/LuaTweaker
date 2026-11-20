@@ -666,20 +666,78 @@ public class DimensionServiceImplTest {
         ILuaTable config2 = engine.createTable();
         config2.rawset("coordinateScale", -2.0);
         assertThrows(IllegalArgumentException.class, () -> service.create("minecraft:test", config2));
+        ILuaTable config3 = engine.createTable();
+        config3.rawset("coordinateScale", 1.0E-9);
+        assertThrows(IllegalArgumentException.class, () -> service.create("minecraft:test", config3));
+        ILuaTable config4 = engine.createTable();
+        config4.rawset("coordinateScale", 4.0E7);
+        assertThrows(IllegalArgumentException.class, () -> service.create("minecraft:test", config4));
     }
 
     @Test
     void create_RejectsSeaLevelOutsideHeightRange() {
         ILuaTable config = engine.createTable();
         config.rawset("minHeight", 0);
-        config.rawset("maxHeight", 100);
-        config.rawset("seaLevel", 100);
+        config.rawset("maxHeight", 96);
+        config.rawset("seaLevel", 96);
         assertThrows(IllegalArgumentException.class, () -> service.create("minecraft:test", config));
         ILuaTable config2 = engine.createTable();
         config2.rawset("minHeight", 0);
-        config2.rawset("maxHeight", 100);
+        config2.rawset("maxHeight", 96);
         config2.rawset("seaLevel", -1);
         assertThrows(IllegalArgumentException.class, () -> service.create("minecraft:test", config2));
+    }
+
+    @Test
+    void create_RejectsUnalignedBuildHeights() {
+        ILuaTable config = engine.createTable();
+        config.rawset("minHeight", -60);
+        config.rawset("maxHeight", 320);
+        IllegalArgumentException minError = assertThrows(IllegalArgumentException.class,
+                () -> service.create("minecraft:test", config));
+        assertTrue(minError.getMessage().contains("multiple of 16"), minError.getMessage());
+
+        ILuaTable config2 = engine.createTable();
+        config2.rawset("minHeight", -64);
+        config2.rawset("maxHeight", 300);
+        IllegalArgumentException maxError = assertThrows(IllegalArgumentException.class,
+                () -> service.create("minecraft:test", config2));
+        assertTrue(maxError.getMessage().contains("multiple of 16"), maxError.getMessage());
+    }
+
+    @Test
+    void create_RejectsBuildTopAboveVanillaLimit() {
+        ILuaTable config = engine.createTable();
+        config.rawset("minHeight", 0);
+        config.rawset("maxHeight", 2032 + 16);
+        assertThrows(IllegalArgumentException.class, () -> service.create("minecraft:test", config));
+    }
+
+    @Test
+    void create_RejectsLogicalHeightAboveHeight() {
+        ILuaTable config = engine.createTable();
+        config.rawset("minHeight", -64);
+        config.rawset("maxHeight", 320);
+        config.rawset("logicalHeight", 400);
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.create("minecraft:test", config));
+        assertTrue(error.getMessage().contains("logicalHeight"), error.getMessage());
+    }
+
+    @Test
+    void create_RejectsInfiniburnWithoutTagPrefix() {
+        ILuaTable config = engine.createTable();
+        config.rawset("infiniburn", "minecraft:infiniburn_overworld");
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.create("minecraft:test", config));
+        assertTrue(error.getMessage().contains("block tag"), error.getMessage());
+    }
+
+    @Test
+    void create_RejectsBareDimensionId() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.create("skylands", engine.createTable()));
+        assertTrue(error.getMessage().contains("namespaced"), error.getMessage());
     }
 
     @Test
@@ -792,5 +850,322 @@ public class DimensionServiceImplTest {
         };
         service.create("minecraft:test", engine.createTable());
         assertThrows(IllegalStateException.class, () -> service.teleportTo(player, "minecraft:test"));
+    }
+
+    // ---------- batch chunk terrain ----------
+
+    @Test
+    void chunkTerrain_ProducesWholeChunkInOneCall() {
+        service.create("minecraft:batch", engine.createTable());
+        engine.executeStringOrThrow(
+                "chunkTerrainCalls = 0\n" +
+                "function batchChunkTerrain(cx, cz, ctx)\n" +
+                "    chunkTerrainCalls = chunkTerrainCalls + 1\n" +
+                "    local heights, surfaces, overrides = {}, {}, {}\n" +
+                "    for z = 0, 15 do\n" +
+                "        for x = 0, 15 do\n" +
+                "            local i = z * 16 + x + 1\n" +
+                "            heights[i] = ctx.seaLevel + x + z\n" +
+                "            if x == 0 then surfaces[i] = 'minecraft:stone' end\n" +
+                "        end\n" +
+                "    end\n" +
+                "    overrides[1] = { [0] = 'minecraft:air', [20] = 'minecraft:gold_block', [4000] = 'minecraft:air' }\n" +
+                "    overrides[300] = { [0] = 'minecraft:air' }\n" +
+                "    return heights, surfaces, overrides\n" +
+                "end\n",
+                "batch_terrain_setup");
+
+        service.setChunkTerrain("minecraft:batch", engine.getGlobalEnvironment().rawget("batchChunkTerrain"));
+        DimensionServiceImpl.ChunkTerrainResult result = service.computeChunkTerrain("minecraft:batch", 4, -7);
+
+        assertEquals(1, engine.getGlobalEnvironment().rawget("chunkTerrainCalls").asInt(),
+                "the batch callback must run exactly once per chunk");
+        assertEquals(DimensionServiceImpl.CHUNK_COLUMNS, result.heights().length);
+        assertEquals(63, result.heights()[0]);
+        assertEquals(64, result.heights()[1], "x must be the fastest index");
+        assertEquals(64, result.heights()[16], "row stride must be 16");
+        assertEquals("minecraft:stone", result.surfaces()[0]);
+        assertEquals("minecraft:grass_block", result.surfaces()[1],
+                "a nil surface falls back to the config surface block");
+        Map<Integer, String> firstColumn = result.overrides().get(0);
+        assertNotNull(firstColumn);
+        assertEquals(2, firstColumn.size(), "the out-of-range Y must be rejected");
+        assertEquals("minecraft:air", firstColumn.get(0));
+        assertEquals("minecraft:gold_block", firstColumn.get(20));
+        assertNull(result.overrides().get(299), "an out-of-range column must be rejected");
+        assertEquals(DimensionServiceImpl.TerrainMode.CHUNK, service.getTerrainMode("minecraft:batch"));
+        assertTrue(service.hasChunkTerrain("minecraft:batch"));
+    }
+
+    @Test
+    void chunkTerrain_MissingHeightsTableFailsLoudly() {
+        service.create("minecraft:batch", engine.createTable());
+        engine.executeStringOrThrow(
+                "function brokenBatchChunk(cx, cz, ctx) return nil end\n",
+                "broken_batch_setup");
+        service.setChunkTerrain("minecraft:batch", engine.getGlobalEnvironment().rawget("brokenBatchChunk"));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.computeChunkTerrain("minecraft:batch", 0, 0));
+        assertTrue(error.getMessage().contains("heights table"), error.getMessage());
+    }
+
+    @Test
+    void chunkTerrain_MissingColumnsBecomeVoid() {
+        service.create("minecraft:batch", engine.createTable());
+        engine.executeStringOrThrow(
+                "function sparseChunk(cx, cz, ctx)\n" +
+                "    local heights = {}\n" +
+                "    heights[1] = ctx.minY\n" +
+                "    heights[2] = 'not a number'\n" +
+                "    return heights\n" +
+                "end\n",
+                "sparse_batch_setup");
+        service.setChunkTerrain("minecraft:batch", engine.getGlobalEnvironment().rawget("sparseChunk"));
+
+        DimensionServiceImpl.ChunkTerrainResult result = service.computeChunkTerrain("minecraft:batch", 0, 0);
+        int voidHeight = DimensionConfig.DEFAULT_MIN_HEIGHT - 1;
+        assertEquals(DimensionConfig.DEFAULT_MIN_HEIGHT, result.heights()[0]);
+        assertEquals(voidHeight, result.heights()[1], "a non-numeric height must become void");
+        assertEquals(voidHeight, result.heights()[200], "a missing height must become void");
+    }
+
+    @Test
+    void chunkTerrain_InvalidSurfaceFallsBackToConfig() {
+        service.create("minecraft:batch", engine.createTable());
+        engine.executeStringOrThrow(
+                "function badSurfaceChunk(cx, cz, ctx)\n" +
+                "    local heights, surfaces = {}, {}\n" +
+                "    for i = 1, 256 do heights[i] = 64 end\n" +
+                "    surfaces[1] = 'Not A Block'\n" +
+                "    return heights, surfaces\n" +
+                "end\n",
+                "bad_surface_setup");
+        service.setChunkTerrain("minecraft:batch", engine.getGlobalEnvironment().rawget("badSurfaceChunk"));
+
+        DimensionServiceImpl.ChunkTerrainResult result = service.computeChunkTerrain("minecraft:batch", 0, 0);
+        assertEquals("minecraft:grass_block", result.surfaces()[0]);
+    }
+
+    @Test
+    void chunkTerrain_OverridesAboveCapFailLoudly() {
+        service.create("minecraft:batch", engine.createTable());
+        engine.executeStringOrThrow(
+                "function overridesFor(cx, cz, ctx)\n" +
+                "    local heights = {}\n" +
+                "    for i = 1, 256 do heights[i] = 0 end\n" +
+                "    return heights, nil, {\n" +
+                "        [1] = { [0] = 'minecraft:stone', [1] = 'minecraft:stone', [2] = 'minecraft:stone' },\n" +
+                "    }\n" +
+                "end\n",
+                "override_cap_setup");
+        com.luatweaker.api.vm.ILuaValue fn = engine.getGlobalEnvironment().rawget("overridesFor");
+        com.luatweaker.api.vm.ILuaTable ctx = engine.createTable();
+        ctx.rawset("seaLevel", 63.0);
+        ctx.rawset("minY", -64.0);
+        ctx.rawset("maxY", 320.0);
+        com.luatweaker.api.vm.ILuaValue[] results = engine.callFunctionMulti(fn,
+                engine.wrapNumber(0), engine.wrapNumber(0), ctx);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.parseChunkOverrides("minecraft:batch", 0, 0, results, -64, 320, 2));
+        assertTrue(error.getMessage().contains("block overrides"), error.getMessage());
+    }
+
+    @Test
+    void setTerrainGenerator_SwitchesTerrainModeBackToLegacy() {
+        service.create("minecraft:batch", engine.createTable());
+        engine.executeStringOrThrow(
+                "function batchChunkTerrain(cx, cz, ctx) local h = {} for i = 1, 256 do h[i] = 64 end return h end\n" +
+                "function legacyGenerator(x, z, baseHeight) return baseHeight end\n",
+                "mode_switch_setup");
+        service.setChunkTerrain("minecraft:batch", engine.getGlobalEnvironment().rawget("batchChunkTerrain"));
+        assertEquals(DimensionServiceImpl.TerrainMode.CHUNK, service.getTerrainMode("minecraft:batch"));
+
+        service.setTerrainGenerator("minecraft:batch", engine.getGlobalEnvironment().rawget("legacyGenerator"));
+        assertEquals(DimensionServiceImpl.TerrainMode.LEGACY, service.getTerrainMode("minecraft:batch"));
+    }
+
+    // ---------- batch biomes ----------
+
+    @Test
+    void biomeBatch_ReturnsQuartGridWithFallbacks() {
+        service.create("minecraft:batch", engine.createTable());
+        engine.executeStringOrThrow(
+                "function batchBiomes(cx, cz, ctx)\n" +
+                "    local t = {}\n" +
+                "    for i = 1, 16 do t[i] = 'minecraft:plains' end\n" +
+                "    t[2] = 'minecraft:ocean'\n" +
+                "    t[3] = 'Not A Biome'\n" +
+                "    t[4] = nil\n" +
+                "    return t\n" +
+                "end\n",
+                "biome_batch_setup");
+        service.setBiomeBatch("minecraft:batch", engine.getGlobalEnvironment().rawget("batchBiomes"));
+
+        String[] ids = service.computeBiomeBatch("minecraft:batch", 0, 0);
+        assertEquals(DimensionServiceImpl.BIOME_QUART_CELLS, ids.length);
+        assertEquals("minecraft:plains", ids[0]);
+        assertEquals("minecraft:ocean", ids[1]);
+        assertNull(ids[2], "an invalid biome id must fall back");
+        assertNull(ids[3], "a nil entry must fall back");
+        assertTrue(service.hasBiomeBatch("minecraft:batch"));
+    }
+
+    @Test
+    void biomeBatch_IsClearedByPerColumnProvider() {
+        service.create("minecraft:batch", engine.createTable());
+        engine.executeStringOrThrow(
+                "function batchBiomes(cx, cz, ctx) local t = {} for i = 1, 16 do t[i] = 'minecraft:plains' end return t end\n" +
+                "function singleBiome(x, z) return 'minecraft:plains' end\n",
+                "biome_switch_setup");
+        service.setBiomeBatch("minecraft:batch", engine.getGlobalEnvironment().rawget("batchBiomes"));
+        assertTrue(service.hasBiomeBatch("minecraft:batch"));
+
+        service.setBiomeProvider("minecraft:batch", engine.getGlobalEnvironment().rawget("singleBiome"));
+        assertFalse(service.hasBiomeBatch("minecraft:batch"));
+        assertEquals(0, service.computeBiomeBatch("minecraft:batch", 0, 0).length);
+    }
+
+    // ---------- benchmark ----------
+
+    @Test
+    void benchmark_CountsOneLuaCallPerChunkForBatchTerrain() {
+        service.create("minecraft:batch", engine.createTable());
+        engine.executeStringOrThrow(
+                "function batchChunkTerrain(cx, cz, ctx) local h = {} for i = 1, 256 do h[i] = 64 end return h end\n",
+                "bench_batch_setup");
+        service.setChunkTerrain("minecraft:batch", engine.getGlobalEnvironment().rawget("batchChunkTerrain"));
+
+        DimensionBenchmark.Report report = DimensionBenchmark.run(service, "minecraft:batch", 1);
+        assertEquals(9, report.chunks());
+        assertEquals(9, report.luaCalls());
+        assertEquals(1.0, report.luaCallsPerChunk(), 1e-9);
+    }
+
+    @Test
+    void benchmark_CountsPerColumnCallsForLegacyTerrain() {
+        service.create("minecraft:legacy", engine.createTable());
+        engine.executeStringOrThrow(
+                "function legacyGenerator(x, z, baseHeight) return baseHeight end\n",
+                "bench_legacy_setup");
+        service.setTerrainGenerator("minecraft:legacy", engine.getGlobalEnvironment().rawget("legacyGenerator"));
+
+        DimensionBenchmark.Report report = DimensionBenchmark.run(service, "minecraft:legacy", 1);
+        assertEquals(9, report.chunks());
+        assertEquals(9 * 256, report.luaCalls());
+        assertEquals(256.0, report.luaCallsPerChunk(), 1e-9);
+    }
+
+    @Test
+    void benchmark_RejectsUnknownDimensionAndBadRadius() {
+        service.create("minecraft:batch", engine.createTable());
+        assertThrows(IllegalArgumentException.class,
+                () -> DimensionBenchmark.run(service, "minecraft:unknown", 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> DimensionBenchmark.run(service, "minecraft:batch", DimensionBenchmark.MAX_RADIUS + 1));
+    }
+
+    // ---------- info table ----------
+
+    @Test
+    void getDimension_ReportsBatchFlags() {
+        service.create("minecraft:batch", engine.createTable());
+        engine.executeStringOrThrow(
+                "function batchChunkTerrain(cx, cz, ctx) local h = {} for i = 1, 256 do h[i] = 64 end return h end\n",
+                "info_batch_setup");
+        service.setChunkTerrain("minecraft:batch", engine.getGlobalEnvironment().rawget("batchChunkTerrain"));
+
+        com.luatweaker.api.vm.ILuaTable info = (com.luatweaker.api.vm.ILuaTable) service.getDimension("minecraft:batch");
+        assertNotNull(info);
+        assertEquals("chunk", info.rawget("terrainMode").asString());
+        assertTrue(info.rawget("hasChunkTerrain").asBoolean());
+        assertFalse(info.rawget("hasBiomeBatch").asBoolean());
+        assertFalse(info.rawget("hasTerrainSpec").asBoolean());
+    }
+
+    // ---------- declarative terrain spec ----------
+
+    private com.luatweaker.api.vm.ILuaTable heightSpec() {
+        com.luatweaker.api.vm.ILuaTable layer = engine.createTable();
+        layer.rawset("kind", "fbm");
+        layer.rawset("amp", 20.0);
+        layer.rawset("frequency", 0.01);
+        com.luatweaker.api.vm.ILuaTable layers = engine.createTable();
+        layers.rawset(1, layer);
+
+        com.luatweaker.api.vm.ILuaTable rule = engine.createTable();
+        rule.rawset("block", "minecraft:stone");
+        com.luatweaker.api.vm.ILuaTable rules = engine.createTable();
+        rules.rawset(1, rule);
+
+        com.luatweaker.api.vm.ILuaTable spec = engine.createTable();
+        spec.rawset("height", layers);
+        spec.rawset("surface", rules);
+        return spec;
+    }
+
+    @Test
+    void terrainSpec_SetsSpecModeAndStoresSpec() {
+        service.create("minecraft:spec", engine.createTable());
+        service.setTerrainSpec("minecraft:spec", heightSpec());
+
+        assertEquals(DimensionServiceImpl.TerrainMode.SPEC, service.getTerrainMode("minecraft:spec"));
+        assertTrue(service.hasTerrainSpec("minecraft:spec"));
+        assertNotNull(service.getTerrainSpec("minecraft:spec"));
+        assertEquals(1, service.getTerrainSpec("minecraft:spec").heightLayers().size());
+    }
+
+    @Test
+    void terrainSpec_RejectsUnknownDimension() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.setTerrainSpec("minecraft:unknown", heightSpec()));
+        assertTrue(error.getMessage().contains("Unknown dimension"), error.getMessage());
+    }
+
+    @Test
+    void terrainSpec_BuildsNativeSamplerFromRegisteredNoiseService() {
+        service.create("minecraft:spec", engine.createTable());
+        service.setTerrainSpec("minecraft:spec", heightSpec());
+        try {
+            LuaServiceRegistry.register("NoiseServiceImpl", new com.luatweaker.noise.NoiseServiceImpl(4242L));
+            TerrainSampler sampler = service.createTerrainSampler("minecraft:spec");
+
+            assertNotNull(sampler);
+            int[] heights = new int[256];
+            float[] slopes = new float[256];
+            sampler.sampleChunk(0, 0, heights, slopes);
+            for (int i = 0; i < 256; i++) {
+                assertTrue(heights[i] >= 43 && heights[i] <= 83,
+                        "spec height must stay within seaLevel +/- amplitude, got " + heights[i]);
+            }
+            assertEquals("minecraft:stone", sampler.surfaceBlockAt(0, 100, 0.0));
+        } finally {
+            LuaServiceRegistry.clear();
+        }
+    }
+
+    @Test
+    void terrainSpec_SamplerRequiresNoiseModule() {
+        service.create("minecraft:spec", engine.createTable());
+        service.setTerrainSpec("minecraft:spec", heightSpec());
+        LuaServiceRegistry.clear();
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.createTerrainSampler("minecraft:spec"));
+        assertTrue(error.getMessage().contains("Noise"), error.getMessage());
+    }
+
+    @Test
+    void benchmark_SpecModeUsesNoLuaCalls() {
+        service.create("minecraft:spec", engine.createTable());
+        service.setTerrainSpec("minecraft:spec", heightSpec());
+        try {
+            LuaServiceRegistry.register("NoiseServiceImpl", new com.luatweaker.noise.NoiseServiceImpl(4242L));
+            DimensionBenchmark.Report report = DimensionBenchmark.run(service, "minecraft:spec", 1);
+            assertEquals(0, report.luaCalls());
+            assertEquals(0.0, report.luaCallsPerChunk(), 1e-9);
+        } finally {
+            LuaServiceRegistry.clear();
+        }
     }
 }

@@ -78,6 +78,15 @@ public interface IEntity {
     @LuaDoc(description = "Deals generic damage to the entity.", params = {"amount: number"})
     default void damage(float amount) {}
 
+    @LuaDoc(
+        description = "Triggers a GeckoLib skeletal animation on this entity.",
+        params = {"animName: string", "[controllerName: string]"},
+        returnType = "boolean"
+    )
+    default boolean triggerAnimation(String animName, @LuaDefault("controller") String controllerName) {
+        return com.luatweaker.api.pal.Platform.getInteraction().triggerGeoAnimation(this, controllerName, animName, 1.0, false);
+    }
+
     @LuaDoc(description = "Deals generic damage to the entity.", params = {"amount: number"})
     default void hurt(float amount) { damage(amount); }
 
@@ -139,6 +148,12 @@ public interface IEntity {
 
     @LuaDoc(description = "Plays a named animation on the entity (stored for client-side rendering).", params = {"animName: string", "[speed: number]", "[transition: number]"})
     default void playAnimation(String animName, @LuaDefault("1.0") double speed, @LuaDefault("0.2") double transition) {}
+
+    @LuaDoc(description = "Plays a custom item animation on this entity (e.g. 'recoil', 'thrust', 'cast', 'spin', 'inspect').",
+            params = {"animName: string", "[durationTicks: integer]", "[speed: number]"})
+    default void playItemAnimation(String animName, @LuaDefault("20") int durationTicks, @LuaDefault("1.0") double speed) {
+        playAnimation(animName, speed, durationTicks);
+    }
 
     /**
      * Legacy string view over the entity's persistent data. Shares the same key namespace as
@@ -297,6 +312,45 @@ public interface IEntity {
 
     @LuaDoc(description = "Swings the entity's main arm.")
     default void swingArm() {}
+
+    @LuaDoc(
+        description = "Sets the entity pose (STANDING, CROUCHING, SWIMMING, SLEEPING, SITTING, ...). Unknown values throw.",
+        params = {"pose: string"}
+    )
+    default void setPose(String pose) {}
+
+    @LuaDoc(description = "Returns the entity pose name (e.g. 'STANDING').", returnType = "string")
+    default String getPose() { return "STANDING"; }
+
+    @LuaDoc(
+        description = "Whether this entity has an unobstructed line of sight to the target (mob senses).",
+        params = {"target: table (entity)"},
+        returnType = "boolean"
+    )
+    default boolean canSee(IEntity target) { return false; }
+
+    @LuaDoc(description = "Stops the current pathfinding move (mobs only).")
+    default void stopMoving() {}
+
+    @LuaDoc(description = "Rotates the entity to face a position (mobs steer the look controller).", params = {"x: number", "y: number", "z: number"})
+    default void lookAt(double x, double y, double z) {}
+
+    @LuaDoc(description = "Rotates the entity to face another entity (aims at eye height for mobs).", params = {"target: table (entity)"})
+    default void lookAtEntity(@NotNull IEntity target) {}
+
+    @LuaDoc(description = "Makes the entity jump (mobs only; no-op for other entities). Check isOnGround() first for grounded hops.")
+    default void jump() {}
+
+    @LuaDoc(
+        description = "Server game ticks of the entity's level (monotonic tick clock). "
+                    + "Use this for AI cooldowns and timeouts, NOT the wall-clock Task.GetTimeClock "
+                    + "(wall time jumps on NTP corrections and pauses).",
+        returnType = "number"
+    )
+    default long getGameTime() { return 0; }
+
+    @LuaDoc(description = "Whether the entity is currently pathfinding toward a target.", returnType = "boolean")
+    default boolean isNavigating() { return false; }
 
     @LuaDoc(description = "Sets the combat target entity for mob AI.", params = {"targetEntity: IEntity"})
     default void setTarget(IEntity target) {}

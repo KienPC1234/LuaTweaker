@@ -204,14 +204,275 @@ without needing a block mapping; `RegisterRemovalFeatures` is only the
 `block -> feature IDs` lookup that `RemoveOre` consumes. Overrides persist for
 the session — re-register after every reload (startup scripts run each load).
 
-## 7. Explicitly NOT supported
+## 7. Live biome queries (`GetBiome`)
 
-`Worldgen:GetBiome(id)` throws `UnsupportedOperationException` (loud STUB +
-error log). Live biome queries need a platform PAL capability that does not
-exist yet — follow-up work. Use `ModifyBiome` with explicit biome IDs instead.
+`Worldgen:GetBiome(id)` reads the biome from the **running server's registry**, so datapack
+biomes (including Lua-defined ones) and biome-modifier changes are visible:
 
-## 5. Platform integration notes (provider owner)
+```lua
+local plains = Worldgen:GetBiome("minecraft:plains")
+print(plains.temperature, plains.downfall, plains.hasPrecipitation)
+print(plains.skyColor, plains.waterColor)
+for _, spawn in ipairs(plains.spawners.monster or {}) do
+    print(spawn.entity, spawn.weight, spawn.minGroup, spawn.maxGroup)
+end
+```
 
+Returned fields: `id`, `hasPrecipitation`, `temperature`, `downfall`,
+`temperatureModifier`, `skyColor`, `fogColor`, `waterColor`, `waterFogColor`, optional
+`grassColor`/`foliageColor` overrides, and `spawners` keyed by category
+(`monster`, `creature`, ...). An unknown id throws `IllegalArgumentException`; the call
+requires a running server.
+
+## 8. Batched noise sampling (`Noise:Fill2D` / `Fill3D`)
+
+Calling `Noise:fBm` once per block is the main cost of a Lua terrain generator: every call
+crosses the Lua/Java boundary. `Fill2D`/`Fill3D` sample a whole grid in **one** native call
+and return a 1-indexed array:
+
+```lua
+-- 16 x 16 chunk height field, one call
+local heights = Noise:Fill2D(chunkX * 16, chunkZ * 16, 16, 16, {
+    kind = 'warped_fbm', octaves = 6, lacunarity = 2.0, gain = 0.55,
+    warpStrength = 40, warpFrequency = 0.01,
+})
+
+-- 3D density volume for caves/overhangs: 8 x 8 x 8 samples
+local density = Noise:Fill3D(x0, y0, z0, 8, 8, 8, {
+    kind = 'fbm3', octaves = 4, gain = 0.5,
+})
+```
+
+Indexing: `Fill2D` → `index = z * width + x + 1` (x fastest); `Fill3D` →
+`index = (y * sizeZ + z) * sizeX + x + 1`.
+
+Spec fields: `kind` (`fbm`, `simplex`, `ridged`, `voronoi`, `warped_fbm`, `fbm3`,
+`simplex3`), `octaves`, `lacunarity`, `gain`, `frequency`, `jitter`, `returnType`
+(voronoi 0/1/2), `warpStrength`, `warpFrequency`. `frequency` scales world coordinates for
+every kind. `warpStrength` is a **world-space displacement in blocks** (internally converted
+to noise units, so it does not depend on `frequency`). One call is capped at 1,048,576 samples;
+invalid kinds/sizes raise a Lua error instead of silently returning zeros.
+
+`Fill2D` already reads the same noise state as the scalar functions, so it is
+seed-reproducible (`Noise:SetSeed`).
+
+## 9. Batch terrain per chunk (`Dimensions:SetChunkTerrain`)
+
+The per-column callbacks cost up to 768 Lua calls per chunk: `SetTerrainGenerator` 256,
+`SetBlockPicker` 256, `SetStrataPicker` 256, plus 16 biome-provider calls. `SetChunkTerrain`
+replaces all three terrain callbacks with **one** call per chunk:
+
+```lua
+Dimensions:SetChunkTerrain("mymod:islands", function(chunkX, chunkZ, ctx)
+    local baseX, baseZ = chunkX * 16, chunkZ * 16
+    local base = Noise:Fill2D(baseX, baseZ, 16, 16, { kind = 'warped_fbm', octaves = 5 })
+    local ridge = Noise:Fill2D(baseX, baseZ, 16, 16, { kind = 'ridged', octaves = 4 })
+
+    local heights, surfaces, overrides = {}, {}, {}
+    for z = 0, 15 do
+        for x = 0, 15 do
+            local i = z * 16 + x + 1
+            local h = ctx.seaLevel + base[i] * 20 + ridge[i] * 90
+            heights[i] = math.floor(h)
+            surfaces[i] = h > 200 and 'minecraft:snow_block' or 'mymod:stone'
+        end
+    end
+    -- Sparse 3D escape hatch: column index -> { [y] = blockId }
+    overrides[1] = { [ctx.minY + 2] = 'minecraft:lava' }
+    return heights, surfaces, overrides
+end)
+```
+
+Contract:
+
+- `heights`: 256 numbers, `index = z * 16 + x + 1`, **absolute Y**. A value `<= ctx.minY`
+  means a void column. Missing or non-numeric entries also generate as void and log once per
+  chunk; returning no heights table aborts chunk generation loudly instead of producing a
+  flat world.
+- `surfaces`: optional 256 block ids for the top block; `nil` or invalid entries fall back to
+  the config `surfaceBlock`.
+- `overrides`: optional `{[column] = {[y] = blockId}}`, column 1..256. `minecraft:air`
+  carves. Y outside the build range is dropped, and one chunk is capped at 262,144 override
+  entries (exceeding the cap aborts loudly).
+- `ctx`: `chunkX`, `chunkZ`, `minX`, `minZ`, `minY`, `maxY`, `seaLevel`, `biomeSize`.
+
+`SetChunkTerrain` takes precedence over `SetTerrainGenerator`/`SetBlockPicker`/
+`SetStrataPicker`: while it is active the per-column callbacks are not called (a warning is
+logged when both are registered). Calling `SetTerrainGenerator` again switches the dimension
+back to the per-column mode. Columns the callback leaves below `ctx.seaLevel` are still
+filled with water, and an explicit `minecraft:air` override wins over that fill.
+
+## 10. Batch biomes per chunk (`Dimensions:SetBiomeBatch`)
+
+One call per chunk instead of one per quart (16 per chunk):
+
+```lua
+Dimensions:SetBiomeBatch("mymod:islands", function(chunkX, chunkZ, ctx)
+    local bands = Noise:Fill2D(chunkX * 16, chunkZ * 16, 16, 16, {
+        kind = 'simplex', frequency = 0.004,
+    })
+    local biomes = {}
+    for qz = 0, 3 do
+        for qx = 0, 3 do
+            local i = qz * 4 + qx + 1
+            local value = bands[(qz * 4) * 16 + (qx * 4) + 1]
+            biomes[i] = value > 0.3 and 'mymod:forest'
+                or value < -0.3 and 'mymod:wastes'
+                or 'mymod:plains'
+        end
+    end
+    return biomes
+end)
+```
+
+The table holds up to 16 biome ids for the 4 x 4 quart grid of the chunk
+(`index = qz * 4 + qx + 1`). A nil or invalid entry falls back to the weighted pick from the
+config biomes. Results are cached per chunk and dropped when the dimension is reloaded.
+`SetBiomeProvider` and `SetBiomeBatch` are mutually exclusive - the last one registered wins.
+
+## 11. Declarative terrain (`Dimensions:SetTerrainSpec`)
+
+A spec is pure data evaluated natively by the chunk generator: **zero Lua calls per chunk**.
+
+```lua
+Dimensions:SetTerrainSpec("mymod:peaks", {
+    seaLevel = 70,
+    height = {
+        { kind = 'fbm',        amp = 30, frequency = 0.001, octaves = 6 },
+        { kind = 'ridged',     amp = 70, frequency = 0.004, octaves = 5 },
+        { kind = 'warped_fbm', amp = 15, frequency = 0.02, warpStrength = 40 },
+    },
+    -- optional: maps the normalized sum (-1..1) to an absolute surface Y
+    spline = { { -0.6, 30 }, { 0.0, 70 }, { 0.5, 150 }, { 0.9, 260 } },
+    surface = {
+        { block = 'minecraft:snow_block',   maxDepth = 1, minY = 200 },
+        { block = 'mymod:alpine_grass',     maxDepth = 1 },
+        { block = 'mymod:cliff_stone',      maxDepth = 4, minSlope = 0.8 },
+        { block = 'mymod:rock',             maxDepth = 4 },
+    },
+})
+```
+
+Semantics:
+
+- `height` layers must be 2D kinds. `sum = SUM(amp * noise(x * frequency, z * frequency))`.
+  Without a spline, `surfaceY = seaLevel + sum`. With a spline, the surface is the spline
+  output for `sum / SUM(|amp|)`; inputs must be strictly increasing and out-of-range values
+  clamp to the end points.
+- `surface` rules are ordered; the first match wins. `maxDepth` is the deepest offset below
+  the column top (`0` = top block only), `minY`/`maxY` are inclusive, and `minSlope` filters
+  cliffs (blocks per block). Depths no rule matches fall back to the config
+  `surfaceBlock`/`subsurfaceBlock`/`fillerBlock` stack.
+- `seaLevel` optionally overrides the dimension config sea level for water fill and spawns.
+  `water = false` disables water fill entirely, so void/sky dimensions stay empty below the
+  terrain instead of filling up to sea level.
+- `platforms = { { x, z, radius, bottomY, topY } }` forces solid cylinders into the terrain
+  (spawn islands and pillars). Density mode fills between `bottomY` and `topY`; height mode
+  raises the column to at least `topY`.
+- Slopes come from an 18 x 18 height grid (the chunk plus a one-block border), so border
+  columns see their real neighbours. A chunk costs 324 height samples, not 256 separate Lua
+  calls.
+- Broken specs fail at registration with the offending field named: unknown noise kind,
+  non-ascending spline, invalid block id, `seaLevel` outside the build range, non-numeric
+  amplitude, and so on.
+
+Precedence: the last terrain setter called wins. `SetTerrainSpec` replaces the Lua terrain
+generator and the per-column pickers for that dimension; it does not touch the biome source.
+
+### 3D density: overhangs, caves and floating islands
+
+Add a `density` section to switch the whole dimension from a heightmap to a real 3D field:
+
+```lua
+Dimensions:SetTerrainSpec("mymod:skylands", {
+    seaLevel = 0,                       -- water fill stays off for a sky dimension
+    water = false,
+    density = {                         -- height layer is optional when density is set
+        layers = {
+            { kind = 'fbm3',     amp = 1.0, frequency = 0.012, octaves = 5 },
+            { kind = 'simplex3', amp = 0.35, frequency = 0.04 },
+        },
+        threshold = 0.15,
+        -- Solid only where the threshold dips below zero: a floating band around y = 180.
+        thresholdSpline = { { 0, 1.2 }, { 150, 0.6 }, { 180, -0.6 }, { 220, 0.6 }, { 319, 1.2 } },
+        cellSize = 4,
+        cellHeight = 4,
+    },
+    -- Guaranteed spawn island: a solid cylinder independent of the noise.
+    platforms = { { x = 0, z = 0, radius = 14, bottomY = 168, topY = 182 } },
+    surface = {
+        { block = 'mymod:sky_grass',  maxDepth = 1 },
+        { block = 'mymod:sky_stone',  maxDepth = 4 },
+    },
+})
+```
+
+`density.layers` must be 3D kinds (`fbm3`, `simplex3`). A block is solid when
+`SUM(amp * noise3(x, y, z)) > threshold + thresholdSpline(y)`. Raising `threshold` carves more
+away (cave systems, broken arches); a `thresholdSpline` that is high away from a Y band and low
+inside it yields floating islands or overhangs. Density noise is sampled every `cellSize`
+blocks horizontally and `cellHeight` blocks vertically (4 x 4 by default) and interpolated
+trilinearly per block, so a 384-high chunk costs about 2,000 noise samples instead of 90,000.
+
+With density the per-column `height` is the highest solid block, so heightmap consumers
+(spawn checks, `getBaseHeight`) keep working, and water only fills above that block - caves
+stay dry. `surface` rules apply to the top solid block of each column.
+
+`platforms` forces solid cylinders into the terrain
+(`{ x, z, radius, bottomY, topY }`). With a density field the cylinder is solid between
+`bottomY` and `topY`; in height mode the column is raised to at least `topY`. Use one for a
+spawn island in a void dimension, or several for pillars; they are pure data and cost one
+distance check per block.
+
+There are still no vanilla-style carvers, structure sets or region pre-generation; use
+`SetChunkTerrain` overrides or the structure APIs for those.
+
+## 12. Measuring the Lua pipeline
+
+`/lt dimension bench <id> [radius 0-8]` replays the active terrain pipeline and reports total
+milliseconds, milliseconds per chunk and Lua calls per chunk. It is a developer measurement
+of the Lua pipeline: block placement, lighting and feature generation are not included.
+
+## 13. Minecraft generator contract (what is and is not implemented)
+
+The Lua chunk generator is a real `ChunkGenerator`, not a wrapper around
+`NoiseBasedChunkGenerator`. Audit against Minecraft 1.21.1 / NeoForge 21.1.242:
+
+| Hook | Implementation |
+|---|---|
+| `fillFromNoise` | Lua batch / declarative spec / 3D density; writes solid blocks only |
+| `createBiomes` | inherited: fills biomes from `LuaBiomeSource` |
+| `buildSurface` | no-op: surfaces come from the config or spec rules |
+| `applyCarvers` | no-op: no vanilla carvers; density threshold carves caves |
+| `applyBiomeDecoration` | inherited: vanilla biome features (trees, grass, ores) **do** run |
+| `createState` / `createReferences` | overridden: no vanilla structure sets (see below) |
+| `spawnOriginalMobs` / `getMobsAt` | config `spawnEntities`; ocean columns are skipped |
+| `getBaseHeight` | first free Y above solid/water, per the vanilla heightmap contract |
+| `getBaseColumn` | full block-state column from `minY` to `maxY` |
+| `getGenDepth` / `getMinY` / `getSeaLevel` | dimension config, with a spec `seaLevel` override |
+
+Dimension type values are validated before the JSON is written, because vanilla
+`DimensionType` throws at datapack load otherwise:
+
+- `minHeight` and `maxHeight` must be multiples of 16;
+- `height = maxHeight - minHeight` must be 16..2032 and `minHeight + height <= 2032`;
+- `logicalHeight <= height`;
+- `coordinateScale` must be in `1e-5..3e7`;
+- `infiniburn` must be a `#namespace:tag`;
+- dimension ids must be namespaced (`mymod:skylands`).
+
+Intentional gaps:
+
+- **Vanilla structure sets are disabled** (`createState` returns an empty set), so villages,
+  mineshafts and similar structures do not generate into Lua terrain. Place builds with the
+  structure APIs instead.
+- No vanilla carvers (`applyCarvers` no-op); use the `density` threshold or chunk overrides.
+- No vanilla surface rules, snow or ice (`buildSurface` no-op); use `surface` rules.
+- No `NoiseGeneratorSettings`/`NoiseRouter`; `SetTerrainSpec` is the native equivalent.
+- Dimension levels are created when the server starts. A dimension added by `/lt reload` is
+  written to the virtual datapack but its level is not hot-loaded; restart the server.
+
+## 14. Platform integration notes (provider owner)
 - `buildBiomeModifierFiles()` returns every new `relPath -> json` pair;
   the provider feeds them to `IDatapackService#addData` next to its ore files,
   so `ModifyBiome`/`AddFeature` registrations materialize on every load.

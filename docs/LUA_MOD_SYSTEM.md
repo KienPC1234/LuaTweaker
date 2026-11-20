@@ -291,6 +291,11 @@ When Minecraft boots, LuaTweaker runs this pipeline **sequentially** for every m
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+While this pipeline runs, the client prints one line per mod on the FML loading window —
+`[LuaTweaker] <mod_id> (3/12)` — so a slow mod is identifiable without opening the log. FML
+keeps those loading-window lines ASCII-only and shows the two most recent ones. Dedicated
+servers have no loading window; there the same progress stays in the log.
+
 ---
 
 ## 🚀 6. `main.lua` Reference Structure

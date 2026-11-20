@@ -15,6 +15,13 @@ public class ContentLuaBinding {
     private static final String DEFAULT_BOSS_BAR_COLOR = "RED";
     private static final String DEFAULT_BOSS_BAR_OVERLAY = "PROGRESS";
 
+    private static ILuaValue wrapItemValue(ILuaEngine engine, Object itemStack) {
+        if (itemStack instanceof com.luatweaker.api.interaction.IInteractableItem item) {
+            return com.luatweaker.interaction.InteractionLuaBinding.wrapItem(engine, item);
+        }
+        return engine.toLuaValue(itemStack);
+    }
+
     public static void registerBindings(ILuaEngine engine, IContentService contentService, IStorageService storageService, IDatapackService datapackService) {
         ILuaTable env = engine.getGlobalEnvironment();
 
@@ -349,7 +356,8 @@ public class ContentLuaBinding {
         // Content.OreDict("name")
         startupTable.rawset("OreDict", startupTable.rawget("Tag"));
 
-        // Content.NewKeyMapping("staff_swap_skill"):DisplayName("Staff Skill Swap"):Category("luatweaker"):DefaultKey(90):OnPress("StaffSwapSkill"):Register()
+        // Content.NewKeyMapping("staff_swap_skill"):DisplayName("Staff Skill Swap"):Category("luatweaker"):DefaultKey("Z"):OnPress("StaffSwapSkill"):Register()
+        // Content.NewKeyMapping("staff_aoe"):DefaultKey("MOUSE_RIGHT"):Modifier("shift"):OnPress("StaffAoe"):Register()
         ILuaFunction newKeyMappingFn = args -> {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off < 1) throw new IllegalArgumentException("Content.NewKeyMapping requires (id)");
@@ -359,18 +367,24 @@ public class ContentLuaBinding {
             final String[] category = new String[] { "luatweaker" };
             final int[] defaultKey = new int[] { 90 };
             final String[] payload = new String[] { "" };
+            final String[] inputType = new String[] { "key" };
+            final String[] modifier = new String[] { "none" };
 
             bindMethod(table, "displayName", a -> { int o = getOffset(a); if (a.length - o >= 1) displayName[0] = a[o].asString(); return table; });
             bindMethod(table, "name", a -> { int o = getOffset(a); if (a.length - o >= 1) displayName[0] = a[o].asString(); return table; });
             bindMethod(table, "description", a -> { int o = getOffset(a); if (a.length - o >= 1) displayName[0] = a[o].asString(); return table; });
             bindMethod(table, "category", a -> { int o = getOffset(a); if (a.length - o >= 1) category[0] = a[o].asString(); return table; });
-            bindMethod(table, "defaultKey", a -> { int o = getOffset(a); if (a.length - o >= 1) defaultKey[0] = a[o].asInt(); return table; });
+            bindMethod(table, "defaultKey", a -> { int o = getOffset(a); if (a.length - o >= 1) { com.luatweaker.api.client.KeyNames.KeyRef ref = com.luatweaker.api.client.KeyNames.parseKeyRef(a[o], "DefaultKey"); defaultKey[0] = ref.code(); inputType[0] = ref.inputType(); } return table; });
+            bindMethod(table, "key", a -> { int o = getOffset(a); if (a.length - o >= 1) { com.luatweaker.api.client.KeyNames.KeyRef ref = com.luatweaker.api.client.KeyNames.parseKeyRef(a[o], "Key"); defaultKey[0] = ref.code(); inputType[0] = ref.inputType(); } return table; });
+            bindMethod(table, "mouseButton", a -> { int o = getOffset(a); if (a.length - o >= 1) { defaultKey[0] = com.luatweaker.api.client.KeyNames.parseMouseButton(a[o].asString()); inputType[0] = "mouse"; } return table; });
+            bindMethod(table, "modifier", a -> { int o = getOffset(a); if (a.length - o >= 1) modifier[0] = com.luatweaker.api.client.KeyNames.parseModifier(a[o].asString()); return table; });
             bindMethod(table, "onPress", a -> { int o = getOffset(a); if (a.length - o >= 1) payload[0] = a[o].asString(); return table; });
             bindMethod(table, "onPressPayload", a -> { int o = getOffset(a); if (a.length - o >= 1) payload[0] = a[o].asString(); return table; });
             bindMethod(table, "register", a -> {
                 Object keyBindService = com.luatweaker.core.service.LuaServiceRegistry.get("KeyBindService");
                 if (keyBindService instanceof com.luatweaker.api.client.IKeyBindService kbs) {
-                    kbs.registerKeyBind(id, displayName[0], category[0], defaultKey[0], payload[0]);
+                    kbs.registerKeyBind(id, displayName[0], category[0], defaultKey[0], payload[0],
+                            inputType[0], modifier[0]);
                 }
                 return table;
             });
@@ -647,7 +661,7 @@ public class ContentLuaBinding {
                         ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
                                 ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
                                 : engine.toLuaValue(player);
-                        engine.callFunction(func, playerVal, engine.toLuaValue(itemStack));
+                        engine.callFunction(func, playerVal, wrapItemValue(engine, itemStack));
                     } catch (Exception e) {
                         LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item rightClick callback: " + e.getMessage());
                     }
@@ -716,7 +730,7 @@ public class ContentLuaBinding {
                         ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
                                 ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
                                 : engine.toLuaValue(player);
-                        engine.callFunction(func, playerVal, engine.toLuaValue(itemStack));
+                        engine.callFunction(func, playerVal, wrapItemValue(engine, itemStack));
                     } catch (Exception e) {
                         LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item onConsume callback: " + e.getMessage());
                     }
@@ -749,7 +763,7 @@ public class ContentLuaBinding {
                         ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
                                 ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
                                 : engine.toLuaValue(player);
-                        engine.callFunction(func, playerVal, engine.toLuaValue(itemStack), engine.wrapNumber(ticksRemaining));
+                        engine.callFunction(func, playerVal, wrapItemValue(engine, itemStack), engine.wrapNumber(ticksRemaining));
                     } catch (Exception e) {
                         LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item onUseTick callback: " + e.getMessage());
                     }
@@ -767,7 +781,7 @@ public class ContentLuaBinding {
                         ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
                                 ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
                                 : engine.toLuaValue(player);
-                        engine.callFunction(func, playerVal, engine.toLuaValue(itemStack), engine.wrapNumber(timeLeft));
+                        engine.callFunction(func, playerVal, wrapItemValue(engine, itemStack), engine.wrapNumber(timeLeft));
                     } catch (Exception e) {
                         LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item onReleaseUsing callback: " + e.getMessage());
                     }
@@ -785,7 +799,7 @@ public class ContentLuaBinding {
                         ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
                                 ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
                                 : engine.toLuaValue(player);
-                        engine.callFunction(func, playerVal, engine.toLuaValue(itemStack));
+                        engine.callFunction(func, playerVal, wrapItemValue(engine, itemStack));
                     } catch (Exception e) {
                         LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item onFinishUsing callback: " + e.getMessage());
                     }
@@ -806,7 +820,7 @@ public class ContentLuaBinding {
                         ILuaValue attackerVal = (attackerPlayer instanceof com.luatweaker.api.entity.IPlayer p)
                                 ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
                                 : engine.toLuaValue(attackerPlayer);
-                        engine.callFunction(func, targetVal, attackerVal, engine.toLuaValue(itemStack));
+                        engine.callFunction(func, targetVal, attackerVal, wrapItemValue(engine, itemStack));
                     } catch (Exception e) {
                         LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item onHurtEnemy callback: " + e.getMessage());
                     }
@@ -824,7 +838,7 @@ public class ContentLuaBinding {
                         ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
                                 ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
                                 : engine.toLuaValue(player);
-                        engine.callFunction(func, playerVal, engine.toLuaValue(itemStack), engine.wrapNumber(x), engine.wrapNumber(y), engine.wrapNumber(z));
+                        engine.callFunction(func, playerVal, wrapItemValue(engine, itemStack), engine.wrapNumber(x), engine.wrapNumber(y), engine.wrapNumber(z));
                     } catch (Exception e) {
                         LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item onMineBlock callback: " + e.getMessage());
                     }
@@ -842,7 +856,7 @@ public class ContentLuaBinding {
                         ILuaValue playerVal = (player instanceof com.luatweaker.api.entity.IPlayer p)
                                 ? com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, p)
                                 : engine.toLuaValue(player);
-                        engine.callFunction(func, playerVal, engine.toLuaValue(itemStack));
+                        engine.callFunction(func, playerVal, wrapItemValue(engine, itemStack));
                     } catch (Exception e) {
                         LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing item onSwing callback: " + e.getMessage());
                     }
@@ -851,6 +865,25 @@ public class ContentLuaBinding {
             return table;
         });
 
+        bindMethod(table, "geoModel", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 3) {
+                String modelPath = args[off].asString();
+                String texturePath = args[off + 1].asString();
+                String animPath = args[off + 2].asString();
+                String defaultAnim = (args.length - off >= 4 && !args[off + 3].isNil()) ? args[off + 3].asString() : null;
+                builder.geoModel(modelPath, texturePath, animPath, defaultAnim);
+            }
+            return table;
+        });
+        bindMethod(table, "defaultAnimation", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 1 && builder.getGeoModel() != null) {
+                var prev = builder.getGeoModel();
+                builder.geoModel(prev.modelPath(), prev.texturePath(), prev.animationPath(), args[off].asString());
+            }
+            return table;
+        });
     }
 
     private static void bindBlockBuilderMethods(ILuaEngine engine, ILuaTable table, IBlockBuilder builder, IDatapackService datapackService) {
@@ -1041,6 +1074,41 @@ public class ContentLuaBinding {
             return table;
         });
 
+        bindMethod(table, "customBar", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 5) {
+                String id = args[off].asString();
+                int x = args[off + 1].asInt();
+                int y = args[off + 2].asInt();
+                int width = args[off + 3].asInt();
+                int height = args[off + 4].asInt();
+                String curKey = null;
+                String maxKey = null;
+                int color = 0;
+                String tooltip = null;
+                if (args.length - off >= 6 && args[off + 5].isTable()) {
+                    ILuaTable opts = args[off + 5].asTable();
+                    ILuaValue ckv = opts.rawget("currentKey"); if (ckv.isNil()) ckv = opts.rawget("current");
+                    if (!ckv.isNil()) curKey = ckv.asString();
+                    ILuaValue mkv = opts.rawget("maxKey"); if (mkv.isNil()) mkv = opts.rawget("max");
+                    if (!mkv.isNil()) maxKey = mkv.asString();
+                    ILuaValue colv = opts.rawget("color");
+                    if (!colv.isNil()) color = colv.asInt();
+                    ILuaValue ttv = opts.rawget("tooltip"); if (ttv.isNil()) ttv = opts.rawget("tooltipFormat");
+                    if (!ttv.isNil()) tooltip = ttv.asString();
+                } else if (args.length - off >= 7) {
+                    curKey = args[off + 5].asString();
+                    maxKey = args[off + 6].asString();
+                    if (args.length - off >= 8) color = args[off + 7].asInt();
+                    if (args.length - off >= 9) tooltip = args[off + 8].asString();
+                }
+                if (curKey != null && maxKey != null) {
+                    builder.customBar(id, x, y, width, height, curKey, maxKey, color, tooltip);
+                }
+            }
+            return table;
+        });
+
         bindMethod(table, "booleanState", args -> {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 3) {
@@ -1204,6 +1272,26 @@ public class ContentLuaBinding {
             }
             return table;
         });
+
+        bindMethod(table, "geoModel", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 3) {
+                String modelPath = args[off].asString();
+                String texturePath = args[off + 1].asString();
+                String animPath = args[off + 2].asString();
+                String defaultAnim = (args.length - off >= 4 && !args[off + 3].isNil()) ? args[off + 3].asString() : null;
+                builder.geoModel(modelPath, texturePath, animPath, defaultAnim);
+            }
+            return table;
+        });
+        bindMethod(table, "defaultAnimation", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 1 && builder.getGeoModel() != null) {
+                var prev = builder.getGeoModel();
+                builder.geoModel(prev.modelPath(), prev.texturePath(), prev.animationPath(), args[off].asString());
+            }
+            return table;
+        });
     }
 
 
@@ -1287,6 +1375,96 @@ public class ContentLuaBinding {
         bindMethod(table, "eggTexture", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.spawnEggTexture(args[off].asString()); return table; });
         bindMethod(table, "parent", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.parent(args[off].asString()); return table; });
         bindMethod(table, "parentMob", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.parentMob(args[off].asString()); return table; });
+        bindMethod(table, "rig", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.rig(args[off].asString()); return table; });
+        bindMethod(table, "defaultGoals", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.defaultGoals(args[off].asString()); return table; });
+        bindMethod(table, "renderScale", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.renderScale(args[off].asDouble()); return table; });
+        bindMethod(table, "fireImmune", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            builder.fireImmune(args.length - off < 1 || args[off].asBoolean());
+            return table;
+        });
+        bindMethod(table, "tickRate", args -> { int off = com.luatweaker.core.bind.LuaBinder.getOffset(args); builder.tickRate(args[off].asInt()); return table; });
+        bindMethod(table, "onTick", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.onTick(entity -> {
+                    try {
+                        engine.callFunction(func,
+                                com.luatweaker.entities.EntitiesLuaBinding.createEntityLuaTable(engine, entity));
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing entity onTick callback: " + e.getMessage());
+                    }
+                });
+            }
+            return table;
+        });
+        bindMethod(table, "onHurt", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.onHurt((entity, amount, attacker) -> {
+                    try {
+                        ILuaValue entityVal =
+                                com.luatweaker.entities.EntitiesLuaBinding.createEntityLuaTable(engine, entity);
+                        ILuaValue attackerVal = (attacker instanceof com.luatweaker.api.entity.IEntity a)
+                                ? com.luatweaker.entities.EntitiesLuaBinding.createEntityLuaTable(engine, a)
+                                : engine.nilValue();
+                        ILuaValue result = engine.callFunction(func, entityVal,
+                                engine.wrapNumber(amount), attackerVal);
+                        if (result != null && !result.isNil() && result.isNumber()) {
+                            return (float) result.asDouble();
+                        }
+                        return null;
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing entity onHurt callback: " + e.getMessage());
+                        return null;
+                    }
+                });
+            }
+            return table;
+        });
+        bindMethod(table, "onDeath", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.onDeath((entity, killer) -> {
+                    try {
+                        ILuaValue entityVal =
+                                com.luatweaker.entities.EntitiesLuaBinding.createEntityLuaTable(engine, entity);
+                        ILuaValue killerVal = (killer instanceof com.luatweaker.api.entity.IEntity k)
+                                ? com.luatweaker.entities.EntitiesLuaBinding.createEntityLuaTable(engine, k)
+                                : engine.nilValue();
+                        ILuaValue result = engine.callFunction(func, entityVal, killerVal);
+                        return result != null && !result.isNil() && result.asBoolean();
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing entity onDeath callback: " + e.getMessage());
+                        return false;
+                    }
+                });
+            }
+            return table;
+        });
+        bindMethod(table, "onInteract", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            ILuaValue func = args[off];
+            if (func != null && func.isFunction()) {
+                builder.onInteract((entity, player) -> {
+                    try {
+                        ILuaValue entityVal =
+                                com.luatweaker.entities.EntitiesLuaBinding.createEntityLuaTable(engine, entity);
+                        ILuaValue playerVal =
+                                com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, player);
+                        ILuaValue result = engine.callFunction(func, entityVal, playerVal);
+                        return result != null && !result.isNil() && result.asBoolean();
+                    } catch (Exception e) {
+                        LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing entity onInteract callback: " + e.getMessage());
+                        return false;
+                    }
+                });
+            }
+            return table;
+        });
         bindMethod(table, "bossBar", args -> {
             int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
             if (args.length - off >= 1) {
@@ -1294,6 +1472,26 @@ public class ContentLuaBinding {
                 String color = args.length - off >= 2 ? args[off + 1].asString() : DEFAULT_BOSS_BAR_COLOR;
                 String overlay = args.length - off >= 3 ? args[off + 2].asString() : DEFAULT_BOSS_BAR_OVERLAY;
                 builder.bossBar(title, color, overlay);
+            }
+            return table;
+        });
+
+        bindMethod(table, "geoModel", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 3) {
+                String modelPath = args[off].asString();
+                String texturePath = args[off + 1].asString();
+                String animPath = args[off + 2].asString();
+                String defaultAnim = (args.length - off >= 4 && !args[off + 3].isNil()) ? args[off + 3].asString() : null;
+                builder.geoModel(modelPath, texturePath, animPath, defaultAnim);
+            }
+            return table;
+        });
+        bindMethod(table, "defaultAnimation", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 1 && builder.getGeoModel() != null) {
+                var prev = builder.getGeoModel();
+                builder.geoModel(prev.modelPath(), prev.texturePath(), prev.animationPath(), args[off].asString());
             }
             return table;
         });

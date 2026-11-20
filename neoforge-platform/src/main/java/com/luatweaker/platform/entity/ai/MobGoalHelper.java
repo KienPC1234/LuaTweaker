@@ -71,6 +71,186 @@ public final class MobGoalHelper {
         }
     }
 
+    public static void addFloatGoal(@NotNull IEntity entity, int priority) {
+        if (entity.getRawEntity() instanceof net.minecraft.world.entity.Mob mob) {
+            mob.goalSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.FloatGoal(mob));
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Cannot add FloatGoal: Entity " + entity + " is not a Mob!");
+        }
+    }
+
+    public static void addWanderGoal(@NotNull IEntity entity, int priority, double speed) {
+        if (entity.getRawEntity() instanceof net.minecraft.world.entity.PathfinderMob mob) {
+            mob.goalSelector.addGoal(priority,
+                    new net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal(mob, speed));
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Cannot add WanderGoal: Entity " + entity + " is not a PathfinderMob!");
+        }
+    }
+
+    public static void addLookAtGoal(@NotNull IEntity entity, int priority, double distance, @NotNull String targetType) {
+        if (entity.getRawEntity() instanceof net.minecraft.world.entity.Mob mob) {
+            Class<? extends net.minecraft.world.entity.LivingEntity> clazz = resolveTargetClass(targetType, entity);
+            if (clazz == null) {
+                return;
+            }
+            mob.goalSelector.addGoal(priority,
+                    new net.minecraft.world.entity.ai.goal.LookAtPlayerGoal(mob, clazz, (float) distance));
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Cannot add LookAtGoal: Entity " + entity + " is not a Mob!");
+        }
+    }
+
+    public static void addLookAroundGoal(@NotNull IEntity entity, int priority) {
+        if (entity.getRawEntity() instanceof net.minecraft.world.entity.Mob mob) {
+            mob.goalSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.RandomLookAroundGoal(mob));
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Cannot add LookAroundGoal: Entity " + entity + " is not a Mob!");
+        }
+    }
+
+    public static void addPanicGoal(@NotNull IEntity entity, int priority, double speed) {
+        if (entity.getRawEntity() instanceof net.minecraft.world.entity.PathfinderMob mob) {
+            mob.goalSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.PanicGoal(mob, speed));
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Cannot add PanicGoal: Entity " + entity + " is not a PathfinderMob!");
+        }
+    }
+
+    public static void addAvoidGoal(@NotNull IEntity entity, int priority, @NotNull String targetType,
+                                    double distance, double walkSpeed, double sprintSpeed) {
+        if (entity.getRawEntity() instanceof net.minecraft.world.entity.PathfinderMob mob) {
+            Class<? extends net.minecraft.world.entity.LivingEntity> clazz = resolveTargetClass(targetType, entity);
+            if (clazz == null) {
+                return;
+            }
+            mob.goalSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.AvoidEntityGoal<>(
+                    mob, clazz, (float) distance, walkSpeed, sprintSpeed));
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Cannot add AvoidGoal: Entity " + entity + " is not a PathfinderMob!");
+        }
+    }
+
+    public static void addLeapGoal(@NotNull IEntity entity, int priority, double strength) {
+        if (entity.getRawEntity() instanceof net.minecraft.world.entity.Mob mob) {
+            mob.goalSelector.addGoal(priority,
+                    new net.minecraft.world.entity.ai.goal.LeapAtTargetGoal(mob, (float) strength));
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Cannot add LeapGoal: Entity " + entity + " is not a Mob!");
+        }
+    }
+
+    public static void addBreakDoorGoal(@NotNull IEntity entity, int priority, boolean hardOnly) {
+        if (entity.getRawEntity() instanceof net.minecraft.world.entity.Mob mob) {
+            mob.goalSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.BreakDoorGoal(mob,
+                    difficulty -> !hardOnly || difficulty == net.minecraft.world.Difficulty.HARD));
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Cannot add BreakDoorGoal: Entity " + entity + " is not a Mob!");
+        }
+    }
+
+    public static void addTemptGoal(@NotNull IEntity entity, int priority, double speed, @NotNull String itemId) {
+        if (entity.getRawEntity() instanceof net.minecraft.world.entity.PathfinderMob mob) {
+            net.minecraft.resources.ResourceLocation rl = itemId.contains(":")
+                    ? net.minecraft.resources.ResourceLocation.tryParse(itemId)
+                    : net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("minecraft", itemId);
+            net.minecraft.world.item.Item item = rl == null
+                    ? null
+                    : net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+            if (item == null) {
+                com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                        "Cannot add TemptGoal: unknown item '" + itemId + "' for entity " + entity);
+                return;
+            }
+            mob.goalSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.TemptGoal(
+                    mob, speed, stack -> stack.getItem() == item, false));
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Cannot add TemptGoal: Entity " + entity + " is not a PathfinderMob!");
+        }
+    }
+
+    public static void addMoveToTargetGoal(@NotNull IEntity entity, int priority, double speed, double maxDistance) {
+        if (entity.getRawEntity() instanceof net.minecraft.world.entity.PathfinderMob mob) {
+            mob.goalSelector.addGoal(priority,
+                    new net.minecraft.world.entity.ai.goal.MoveTowardsTargetGoal(mob, speed, (float) maxDistance));
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Cannot add MoveToTargetGoal: Entity " + entity + " is not a PathfinderMob!");
+        }
+    }
+
+    /**
+     * Shared target-class mapping for the look/avoid goals. Known names map to
+     * exact classes; a resolvable entity id (vanilla or custom) falls back to
+     * {@code LivingEntity} — broader than the named target, documented on the
+     * API. Unknown names return {@code null} so callers warn and skip.
+     */
+    static Class<? extends net.minecraft.world.entity.LivingEntity> resolveTargetClass(
+            @NotNull String targetTypeStr, @NotNull IEntity entity) {
+        String lower = targetTypeStr == null ? "" : targetTypeStr.trim().toLowerCase();
+        switch (lower) {
+            case "player", "players" -> {
+                return net.minecraft.world.entity.player.Player.class;
+            }
+            case "monster", "mob", "monsters", "mobs" -> {
+                return net.minecraft.world.entity.monster.Monster.class;
+            }
+            case "animal", "animals" -> {
+                return net.minecraft.world.entity.animal.Animal.class;
+            }
+            case "villager", "villagers" -> {
+                return net.minecraft.world.entity.npc.AbstractVillager.class;
+            }
+            case "iron_golem", "golem" -> {
+                return net.minecraft.world.entity.animal.IronGolem.class;
+            }
+            case "living" -> {
+                return net.minecraft.world.entity.LivingEntity.class;
+            }
+            default -> {
+                java.util.Optional<net.minecraft.world.entity.EntityType<?>> optType =
+                        com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(targetTypeStr);
+                if (optType.isPresent()) {
+                    com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM,
+                            "Target type '" + targetTypeStr + "' matches a custom entity: "
+                                    + "using LivingEntity (look/avoid applies to all living).");
+                    return net.minecraft.world.entity.LivingEntity.class;
+                }
+                com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                        "Unknown target type '" + targetTypeStr + "' for entity " + entity);
+                return null;
+            }
+        }
+    }
+
+    public static java.util.List<java.util.Map<String, Object>> listGoals(@NotNull IEntity entity) {
+        if (!(entity.getRawEntity() instanceof net.minecraft.world.entity.Mob mob)) {
+            return java.util.List.of();
+        }
+        java.util.List<java.util.Map<String, Object>> out = new java.util.ArrayList<>();
+        collectGoals(out, "goal", mob.goalSelector);
+        collectGoals(out, "target", mob.targetSelector);
+        return out;
+    }
+
+    private static void collectGoals(java.util.List<java.util.Map<String, Object>> out, String side,
+                                     net.minecraft.world.entity.ai.goal.GoalSelector selector) {
+        for (net.minecraft.world.entity.ai.goal.WrappedGoal wrapped : selector.getAvailableGoals()) {
+            java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("side", side);
+            row.put("priority", wrapped.getPriority());
+            // Custom Lua goals report their script-given name (or "LuaGoal") so
+            // listGoals stays useful as a behavior-tree debugger; vanilla goals
+            // keep their class simple name as before.
+            if (wrapped.getGoal() instanceof NeoForgeLuaGoal luaGoal) {
+                row.put("goal", "LuaGoal:" + luaGoal.getGoalName());
+            } else {
+                row.put("goal", wrapped.getGoal().getClass().getSimpleName());
+            }
+            row.put("running", wrapped.isRunning());
+            out.add(row);
+        }
+    }
+
     public static void addHurtByTargetGoal(@NotNull IEntity entity, int priority) {
         if (entity.getRawEntity() instanceof net.minecraft.world.entity.PathfinderMob mob) {
             mob.targetSelector.addGoal(priority, new net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal(mob));

@@ -51,7 +51,7 @@ public interface ILuaTweakerCommand {
      * Execute the command with the raw argument tail as typed by the user.
      * The default implementation tokenizes on whitespace and delegates to
      * {@link #execute}; Lua commands override this to preserve the raw text
-     * (exposed to handlers as {@code args.Raw}).
+     * (exposed to Lua handlers as the third {@code raw} argument).
      *
      * @param sender  The command sender (player or console).
      * @param raw     The full argument tail exactly as typed (may be blank).

@@ -132,4 +132,39 @@ public class LuaBinderTest {
 
         assertTrue(impl.calls.stream().anyMatch(c -> c.startsWith("passthrough")), impl.calls.toString());
     }
+
+    @Test
+    public void repeatedBindsReuseCachedPlanWithIdenticalBehavior() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        MockImpl impl = new MockImpl();
+        // Warm the per-interface bind-plan cache, then bind again: both tables
+        // must expose the same keys and honor defaults + error paths.
+        ILuaTable first = LuaBinder.bindTable(engine, impl, MockApi.class);
+        ILuaTable second = LuaBinder.bindTable(engine, impl, MockApi.class);
+
+        java.util.Set<String> firstKeys = new java.util.HashSet<>();
+        first.forEach((k, v) -> firstKeys.add(k.toJavaObject().toString()));
+        java.util.Set<String> secondKeys = new java.util.HashSet<>();
+        second.forEach((k, v) -> secondKeys.add(k.toJavaObject().toString()));
+        assertEquals(firstKeys, secondKeys, "cached plan must expose identical keys");
+
+        engine.getGlobalEnvironment().rawset("FirstApi", first);
+        engine.getGlobalEnvironment().rawset("SecondApi", second);
+        engine.executeString(
+            "assert(FirstApi:greet('A') == 'hi A')\n" +
+            "assert(SecondApi:greet('B') == 'hi B')\n" +
+            "assert(SecondApi:Greet('C') == 'hi C', 'PascalCase alias missing on cached bind')\n" +
+            "SecondApi:logAll('cached')\n" +
+            "local ok, err = pcall(function() SecondApi:greet() end)\n" +
+            "assert(not ok, 'missing required argument must raise through the cached plan')\n" +
+            "assert(tostring(err):find('argument 1') ~= nil, 'cached error must name the argument: ' .. tostring(err))\n",
+            "binder_cache_test"
+        );
+
+        assertTrue(impl.calls.contains("greet:A"), impl.calls.toString());
+        assertTrue(impl.calls.contains("greet:B"), impl.calls.toString());
+        assertTrue(impl.calls.contains("greet:C"), impl.calls.toString());
+        assertTrue(impl.calls.contains("logAll:cached:3"),
+                "default int arg must apply through the cached plan: " + impl.calls);
+    }
 }

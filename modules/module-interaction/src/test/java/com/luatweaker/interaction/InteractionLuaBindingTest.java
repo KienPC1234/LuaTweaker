@@ -40,16 +40,15 @@ public class InteractionLuaBindingTest {
     }
 
     @Test
-    void testWrapBlock_StructureIsCorrect() {
+    void testWrapBlock_PropertyAccessInLua() {
         IInteractableBlock mockBlock = createMockBlock("minecraft:diamond_ore", 10, 65, -20);
         ILuaTable blockTable = InteractionLuaBinding.wrapBlock(engine, mockBlock);
-        
-        assertNotNull(blockTable, "wrapBlock should return non-null table");
-        ILuaValue blockField = blockTable.rawget("__block");
-        assertNotNull(blockField, "Block table should have __block field");
-        
-        // Properties are accessed via metatable __index, not rawget
-        // This test verifies structure, not property access (which requires Lua runtime)
+        engine.getGlobalEnvironment().rawset("testBlock", blockTable);
+
+        engine.executeStringOrThrow("""
+            assert(testBlock.Id == "minecraft:diamond_ore", "id mismatch")
+            assert(testBlock.Dimension == "minecraft:overworld", "dimension mismatch")
+        """, "test_block_props");
     }
 
     @Test
@@ -73,16 +72,16 @@ public class InteractionLuaBindingTest {
     }
 
     @Test
-    void testWrapItem_StructureIsCorrect() {
+    void testWrapItem_PropertyAccessInLua() {
         IInteractableItem mockItem = createMockItem("minecraft:arrow", 64, 5);
         ILuaTable itemTable = InteractionLuaBinding.wrapItem(engine, mockItem);
-        
-        assertNotNull(itemTable, "wrapItem should return non-null table");
-        ILuaValue itemField = itemTable.rawget("__item");
-        assertNotNull(itemField, "Item table should have __item field");
-        
-        // Properties are accessed via metatable __index, not rawget
-        // This test verifies structure, not property access (which requires Lua runtime)
+        engine.getGlobalEnvironment().rawset("testItem", itemTable);
+
+        engine.executeStringOrThrow("""
+            assert(testItem.Id == "minecraft:arrow", "item id mismatch")
+            assert(testItem.Count == 64, "item count mismatch")
+            assert(testItem.Slot == 5, "item slot mismatch")
+        """, "test_item_props");
     }
 
     @Test

@@ -319,6 +319,28 @@ public class CommandServiceImplTest {
     }
 
     @Test
+    public void unregisterByAliasRemovesWholeDefinition() {
+        ILuaEngine engine = newEngineWithMod("test_mod");
+        register(engine, "hello", "{ Aliases = { 'hi' }, Handler = function() end }");
+        assertNotNull(CommandServiceImpl.get("hi"));
+
+        engine.executeString("local ok = Commands:Unregister('hi')\n"
+                + "_G._unregAlias = ok and 'true' or 'false'", "unregister_alias");
+        assertEquals("true", engine.getGlobalEnvironment().rawget("_unregAlias").asString(),
+                "owner unregistering via alias must succeed");
+        assertNull(CommandServiceImpl.get("hello"), "unregister via alias must remove the primary");
+        assertNull(CommandServiceImpl.get("hi"), "unregister via alias must remove the alias");
+        assertEquals(0, CommandServiceImpl.getSnapshot().size());
+    }
+
+    @Test
+    public void registerRejectsFractionalPermissionLevel() {
+        ILuaEngine engine = newEngineWithMod("test_mod");
+        registerExpectFalse(engine, "a", "{ PermissionLevel = 2.5, Handler = function() end }");
+        assertNull(CommandServiceImpl.get("a"), "fractional permission must not silently truncate");
+    }
+
+    @Test
     public void unregisterUnknownCommandIsRejected() {
         ILuaEngine engine = newEngineWithMod("test_mod");
         engine.executeString("local ok = Commands:Unregister('nope')", "unregister_unknown");

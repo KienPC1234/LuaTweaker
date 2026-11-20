@@ -186,11 +186,15 @@ public class CommandServiceImpl implements ICommandService {
                             + "', caller '" + (modId == null ? "unknown" : modId) + "'.");
             return false;
         }
-        // Remove the primary name and every alias of the definition.
-        COMMANDS.entrySet().removeIf(entry -> entry.getValue().name().equals(name));
+        // Resolve aliases to the primary name first: the definition is stored
+        // under its primary, so removing by an alias name would match nothing
+        // and falsely report success.
+        String primary = existing.name();
+        COMMANDS.entrySet().removeIf(entry -> entry.getValue().name().equals(primary));
         OWNERS.keySet().removeIf(path -> !COMMANDS.containsKey(path));
         LuaTweakerLog.get().info(LogStage.COMMAND,
-                "Commands:Unregister '" + name + "' by mod '" + modId + "'.");
+                "Commands:Unregister '" + primary + "' by mod '" + modId + "'."
+                        + (primary.equals(name) ? "" : " (via alias '" + name + "')"));
         return true;
     }
 
@@ -284,6 +288,11 @@ public class CommandServiceImpl implements ICommandService {
                     return null;
                 }
                 permissionLevel = permNum.intValue();
+                if (permNum.doubleValue() != permissionLevel) {
+                    LuaTweakerLog.get().error(LogStage.COMMAND,
+                            "Commands:Register('" + name + "') by mod '" + modId + "': 'PermissionLevel' must be an integer.");
+                    return null;
+                }
                 if (permissionLevel < PERMISSION_MIN || permissionLevel > PERMISSION_MAX) {
                     LuaTweakerLog.get().error(LogStage.COMMAND,
                             "Commands:Register('" + name + "') by mod '" + modId + "': 'PermissionLevel' must be between " + PERMISSION_MIN + " and " + PERMISSION_MAX + ".");

@@ -43,6 +43,10 @@ public final class NativeModuleResolver {
         m.put("LuaTweaker.Content", new String[]{"Content", "startup"});
         m.put("Content", new String[]{"Content", "startup"});
         m.put("startup", new String[]{"Content", "startup"});
+        // The content builder is also registered as the "Startup" service, so scripts may
+        // require it under that name. Keep require() in sync with the service registry.
+        m.put("LuaTweaker.Startup", new String[]{"Content", "startup"});
+        m.put("Startup", new String[]{"Content", "startup"});
         m.put("LuaTweaker.Recipe", new String[]{"Recipe", "recipes"});
         m.put("Recipe", new String[]{"Recipe", "recipes"});
         m.put("Recipes", new String[]{"Recipe", "recipes"});
@@ -120,8 +124,12 @@ public final class NativeModuleResolver {
         m.put("RunService", new String[]{"RunService"});
         m.put("LuaTweaker.KeyBindService", new String[]{"KeyBindService"});
         m.put("KeyBindService", new String[]{"KeyBindService"});
+        m.put("LuaTweaker.Shaders", new String[]{"Shaders"});
+        m.put("Shaders", new String[]{"Shaders"});
         m.put("LuaTweaker.Signal", new String[]{"Signal"});
         m.put("Signal", new String[]{"Signal"});
+        m.put("LuaTweaker.Brain", new String[]{"Brain"});
+        m.put("Brain", new String[]{"Brain"});
         m.put("LuaTweaker.Utils", new String[]{"Utils"});
         m.put("Utils", new String[]{"Utils"});
         m.put("LuaTweaker.TweenService", new String[]{"TweenService"});

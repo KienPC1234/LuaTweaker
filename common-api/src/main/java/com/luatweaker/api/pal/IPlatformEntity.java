@@ -14,6 +14,19 @@ public interface IPlatformEntity {
     void addMeleeAttackGoal(@NotNull IEntity entity, int priority, double speed, boolean pauseWhenMobIdle);
     void addHurtByTargetGoal(@NotNull IEntity entity, int priority);
     void addNearestAttackableTargetGoal(@NotNull IEntity entity, int priority, @NotNull String targetType);
+    void addFloatGoal(@NotNull IEntity entity, int priority);
+    void addWanderGoal(@NotNull IEntity entity, int priority, double speed);
+    void addLookAtGoal(@NotNull IEntity entity, int priority, double distance, @NotNull String targetType);
+    void addLookAroundGoal(@NotNull IEntity entity, int priority);
+    void addPanicGoal(@NotNull IEntity entity, int priority, double speed);
+    void addAvoidGoal(@NotNull IEntity entity, int priority, @NotNull String targetType,
+                      double distance, double walkSpeed, double sprintSpeed);
+    void addLeapGoal(@NotNull IEntity entity, int priority, double strength);
+    void addBreakDoorGoal(@NotNull IEntity entity, int priority, boolean hardOnly);
+    void addTemptGoal(@NotNull IEntity entity, int priority, double speed, @NotNull String itemId);
+    void addMoveToTargetGoal(@NotNull IEntity entity, int priority, double speed, double maxDistance);
+
+    java.util.@NotNull List<java.util.Map<String, Object>> listGoals(@NotNull IEntity entity);
 
     @Nullable
     com.luatweaker.api.entity.IPlayer getPlayer(@NotNull String uuid);

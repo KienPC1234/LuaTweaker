@@ -571,6 +571,9 @@ public class NeoForgeInteractionPlatform implements IPlatformInteraction {
             int dy = entry.get("dy") instanceof Number n ? n.intValue() : 0;
             int dz = entry.get("dz") instanceof Number n ? n.intValue() : 0;
             net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(originX + dx, originY + dy, originZ + dz);
+            if (!isChunkLoaded(level, pos.getX(), pos.getZ())) {
+                return false;
+            }
             net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
             String requiredBlock = (String) entry.get("block");
             if (requiredBlock != null) {
@@ -667,6 +670,419 @@ public class NeoForgeInteractionPlatform implements IPlatformInteraction {
             fromHandler.extractItem(fromSlot, moved, false);
         }
         return moved;
+    }
+
+    private boolean matchesBlockCondition(
+            net.minecraft.server.level.ServerLevel level,
+            net.minecraft.core.BlockPos pos,
+            net.minecraft.world.level.block.state.BlockState state,
+            Object condition) {
+        if (condition == null) return true;
+        if (condition instanceof String s) {
+            if (s.equals("*")) return true;
+            if (s.startsWith("#")) {
+                net.minecraft.resources.ResourceLocation tagRl = net.minecraft.resources.ResourceLocation.tryParse(s.substring(1));
+                if (tagRl == null) return false;
+                net.minecraft.tags.TagKey<net.minecraft.world.level.block.Block> tagKey =
+                        net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.BLOCK, tagRl);
+                return state.is(tagKey);
+            }
+            String reqId = s.contains(":") ? s : "minecraft:" + s;
+            String actualId = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+            return actualId.equalsIgnoreCase(reqId);
+        }
+        if (condition instanceof java.util.List<?> list) {
+            for (Object item : list) {
+                if (matchesBlockCondition(level, pos, state, item)) return true;
+            }
+            return false;
+        }
+        if (condition instanceof java.util.Map<?, ?> map) {
+            Object blockObj = map.get("block");
+            if (blockObj == null) blockObj = map.get("id");
+            if (blockObj != null) {
+                String reqId = blockObj.toString();
+                if (!reqId.contains(":")) reqId = "minecraft:" + reqId;
+                String actualId = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+                if (!actualId.equalsIgnoreCase(reqId)) return false;
+            }
+            Object tagObj = map.get("tag");
+            if (tagObj != null) {
+                String tagStr = tagObj.toString();
+                if (tagStr.startsWith("#")) tagStr = tagStr.substring(1);
+                net.minecraft.resources.ResourceLocation tagRl = net.minecraft.resources.ResourceLocation.tryParse(tagStr);
+                if (tagRl == null) return false;
+                net.minecraft.tags.TagKey<net.minecraft.world.level.block.Block> tagKey =
+                        net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.BLOCK, tagRl);
+                if (!state.is(tagKey)) return false;
+            }
+            Object propsObj = map.get("properties");
+            if (propsObj instanceof java.util.Map<?, ?> propsMap) {
+                for (java.util.Map.Entry<?, ?> entry : propsMap.entrySet()) {
+                    String propName = entry.getKey().toString();
+                    String expectedVal = entry.getValue().toString();
+                    net.minecraft.world.level.block.state.properties.Property<?> prop =
+                            state.getBlock().getStateDefinition().getProperty(propName);
+                    if (prop == null) return false;
+                    Comparable<?> actualVal = state.getValue(prop);
+                    if (!actualVal.toString().equalsIgnoreCase(expectedVal)) return false;
+                }
+            }
+            Object nbtObj = map.get("nbt");
+            if (nbtObj instanceof java.util.Map<?, ?> nbtMap) {
+                net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+                if (be == null) return false;
+                java.util.Map<String, Object> data = NbtCodec.toMap(be.saveWithFullMetadata(level.registryAccess()));
+                for (java.util.Map.Entry<?, ?> entry : nbtMap.entrySet()) {
+                    String k = entry.getKey().toString();
+                    Object expected = entry.getValue();
+                    Object actual = data.get(k);
+                    if (actual == null || !actual.toString().equals(expected.toString())) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    public @NotNull java.util.Map<String, Object> validateCuboid(
+            @NotNull String dimension,
+            int x1, int y1, int z1,
+            int x2, int y2, int z2,
+            @NotNull java.util.Map<String, Object> spec) {
+        net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
+        if (level == null) {
+            return java.util.Map.of("valid", false, "error", "Dimension '" + dimension + "' is not loaded");
+        }
+        int minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+        int minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+        int minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
+        int width = maxX - minX + 1;
+        int height = maxY - minY + 1;
+        int depth = maxZ - minZ + 1;
+
+        if (spec.get("minWidth") instanceof Number n && width < n.intValue())
+            return java.util.Map.of("valid", false, "error", "Width " + width + " is smaller than minWidth " + n.intValue());
+        if (spec.get("maxWidth") instanceof Number n && width > n.intValue())
+            return java.util.Map.of("valid", false, "error", "Width " + width + " is larger than maxWidth " + n.intValue());
+        if (spec.get("minHeight") instanceof Number n && height < n.intValue())
+            return java.util.Map.of("valid", false, "error", "Height " + height + " is smaller than minHeight " + n.intValue());
+        if (spec.get("maxHeight") instanceof Number n && height > n.intValue())
+            return java.util.Map.of("valid", false, "error", "Height " + height + " is larger than maxHeight " + n.intValue());
+        if (spec.get("minDepth") instanceof Number n && depth < n.intValue())
+            return java.util.Map.of("valid", false, "error", "Depth " + depth + " is smaller than minDepth " + n.intValue());
+        if (spec.get("maxDepth") instanceof Number n && depth > n.intValue())
+            return java.util.Map.of("valid", false, "error", "Depth " + depth + " is larger than maxDepth " + n.intValue());
+
+        Object frameRule = spec.get("frame");
+        Object wallRule = spec.get("walls");
+        Object floorRule = spec.get("floor");
+        Object ceilingRule = spec.get("ceiling");
+        Object interiorRule = spec.get("interior");
+        Object shellRule = spec.get("casing");
+        if (shellRule == null) shellRule = spec.get("shell");
+        if (shellRule == null) shellRule = spec.get("all");
+
+        Object limitsObj = spec.get("limits");
+        java.util.List<java.util.Map<String, Object>> limits = new java.util.ArrayList<>();
+        if (limitsObj instanceof java.util.List<?> limitList) {
+            for (Object item : limitList) {
+                if (item instanceof java.util.Map<?, ?> m) {
+                    java.util.Map<String, Object> limitMap = new java.util.HashMap<>();
+                    for (var e : m.entrySet()) limitMap.put(e.getKey().toString(), e.getValue());
+                    limitMap.put("_count", 0);
+                    limits.add(limitMap);
+                }
+            }
+        }
+
+        java.util.Map<String, Integer> blockCounts = new java.util.LinkedHashMap<>();
+
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    if (!isChunkLoaded(level, x, z)) continue;
+                    net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(x, y, z);
+                    net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
+                    String blockId = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+                    blockCounts.put(blockId, blockCounts.getOrDefault(blockId, 0) + 1);
+
+                    for (java.util.Map<String, Object> limit : limits) {
+                        Object matchObj = limit.get("match");
+                        if (matchObj == null) matchObj = limit.get("block");
+                        if (matchesBlockCondition(level, pos, state, matchObj)) {
+                            int cnt = (int) limit.getOrDefault("_count", 0);
+                            limit.put("_count", cnt + 1);
+                        }
+                    }
+
+                    int boundaryCount = (x == minX || x == maxX ? 1 : 0)
+                            + (y == minY || y == maxY ? 1 : 0)
+                            + (z == minZ || z == maxZ ? 1 : 0);
+
+                    boolean ruleMatched;
+                    String ruleCategory;
+                    if (boundaryCount >= 2) {
+                        ruleCategory = "frame";
+                        Object rule = frameRule != null ? frameRule : (wallRule != null ? wallRule : shellRule);
+                        ruleMatched = matchesBlockCondition(level, pos, state, rule);
+                    } else if (boundaryCount == 1) {
+                        if (y == minY) {
+                            ruleCategory = "floor";
+                            Object rule = floorRule != null ? floorRule : (wallRule != null ? wallRule : shellRule);
+                            ruleMatched = matchesBlockCondition(level, pos, state, rule);
+                        } else if (y == maxY) {
+                            ruleCategory = "ceiling";
+                            Object rule = ceilingRule != null ? ceilingRule : (wallRule != null ? wallRule : shellRule);
+                            ruleMatched = matchesBlockCondition(level, pos, state, rule);
+                        } else {
+                            ruleCategory = "wall";
+                            Object rule = wallRule != null ? wallRule : shellRule;
+                            ruleMatched = matchesBlockCondition(level, pos, state, rule);
+                        }
+                    } else {
+                        ruleCategory = "interior";
+                        ruleMatched = matchesBlockCondition(level, pos, state, interiorRule);
+                    }
+
+                    if (!ruleMatched) {
+                        java.util.Map<String, Object> fail = new java.util.LinkedHashMap<>();
+                        fail.put("valid", false);
+                        fail.put("error", "Mismatch at " + x + ", " + y + ", " + z + " (" + ruleCategory + "): found " + blockId);
+                        fail.put("failedPos", java.util.Map.of("X", x, "Y", y, "Z", z));
+                        fail.put("category", ruleCategory);
+                        fail.put("actualBlock", blockId);
+                        return fail;
+                    }
+                }
+            }
+        }
+
+        for (java.util.Map<String, Object> limit : limits) {
+            int count = (int) limit.getOrDefault("_count", 0);
+            if (limit.get("min") instanceof Number n && count < n.intValue()) {
+                return java.util.Map.of("valid", false, "error", "Component " + limit.get("match") + " count " + count + " is less than minimum " + n.intValue());
+            }
+            if (limit.get("max") instanceof Number n && count > n.intValue()) {
+                return java.util.Map.of("valid", false, "error", "Component " + limit.get("match") + " count " + count + " exceeds maximum " + n.intValue());
+            }
+        }
+
+        java.util.Map<String, Object> success = new java.util.LinkedHashMap<>();
+        success.put("valid", true);
+        success.put("width", width);
+        success.put("height", height);
+        success.put("depth", depth);
+        success.put("volume", width * height * depth);
+        success.put("counts", blockCounts);
+        success.put("minPos", java.util.Map.of("X", minX, "Y", minY, "Z", minZ));
+        success.put("maxPos", java.util.Map.of("X", maxX, "Y", maxY, "Z", maxZ));
+        return success;
+    }
+
+    @Override
+    public int setBlockStatesInBox(
+            @NotNull String dimension,
+            int x1, int y1, int z1,
+            int x2, int y2, int z2,
+            @Nullable String filterBlockId,
+            @NotNull java.util.Map<String, Object> properties) {
+        net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
+        if (level == null || properties.isEmpty()) return 0;
+        int minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+        int minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+        int minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
+        int updated = 0;
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    if (!isChunkLoaded(level, x, z)) continue;
+                    net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(x, y, z);
+                    net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
+                    if (filterBlockId != null && !filterBlockId.isEmpty() && !filterBlockId.equals("*")) {
+                        String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+                        String req = filterBlockId.contains(":") ? filterBlockId : "minecraft:" + filterBlockId;
+                        if (!id.equalsIgnoreCase(req)) continue;
+                    }
+                    net.minecraft.world.level.block.state.BlockState newState = state;
+                    for (java.util.Map.Entry<String, Object> entry : properties.entrySet()) {
+                        net.minecraft.world.level.block.state.properties.Property<?> prop =
+                                newState.getBlock().getStateDefinition().getProperty(entry.getKey());
+                        if (prop != null) {
+                            newState = setProperty(newState, prop, String.valueOf(entry.getValue()));
+                        }
+                    }
+                    if (newState != state) {
+                        level.setBlock(pos, newState, 3);
+                        updated++;
+                    }
+                }
+            }
+        }
+        return updated;
+    }
+
+    @Override
+    public @NotNull java.util.List<java.util.Map<String, Object>> findBlocks(
+            @NotNull String dimension,
+            int centerX, int centerY, int centerZ,
+            int radius,
+            @NotNull String filter,
+            int maxResults) {
+        net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
+        if (level == null || radius <= 0 || filter.isEmpty()) return java.util.List.of();
+        int r = Math.min(radius, 48);
+        int limit = maxResults > 0 ? Math.min(maxResults, 256) : 64;
+        java.util.List<java.util.Map<String, Object>> results = new java.util.ArrayList<>();
+        double rSq = (double) r * r;
+
+        int minX = centerX - r, maxX = centerX + r;
+        int minY = Math.max(level.getMinBuildHeight(), centerY - r);
+        int maxY = Math.min(level.getMaxBuildHeight() - 1, centerY + r);
+        int minZ = centerZ - r, maxZ = centerZ + r;
+
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                if (!isChunkLoaded(level, x, z)) continue;
+                for (int y = minY; y <= maxY; y++) {
+                    double dx = x - centerX;
+                    double dy = y - centerY;
+                    double dz = z - centerZ;
+                    double distSq = dx * dx + dy * dy + dz * dz;
+                    if (distSq > rSq) continue;
+
+                    net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(x, y, z);
+                    net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
+                    if (state.isAir()) continue;
+
+                    if (matchesBlockCondition(level, pos, state, filter)) {
+                        String blockId = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+                        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
+                        map.put("X", x);
+                        map.put("Y", y);
+                        map.put("Z", z);
+                        map.put("Id", blockId);
+                        map.put("Distance", Math.round(Math.sqrt(distSq) * 100.0) / 100.0);
+                        results.add(map);
+                        if (results.size() >= limit) {
+                            return results;
+                        }
+                    }
+                }
+            }
+        }
+        return results;
+    }
+
+    @Override
+    public boolean setEnergy(@NotNull String dimension, int x, int y, int z, int amount) {
+        net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
+        if (level == null) return false;
+        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(x, y, z);
+        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+        if (be instanceof com.luatweaker.platform.container.CustomContainerBlockEntity container) {
+            container.setEnergyStored(amount);
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    public int produceEnergy(@NotNull String dimension, int x, int y, int z, int amount) {
+        net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
+        if (level == null || amount <= 0) return 0;
+        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(x, y, z);
+        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+        if (be instanceof com.luatweaker.platform.container.CustomContainerBlockEntity container) {
+            int current = container.getEnergyStored();
+            int cap = container.getEnergyCapacity();
+            int toAdd = Math.min(amount, Math.max(0, cap - current));
+            if (toAdd > 0) {
+                container.setEnergyStored(current + toAdd);
+            }
+            return toAdd;
+        }
+        return 0;
+    }
+
+    @Override
+    public boolean setProgress(@NotNull String dimension, int x, int y, int z, float progress) {
+        net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
+        if (level == null) return false;
+        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(x, y, z);
+        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+        if (be instanceof com.luatweaker.platform.container.CustomContainerBlockEntity container) {
+            container.setProgress(progress);
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    public float getProgress(@NotNull String dimension, int x, int y, int z) {
+        net.minecraft.server.level.ServerLevel level = resolveLevel(dimension);
+        if (level == null) return 0.0f;
+        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(x, y, z);
+        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+        if (be instanceof com.luatweaker.platform.container.CustomContainerBlockEntity container) {
+            return container.getProgress();
+        }
+        return 0.0f;
+    }
+
+    @Override
+    public boolean triggerGeoAnimation(@NotNull Object target, @NotNull String controllerName, @NotNull String animName, double speed, boolean loop) {
+        String ctrl = (controllerName != null && !controllerName.isBlank()) ? controllerName : null;
+
+        if (target instanceof IEntity ie) {
+            target = ie.getRawEntity();
+        }
+
+        if (target instanceof software.bernie.geckolib.animatable.GeoEntity geoEntity) {
+            geoEntity.triggerAnim(ctrl, animName);
+            return true;
+        }
+
+        if (target instanceof net.minecraft.world.entity.LivingEntity living) {
+            net.minecraft.world.item.ItemStack mainHand = living.getMainHandItem();
+            if (mainHand.getItem() instanceof software.bernie.geckolib.animatable.GeoItem geoItem) {
+                long id = living.level() instanceof net.minecraft.server.level.ServerLevel sl
+                        ? software.bernie.geckolib.animatable.GeoItem.getOrAssignId(mainHand, sl)
+                        : software.bernie.geckolib.animatable.GeoItem.getId(mainHand);
+                geoItem.triggerAnim(living, id, ctrl, animName);
+                return true;
+            }
+            net.minecraft.world.item.ItemStack offHand = living.getOffhandItem();
+            if (offHand.getItem() instanceof software.bernie.geckolib.animatable.GeoItem geoItem) {
+                long id = living.level() instanceof net.minecraft.server.level.ServerLevel sl
+                        ? software.bernie.geckolib.animatable.GeoItem.getOrAssignId(offHand, sl)
+                        : software.bernie.geckolib.animatable.GeoItem.getId(offHand);
+                geoItem.triggerAnim(living, id, ctrl, animName);
+                return true;
+            }
+        }
+
+        if (target instanceof com.luatweaker.api.interaction.IInteractableBlock block) {
+            net.minecraft.server.level.ServerLevel level = resolveLevel(block.getDimension());
+            if (level != null) {
+                net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(block.getX(), block.getY(), block.getZ());
+                net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+                if (be instanceof software.bernie.geckolib.animatable.GeoBlockEntity geoBe) {
+                    geoBe.triggerAnim(ctrl, animName);
+                    return true;
+                }
+            }
+        }
+
+        if (target instanceof software.bernie.geckolib.animatable.GeoBlockEntity geoBe) {
+            geoBe.triggerAnim(ctrl, animName);
+            return true;
+        }
+
+        return false;
     }
 
     private net.minecraft.server.level.ServerLevel resolveLevel(@NotNull String dimension) {

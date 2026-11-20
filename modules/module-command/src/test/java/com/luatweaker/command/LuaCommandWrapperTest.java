@@ -263,6 +263,51 @@ public class LuaCommandWrapperTest {
     }
 
     @Test
+    public void usageHintSentWhenHandlerFails() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        CommandLuaBinding.registerBindings(engine);
+        setModGlobal(engine, "test_mod");
+        engine.executeString(
+                "Commands:Register('deploy', { Usage = '/deploy <target>', Handler = function(sender, args) return false end })",
+                "register_usage_fail"
+        );
+        MockSender sender = new MockSender(true, 4);
+        assertEquals(0, new LuaCommandWrapper("deploy").execute(sender, new String[0]));
+        assertTrue(sender.messages.stream().anyMatch(m -> m.equals("MSG:Usage: /deploy <target>")),
+                "handler failure must surface the declared Usage hint, got: " + sender.messages);
+    }
+
+    @Test
+    public void usageHintSentWhenHandlerErrors() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        CommandLuaBinding.registerBindings(engine);
+        setModGlobal(engine, "test_mod");
+        engine.executeString(
+                "Commands:Register('boom2', { Usage = '/boom2', Handler = function(sender, args) error('kaboom') end })",
+                "register_usage_boom"
+        );
+        MockSender sender = new MockSender(true, 4);
+        assertEquals(0, new LuaCommandWrapper("boom2").execute(sender, new String[0]));
+        assertTrue(sender.messages.stream().anyMatch(m -> m.equals("MSG:Usage: /boom2")),
+                "handler errors must surface the declared Usage hint, got: " + sender.messages);
+    }
+
+    @Test
+    public void noUsageHintWhenAbsent() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        CommandLuaBinding.registerBindings(engine);
+        setModGlobal(engine, "test_mod");
+        engine.executeString(
+                "Commands:Register('quiet', { Handler = function(sender, args) return false end })",
+                "register_no_usage"
+        );
+        MockSender sender = new MockSender(true, 4);
+        assertEquals(0, new LuaCommandWrapper("quiet").execute(sender, new String[0]));
+        assertTrue(sender.messages.stream().noneMatch(m -> m.contains("Usage:")),
+                "no Usage declared means no hint, got: " + sender.messages);
+    }
+
+    @Test
     public void commandWithoutSuggestionsReturnsEmptyList() {
         ILuaEngine engine = LuaEngineFactory.create(false);
         CommandLuaBinding.registerBindings(engine);

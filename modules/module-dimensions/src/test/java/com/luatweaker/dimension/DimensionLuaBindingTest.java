@@ -149,4 +149,86 @@ public class DimensionLuaBindingTest {
             "dimension_require_test"
         );
     }
+
+    @Test
+    void binding_BatchTerrainAndBiomesRunOncePerChunk() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        DimensionLuaBinding.registerBindings(engine);
+
+        engine.executeStringOrThrow(
+            "batchTerrainCalls = 0\n" +
+            "Dimensions:Create('minecraft:batch_dim', { seaLevel = 64 })\n" +
+            "Dimensions:SetChunkTerrain('minecraft:batch_dim', function(cx, cz, ctx)\n" +
+            "    batchTerrainCalls = batchTerrainCalls + 1\n" +
+            "    local heights, surfaces = {}, {}\n" +
+            "    for z = 0, 15 do\n" +
+            "        for x = 0, 15 do\n" +
+            "            local i = z * 16 + x + 1\n" +
+            "            heights[i] = ctx.seaLevel + x + z\n" +
+            "            surfaces[i] = 'minecraft:stone'\n" +
+            "        end\n" +
+            "    end\n" +
+            "    return heights, surfaces, { [1] = { [80] = 'minecraft:gold_block' } }\n" +
+            "end)\n" +
+            "Dimensions:SetBiomeBatch('minecraft:batch_dim', function(cx, cz, ctx)\n" +
+            "    local t = {}\n" +
+            "    for i = 1, 16 do t[i] = 'minecraft:plains' end\n" +
+            "    t[6] = 'minecraft:ocean'\n" +
+            "    return t\n" +
+            "end)\n" +
+            "local info = Dimensions:GetDimension('minecraft:batch_dim')\n" +
+            "assert(info.terrainMode == 'chunk', 'info must report chunk terrain mode')\n" +
+            "assert(info.hasChunkTerrain == true and info.hasBiomeBatch == true)\n",
+            "dimension_batch_binding_test"
+        );
+
+        DimensionServiceImpl service = (DimensionServiceImpl)
+                com.luatweaker.core.service.LuaServiceRegistry.get("DimensionServiceImpl");
+        DimensionServiceImpl.ChunkTerrainResult result =
+                service.computeChunkTerrain("minecraft:batch_dim", 2, 3);
+
+        assertEquals(1, engine.getGlobalEnvironment().rawget("batchTerrainCalls").asInt());
+        assertEquals(64, result.heights()[0]);
+        assertEquals(65, result.heights()[1]);
+        assertEquals("minecraft:stone", result.surfaces()[0]);
+        assertEquals("minecraft:gold_block", result.overrides().get(0).get(80));
+
+        String[] biomes = service.computeBiomeBatch("minecraft:batch_dim", 2, 3);
+        assertEquals(16, biomes.length);
+        assertEquals("minecraft:ocean", biomes[5]);
+        assertEquals("minecraft:plains", biomes[0]);
+    }
+
+    @Test
+    void binding_TerrainSpecRunsNatively() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        DimensionLuaBinding.registerBindings(engine);
+        com.luatweaker.noise.NoiseLuaBinding.registerBindings(engine);
+
+        engine.executeStringOrThrow(
+            "Dimensions:Create('minecraft:spec_dim', { seaLevel = 63 })\n" +
+            "Dimensions:SetTerrainSpec('minecraft:spec_dim', {\n" +
+            "    height = { { kind = 'fbm', amp = 20, frequency = 0.01 } },\n" +
+            "    spline = { { -1, 40 }, { 1, 200 } },\n" +
+            "    surface = { { block = 'minecraft:stone', maxDepth = 3 } },\n" +
+            "})\n" +
+            "local info = Dimensions:GetDimension('minecraft:spec_dim')\n" +
+            "assert(info.terrainMode == 'spec', 'info must report spec terrain mode')\n" +
+            "assert(info.hasTerrainSpec == true, 'info must report hasTerrainSpec')\n",
+            "dimension_spec_binding_test");
+
+        DimensionServiceImpl service = (DimensionServiceImpl)
+                com.luatweaker.core.service.LuaServiceRegistry.get("DimensionServiceImpl");
+        TerrainSampler sampler = service.createTerrainSampler("minecraft:spec_dim");
+        assertNotNull(sampler);
+
+        int[] heights = new int[256];
+        float[] slopes = new float[256];
+        sampler.sampleChunk(0, 0, heights, slopes);
+        for (int height : heights) {
+            assertTrue(height >= 40 && height <= 200,
+                    "spline-mapped height out of range: " + height);
+        }
+        assertEquals("minecraft:stone", sampler.surfaceBlockAt(0, 120, 0.0));
+    }
 }

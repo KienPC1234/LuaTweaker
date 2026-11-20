@@ -40,6 +40,18 @@ public class LuaTweakerMod {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LuaTweakerMod.class);
 
+    /** Client-only control channels; they carry a small UTF-8 JSON object, never Lua values. */
+    private static final String SYNC_DATA_CHANNEL = "LuaTweaker:SyncData";
+    private static final String OPEN_SCREEN_CHANNEL = "LuaTweaker:OpenScreen";
+    private static final String CLOSE_SCREEN_CHANNEL = "LuaTweaker:CloseScreen";
+
+    /**
+     * Reassembles chunked inbound frames. Bounded and self-expiring, so a client cannot
+     * exhaust memory by opening partial messages; cleared on logout.
+     */
+    private static final com.luatweaker.network.ChunkAssembler INBOUND_CHUNKS =
+            new com.luatweaker.network.ChunkAssembler();
+
     // Written on the server/client tick thread and read by the render thread, network handlers
     // and worldgen workers; publish them safely.
     private static volatile ILuaEngine activeEngine;
@@ -63,13 +75,19 @@ public class LuaTweakerMod {
         ILuaValue taskVal = engine.getGlobalEnvironment().rawget("task");
         if (taskVal == null || !taskVal.isTable()) return;
         ILuaTable taskTbl = taskVal.asTable();
-        ILuaValue luaTick = taskTbl.rawget("_tick");
-        if (luaTick != null && luaTick.isFunction()) {
-            engine.callFunction(luaTick);
-        }
-        ILuaValue javaTick = taskTbl.rawget("_java_tick");
-        if (javaTick != null && javaTick.isFunction()) {
-            engine.callFunction(javaTick);
+        try {
+            ILuaValue luaTick = taskTbl.rawget("_tick");
+            if (luaTick != null && luaTick.isFunction()) {
+                engine.callFunction(luaTick);
+            }
+            ILuaValue javaTick = taskTbl.rawget("_java_tick");
+            if (javaTick != null && javaTick.isFunction()) {
+                engine.callFunction(javaTick);
+            }
+        } catch (IllegalStateException e) {
+            // A reload shut this engine down between reading activeEngine and pumping it.
+            // The next tick reads the new engine; never let this take down the tick loop.
+            LOGGER.debug("Lua task pump skipped: engine was shut down by a reload");
         }
     }
 
@@ -116,6 +134,7 @@ public class LuaTweakerMod {
         Platform.setDimension(new com.luatweaker.platform.dimension.NeoForgeDimensionPlatform());
         Platform.setStructures(new com.luatweaker.platform.structures.NeoForgeStructuresPlatform());
         Platform.setCapability(new com.luatweaker.platform.interaction.NeoForgeCapabilityPlatform());
+        Platform.setWorldgen(new com.luatweaker.platform.worldgen.NeoForgeWorldgenPlatform());
         if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) {
             initClientPlatform();
         }
@@ -182,7 +201,12 @@ public class LuaTweakerMod {
         com.luatweaker.command.CommandServiceImpl.clear();
         // Load Autonomous LuaMods from luamods/ directory
         String dist = net.neoforged.fml.loading.FMLEnvironment.dist.isClient() ? "universal" : "server";
-        com.luatweaker.core.mod.LuaModManager.loadLuaMods(luaDir, startupEngine, dist);
+        // Only the client owns the FML early loading window; a dedicated server keeps the log.
+        com.luatweaker.core.mod.LuaModLoadObserver loadProgress =
+                net.neoforged.fml.loading.FMLEnvironment.dist.isClient()
+                        ? new com.luatweaker.platform.bootstrap.FmlLoadingScreenProgress()
+                        : com.luatweaker.core.mod.LuaModLoadObserver.NONE;
+        com.luatweaker.core.mod.LuaModManager.loadLuaMods(luaDir, startupEngine, dist, loadProgress);
 
         // Loud warning for keybind payloads that have no matching server RemoteEvent
         // (typo'd names would otherwise silently drop every key press).
@@ -375,9 +399,31 @@ public class LuaTweakerMod {
     }
 
     @SubscribeEvent
+    public void onPlayerLoggedOut(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) {
+            INBOUND_CHUNKS.clear("S:" + player.getUUID());
+        }
+    }
+
+    @SubscribeEvent
     public void onServerAboutToStart(ServerAboutToStartEvent event) {
         LOGGER.info("ServerAboutToStartEvent fired, calling reloadServerRecipes");
         reloadServerRecipes(event.getServer());
+    }
+
+    @SubscribeEvent
+    public void onServerStopping(net.neoforged.neoforge.event.server.ServerStoppingEvent event) {
+        LOGGER.info("ServerStoppingEvent fired, flushing pending storage commits...");
+        com.luatweaker.storage.StorageServiceImpl.flushAllActive();
+    }
+
+    @SubscribeEvent
+    public void onLevelSave(net.neoforged.neoforge.event.level.LevelEvent.Save event) {
+        if (!event.getLevel().isClientSide()
+                && event.getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel
+                && serverLevel.dimension() == net.minecraft.world.level.Level.OVERWORLD) {
+            com.luatweaker.storage.StorageServiceImpl.flushAllActive();
+        }
     }
 
     @SubscribeEvent
@@ -392,8 +438,7 @@ public class LuaTweakerMod {
 
     @SubscribeEvent
     public void onRegisterBrewingRecipes(RegisterBrewingRecipesEvent event) {
-        LOGGER.info("RegisterBrewingRecipesEvent fired, executing Lua scripts for brewing registration...");
-        reloadServerRecipes(null);
+        LOGGER.info("RegisterBrewingRecipesEvent fired, applying pending brewing recipes...");
         InterceptionHelper.applyPendingBrewing(event);
     }
 
@@ -498,6 +543,12 @@ public class LuaTweakerMod {
         com.luatweaker.platform.container.ContainerSpecRebinder.rebindAll(
                 contentService, com.luatweaker.platform.content.NeoForgeContentRegistry::parseLocation);
 
+        // Re-attach registered items to the new VM: without this, item callbacks
+        // (:OnUseTick, :OnReleaseUsing, :OnSwing, :OnHurtEnemy, etc.) kept calling
+        // the engine that was shut down.
+        com.luatweaker.platform.content.registrar.ItemRegistrar.rebindAll(
+                contentService, com.luatweaker.platform.content.NeoForgeContentRegistry::parseLocation);
+
         // Loud warning for keybind payloads that have no matching server RemoteEvent
         // (typo'd names would otherwise silently drop every key press).
         com.luatweaker.platform.bootstrap.KeyBindPayloadValidator.validate();
@@ -534,19 +585,22 @@ public class LuaTweakerMod {
 
     public static void registerPayloads(final net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent event) {
         final net.neoforged.neoforge.network.registration.PayloadRegistrar registrar = event.registrar(MODID)
-                .versioned("1.0.0");
+                .versioned("1.1.0");
         registrar.playBidirectional(
                 com.luatweaker.platform.network.LuaTweakerPayload.TYPE,
                 com.luatweaker.platform.network.LuaTweakerPayload.STREAM_CODEC,
-                (payload, context) -> context.enqueueWork(() -> handleEventPayload(payload, context)));
-        registrar.playBidirectional(
-                com.luatweaker.platform.network.LuaTweakerRpcPayload.TYPE,
-                com.luatweaker.platform.network.LuaTweakerRpcPayload.STREAM_CODEC,
-                (payload, context) -> context.enqueueWork(() -> handleRpcPayload(payload, context)));
+                (payload, context) -> context.enqueueWork(() -> handleLuaPayload(payload, context)));
         registrar.playToServer(
                 com.luatweaker.platform.network.ContainerButtonPayload.TYPE,
                 com.luatweaker.platform.network.ContainerButtonPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleContainerButtonPayload(payload, context)));
+        registrar.playToClient(
+                com.luatweaker.platform.network.ItemAnimationPayload.TYPE,
+                com.luatweaker.platform.network.ItemAnimationPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> {
+                    com.luatweaker.platform.client.ClientItemAnimationHandler.trigger(
+                            payload.entityId(), payload.animationName(), payload.durationTicks(), payload.speed());
+                }));
     }
 
     private static void handleContainerButtonPayload(
@@ -573,56 +627,93 @@ public class LuaTweakerMod {
         }
     }
 
-    private static void handleEventPayload(com.luatweaker.platform.network.LuaTweakerPayload payload,
-                                           net.neoforged.neoforge.network.handling.IPayloadContext context) {
-        if (!context.flow().isServerbound()) {
-            if ("LuaTweaker:SyncData".equals(payload.channelName())) {
-                handleClientSyncData(payload.dataJson());
+    private static void handleLuaPayload(com.luatweaker.platform.network.LuaTweakerPayload payload,
+                                         net.neoforged.neoforge.network.handling.IPayloadContext context) {
+        boolean serverbound = context.flow().isServerbound();
+        String connectionKey = serverbound
+                ? "S:" + (context.player() != null ? context.player().getUUID() : "")
+                : "C:";
+        String channel = payload.channelName();
+
+        byte[] data;
+        try {
+            data = INBOUND_CHUNKS.accept(connectionKey, channel, payload.index(), payload.total(),
+                    payload.data());
+        } catch (RuntimeException e) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "[Network] Dropped frame '" + channel + "': " + e.getMessage());
+            INBOUND_CHUNKS.clear(connectionKey, channel);
+            return;
+        }
+        if (data == null) {
+            return; // still waiting for the remaining frames
+        }
+
+        if (!serverbound) {
+            if (SYNC_DATA_CHANNEL.equals(channel)) {
+                handleClientSyncData(new String(data, java.nio.charset.StandardCharsets.UTF_8));
                 return;
             }
-            if ("LuaTweaker:OpenScreen".equals(payload.channelName())) {
-                handleClientOpenScreen(payload.dataJson());
+            if (OPEN_SCREEN_CHANNEL.equals(channel)) {
+                handleClientOpenScreen(new String(data, java.nio.charset.StandardCharsets.UTF_8));
                 return;
             }
-            if ("LuaTweaker:CloseScreen".equals(payload.channelName())) {
+            if (CLOSE_SCREEN_CHANNEL.equals(channel)) {
                 com.luatweaker.api.pal.Platform.getClient().closeScreen();
                 return;
             }
         }
 
-        ILuaEngine engine = activeEngine;
-        if (engine == null) {
+        if (com.luatweaker.network.NetworkServiceImpl.RPC_CHANNEL.equals(channel)) {
+            handleRpcFrame(data, serverbound, context);
             return;
         }
-        ILuaValue[] args;
-        try {
-            args = com.luatweaker.network.NetworkPayloadCodec.decodeArgs(engine, payload.dataJson());
-        } catch (RuntimeException e) {
-            com.luatweaker.api.log.LuaTweakerLog.get().error(
-                    com.luatweaker.api.log.LogStage.SYSTEM,
-                    "[Network] Dropped RemoteEvent payload '" + payload.channelName() + "': " + e.getMessage());
-            return;
-        }
-        if (context.flow().isServerbound()) {
+
+        if (serverbound) {
             String playerUuid = context.player() != null ? context.player().getUUID().toString() : "";
             com.luatweaker.network.NetworkServiceImpl ns = serverNetworkService;
             if (ns != null) {
-                ns.OnClientFired(payload.channelName(), playerUuid, args);
+                ns.OnClientFired(channel, playerUuid, data);
             } else {
-                LOGGER.warn("serverNetworkService is null when handling serverbound payload {}",
-                        payload.channelName());
+                LOGGER.warn("serverNetworkService is null when handling serverbound payload {}", channel);
             }
-        } else {
-            // Clientbound: the OnClientEvent listeners are connected on the network service of
-            // the CURRENTLY ACTIVE engine (where the mods loaded), not on the client setup engine
-            // which never loads mods.
-            Object ns = com.luatweaker.core.service.LuaServiceRegistry.get("NetworkServiceImpl");
-            if (ns instanceof com.luatweaker.network.NetworkServiceImpl networkService) {
-                networkService.OnServerFired(payload.channelName(), "", args);
-            } else {
-                LOGGER.warn("No active NetworkService for clientbound payload {}", payload.channelName());
-            }
+            return;
         }
+        // Clientbound: the OnClientEvent listeners are connected on the network service of
+        // the CURRENTLY ACTIVE engine (where the mods loaded), not on the client setup engine
+        // which never loads mods.
+        Object ns = com.luatweaker.core.service.LuaServiceRegistry.get("NetworkServiceImpl");
+        if (ns instanceof com.luatweaker.network.NetworkServiceImpl networkService) {
+            networkService.OnServerFired(channel, "", data);
+        } else {
+            LOGGER.warn("No active NetworkService for clientbound payload {}", channel);
+        }
+    }
+
+    private static void handleRpcFrame(byte[] data, boolean serverbound,
+                                       net.neoforged.neoforge.network.handling.IPayloadContext context) {
+        com.luatweaker.network.NetworkServiceImpl ns = rpcService(serverbound);
+        if (ns == null) {
+            LOGGER.warn("No NetworkService to handle a RemoteFunction frame (serverbound={})", serverbound);
+            return;
+        }
+        com.luatweaker.network.RpcEnvelope envelope;
+        try {
+            envelope = com.luatweaker.network.RpcEnvelope.decode(data);
+        } catch (RuntimeException e) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "[Network] Dropped malformed RemoteFunction envelope: " + e.getMessage());
+            return;
+        }
+        if (envelope.phase() == com.luatweaker.network.RpcEnvelope.PHASE_INVOKE) {
+            String playerUuid = serverbound && context.player() != null
+                    ? context.player().getUUID().toString() : "";
+            ns.OnRpcInvoke(envelope.requestId(), envelope.functionName(), playerUuid, envelope.payload());
+            return;
+        }
+        ns.OnRpcResult(envelope.requestId(), envelope.payload(), envelope.error());
     }
 
     private static void handleClientSyncData(String dataJson) {
@@ -643,35 +734,6 @@ public class LuaTweakerMod {
         } catch (Exception e) {
             LOGGER.error("Failed to open canvas screen: {}", e.getMessage());
         }
-    }
-
-    private static void handleRpcPayload(com.luatweaker.platform.network.LuaTweakerRpcPayload payload,
-                                         net.neoforged.neoforge.network.handling.IPayloadContext context) {
-        boolean serverbound = context.flow().isServerbound();
-        String phase = payload.phase();
-        if (com.luatweaker.api.network.RpcPhase.INVOKE.equals(phase)) {
-            String playerUuid = serverbound && context.player() != null
-                    ? context.player().getUUID().toString() : "";
-            com.luatweaker.network.NetworkServiceImpl ns = rpcService(serverbound);
-            if (ns == null) {
-                LOGGER.warn("No NetworkService to handle RemoteFunction invoke '{}'", payload.functionName());
-                return;
-            }
-            ns.OnRpcInvoke(payload.requestId(), payload.functionName(), playerUuid, payload.dataJson());
-            return;
-        }
-        if (com.luatweaker.api.network.RpcPhase.RESULT.equals(phase)) {
-            com.luatweaker.network.NetworkServiceImpl ns = rpcService(serverbound);
-            if (ns == null) {
-                LOGGER.warn("No NetworkService to handle RemoteFunction response '{}'", payload.requestId());
-                return;
-            }
-            ns.OnRpcResult(payload.requestId(), payload.dataJson(), payload.error());
-            return;
-        }
-        com.luatweaker.api.log.LuaTweakerLog.get().error(
-                com.luatweaker.api.log.LogStage.SYSTEM,
-                "[Network] Dropped RemoteFunction packet with unknown phase '" + phase + "'");
     }
 
     /**

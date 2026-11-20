@@ -111,7 +111,11 @@ dependencies {
     compileOnly "mezz.jei:jei-1.21.1-neoforge:19.32.0.359"
     developmentMods "mezz.jei:jei-1.21.1-neoforge:19.32.0.359"
 
+    implementation "software.bernie.geckolib:geckolib-neoforge-1.21.1:4.7.4"
+    developmentMods "software.bernie.geckolib:geckolib-neoforge-1.21.1:4.7.4"
+
     // Embed all submodules into the single output jar via NeoForge Jar-in-Jar
+    jarJar "software.bernie.geckolib:geckolib-neoforge-1.21.1:4.7.4"
     jarJar(project(':common-api'))
     jarJar(project(':core-engine'))
     jarJar(project(':modules:module-recipes'))
@@ -157,6 +161,19 @@ dependencies {
  implementation project(':modules:module-structures')
  implementation project(':modules:module-update')
 
+    // SPIRV-Cross for user-authored SPIR-V translation (Shaders:registerSpirvPass).
+    // The Java part ships inside the mod jar; natives ride the dev classpath.
+    // Production native bundling is a follow-up — without natives that path
+    // fails loudly and GLSL stays fully working.
+    jarJar "org.lwjgl:lwjgl-spvc:3.3.3"
+    implementation "org.lwjgl:lwjgl-spvc:3.3.3"
+    runtimeOnly "org.lwjgl:lwjgl-spvc:3.3.3:natives-windows"
+    runtimeOnly "org.lwjgl:lwjgl-spvc:3.3.3:natives-linux"
+    runtimeOnly "org.lwjgl:lwjgl-spvc:3.3.3:natives-macos"
+    runtimeOnly "org.lwjgl:lwjgl:3.3.3:natives-windows"
+    runtimeOnly "org.lwjgl:lwjgl:3.3.3:natives-linux"
+    runtimeOnly "org.lwjgl:lwjgl:3.3.3:natives-macos"
+
     // JEI integration for checking recipes in-game easily
     implementation "mezz.jei:jei-1.21.1-neoforge:19.32.0.359"
 
@@ -164,6 +181,8 @@ dependencies {
     additionalRuntimeClasspath "io.github.kienpc1234:luava:${luava_version}"
     additionalRuntimeClasspath "org.mongodb:bson:5.1.0"
 
+    testImplementation "io.github.kienpc1234:luava:${luava_version}"
+    testImplementation "org.mongodb:bson:5.1.0"
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -172,6 +191,7 @@ dependencies {
 
 test {
     useJUnitPlatform()
+    maxHeapSize = '2048m'
 }
 
 var copyDevelopmentMods = tasks.register('copyDevelopmentMods', Copy) {

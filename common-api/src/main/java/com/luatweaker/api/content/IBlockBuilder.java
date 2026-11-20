@@ -153,6 +153,11 @@ public interface IBlockBuilder {
     @LuaDoc(description = "Adds a bar element to the container GUI. source: 'energy' (FE fill), 'fluid' (tank fill) or 'progress' (Lua progress 0..1). Color is ARGB, e.g. 0xFF00E676; 0 = source default.", params = {"id: string", "x: integer", "y: integer", "width: integer", "height: integer", "source: string", "color: integer"}, returnType = "IBlockBuilder")
     IBlockBuilder guiBar(String id, int x, int y, int width, int height, String source, int color);
 
+    @LuaDoc(description = "Adds a custom proprietary resource bar (e.g. Heat, Pressure, Mana, Radiation) synced from custom BlockEntity data keys.",
+            params = {"id: string", "x: integer", "y: integer", "width: integer", "height: integer", "currentKey: string", "maxKey: string", "color: integer", "tooltip: string"},
+            returnType = "IBlockBuilder")
+    IBlockBuilder customBar(String id, int x, int y, int width, int height, String currentKey, String maxKey, int color, @org.jetbrains.annotations.Nullable String tooltip);
+
     @LuaDoc(description = "Adds a boolean block-state pair (e.g. running/off). The blockstate JSON and both cube-all models are generated automatically from the two textures - no JSON files needed. Toggle it from Lua: World:SetBlockState(x, y, z, 'ns:id', { running = true }).", params = {"property: string (e.g. 'running')", "offTexture: string", "onTexture: string"}, returnType = "IBlockBuilder")
     IBlockBuilder booleanState(String property, String offTexture, String onTexture);
 
@@ -185,6 +190,13 @@ public interface IBlockBuilder {
 
     @LuaDoc(description = "Registers a callback invoked when a neighbor block changes or redstone signal updates.", params = {"handler: function(pos, neighborPos)"}, returnType = "IBlockBuilder")
     IBlockBuilder onNeighborChanged(BiConsumer<Object, Object> handler);
+
+    @LuaDoc(description = "Sets the GeckoLib skeletal model and animation specs for this block.", params = {"modelPath: string", "texturePath: string", "animationPath: string", "defaultAnimation: string?"}, returnType = "IBlockBuilder")
+    IBlockBuilder geoModel(String modelPath, String texturePath, String animationPath, @org.jetbrains.annotations.Nullable String defaultAnimation);
+
+    default IBlockBuilder geoModel(String modelPath, String texturePath, String animationPath) {
+        return geoModel(modelPath, texturePath, animationPath, null);
+    }
 
     String getId();
     float getHardness();
@@ -245,6 +257,8 @@ public interface IBlockBuilder {
     java.util.List<MachineLabelSpec> getLabels();
     BiConsumer<Object, String> getButtonClickHandler();
     BiConsumer<Object, Object> getNeighborChangedHandler();
+    @org.jetbrains.annotations.Nullable
+    GeoModelSpec getGeoModel();
 }
 
 

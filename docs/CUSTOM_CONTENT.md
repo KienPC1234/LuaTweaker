@@ -46,7 +46,73 @@ local LiquidRuby = Content.NewFluid("luatweaker:liquid_ruby")
 
 ---
 
-## 2. Persistent Storage API (`Storage`)
+## 1b. Custom entities (`Content.createEntity`)
+
+```lua
+-- Legacy rig: clones a vanilla mob class (behavior + renderer + sounds).
+-- Zero behavior change, but custom sounds are unavailable here.
+Content.createEntity("crystal_golem", function(e)
+    e:category("MONSTER"):parent("iron_golem")
+     :dimensions(1.4, 2.8):maxHealth(500):movementSpeed(0.3):attackDamage(12.0)
+     :spawnEgg(0x4488FF, 0x88CCFF)
+     :texture("luatweaker:textures/entity/crystal_golem.png")
+     :drop("luatweaker:crystal_shard", 10, 20)  -- every :drop adds one entry
+     :drop("luatweaker:crystal_staff", 1, 1)
+     :experience(200):bossBar("Crystal Golem", "BLUE", "PROGRESS")
+end)
+
+-- Generic rig: behavior-free mob + texture-driven renderer + custom sounds.
+-- defaultGoals presets: monster (hostile), animal (panic + wander), none.
+Content.createEntity("crystal_wisp", function(e)
+    e:category("MONSTER"):parent("cow")          -- attribute defaults only
+     :rig("quadruped")                           -- or "humanoid"
+     :texture("luatweaker:textures/entity/crystal_beast.png")
+     :dimensions(0.9, 1.4):maxHealth(40):movementSpeed(0.3):attackDamage(5.0)
+     :spawnEgg(0x46C9A0, 0xBDFFD9)
+     :hurtSound("minecraft:entity.cow.hurt"):deathSound("minecraft:entity.cow.death")
+     :drop("luatweaker:crystal_shard", 2, 5):experience(12)
+     :tickRate(5)                                -- onTick every 5 server ticks
+     :onTick(function(ent)                       -- server-side only
+         -- per-type AI, particles, phase logic...
+     end)
+     :onHurt(function(ent, amount, attacker)     -- return number = new damage
+         return amount * 0.5                     -- nil keeps the original
+     end)
+     :onDeath(function(ent, killer)              -- return true cancels death
+         return false
+     end)
+     :onInteract(function(ent, player)           -- return true consumes
+         return false
+     end)
+end)
+```
+
+Rules:
+
+- `rig("parent")` (default) keeps the vanilla class: creeper explodes, villager
+  trades, witch drinks potions. New rigs (`humanoid`/`quadruped`) start with
+  empty AI plus the `defaultGoals` preset — anything not configured does nothing.
+- `drop()`/`experience()` replace vanilla drops for every rig (server-side,
+  via drop/XP events). `experience()` only applies when set explicitly.
+- `ambientSound/hurtSound/deathSound` only apply to the generic rigs; the
+  legacy rig keeps its vanilla sounds (documented, not silent).
+- For full custom 3D keyframe models and animations (GeckoLib 4 format), use `:GeoModel(modelPath, [texturePath], [animationPath], [defaultAnimation])`. See [GECKOLIB_ANIMATIONS](GECKOLIB_ANIMATIONS.md).
+- Animation for standard rigs is procedural: walk/idle come free from the rig, attacks from
+  `entity:swingArm()`, poses via `entity:setPose("SITTING")`. For custom animated keyframe models, use `:GeoModel(...)` and `entity:TriggerAnimation(animName)`.
+- AI primitives (`AIGoals`), sensing (`entity:canSee(target)`,
+  `World:FindNearest(entity, [typeId], [radius])`, `entity:isNavigating()`,
+  `AIGoals:listGoals(entity)` — custom Lua goals show their script-given `name`),
+  aiming/locomotion (`entity:lookAt(x, y, z)`, `entity:lookAtEntity(target)`,
+  `entity:jump()`, `entity:setPose/getPose/stopMoving`), and the tick clock
+  (`entity:getGameTime()` — use for AI cooldowns, NOT wall-clock time) work on
+  every rig. Full decision trees run on the pure-Lua `Brain` module
+  (`require("LuaTweaker.Brain")`: Selector/Sequence/Parallel/Utility/Cooldown/
+  Timeout/Repeat/Retry/Guard/Latch + per-entity `Registry` blackboards and shared
+  `Squad` boards) — see `docs/BEHAVIOR_TREES.md`
+  and the runnable demos (`src/server/brain_demo.lua` wisp greeter,
+  `src/server/brain_hunt_demo.lua` beast pack hunt).
+
+---
 
 Save quest states, player data, and world variables across server restarts:
 
@@ -275,7 +341,9 @@ Low-level primitives for checking multiblock shapes, querying redstone power, an
 
 | Method | Parameters | Return | Description |
 |---|---|---|---|
-| `World:CheckPattern(level, x, y, z, pattern)` | `level: str, x: int, y: int, z: int, pattern: table` | `boolean` | Checks if pattern matches relative to origin |
+| `World:CheckPattern(level, x, y, z, pattern)` | `level: str, x: int, y: int, z: int, pattern: table` | `boolean` | Checks if static pattern matches relative to origin |
+| `World:ValidateCuboid(level, minPos, maxPos, rules)` | `level: str, minPos: table, maxPos: table, rules: table` | `table` | Validates arbitrary expandable cuboid multiblock structure |
+| `World:SetBlockStatesInBox(level, minPos, maxPos, props, [filterBlockId])` | `level: str, minPos: table, maxPos: table, props: table, filter: str?` | `integer` | Batch applies blockstate properties across a 3D box |
 | `World:GetRedstoneSignal(level, x, y, z, [dir])` | `level: str, x: int, y: int, z: int, dir: str?` | `integer` | Returns redstone signal level (0 to 15) |
 | `World:TransferEnergy(level, from, to, amount, sim)` | `level: str, from: {X,Y,Z}, to: {X,Y,Z}, amount: int, sim: bool` | `integer` | Transfers FE between blocks |
 | `World:TransferFluid(level, from, to, amount, sim)` | `level: str, from: {X,Y,Z}, to: {X,Y,Z}, amount: int, sim: bool` | `integer` | Transfers fluid (mB) between blocks |
@@ -303,4 +371,99 @@ if formed and redstone > 0 then
     local movedItems = World:TransferItem("minecraft:overworld", {X = 100, Y = 64, Z = 200}, {X = 101, Y = 64, Z = 200}, 1, 0, 1, false)
 end
 ```
+
+---
+
+### 10.2 Dynamic Expandable Multiblock Validation (`World:ValidateCuboid`)
+
+For expandable structures of variable dimensions (such as reactors, smelteries, and pressure chambers):
+
+```lua
+local check = World:ValidateCuboid("minecraft:overworld", { X = 100, Y = 64, Z = 100 }, { X = 105, Y = 69, Z = 105 }, {
+    minWidth = 3, maxWidth = 16,
+    minHeight = 3, maxHeight = 16,
+    minDepth = 3, maxDepth = 16,
+    frame = {
+        block = "minecraft:obsidian"
+    },
+    floor = {
+        block = "#minecraft:stone_bricks"
+    },
+    ceiling = {
+        block = "#minecraft:stone_bricks"
+    },
+    walls = {
+        "luatweaker:crystal_block",
+        { block = "minecraft:iron_block", properties = { facing = "north" } },
+        { block = "minecraft:glass" }
+    },
+    interior = {
+        "minecraft:air",
+        "minecraft:lava"
+    },
+    limits = {
+        ["minecraft:iron_block"] = { min = 0, max = 10 }
+    }
+})
+
+if check.valid then
+    print(string.format("Structure valid! Dimensions: %dx%dx%d, Volume: %d", check.width, check.height, check.depth, check.volume))
+    -- Batch update connected/lit state on crystal blocks
+    World:SetBlockStatesInBox("minecraft:overworld", check.minPos, check.maxPos, { lit = "true" }, "luatweaker:crystal_block")
+else
+    print("Validation failed: " .. check.error .. " at " .. check.failedPos.X .. "," .. check.failedPos.Y .. "," .. check.failedPos.Z)
+end
+```
+
+Each rule condition can be:
+- String ID: `"minecraft:obsidian"` or wildcard `"*"`
+- Tag: `"#c:glass_blocks"` or `"#minecraft:stone_bricks"`
+- Table condition: `{ block = "minecraft:chest", properties = { facing = "north" }, nbt = { CustomKey = 100 } }`
+- Array of conditions: `{ "minecraft:glass", "#c:glass_blocks" }`
+
+---
+
+## 11. Custom GUI Resource Bars (`:CustomBar`)
+
+Define proprietary resource meters (Heat, Pressure, Mana, Flux, Steam) in Container GUIs:
+
+```lua
+local Machine = Content.NewBlock("arcane_reactor")
+    :DisplayName("Arcane Reactor")
+    :Container(3, 9, "spill")
+    :SlotPosition(0, 44, 30)
+    :SlotPosition(1, 116, 30)
+    -- Custom resource bar synchronized automatically via Container DataSlots
+    :CustomBar("mana_bar", 10, 20, 16, 50, "CurrentMana", "MaxMana", 0x33CCFF, "Mana: %d / %d Arcanum")
+    :CustomBar("heat_gauge", 28, 20, 16, 50, "CoreHeat", "MaxHeat", 0xFF4400, "Core Temp: %d / %d C")
+    :Register()
+```
+
+- **id**: Unique identifier for the bar
+- **x, y, width, height**: Screen coordinates and dimensions relative to container background
+- **currentKey, maxKey**: Custom keys mapped to BlockEntity persistent data
+- **color**: ARGB hex color (e.g. `0xFF4400` for orange heat, `0x33CCFF` for blue mana)
+- **tooltipFormat**: String format pattern for hover tooltip (`"%d / %d"` or custom labels)
+
+---
+
+## 12. Programmatic Item Animations (`player:PlayItemAnimation`)
+
+Trigger client item pose animations dynamically via script function calls:
+
+```lua
+local CrystalStaff = Content.NewItem("crystal_staff")
+    :DisplayName("Crystal Staff")
+    :OnRightClick(function(player, itemStack)
+        -- Trigger recoil animation with 12 ticks duration and 1.5x speed
+        player:PlayItemAnimation("recoil", 12, 1.5)
+    end)
+    :Register()
+```
+
+Supported animation types:
+- `"recoil"`: Gunshot/blast recoil animation with backward kick and upward tilt
+- `"thrust"`: Spear/wand forward stab motion
+- `"spin"`: Rapid Z-axis spin rotation
+- `"inspect"`: CS/Valorant style inspect tilt and examination roll
 

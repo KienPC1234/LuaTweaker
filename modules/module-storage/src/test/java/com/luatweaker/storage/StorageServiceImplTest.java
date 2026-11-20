@@ -63,11 +63,30 @@ public class StorageServiceImplTest {
     void testSessionStorage() {
         ILuaEngine engine = LuaEngineFactory.create(false);
         StorageServiceImpl storageService = new StorageServiceImpl(engine);
-
         IRobloxStorageService.IDataStore session = storageService.GetSessionStorage();
         session.SetAsync("temp_key", "temp_val");
 
         assertEquals("temp_val", session.GetAsync("temp_key"));
+    }
+
+    @Test
+    void luaStringValueRoundTripsAsString() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        StorageServiceImpl storageService = new StorageServiceImpl(engine);
+        try {
+            StorageLuaBinding.registerBindings(engine, storageService);
+            engine.executeStringOrThrow(
+                    "local Storage = require('LuaTweaker.Storage')\n" +
+                    "local session = Storage:GetSessionStorage()\n" +
+                    "session:SetAsync('luatweaker_test.roundtrip', '42')\n" +
+                    "local value = session:GetAsync('luatweaker_test.roundtrip')\n" +
+                    "assert(type(value) == 'string', 'expected a string, got ' .. type(value)\n" +
+                    "    .. ' (' .. tostring(value) .. ')')\n" +
+                    "assert(value == '42', 'expected 42, got ' .. tostring(value))\n",
+                    "storage_lua_string_roundtrip");
+        } finally {
+            engine.shutdown();
+        }
     }
 
     @Test
@@ -205,5 +224,52 @@ public class StorageServiceImplTest {
         assertTrue(levels.isTable());
         assertEquals(3, levels.asTable().length());
         assertEquals(2.0, levels.asTable().rawget(2).asDouble());
+    }
+
+    @Test
+    void testFlushPersistsImmediately() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        StorageServiceImpl storageService = new StorageServiceImpl(engine);
+        IRobloxStorageService.IDataStore world = storageService.GetWorldStorage();
+
+        world.SetAsync("flush_test", "flushed_value");
+        world.Flush();
+
+        File file = new File(tempDir, "world_storage.bson");
+        assertTrue(file.exists() && file.length() > 0, "Flush() must immediately commit data to disk");
+
+        StorageServiceImpl another = new StorageServiceImpl(engine);
+        assertEquals("flushed_value", another.GetWorldStorage().GetAsync("flush_test"));
+    }
+
+    @Test
+    void testLuaFlushBinding() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        StorageServiceImpl storageService = new StorageServiceImpl(engine);
+        StorageLuaBinding.registerBindings(engine, storageService);
+
+        engine.executeStringOrThrow(
+                "local ws = Storage:GetWorldStorage()\n" +
+                "ws:SetAsync('lua_key', 999)\n" +
+                "ws:Flush()\n" +
+                "Storage:Flush()\n" +
+                "assert(ws:GetAsync('lua_key') == 999, 'Key should match after flush')",
+                "test_lua_flush");
+    }
+
+    @Test
+    void testConcurrentRapidWritesCoalesced() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        StorageServiceImpl storageService = new StorageServiceImpl(engine);
+        IRobloxStorageService.IDataStore world = storageService.GetWorldStorage();
+
+        for (int i = 0; i < 50; i++) {
+            world.SetAsync("rapid_key_" + i, i);
+        }
+        storageService.Flush();
+
+        for (int i = 0; i < 50; i++) {
+            assertEquals((double) i, ((Number) world.GetAsync("rapid_key_" + i)).doubleValue(), 1e-9);
+        }
     }
 }

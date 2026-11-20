@@ -53,6 +53,16 @@ public record DimensionConfig(
     public static final int DEFAULT_SEA_LEVEL = 63;
     public static final int DEFAULT_MIN_HEIGHT = -64;
     public static final int DEFAULT_MAX_HEIGHT = 320;
+    /** Minecraft's {@code DimensionType} build limits (1.21.1): min_y -2032..2031,
+     *  height 16..4064, min_y + height <= 2032, both multiples of 16. */
+    public static final int MIN_WORLD_Y = -2032;
+    public static final int MAX_WORLD_TOP = 2032;
+    public static final int MAX_WORLD_HEIGHT = 4064;
+    public static final int MIN_WORLD_HEIGHT = 16;
+    public static final int WORLD_SECTION = 16;
+    /** Vanilla {@code DimensionType} coordinate_scale codec range. */
+    public static final double MIN_COORDINATE_SCALE = 1.0E-5;
+    public static final double MAX_COORDINATE_SCALE = 3.0E7;
     public static final int DEFAULT_SKY_COLOR = 0x78A7FF;
     public static final int DEFAULT_FOG_COLOR = 0xC0D8FF;
     public static final double DEFAULT_AMBIENT_LIGHT = 0.1;

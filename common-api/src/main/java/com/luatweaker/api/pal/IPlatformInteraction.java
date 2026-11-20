@@ -159,4 +159,61 @@ public interface IPlatformInteraction {
                             int toX, int toY, int toZ, int toSlot, int maxCount, boolean simulate) {
         return 0;
     }
+
+    default @NotNull java.util.Map<String, Object> validateCuboid(
+            @NotNull String dimension,
+            int x1, int y1, int z1,
+            int x2, int y2, int z2,
+            @NotNull java.util.Map<String, Object> spec) {
+        return java.util.Map.of("valid", false, "error", "Not implemented on platform");
+    }
+
+    default int setBlockStatesInBox(
+            @NotNull String dimension,
+            int x1, int y1, int z1,
+            int x2, int y2, int z2,
+            @Nullable String filterBlockId,
+            @NotNull java.util.Map<String, Object> properties) {
+        return 0;
+    }
+
+    @NotNull
+    default java.util.List<java.util.Map<String, Object>> findBlocks(
+            @NotNull String dimension,
+            int x, int y, int z,
+            int radius,
+            @NotNull String filter,
+            int maxResults) {
+        return java.util.List.of();
+    }
+
+    default boolean setEnergy(@NotNull String dimension, int x, int y, int z, int amount) {
+        return false;
+    }
+
+    default int produceEnergy(@NotNull String dimension, int x, int y, int z, int amount) {
+        return 0;
+    }
+
+    default boolean setProgress(@NotNull String dimension, int x, int y, int z, float progress) {
+        return false;
+    }
+
+    default float getProgress(@NotNull String dimension, int x, int y, int z) {
+        return 0.0f;
+    }
+
+    /**
+     * Triggers a skeletal animation via GeckoLib on an Entity, BlockEntity, or Item.
+     *
+     * @param target The target instance (IEntity, IInteractableBlock, IInteractableItem, BlockPos/BlockEntity)
+     * @param controllerName Name of the animation controller (default "main")
+     * @param animName Name of the animation from the .animation.json file
+     * @param speed Playback speed multiplier (1.0 = normal)
+     * @param loop True to loop the animation continuously, false to play once
+     * @return True if the animation was successfully dispatched, false otherwise
+     */
+    default boolean triggerGeoAnimation(@NotNull Object target, @NotNull String controllerName, @NotNull String animName, double speed, boolean loop) {
+        return false;
+    }
 }

@@ -166,7 +166,7 @@ public final class BlockRegistrar {
                 if (builder.isNoCollision()) {
                     props.noCollission();
                 }
-                if (builder.isNoOcclusion()) {
+                if (builder.isNoOcclusion() || builder.isConnectionState() || builder.getGeoModel() != null || !builder.getBoxes().isEmpty()) {
                     props.noOcclusion();
                 }
                 if (builder.getPushReaction() != null) {
@@ -208,7 +208,8 @@ public final class BlockRegistrar {
                 // with "none" drops unless :Container(...) was configured.
                 boolean hasBe = builder.isContainer() || builder.isConnectionState()
                         || builder.getTickHandler() != null || builder.getRenderHandler() != null
-                        || builder.getEnergyCapacity() > 0 || builder.getFluidCapacity() > 0;
+                        || builder.getEnergyCapacity() > 0 || builder.getFluidCapacity() > 0
+                        || builder.getGeoModel() != null;
                 boolean hasCustomShapeOrFacing = !builder.getBoxes().isEmpty()
                         || (builder.getFacing() != null && !"NONE".equalsIgnoreCase(builder.getFacing()));
                 Block block;
@@ -321,11 +322,13 @@ public final class BlockRegistrar {
         }
     }
 
+    @SuppressWarnings("unchecked")
     public void registerContainerBlockEntities(RegisterEvent event) {
         for (IBlockBuilder builder : contentService.getRegisteredBlocks()) {
             boolean hasBe = builder.isContainer() || builder.isConnectionState()
                     || builder.getTickHandler() != null || builder.getRenderHandler() != null
-                    || builder.getEnergyCapacity() > 0 || builder.getFluidCapacity() > 0;
+                    || builder.getEnergyCapacity() > 0 || builder.getFluidCapacity() > 0
+                    || builder.getGeoModel() != null;
             if (!hasBe) continue;
             ResourceLocation rl = locationParser.apply(builder.getId());
             Block block = createdBlocks.get(rl);

@@ -2,12 +2,18 @@ package com.luatweaker.platform.dimension;
 
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
+import com.luatweaker.dimension.DensityField;
 import com.luatweaker.dimension.DimensionConfig;
 import com.luatweaker.dimension.DimensionServiceImpl;
+import com.luatweaker.dimension.DimensionServiceImpl.TerrainMode;
+import com.luatweaker.dimension.TerrainSampler;
+import com.luatweaker.dimension.TerrainSpec;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -28,10 +34,12 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
 import net.minecraft.world.level.levelgen.GenerationStep;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.blending.Blender;
+import net.minecraft.world.level.levelgen.structure.StructureSet;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -40,6 +48,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Stream;
 
 /**
  * Chunk generator driven by Lua callbacks.
@@ -69,7 +78,6 @@ public class LuaChunkGenerator extends ChunkGenerator {
     // terrain/visual/spawn data (no cache or seed fields), so the column-cache
     // bound and placement seeds live here as named constants.
     private static final int MAX_CACHED_CHUNKS = 1024;
-    private static final int GEN_DEPTH = 16;
     /** Vanilla per-chunk placement seeds (same constants vanilla features use). */
     private static final long CHUNK_X_SEED = 341873128712L;
     private static final long CHUNK_Z_SEED = 132897987541L;
@@ -80,6 +88,7 @@ public class LuaChunkGenerator extends ChunkGenerator {
     /** Per-chunk column cache: chunk key -> 16x16 heights + top block ids. */
     private final Map<Long, ChunkColumnData> columnCache = new ConcurrentHashMap<>();
     private volatile long cachedGenerationVersion = -1;
+    private volatile DimensionServiceImpl cachedService;
 
     /** Resolved block states by id, so lookups happen once per block id. */
     private final Map<String, BlockState> resolvedBlocks = new ConcurrentHashMap<>();
@@ -98,6 +107,21 @@ public class LuaChunkGenerator extends ChunkGenerator {
         return MAP_CODEC;
     }
 
+    @Override
+    public ChunkGeneratorStructureState createState(HolderLookup<StructureSet> structureSetLookup,
+                                                    RandomState randomState, long seed) {
+        // Lua dimensions own their content. Vanilla structure sets (villages, mineshafts...)
+        // are filtered by biome and would otherwise generate into terrain they do not fit;
+        // mods place structures explicitly through the World/Structure APIs instead.
+        return ChunkGeneratorStructureState.createForFlat(randomState, seed, getBiomeSource(), Stream.empty());
+    }
+
+    @Override
+    public void createReferences(WorldGenLevel level, StructureManager structureManager, ChunkAccess chunk) {
+        // No structure starts exist for Lua dimensions (see createState); skip the 17 x 17
+        // neighbour scan vanilla performs for structure references.
+    }
+
     // ---------------------------------------------------------------------
     // Worldgen entry points
     // ---------------------------------------------------------------------
@@ -110,67 +134,78 @@ public class LuaChunkGenerator extends ChunkGenerator {
         ChunkPos pos = chunk.getPos();
         int minY = chunk.getMinBuildHeight();
         int maxY = minY + chunk.getHeight();
+        int configMinY = config.minHeight();
 
-        Heightmap[] heightmaps = new Heightmap[Heightmap.Types.values().length];
-        for (Heightmap.Types type : Heightmap.Types.values()) {
-            heightmaps[type.ordinal()] = chunk.getOrCreateHeightmapUnprimed(type);
-        }
-
-        short[] heights = new short[256];
-        String[] topBlocks = new String[256];
+        // One column pass for the whole chunk, shared with getBaseHeight/getBaseColumn.
+        // Calling the Lua terrain callback again for those paths made a single chunk run
+        // up to 768 Lua calls instead of 256.
+        ChunkColumnData columns = columnDataForChunk(service, config, pos.x, pos.z);
         BlockState waterState = resolveBlock(config.waterBlock());
+        // A batch chunk callback already owns every column, so the per-column pickers
+        // (another 512 Lua calls per chunk) must not run on top of it.
+        boolean usePickers = columns.mode == TerrainMode.LEGACY;
+        int seaLevel = columns.sampler != null ? columns.sampler.baseHeight() : config.seaLevel();
+        boolean fillWater = columns.sampler == null || columns.sampler.waterEnabled();
 
         BlockPos.MutableBlockPos mutPos = new BlockPos.MutableBlockPos();
         for (int z = 0; z < 16; z++) {
             for (int x = 0; x < 16; x++) {
+                int column = z * 16 + x;
                 int worldX = pos.getMinBlockX() + x;
                 int worldZ = pos.getMinBlockZ() + z;
-                DimensionServiceImpl.SurfaceResult surface =
-                        service.computeSurface(dimensionId, worldX, worldZ, config.seaLevel());
+                int height = columns.heights[column] + configMinY;
 
-                int height = Math.clamp(surface.height(), minY + 1, maxY - 1);
-                heights[z * 16 + x] = (short) (height - minY); // offset storage: never negative
-                topBlocks[z * 16 + x] = surface.blockId();
-
-                Map<Integer, String> overrides =
-                        service.computeBlockOverrides(dimensionId, worldX, worldZ, height, minY, maxY);
-                Map<Integer, String> strataOverrides = service.computeStrataOverrides(dimensionId, worldX, worldZ, height);
+                Map<Integer, String> overrides = usePickers
+                        ? service.computeBlockOverrides(dimensionId, worldX, worldZ, height, minY, maxY)
+                        : columns.overrides.getOrDefault(column, Map.of());
+                Map<Integer, String> strataOverrides = usePickers
+                        ? service.computeStrataOverrides(dimensionId, worldX, worldZ, height)
+                        : Map.of();
+                String topBlock = columns.topBlocks[column];
+                float slope = columns.slopes != null ? columns.slopes[column] : 0.0f;
                 for (int y = minY; y <= height; y++) {
-                    BlockState state;
+                    String blockId;
                     if (overrides.containsKey(y)) {
-                        state = resolveBlock(overrides.get(y));
+                        // Explicit overrides win even inside a density cave (ore veins, lava pockets).
+                        blockId = overrides.get(y);
                     } else {
-                        int depth = height - y;
-                        String blockId = strataOverrides.containsKey(depth)
-                                ? strataOverrides.get(depth)
-                                : com.luatweaker.dimension.TerrainColumn.blockAtDepth(config, height, y);
-                        state = resolveBlock(blockId);
+                        if (columns.density != null && !columns.density.isSolid(x, y, z)) {
+                            // Density says air: the chunk starts as air, so skip the write.
+                            continue;
+                        }
+                        String ruleBlock = columns.sampler != null
+                                ? columns.sampler.surfaceBlockAt(height - y, y, slope)
+                                : null;
+                        if (ruleBlock != null) {
+                            blockId = ruleBlock;
+                        } else if (y == height) {
+                            blockId = topBlock;
+                        } else if (strataOverrides.containsKey(height - y)) {
+                            blockId = strataOverrides.get(height - y);
+                        } else {
+                            blockId = com.luatweaker.dimension.TerrainColumn.blockAtDepth(config, height, y);
+                        }
                     }
-                    chunk.setBlockState(mutPos.set(worldX, y, worldZ), state, false);
-                    for (Heightmap heightmap : heightmaps) {
-                        heightmap.update(x, y, z, state);
+                    BlockState state = resolveBlock(blockId);
+                    // A fresh ProtoChunk starts as air, and ProtoChunk#setBlockState already
+                    // updates the worldgen heightmaps (WORLD_SURFACE_WG/OCEAN_FLOOR_WG).
+                    // Writing air here was pure overhead: ~600k heightmap updates per chunk.
+                    if (!state.isAir()) {
+                        chunk.setBlockState(mutPos.set(worldX, y, worldZ), state, false);
                     }
                 }
-                for (int y = height + 1; y < maxY; y++) {
+                for (int y = Math.max(height + 1, minY); y < maxY; y++) {
                     BlockState state;
                     if (overrides.containsKey(y)) {
                         state = resolveBlock(overrides.get(y));
                     } else {
-                        state = y <= config.seaLevel() ? waterState : airState;
+                        state = (fillWater && y <= seaLevel) ? waterState : airState;
                     }
-                    chunk.setBlockState(mutPos.set(worldX, y, worldZ), state, false);
-                    for (Heightmap heightmap : heightmaps) {
-                        heightmap.update(x, y, z, state);
+                    if (!state.isAir()) {
+                        chunk.setBlockState(mutPos.set(worldX, y, worldZ), state, false);
                     }
                 }
             }
-        }
-
-        // Cache the column data for getBaseHeight/getBaseColumn on the same chunk.
-        columnCache.put(chunkKey(pos), new ChunkColumnData(heights, topBlocks, service.getGenerationVersion()));
-
-        for (Heightmap.Types type : Heightmap.Types.values()) {
-            chunk.setHeightmap(type, heightmaps[type.ordinal()].getRawData());
         }
 
         return CompletableFuture.completedFuture(chunk);
@@ -213,7 +248,13 @@ public class LuaChunkGenerator extends ChunkGenerator {
             for (int i = 0; i < groupSize; i++) {
                 int x = center.getMinBlockX() + random.nextInt(16);
                 int z = center.getMinBlockZ() + random.nextInt(16);
-                int y = getBaseHeight(x, z, Heightmap.Types.MOTION_BLOCKING, region, null) + 1;
+                int y = getBaseHeight(x, z, Heightmap.Types.OCEAN_FLOOR_WG, region, null);
+                // Floating-island dimensions report no ground for void columns; spawning at
+                // minY there drops mobs out of the world and wastes entity ticks.
+                if (y <= config.minHeight() + 1 || y >= config.maxHeight()) continue;
+                // OCEAN_FLOOR excludes water; skip columns where the first free block is still
+                // submerged so land mobs do not spawn inside an ocean.
+                if (!region.getFluidState(new BlockPos(x, y, z)).isEmpty()) continue;
                 Entity entity = type.get().create(region.getLevel());
                 if (entity == null) continue;
                 entity.moveTo(x + 0.5, y, z + 0.5, random.nextFloat() * 360.0F, 0.0F);
@@ -251,8 +292,36 @@ public class LuaChunkGenerator extends ChunkGenerator {
                              LevelHeightAccessor levelHeightAccessor, RandomState randomState) {
         DimensionServiceImpl service = requireService();
         DimensionConfig config = requireConfig(service);
-        ChunkColumnData data = columnData(service, config, x, z);
-        return data.heights[columnIndex(x, z)] + config.minHeight();
+        ChunkColumnData data = columnDataAtBlock(service, config, x, z);
+        int topSolid = data.heights[columnIndex(x, z)] + config.minHeight();
+        int seaLevel = data.sampler != null ? data.sampler.baseHeight() : config.seaLevel();
+        boolean fillsWater = data.sampler == null || data.sampler.waterEnabled();
+        // Vanilla contract: getBaseHeight returns the first *air* Y above the surface; the
+        // heightmap itself stores topSolid + 1. Water counts for WORLD_SURFACE/MOTION_BLOCKING.
+        boolean countsWater = type == Heightmap.Types.WORLD_SURFACE_WG
+                || type == Heightmap.Types.WORLD_SURFACE
+                || type == Heightmap.Types.MOTION_BLOCKING
+                || type == Heightmap.Types.MOTION_BLOCKING_NO_LEAVES;
+        int maxY = levelHeightAccessor.getMinBuildHeight() + levelHeightAccessor.getHeight();
+        return firstFreeHeight(topSolid, config.minHeight(), maxY, seaLevel,
+                fillsWater && countsWater);
+    }
+
+    /**
+     * Converts a top solid Y into vanilla's first-free (air) height.
+     *
+     * <p>Void columns report {@code minY} when fluids are not counted (OCEAN_FLOOR), and the
+     * water surface when they are (a void column in a water-filling dimension is an ocean).</p>
+     */
+    static int firstFreeHeight(int topSolid, int minY, int maxY, int seaLevel, boolean countsWater) {
+        int surface = topSolid;
+        if (countsWater && surface < seaLevel) {
+            surface = seaLevel;
+        }
+        if (surface < minY) {
+            return minY;
+        }
+        return Math.min(maxY, surface + 1);
     }
 
     @Override
@@ -263,35 +332,69 @@ public class LuaChunkGenerator extends ChunkGenerator {
         int minY = levelHeightAccessor.getMinBuildHeight();
         int maxY = minY + levelHeightAccessor.getHeight();
 
-        ChunkColumnData data = columnData(service, config, x, z);
+        ChunkColumnData data = columnDataAtBlock(service, config, x, z);
         int index = columnIndex(x, z);
         int height = data.heights[index] + config.minHeight();
         String topBlock = data.topBlocks[index];
 
         BlockState[] states = new BlockState[maxY - minY];
         BlockState waterState = resolveBlock(config.waterBlock());
-        Map<Integer, String> overrides = service.computeBlockOverrides(dimensionId, x, z, height, minY, maxY);
+        Map<Integer, String> overrides = data.mode == TerrainMode.LEGACY
+                ? service.computeBlockOverrides(dimensionId, x, z, height, minY, maxY)
+                : data.overrides.getOrDefault(index, Map.of());
+        float slope = data.slopes != null ? data.slopes[index] : 0.0f;
+        int seaLevel = data.sampler != null ? data.sampler.baseHeight() : config.seaLevel();
+        boolean fillWater = data.sampler == null || data.sampler.waterEnabled();
+        int localX = Math.floorMod(x, 16);
+        int localZ = Math.floorMod(z, 16);
         for (int y = minY; y <= height; y++) {
-            states[y - minY] = overrides.containsKey(y)
-                    ? resolveBlock(overrides.get(y))
-                    : resolveBlock(com.luatweaker.dimension.TerrainColumn.blockAtDepth(config, height, y));
+            String blockId;
+            if (overrides.containsKey(y)) {
+                blockId = overrides.get(y);
+            } else {
+                if (data.density != null && !data.density.isSolid(localX, y, localZ)) {
+                    states[y - minY] = airState;
+                    continue;
+                }
+                String ruleBlock = data.sampler != null
+                        ? data.sampler.surfaceBlockAt(height - y, y, slope)
+                        : null;
+                if (ruleBlock != null) {
+                    blockId = ruleBlock;
+                } else if (y == height) {
+                    blockId = topBlock;
+                } else {
+                    blockId = com.luatweaker.dimension.TerrainColumn.blockAtDepth(config, height, y);
+                }
+            }
+            states[y - minY] = resolveBlock(blockId);
         }
         for (int y = height + 1; y < maxY; y++) {
             states[y - minY] = overrides.containsKey(y)
                     ? resolveBlock(overrides.get(y))
-                    : (y <= config.seaLevel() ? waterState : airState);
+                    : ((fillWater && y <= seaLevel) ? waterState : airState);
         }
         return new NoiseColumn(minY, states);
     }
 
     @Override
     public int getGenDepth() {
-        return GEN_DEPTH;
+        DimensionConfig config = requireConfig(requireService());
+        // Vanilla returns the build height in blocks (overworld 384), not a section count.
+        return config.maxHeight() - config.minHeight();
     }
 
     @Override
     public int getSeaLevel() {
-        return requireConfig(requireService()).seaLevel();
+        DimensionServiceImpl service = requireService();
+        DimensionConfig config = requireConfig(service);
+        if (service.getTerrainMode(dimensionId) == TerrainMode.SPEC) {
+            TerrainSpec spec = service.getTerrainSpec(dimensionId);
+            if (spec != null && spec.seaLevel() != null) {
+                return spec.seaLevel();
+            }
+        }
+        return config.seaLevel();
     }
 
     @Override
@@ -301,7 +404,7 @@ public class LuaChunkGenerator extends ChunkGenerator {
 
     @Override
     public int getSpawnHeight(LevelHeightAccessor levelHeightAccessor) {
-        return requireConfig(requireService()).seaLevel();
+        return getSeaLevel();
     }
 
     @Override
@@ -313,15 +416,25 @@ public class LuaChunkGenerator extends ChunkGenerator {
     // Column cache
     // ---------------------------------------------------------------------
 
-    /** Returns cached (or freshly computed) column data for the chunk containing (x, z). */
-    private ChunkColumnData columnData(DimensionServiceImpl service, DimensionConfig config, int x, int z) {
+    /** Returns cached (or freshly computed) column data for the chunk containing block (x, z). */
+    ChunkColumnData columnDataAtBlock(DimensionServiceImpl service, DimensionConfig config, int x, int z) {
+        return columnDataForChunk(service, config, Math.floorDiv(x, 16), Math.floorDiv(z, 16));
+    }
+
+    /**
+     * Returns cached column data for an explicit chunk coordinate.
+     *
+     * <p>Chunk coordinates never divide by 16 again: passing block coordinates here would make
+     * every group of 16 chunks reuse one chunk's terrain (the whole area looked flat).</p>
+     */
+    ChunkColumnData columnDataForChunk(DimensionServiceImpl service, DimensionConfig config,
+                                       int chunkX, int chunkZ) {
         long version = service.getGenerationVersion();
-        if (version != cachedGenerationVersion) {
+        if (service != cachedService || version != cachedGenerationVersion) {
             columnCache.clear();
+            cachedService = service;
             cachedGenerationVersion = version;
         }
-        int chunkX = Math.floorDiv(x, 16);
-        int chunkZ = Math.floorDiv(z, 16);
         long key = chunkKey(chunkX, chunkZ);
         ChunkColumnData data = columnCache.get(key);
         if (data == null) {
@@ -337,22 +450,104 @@ public class LuaChunkGenerator extends ChunkGenerator {
 
     private ChunkColumnData computeChunk(DimensionServiceImpl service, DimensionConfig config,
                                          int chunkX, int chunkZ, long version) {
-        short[] heights = new short[256];
-        String[] topBlocks = new String[256];
+        int minY = config.minHeight();
+        int maxY = config.maxHeight();
+        TerrainMode mode = service.getTerrainMode(dimensionId);
+        if (mode == TerrainMode.SPEC) {
+            TerrainSampler sampler = service.createTerrainSampler(dimensionId);
+            if (sampler != null) {
+                if (sampler.hasDensity()) {
+                    return computeDensityChunk(sampler, config, chunkX, chunkZ, minY, maxY, version);
+                }
+                return computeHeightChunk(sampler, config, chunkX, chunkZ, minY, maxY, version);
+            }
+        }
+        if (mode == TerrainMode.CHUNK && service.hasChunkTerrain(dimensionId)) {
+            DimensionServiceImpl.ChunkTerrainResult result =
+                    service.computeChunkTerrain(dimensionId, chunkX, chunkZ);
+            short[] heights = new short[DimensionServiceImpl.CHUNK_COLUMNS];
+            for (int i = 0; i < heights.length; i++) {
+                heights[i] = (short) (columnHeight(result.heights()[i], minY, maxY) - minY);
+            }
+            return new ChunkColumnData(heights, result.surfaces(), result.overrides(), null, null, null,
+                    TerrainMode.CHUNK, version);
+        }
+        short[] heights = new short[DimensionServiceImpl.CHUNK_COLUMNS];
+        String[] topBlocks = new String[DimensionServiceImpl.CHUNK_COLUMNS];
         for (int z = 0; z < 16; z++) {
             for (int x = 0; x < 16; x++) {
                 DimensionServiceImpl.SurfaceResult surface = service.computeSurface(dimensionId,
                         chunkX * 16 + x, chunkZ * 16 + z, config.seaLevel());
-                heights[z * 16 + x] = (short) (Math.clamp(surface.height(),
-                                config.minHeight() + 1, config.maxHeight() - 1) - config.minHeight());
+                heights[z * 16 + x] = (short) (columnHeight(surface.height(), minY, maxY) - minY);
                 topBlocks[z * 16 + x] = surface.blockId();
             }
         }
-        return new ChunkColumnData(heights, topBlocks, version);
+        return new ChunkColumnData(heights, topBlocks, Map.of(), null, null, null,
+                TerrainMode.LEGACY, version);
     }
 
-    private static long chunkKey(ChunkPos pos) {
-        return chunkKey(pos.x, pos.z);
+    /** Native height/spline path: one height sample per column plus an 18x18 slope grid. */
+    private ChunkColumnData computeHeightChunk(TerrainSampler sampler, DimensionConfig config,
+                                               int chunkX, int chunkZ, int minY, int maxY, long version) {
+        int[] rawHeights = new int[DimensionServiceImpl.CHUNK_COLUMNS];
+        float[] slopes = new float[DimensionServiceImpl.CHUNK_COLUMNS];
+        sampler.sampleChunk(chunkX, chunkZ, rawHeights, slopes);
+        short[] heights = new short[DimensionServiceImpl.CHUNK_COLUMNS];
+        String[] topBlocks = new String[DimensionServiceImpl.CHUNK_COLUMNS];
+        for (int i = 0; i < heights.length; i++) {
+            int height = columnHeight(rawHeights[i], minY, maxY);
+            heights[i] = (short) (height - minY);
+            String ruleBlock = sampler.surfaceBlockAt(0, height, slopes[i]);
+            topBlocks[i] = ruleBlock != null ? ruleBlock : config.surfaceBlock();
+        }
+        return new ChunkColumnData(heights, topBlocks, Map.of(), slopes, sampler, null,
+                TerrainMode.SPEC, version);
+    }
+
+    /** Native 3D density path: top solid block per column, slopes from neighbouring columns. */
+    private ChunkColumnData computeDensityChunk(TerrainSampler sampler, DimensionConfig config,
+                                                int chunkX, int chunkZ, int minY, int maxY, long version) {
+        DensityField density = sampler.sampleDensity(chunkX, chunkZ, minY, maxY);
+        int[] topSolid = new int[DimensionServiceImpl.CHUNK_COLUMNS];
+        for (int z = 0; z < 16; z++) {
+            for (int x = 0; x < 16; x++) {
+                topSolid[z * 16 + x] = density.topSolid(x, z);
+            }
+        }
+        short[] heights = new short[DimensionServiceImpl.CHUNK_COLUMNS];
+        String[] topBlocks = new String[DimensionServiceImpl.CHUNK_COLUMNS];
+        float[] slopes = new float[DimensionServiceImpl.CHUNK_COLUMNS];
+        for (int z = 0; z < 16; z++) {
+            for (int x = 0; x < 16; x++) {
+                int i = z * 16 + x;
+                // Slopes use the clamped in-chunk neighbours: sampling a density border would
+                // cost another 18x18 column scan for a value only surface rules consume.
+                int left = topSolid[z * 16 + Math.max(0, x - 1)];
+                int right = topSolid[z * 16 + Math.min(15, x + 1)];
+                int down = topSolid[Math.max(0, z - 1) * 16 + x];
+                int up = topSolid[Math.min(15, z + 1) * 16 + x];
+                slopes[i] = (float) Math.max(Math.abs((right - left) * 0.5), Math.abs((up - down) * 0.5));
+                int height = columnHeight(topSolid[i], minY, maxY);
+                heights[i] = (short) (height - minY);
+                String ruleBlock = height < minY ? null : sampler.surfaceBlockAt(0, height, slopes[i]);
+                topBlocks[i] = ruleBlock != null ? ruleBlock : config.surfaceBlock();
+            }
+        }
+        return new ChunkColumnData(heights, topBlocks, Map.of(), slopes, sampler, density,
+                TerrainMode.SPEC, version);
+    }
+
+    /**
+     * Resolves a Lua surface height to a block Y. Values below the build floor are treated as
+     * "no ground" ({@code minY - 1}) instead of being clamped onto the bottom layer: the clamped
+     * block made void columns look solid to {@code Level#getHeight}, so teleport/spawn checks
+     * accepted a column at the very bottom of a floating-island dimension.
+     */
+    static int columnHeight(int rawHeight, int minY, int maxY) {
+        if (rawHeight < minY + 1) {
+            return minY - 1;
+        }
+        return Math.clamp(rawHeight, minY + 1, maxY - 1);
     }
 
     private static long chunkKey(int chunkX, int chunkZ) {
@@ -363,7 +558,10 @@ public class LuaChunkGenerator extends ChunkGenerator {
         return (Math.floorMod(z, 16) * 16) + Math.floorMod(x, 16);
     }
 
-    private record ChunkColumnData(short[] heights, String[] topBlocks, long version) {}
+    record ChunkColumnData(short[] heights, String[] topBlocks,
+                           Map<Integer, Map<Integer, String>> overrides,
+                           float[] slopes, TerrainSampler sampler, DensityField density,
+                           DimensionServiceImpl.TerrainMode mode, long version) {}
 
     // ---------------------------------------------------------------------
     // Helpers

@@ -55,6 +55,7 @@ public class LuavaEngine implements ILuaEngine {
     private static final String DEFAULT_LUAMODS_DIR = "luamods";
     private static final String DEFAULT_LUA_DIR = "lua";
     private static final String BOOTSTRAP_RESOURCE = "/lua/luatweaker_bootstrap.lua";
+    private static final String BRAIN_RESOURCE = "/lua/luatweaker_brain.lua";
     private static final int MILLIS_PER_SECOND = 1000;
 
     private static final Pattern MOD_ID_PATTERN =
@@ -79,6 +80,14 @@ public class LuavaEngine implements ILuaEngine {
 
     /** Suspended/dead coroutines created by deferred tasks, used to stop them on reload. */
     private final Set<LuaCoroutine> liveCoroutines = ConcurrentHashMap.newKeySet();
+
+    /**
+     * A coroutine that yields is removed from {@link #liveCoroutines} only when it is closed
+     * or pruned: the resume that eventually kills it happens in Lua ({@code coroutine.resume}
+     * inside a delayed callback), which cannot touch this set. Pruning at this threshold keeps
+     * the set bounded without walking it on every spawn.
+     */
+    private static final int COROUTINE_PRUNE_THRESHOLD = 512;
 
     private volatile String lastExecutionError;
     private volatile boolean closed;
@@ -263,6 +272,7 @@ public class LuavaEngine implements ILuaEngine {
         globals.rawset(key("oredict"), LuaFunction.of(this::createTagFromArgs));
 
         loadBootstrapResource(BOOTSTRAP_RESOURCE);
+        loadBootstrapResource(BRAIN_RESOURCE);
         installDeferredRunner(globals);
         setupNativeRequire(globals);
 
@@ -423,6 +433,9 @@ public class LuavaEngine implements ILuaEngine {
                 }
             });
             LuaCoroutine coroutine = new LuaCoroutine(marked);
+            if (liveCoroutines.size() >= COROUTINE_PRUNE_THRESHOLD) {
+                pruneFinishedCoroutines();
+            }
             liveCoroutines.add(coroutine);
             try {
                 coroutine.resume(callArgs.toArray(new LuaValue[0]));
@@ -892,7 +905,7 @@ public class LuavaEngine implements ILuaEngine {
             return wrapString(string);
         }
         if (obj instanceof Number number) {
-            return wrapNumber(number.doubleValue());
+            return wrapNumberValue(number);
         }
         if (obj instanceof Boolean bool) {
             return wrapBoolean(bool);
@@ -923,6 +936,27 @@ public class LuavaEngine implements ILuaEngine {
         return new LuavaLuaValue(DynamicJavaProxy.createLuava(state, obj));
     }
 
+    /**
+     * Converts a Java number to the matching Lua kind.
+     *
+     * <p>Gson/JSON parses every number as a {@code Double}, so a stored integer {@code 42} used to
+     * come back as the Lua float {@code 42.0} ({@code tostring} = "42.0", {@code math.type} =
+     * "float"), which broke session-storage round-trips. Whole numbers that fit in a long become
+     * Lua integers; everything else stays a float.</p>
+     */
+    private @NotNull ILuaValue wrapNumberValue(@NotNull Number number) {
+        if (number instanceof Byte || number instanceof Short
+                || number instanceof Integer || number instanceof Long) {
+            return new LuavaLuaValue(LuaValue.valueOf(number.longValue()));
+        }
+        double value = number.doubleValue();
+        if (Double.isFinite(value) && value == Math.rint(value)
+                && Math.abs(value) <= 9_007_199_254_740_992.0) {
+            return new LuavaLuaValue(LuaValue.valueOf((long) value));
+        }
+        return wrapNumber(value);
+    }
+
     @Override
     public void runExclusive(@NotNull Runnable action) {
         checkRunning();
@@ -937,6 +971,7 @@ public class LuavaEngine implements ILuaEngine {
     @Override
     public void shutdown() {
         closed = true;
+        pruneFinishedCoroutines();
         for (LuaCoroutine coroutine : liveCoroutines) {
             try {
                 if (coroutine.getStatus() == LuaCoroutine.Status.SUSPENDED) {
@@ -948,6 +983,21 @@ public class LuavaEngine implements ILuaEngine {
             }
         }
         liveCoroutines.clear();
+    }
+
+    /**
+     * Drops coroutines that already finished. A task that yields is resumed by Lua
+     * ({@code coroutine.resume} inside {@code task.wait}'s delayed callback), so the resume
+     * never reaches the {@code _run_deferred} frame that registered it; without this pass the
+     * set would keep every finished task (and its captured closures) for the engine's lifetime.
+     */
+    void pruneFinishedCoroutines() {
+        liveCoroutines.removeIf(coroutine -> coroutine.getStatus() == LuaCoroutine.Status.DEAD);
+    }
+
+    /** Number of coroutines still tracked for shutdown; package-private for tests. */
+    int liveCoroutineCount() {
+        return liveCoroutines.size();
     }
 
     // ---- Helpers --------------------------------------------------------

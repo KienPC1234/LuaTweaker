@@ -55,6 +55,45 @@ public interface IDimensionService {
     void setStrataPicker(@NotNull String dimensionId, @NotNull Object luaFunction);
 
     @LuaDoc(
+        description = "Batch terrain: the callback runs ONCE per chunk and returns every column at once. "
+            + "Signature: function(chunkX, chunkZ, ctx) -> heights, surfaces, overrides. "
+            + "heights: 256 numbers, index = z * 16 + x + 1, absolute Y (a value <= ctx.minY means void). "
+            + "surfaces: optional 256 block ids for the top block (nil = config surfaceBlock). "
+            + "overrides: optional table {[column] = {[y] = blockId}} with column 1..256; "
+            + "'minecraft:air' carves. Replaces SetTerrainGenerator and the per-column pickers.",
+        params = {"dimensionId: string",
+                  "luaFunction: function - function(chunkX, chunkZ, ctx) -> heights, surfaces, overrides"},
+        returnType = "void"
+    )
+    void setChunkTerrain(@NotNull String dimensionId, @NotNull Object luaFunction);
+
+    @LuaDoc(
+        description = "Batch biome source: the callback runs ONCE per chunk and returns up to 16 biome ids "
+            + "for the 4 x 4 quart grid (index = qz * 4 + qx + 1). A nil entry falls back to the weighted "
+            + "pick. Replaces SetBiomeProvider.",
+        params = {"dimensionId: string", "luaFunction: function - function(chunkX, chunkZ, ctx) -> table"},
+        returnType = "void"
+    )
+    void setBiomeBatch(@NotNull String dimensionId, @NotNull Object luaFunction);
+
+    @LuaDoc(
+        description = "Declarative terrain: the engine evaluates the spec natively (no Lua per column/chunk). "
+            + "Table: { seaLevel, height = { {kind, amp, frequency, octaves, lacunarity, gain}, ... }, "
+            + "spline = { {input, output}, ... }, surface = { {block, maxDepth, minY, maxY, minSlope}, ... }, "
+            + "density = { layers = { {kind='fbm3'|'simplex3', amp, frequency}, ... }, threshold, "
+            + "cellSize, cellHeight, thresholdSpline = { {y, offset}, ... } }, "
+            + "platforms = { {x, z, radius, bottomY, topY}, ... }. "
+            + "height kinds: fbm/simplex/ridged/voronoi/warped_fbm. Without a spline the surface is "
+            + "seaLevel + sum(amp * noise); with a spline it is the spline output for the normalized sum. "
+            + "The height array is optional when density is set. water = false disables water fill. "
+            + "With density, a block is solid when sum(amp * noise3) > threshold + thresholdSpline(y), "
+            + "which produces overhangs, caves and floating islands (no heightmap involved).",
+        params = {"dimensionId: string", "spec: table - declarative terrain spec"},
+        returnType = "void"
+    )
+    void setTerrainSpec(@NotNull String dimensionId, @NotNull ILuaValue spec);
+
+    @LuaDoc(
         description = "Set a custom spawn position for the dimension (used by teleports).",
         params = {"dimensionId: string", "x: number", "z: number"},
         returnType = "void"

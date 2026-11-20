@@ -171,4 +171,38 @@ public class LuavaEngineTest {
         );
         assertNull(engine.getAndClearLastExecutionError());
     }
+
+    @Test
+    void finishedDeferredCoroutinesArePruned() {
+        LuavaEngine engine = new LuavaEngine(false);
+        ILuaTable taskTable = engine.getGlobalEnvironment().rawget("task").asTable();
+
+        // Yields once, so the coroutine is tracked as SUSPENDED when _run_deferred returns.
+        engine.executeString("task._run_deferred(function() task.wait(0) end, {})", "coroutine_setup");
+        assertEquals(1, engine.liveCoroutineCount(), "a suspended task must stay tracked");
+
+        engine.callFunction(taskTable.rawget("_tick"));
+        assertEquals(1, engine.liveCoroutineCount(),
+                "the resume happens in Lua, so the finished coroutine is still referenced");
+
+        engine.pruneFinishedCoroutines();
+        assertEquals(0, engine.liveCoroutineCount(), "pruning must release the finished coroutine");
+        engine.shutdown();
+    }
+
+    @Test
+    void wholeNumbersFromJavaBecomeLuaIntegers() {
+        ILuaEngine engine = new LuavaEngine(false);
+        // Gson parses JSON integers as Double; the SPI must restore Lua's integer kind so
+        // storage/config round-trips keep tostring(42) == "42" and math.type() == "integer".
+        engine.getGlobalEnvironment().rawset("_whole", engine.toLuaValue(42.0));
+        engine.getGlobalEnvironment().rawset("_fraction", engine.toLuaValue(42.5));
+
+        engine.executeString(
+            "assert(math.type(_whole) == 'integer', 'whole number kind: ' .. math.type(_whole))\n" +
+            "assert(tostring(_whole) == '42', 'whole number text: ' .. tostring(_whole))\n" +
+            "assert(math.type(_fraction) == 'float', 'fraction kind: ' .. math.type(_fraction))",
+            "number_kind_check");
+        assertNull(engine.getAndClearLastExecutionError());
+    }
 }

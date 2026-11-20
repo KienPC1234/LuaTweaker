@@ -40,6 +40,20 @@ public final class LuaBinder {
 
     private static final Map<Class<?>, ValueConverter> RETURN_CONVERTERS = new ConcurrentHashMap<>();
 
+    /**
+     * Precomputed binding plan for one API interface: sorted, de-duplicated methods
+     * with their parameter types and raw {@code @LuaDefault} values resolved once.
+     *
+     * <p>{@code bindTable} runs per entity wrapper per scan (thousands of times per
+     * tick), so re-running {@code Class.getMethods()} + sort + annotation lookups
+     * on every call is pure overhead. Interface metadata never changes at runtime,
+     * making this cache semantically transparent.</p>
+     */
+    private record BoundMethod(Method method, String camelName, String pascalName,
+            Class<?>[] paramTypes, String[] defaultRaws, Class<?> returnType) {}
+
+    private static final Map<Class<?>, List<BoundMethod>> BIND_PLAN_CACHE = new ConcurrentHashMap<>();
+
     public static void registerReturnConverter(Class<?> type, ValueConverter converter) {
         RETURN_CONVERTERS.put(type, converter);
     }
@@ -71,6 +85,22 @@ public final class LuaBinder {
     public static ILuaTable bindTable(ILuaEngine engine, Object impl, Class<?> api) {
         ILuaTable table = engine.createTable();
 
+        for (BoundMethod bound : bindPlan(api)) {
+            ILuaFunction fn = args -> invoke(engine, impl, bound, args);
+            table.rawset(bound.camelName(), fn);
+            if (!bound.pascalName().equals(bound.camelName())) {
+                table.rawset(bound.pascalName(), fn);
+            }
+        }
+        return table;
+    }
+
+    /** Returns the cached binding plan for an API interface, computing it once. */
+    private static List<BoundMethod> bindPlan(Class<?> api) {
+        return BIND_PLAN_CACHE.computeIfAbsent(api, LuaBinder::computeBindPlan);
+    }
+
+    private static List<BoundMethod> computeBindPlan(Class<?> api) {
         List<Method> methods = new ArrayList<>();
         for (Method m : api.getMethods()) {
             if (m.isSynthetic() || m.isBridge()) continue;
@@ -86,45 +116,47 @@ public final class LuaBinder {
                 .thenComparing(Comparator.comparingInt(Method::getParameterCount).reversed()));
 
         Set<String> seen = new HashSet<>();
+        List<BoundMethod> plan = new ArrayList<>(methods.size());
         for (Method m : methods) {
             if (!seen.add(m.getName())) continue;
-            ILuaFunction fn = args -> invoke(engine, impl, m, args);
-            table.rawset(m.getName(), fn);
-            String pascal = pascalCase(m.getName());
-            if (!pascal.equals(m.getName())) {
-                table.rawset(pascal, fn);
+            java.lang.reflect.Parameter[] params = m.getParameters();
+            Class<?>[] paramTypes = m.getParameterTypes();
+            String[] defaultRaws = new String[params.length];
+            for (int i = 0; i < params.length; i++) {
+                LuaDefault annotation = params[i].getAnnotation(LuaDefault.class);
+                defaultRaws[i] = annotation == null ? null : annotation.value();
             }
+            plan.add(new BoundMethod(m, m.getName(), pascalCase(m.getName()),
+                    paramTypes, defaultRaws, m.getReturnType()));
         }
-        return table;
+        return List.copyOf(plan);
     }
 
-    private static ILuaValue invoke(ILuaEngine engine, Object impl, Method method, ILuaValue[] args) throws Exception {
+    private static ILuaValue invoke(ILuaEngine engine, Object impl, BoundMethod bound, ILuaValue[] args) throws Exception {
         if (impl == null) {
             return engine.nilValue();
         }
         int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
-        Class<?>[] paramTypes = method.getParameterTypes();
-        java.lang.reflect.Parameter[] paramMeta = method.getParameters();
+        Class<?>[] paramTypes = bound.paramTypes();
+        String[] defaultRaws = bound.defaultRaws();
         Object[] callArgs = new Object[paramTypes.length];
 
         for (int i = 0; i < paramTypes.length; i++) {
             boolean provided = off + i < args.length && args[off + i] != null && !args[off + i].isNil();
             if (!provided) {
-                String def = paramMeta[i].isAnnotationPresent(LuaDefault.class)
-                        ? paramMeta[i].getAnnotation(LuaDefault.class).value()
-                        : null;
+                String def = defaultRaws[i];
                 if (def == null) {
-                    throw new IllegalArgumentException(method.getName() + " requires argument " + (i + 1)
-                            + " (" + paramMeta[i].getType().getSimpleName() + ")");
+                    throw new IllegalArgumentException(bound.method().getName() + " requires argument " + (i + 1)
+                            + " (" + paramTypes[i].getSimpleName() + ")");
                 }
-                callArgs[i] = parseDefault(def, paramTypes[i], method.getName(), i + 1);
+                callArgs[i] = parseDefault(def, paramTypes[i], bound.method().getName(), i + 1);
             } else {
                 callArgs[i] = convertArg(paramTypes[i], args[off + i]);
             }
         }
 
-        Object result = method.invoke(impl, callArgs);
-        return toLua(engine, method.getReturnType(), result);
+        Object result = bound.method().invoke(impl, callArgs);
+        return toLua(engine, bound.returnType(), result);
     }
 
     private static Object convertArg(Class<?> type, ILuaValue arg) {

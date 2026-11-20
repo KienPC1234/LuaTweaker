@@ -38,7 +38,11 @@ public class SyntaxCommand implements ILuaTweakerCommand {
             // Check all files in server/
             return checkDirectory(sender, new File(luaRoot, "server"));
         }
-        File target = new File(luaRoot, args[0]);
+        File target = com.luatweaker.platform.command.core.ListCommand.resolveInsideRoot(luaRoot, args[0]);
+        if (target == null) {
+            sender.sendError("Refusing path outside the lua/ folder: " + args[0]);
+            return 0;
+        }
         if (!target.exists()) {
             sender.sendError("File not found: lua/" + args[0]);
             return 0;

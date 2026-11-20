@@ -22,6 +22,10 @@ public class TaskLuaBinding {
             taskTable = engine.createTable();
         }
 
+        // Monotonic seconds used by the scheduler (task.delay / task.wait / RPC timeout).
+        // The wall clock above is for scripts; deadlines must not move when the OS clock does.
+        taskTable.rawset("_now", args -> engine.wrapNumber(System.nanoTime() / 1_000_000_000.0));
+
         taskTable.rawset("_java_tick", args -> {
             taskService.tick(engine);
             return engine.nilValue();

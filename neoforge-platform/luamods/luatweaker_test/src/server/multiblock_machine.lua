@@ -78,6 +78,51 @@ function MultiblockMachine.Tick(level, pos)
     end
 end
 
+--- Validates whether an expandable dynamic cuboid multiblock structure is valid.
+--- Supports arbitrary sizes (min 3x3x3, max 16x16x16) like Big Reactors / Tinkers' Smeltery.
+--- Supports block tags (#minecraft:...), blockstates, and NBT matching.
+--- @param level string
+--- @param minPos table {X, Y, Z}
+--- @param maxPos table {X, Y, Z}
+--- @return table { valid, width, height, depth, volume, counts } or failure info
+function MultiblockMachine.ValidateDynamicReactor(level, minPos, maxPos)
+    return World:ValidateCuboid(level, minPos, maxPos, {
+        minWidth = 3, maxWidth = 16,
+        minHeight = 3, maxHeight = 16,
+        minDepth = 3, maxDepth = 16,
+        frame = "minecraft:obsidian",
+        floor = "luatweaker:crystal_block",
+        ceiling = "luatweaker:crystal_block",
+        walls = {
+            "luatweaker:crystal_block",
+            { block = "minecraft:iron_block" },
+            { block = "minecraft:glass" }
+        },
+        interior = {
+            "minecraft:air",
+            "minecraft:lava"
+        },
+        limits = {
+            ["minecraft:iron_block"] = { min = 0, max = 20 }
+        }
+    })
+end
+
+--- Updates block states across the dynamic reactor when formed.
+--- Sets connected/lit property without manually iterating each coordinate.
+--- @param level string
+--- @param minPos table {X, Y, Z}
+--- @param maxPos table {X, Y, Z}
+--- @return boolean
+function MultiblockMachine.FormDynamicReactor(level, minPos, maxPos)
+    local check = MultiblockMachine.ValidateDynamicReactor(level, minPos, maxPos)
+    if check.valid then
+        World:SetBlockStatesInBox(level, minPos, maxPos, { lit = "true" }, "luatweaker:crystal_block")
+        return true
+    end
+    return false
+end
+
 -- Hook into block interaction or tick events
 Events:Listen("BlockInteract", function(event)
     if event and event.block and event.block.Id == "luatweaker:crystal_infuser" then
@@ -87,7 +132,12 @@ Events:Listen("BlockInteract", function(event)
 
         local isFormed = MultiblockMachine.ValidateStructure(level, pos)
         if isFormed then
-            if player then player:sendActionBar("§aMultiblock structure: Formed and Valid!") end
+            if player then
+                if player.PlayItemAnimation then
+                    player:PlayItemAnimation("thrust", 15, 1.0)
+                end
+                player:sendActionBar("§aMultiblock structure: Formed and Valid!")
+            end
         else
             if player then player:sendActionBar("§cMultiblock structure: Incomplete or Misaligned.") end
         end

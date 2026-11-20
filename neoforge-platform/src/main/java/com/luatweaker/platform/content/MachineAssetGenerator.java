@@ -115,7 +115,7 @@ public final class MachineAssetGenerator {
 
     private static void generatePipe(IDatapackService datapack, String ns, String id,
                                      BooleanStateSpec state, String texture) {
-        String tex = texture != null && !texture.isBlank() ? texture : ns + ":block/" + id;
+        String tex = texture != null && !texture.isBlank() ? texture : "minecraft:block/iron_block";
         String modelPrefix = ns + ":block/" + id + "_pipe_";
         boolean hasState = state != null;
 

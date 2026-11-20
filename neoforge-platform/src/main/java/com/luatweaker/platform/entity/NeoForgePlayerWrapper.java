@@ -303,11 +303,15 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
             }
             String valStr = unwrapped != null ? unwrapped.toString() : "null";
             String type = unwrapped == null ? "null" : (unwrapped instanceof Boolean ? "bool" : (unwrapped instanceof Number ? "num" : "str"));
-            String payloadJson = "{\"key\":\"" + key + "\",\"val\":\"" + valStr + "\",\"type\":\"" + type + "\"}";
+            // Built with Gson so quotes/newlines in a value cannot produce malformed JSON.
+            com.google.gson.JsonObject payloadJson = new com.google.gson.JsonObject();
+            payloadJson.addProperty("key", key);
+            payloadJson.addProperty("val", valStr);
+            payloadJson.addProperty("type", type);
             com.luatweaker.api.pal.Platform.getNetwork().sendPayloadPacket(
                     serverPlayer.getUUID().toString(),
                     "LuaTweaker:SyncData",
-                    payloadJson
+                    payloadJson.toString()
             );
         }
     }
@@ -315,12 +319,14 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
     @Override
     public void openScreen(String screenId, String title) {
         if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-            String safeTitle = title != null ? title : "";
-            String json = "{\"id\":\"" + screenId + "\",\"title\":\"" + safeTitle + "\"}";
+            // Built with Gson so quotes in the title cannot break the control payload.
+            com.google.gson.JsonObject json = new com.google.gson.JsonObject();
+            json.addProperty("id", screenId);
+            json.addProperty("title", title != null ? title : "");
             com.luatweaker.api.pal.Platform.getNetwork().sendPayloadPacket(
                     serverPlayer.getUUID().toString(),
                     "LuaTweaker:OpenScreen",
-                    json
+                    json.toString()
             );
         }
     }

@@ -37,17 +37,19 @@ public class NeoForgeClientEventListener {
             return;
         }
         // Single-player shares ONE engine between the integrated server and the client, and
-        // LuaTweakerMod.onServerTick already fires Stepped/Heartbeat for it. Firing here too
-        // would run every listener twice per tick. Remote clients have no local server tick,
-        // so they are the only case that dispatches from the client tick.
-        if (com.luatweaker.api.pal.Platform.isInitialized()
-                && com.luatweaker.api.pal.Platform.getContent().hasLocalServer()) {
+        // LuaTweakerMod.onServerTick already pumps the task queues plus Stepped/Heartbeat for
+        // it. Pumping here too would run every task twice per tick and resume coroutines from
+        // a second thread. A remote client has no server tick at all, so its client tick is
+        // the only pump that exists.
+        boolean hasLocalServer = com.luatweaker.api.pal.Platform.isInitialized()
+                && com.luatweaker.api.pal.Platform.getContent().hasLocalServer();
+        if (!com.luatweaker.tasks.TaskPumpPolicy.pumpFromClientTick(hasLocalServer)) {
             return;
         }
+        // No server loop in this process: pump Task.spawn/delay/wait and async Signal:Fire
+        // here, otherwise client-side scripts would never advance.
+        LuaTweakerMod.tickActiveEngineTasks();
         // Standard Minecraft tick is 50ms (0.05s).
-        // NOTE: the Lua task queues are pumped from the SERVER tick only
-        // (LuaTweakerMod.onServerTick); pumping here too would resume
-        // coroutines from a second thread and freeze the game.
         com.luatweaker.platform.runservice.RunServiceDispatcher.fire(
                 engine, "Stepped", com.luatweaker.platform.runservice.ServerTickClock.NOMINAL_DELTA_SECONDS);
         com.luatweaker.platform.runservice.RunServiceDispatcher.fire(

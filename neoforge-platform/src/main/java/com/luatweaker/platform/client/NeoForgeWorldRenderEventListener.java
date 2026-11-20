@@ -56,6 +56,32 @@ public class NeoForgeWorldRenderEventListener {
         });
         renderService.rawset("drawBox", renderService.rawget("DrawBox"));
 
+        renderService.rawset("HighlightBlock", args -> {
+            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+            if (args.length - off >= 2 && args[off].isTable()) {
+                ILuaTable pos = args[off].asTable();
+                ILuaValue xVal = pos.rawget("X"); if (xVal == null || xVal.isNil()) xVal = pos.rawget("x");
+                ILuaValue yVal = pos.rawget("Y"); if (yVal == null || yVal.isNil()) yVal = pos.rawget("y");
+                ILuaValue zVal = pos.rawget("Z"); if (zVal == null || zVal.isNil()) zVal = pos.rawget("z");
+                double x = xVal != null && !xVal.isNil() ? xVal.asDouble() : 0.0;
+                double y = yVal != null && !yVal.isNil() ? yVal.asDouble() : 0.0;
+                double z = zVal != null && !zVal.isNil() ? zVal.asDouble() : 0.0;
+                int color = (int) (long) args[off + 1].asDouble();
+                PENDING_OPS.get().add(new Box(x, y, z, x + 1.0, y + 1.0, z + 1.0, color));
+            } else if (args.length - off >= 4) {
+                double x = args[off].asDouble();
+                double y = args[off + 1].asDouble();
+                double z = args[off + 2].asDouble();
+                int color = (int) (long) args[off + 3].asDouble();
+                PENDING_OPS.get().add(new Box(x, y, z, x + 1.0, y + 1.0, z + 1.0, color));
+            }
+            return engine.nilValue();
+        });
+        renderService.rawset("highlightBlock", renderService.rawget("HighlightBlock"));
+
+        renderService.rawset("HighlightBox", renderService.rawget("DrawBox"));
+        renderService.rawset("highlightBox", renderService.rawget("DrawBox"));
+
         // Client-side entity lookup: position + bounding box size, so Lua can
         // compute its own outlines/shapes from real world data.
         renderService.rawset("GetEntity", args -> {

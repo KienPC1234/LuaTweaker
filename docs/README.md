@@ -1,45 +1,59 @@
-# LuaTweaker Documentation Portal (`docs/`)
+# LuaTweaker Documentation (`docs/`)
 
-LuaTweaker is a high-performance Lua 5.4 (luava) scripting engine for Minecraft 1.21.1 (NeoForge).
+Start here: **GETTING_STARTED** (setup) → **SCRIPTING_GUIDE** (conventions) →
+pick a system below. Files marked `stale` describe an older API surface —
+do not implement from them.
 
-> **LuaTweaker Architecture Style:**
-> **TƯ DUY LẮP RÁP (MODULE & BUILDER) + NGỮ PHÁP TỰ NHIÊN CỦA LUA**
-> - **Static Content Registration:** Chainable Builder DSLs ending with `:Register()`.
-> - **Runtime Logic & AI:** Explicit `require("LuaTweaker.ModuleName")` imports, Signals, and Services.
-> - **Zero Floating Globals:** Every API is imported explicitly from its module.
+## Start
 
----
+| Doc | Read when you want to... |
+| :--- | :--- |
+| [GETTING_STARTED](GETTING_STARTED.md) | Install, run client/server, set up IDE stubs, use `/lt` commands. |
+| [SCRIPTING_GUIDE](SCRIPTING_GUIDE.md) | Learn the `require` + Builder + Signal conventions with correct examples. |
+| [LUA_MOD_SYSTEM](LUA_MOD_SYSTEM.md) | Package an autonomous `luamods/` mod (manifest, config, lifecycle, IPC). |
+| [ARCHITECTURE_AND_SECURITY](ARCHITECTURE_AND_SECURITY.md) | Understand PAL, module boundaries, sandbox rules. |
+| [TROUBLESHOOTING](TROUBLESHOOTING.md) | Diagnose load errors, logs, loop limits. |
 
-## Documentation Directory Index
+## Build content & recipes
 
-### Core Architecture & Onboarding
-* [**GETTING_STARTED.md**](GETTING_STARTED.md) — Setup guide, directory structure, IDE launcher tasks, and LSP autocompletion.
-* [**ARCHITECTURE_AND_SECURITY.md**](ARCHITECTURE_AND_SECURITY.md) — Submodule architecture, PAL specification, sandbox security, LuaTweaker Architecture Style, and technical roadmap.
+| Doc | Covers |
+| :--- | :--- |
+| [CUSTOM_CONTENT](CUSTOM_CONTENT.md) | `Content` builders: items, blocks, fluids, entities (`rig()`), storage, datapacks. |
+| [GECKOLIB_ANIMATIONS](GECKOLIB_ANIMATIONS.md) | GeckoLib 4 custom 3D animated models and animation triggers for items, blocks, entities. |
+| [RECIPES](RECIPES.md) | `Recipe` builders: shaped/shapeless, smelting, smithing, anvil, brewing, trades. |
+| [WORLDGEN](WORLDGEN.md) | `Worldgen` (ore/vegetation/biome mods), `Biomes:Define`, structures, mixed veins. |
+| [MOB_AND_SPAWN](MOB_AND_SPAWN.md) | Spawning, AI goals, loot tables (`Loot`). |
+| [BLOCK_CAPABILITY_API](BLOCK_CAPABILITY_API.md) | RF/FE machines: energy/fluid/item capabilities. |
 
-### Static Content & Recipe Registration
-* [**CUSTOM_CONTENT.md**](CUSTOM_CONTENT.md) — `Content` Builder DSL for Items (`Content.NewItem`), Blocks (`Content.NewBlock`), Fluids (`Content.NewFluid`), Storage, and Datapacks.
-* [**BLOCK_CAPABILITY_API.md**](BLOCK_CAPABILITY_API.md) — RF/FE machines and pipes: energy/fluid/item capabilities, `World:GetEnergy`/`InsertEnergy`/`InsertItem`/`FillFluid` primitives, and `/lt reload` rebinding.
-* [**RECIPES.md**](RECIPES.md) — `Recipe` Builder DSL for Shaped (`Recipe.Shaped`), Shapeless, Smelting, Smithing, Anvil, Brewing, and Replacements.
-* [**WORLDGEN.md**](WORLDGEN.md) — Ore generation, structure placement, and biome feature management.
-* [**LUA_MOD_SYSTEM.md**](LUA_MOD_SYSTEM.md) — Autonomous `luamods/` architecture: single `main.lua` entrypoint, unified config, sandbox & inter-mod IPC, and 5-step execution pipeline.
+## Runtime logic & AI
 
-### Runtime Logic, Signals & Spatial Math
-* [**SCRIPTING_GUIDE.md**](SCRIPTING_GUIDE.md) — Comprehensive guide covering explicit `require` imports, Content/Recipe Builders, and Event Signals.
-* [**EVENTS.md**](EVENTS.md) — Reactive signal engine (`Events.OnEntityDamaged`, `Events.OnEntitySpawned`, `Events.OnBlockBreak`), custom signals, and Network RemoteEvents.
-* [**SERVICE_AND_SPATIAL_MATH_API.md**](SERVICE_AND_SPATIAL_MATH_API.md) — Runtime services (`Task`, `TweenService`), spatial math (`Vector3`, `Vector2`, `Color3`), and extended `math` library.
-* [**MOB_AND_SPAWN.md**](MOB_AND_SPAWN.md) — Entity spawning (`Entities.SpawnMob`), loot table rules (`Loot`), and random utilities (`Utils`).
+| Doc | Covers |
+| :--- | :--- |
+| [EVENTS](EVENTS.md) | `Events:Listen`, `Signal`, threading (`Fire` vs `FireSync`), built-in events. |
+| [BEHAVIOR_TREES](BEHAVIOR_TREES.md) | Pure-Lua `Brain`: Selector/Sequence/Parallel/Utility, decorators, blackboards, Squad packs. |
+| [SERVICE_AND_SPATIAL_MATH_API](SERVICE_AND_SPATIAL_MATH_API.md) | `Task` (spawn/delay/wait), `TweenService`, `Vector3/Vector2/Color3`, math extensions. |
+| [NETWORK](NETWORK.md) | RemoteEvent/RemoteFunction wire format, budgets, byte contract. |
 
-### Specialized Systems & Commands
-* [**JAVA_PATCHER.md**](JAVA_PATCHER.md) — `LuaTweaker.Runtime`: class resolution, field mutation, Java proxies, and permission-gated bytecode hooks (`InjectHead`/`InjectReturn`/`Overwrite`).
-* [**COMMANDS.md**](COMMANDS.md) — In-game diagnostic commands (`/lt hand`, `/lt dump`, `/lt doctor`, `/lt reload`).
-* [**TROUBLESHOOTING.md**](TROUBLESHOOTING.md) — Log diagnostics (`lua/logs/luatweaker.log`), error tracebacks, and loop limit settings.
-* [**ADDON_DEVELOPER_GUIDE.md**](ADDON_DEVELOPER_GUIDE.md) — Third-party Java mod plugin interface (`@LuaTweakerPlugin`, `ILuaTweakerPlugin`).
+## Client, commands, integration
 
-### Legacy / Pending Rewrite (⚠️ stale — describes an older API surface, do not implement from these)
-* [**GUI_GRAPHICS.md**](GUI_GRAPHICS.md) — Historical GUI draft (`GuiGraphicsAPI.java` does not exist; real API is `GuiService`).
-* [**SHADER_API.md**](SHADER_API.md) — No `ShaderAPI` exists in the codebase.
-* [**NBT_HELPERS.md**](NBT_HELPERS.md) — The `nbt`/`enums` globals do not exist (real NBT path: `NbtCodec`).
-* [**SCHEDULER_AND_EFFECTS.md**](SCHEDULER_AND_EFFECTS.md) — Predates the `Task` service and bootstrap conventions.
-* [**MOD_INTEGRATIONS.md**](MOD_INTEGRATIONS.md) — `mods`/`registry`/`jei`/`http`/`unsafe` globals predate the sandbox and `require()` system.
-* [**WORLD_AND_BOSSBAR.md**](WORLD_AND_BOSSBAR.md) — `bossbar`/`world` globals predate the current APIs.
-* [**LTVM_DOCUMENTATION.md**](LTVM_DOCUMENTATION.md) — Architecture overview; VM details predate the Luava migration.
+| Doc | Covers |
+| :--- | :--- |
+| [CLIENT_AND_SOUND_API](CLIENT_AND_SOUND_API.md) | `GuiService` HUD, `KeyBindService`, `ClientEffects`, sounds. |
+| [COMMANDS](COMMANDS.md) | `/lt` diagnostics + `Commands:Register` for Lua-owned `/<cmd>`. |
+| [ADDON_DEVELOPER_GUIDE](ADDON_DEVELOPER_GUIDE.md) | Third-party Java plugins (`ILuaTweakerPlugin`), templates. |
+| [JAVA_PATCHER](JAVA_PATCHER.md) | `LuaTweaker.Runtime`: class resolution, proxies, gated bytecode hooks. |
+
+## Stale — do not implement from these
+
+Historical drafts that predate the `require()` system, `GuiService`,
+`Task` service, sandbox, or the Luava migration. Kept for archaeology only.
+
+| Doc | Why stale |
+| :--- | :--- |
+| [GUI_GRAPHICS](GUI_GRAPHICS.md) | Draft; `GuiGraphicsAPI.java` does not exist (real API: `GuiService`). |
+| [SHADER_API](SHADER_API.md) | `Shaders` service: 24 named effects + custom GLSL/SPIR-V post passes. |
+| [NBT_HELPERS](NBT_HELPERS.md) | `nbt`/`enums` globals do not exist (real path: `NbtCodec`). |
+| [SCHEDULER_AND_EFFECTS](SCHEDULER_AND_EFFECTS.md) | Predates the `Task` service and bootstrap conventions. |
+| [MOD_INTEGRATIONS](MOD_INTEGRATIONS.md) | `mods`/`registry`/`jei`/`http`/`unsafe` globals predate the sandbox. |
+| [WORLD_AND_BOSSBAR](WORLD_AND_BOSSBAR.md) | `bossbar`/`world` globals predate current APIs. |
+| [LTVM_DOCUMENTATION](LTVM_DOCUMENTATION.md) | VM details predate the Luava migration. |

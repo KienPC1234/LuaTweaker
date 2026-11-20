@@ -5,9 +5,17 @@ plugins {
 dependencies {
     api project(':common-api')
     implementation project(':core-engine')
+    implementation 'org.lwjgl:lwjgl-spvc:3.3.3'
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testRuntimeOnly 'org.lwjgl:lwjgl-spvc:3.3.3:natives-windows'
+    testRuntimeOnly 'org.lwjgl:lwjgl-spvc:3.3.3:natives-linux'
+    testRuntimeOnly 'org.lwjgl:lwjgl-spvc:3.3.3:natives-macos'
+    // LWJGL core natives: MemoryUtil itself needs lwjgl.dll/so on the classpath.
+    testRuntimeOnly 'org.lwjgl:lwjgl:3.3.3:natives-windows'
+    testRuntimeOnly 'org.lwjgl:lwjgl:3.3.3:natives-linux'
+    testRuntimeOnly 'org.lwjgl:lwjgl:3.3.3:natives-macos'
 }
 
 test {

@@ -12,281 +12,151 @@
 
 ---
 
-## Overview
+## What it is
 
-**LuaTweaker** is a scripting engine for **Minecraft 1.21.1** that lets you write Lua scripts directly in your game directory and see results on the next reload — no Java compilation, no game restart.
+**LuaTweaker** is a Lua 5.4 (luava) scripting engine for **Minecraft 1.21.1**.
+You write Lua in your game folder, run `/lt reload`, and see results —
+no Java compilation, no game restart.
 
-The engine is **loader-agnostic**. All platform access goes through the **PAL (Platform Abstraction Layer)**, so the core engine and feature modules never touch a mod loader API directly. The reference implementation targets **NeoForge**; new loaders can be added by implementing the PAL interfaces without touching core code.
+Design rules:
 
-The runtime is **Lua 5.4 / luava 0.2.5** with a Roblox (Luau)-flavored API: services, signals, task scheduling, and fluent content builders.
-
----
-
-## Key Features
-
-- **Autonomous Lua Mods (`luamods/`)**
-  - One folder per mod with `manifest.json` + `main.lua`, or a `.zip` package.
-  - `default_config.json` → copied to `luaconfig/<mod_id>.json` (tunables live in config, not code).
-  - Auto-mounted virtual resource packs & data packs (`assets/`, `data/`).
-
-- **Dynamic Content Registration (startup)**
-  - Custom items, blocks, fluids, armor sets, creative tabs, entity types and keybindings via fluent builders: `Content.NewItem("id"):MaxStackSize(64):Register()`.
-  - Custom entity types (`Content.createEntity(...)`) with vanilla-mob adapters, attributes, renderers and boss bars.
-
-- **Recipe Management (server)**
-  - Shaped, shapeless, smelting, blasting, smoking, campfire, smithing, stonecutting, brewing, anvil and villager trades — add, remove, replace.
-  - Chainable builders: `Recipe.Shaped("id"):Pattern(...):Key(...):Output(...):Register()`.
-
-- **Loot Table Manipulation (server)**
-  - Add/remove mob drops, chest loot, block drops, and fishing loot.
-  - Config-driven: `Loot:AddMobDrop("minecraft:zombie", "minecraft:diamond", 0.1, 1, 3, 1)`.
-  - Auto-generates datapack JSON and injects via virtual resource pack system.
-
-- **Roblox-style Runtime APIs**
-  - Services loaded explicitly: `require("LuaTweaker.Players")`, `require("LuaTweaker.Events")`, `require("LuaTweaker.Network")`, `require("LuaTweaker.GuiService")`, ...
-  - Signals (`Signal.new()`, `:Connect`, `:Once`, `:Wait`), task scheduling (`Task:spawn`, `Task:delay`, `Task:wait`), remote events (`Network:GetOrCreateRemoteEvent(...)`).
-  - **Unified entity API**: one entity/player table with BOTH method style (`entity:setHealth(50)`) and Roblox property style (`entity.Health = 50`).
-
-- **Dynamic Bridge Architecture (NEW)**
-  - **Automatic property/method access** for Java objects via metatables — no manual wrappers needed for modded content.
-  - Access any modded entity/block/item property: `entity.ModdedProperty` → auto-calls `getModdedProperty()`.
-  - Generic event system: subscribe to raw NeoForge events with automatic proxy wrapping.
-  - **Smart Package Blacklist**: Blocks dangerous Java classes (`Runtime`, `Process`, `System`, `Thread`, `java.io.*`, `java.net.*`) while allowing full cross-mod interop (GregTech, Create, Mekanism...).
-  - **Runtime Remapper**: Auto-translates method names across obfuscation boundaries (Mojmap ↔ SRG), works in both dev and production environments.
-
-- **Client HUD & Effects**
-  - `GuiService` with `OnRenderHUD`, `DrawRect`, `DrawText`, `DrawProgressBar`, `DrawOutline`, `DrawTexture`, `GetScreenSize`.
-  - Keybinding registration with Lua-side `Client.OnKeyBindPressed` dispatch.
-
-- **Automatic IDE Autocomplete**
-  - Reflection-based `@LuaDoc` parser generates EmmyLua stubs (`run/.luatweaker/stubs/luatweaker-api.lua`) with class inheritance (`---@class Player: Entity`) for VS Code and IntelliJ.
-
-- **Server-authoritative by design**
-  - Item/block interactions dispatch Lua events server-side only; clients receive effects via network packets.
-  - Shared event bus routes dispatches from the startup engine to the current runtime engine.
-
-- **Safe Network Architecture (Update Checker + Permission-Gated HTTP)**
-  - **Zero-code update checks (default):** declare `"update_url": "https://..."` in `manifest.json` and the engine downloads the JSON feed on the Java side (never in the Lua sandbox), then shows update notices in chat and exposes the result read-only to Lua via `mod:GetUpdateStatus("mod_id")` / `require("LuaTweaker.Update")`. Only `https://` feeds are accepted.
-  - **Free HTTP is locked by default:** `Net:HttpGet(url, timeout)` is rejected unless a loaded mod declares `"permissions": ["net.http"]`. The grant is **per installation** (the VM cannot attribute runtime calls to a specific mod), so every granting mod triggers a red warning in chat and logs listing it.
-
-- **Teardown Hooks (Clean Reloads)**
-  - `mod.OnDisable()` called per-mod before reload, plus `Events:Listen("OnScriptUnload", fn)` for global cleanup.
-  - Ensures timers, signals, and UI elements are cleaned up before the new script cycle begins.
+- **Low-level primitives, not high-level wrappers.** Java is a thin bridge
+  (move, look, jump, raytrace, spawn); game logic lives in Lua.
+  See `AGENTS.md` §1.
+- **Loader-agnostic.** `common-api` + `core-engine` + `modules/*` never touch
+  `net.minecraft.*` / `net.neoforged.*`. Only `neoforge-platform` does (PAL).
+- **One mod = one folder.** `luamods/<id>/` with `manifest.json` + `main.lua`
+  + `src/{startup,server,client}` + `default_config.json`.
 
 ---
 
-## Architecture
-
-Strict **Separation of Concerns** across decoupled modules:
-
-```text
-LuaTweaker/
-├── common-api/         # Pure Java 21: PAL interfaces, VM interfaces, @LuaDoc / @LuaDefault annotations
-├── core-engine/        # Luava VM wrapper, LuaBinder (auto-binding), DynamicJavaProxy, async logger, linter, stub generator
-├── modules/
-│   ├── module-content/     # Content builders (items, blocks, fluids, entities, tabs, keybinds)
-│   ├── module-recipes/     # Recipe manipulation
-│   ├── module-events/      # Shared event bus
-│   ├── module-entities/    # Unified entity/player wrappers + AI goals
-│   ├── module-interaction/ # World/block interaction + projectile firing + dynamic proxy fallback
-│   ├── module-network/     # Remote events / remote functions
-│   ├── module-client/      # GuiService, ClientEffects, keybinds, RunService
-│   ├── module-storage/     # Roblox-style data stores (world/player/session)
-│   ├── module-tasks/       # Task scheduler bridge
-│   ├── module-math/        # Vector3 / Vector2 / Color3 / math extensions
-│   ├── module-interception/# Anvil / brewing / villager trade interception
-│   ├── module-loot/        # Loot table manipulation (mob drops, chest, block, fishing)
-│   ├── module-command/     # Server-side /lt sub-command registration from Lua
-│   ├── module-worldgen/    # Ore, vegetation and biome feature generation hooks
-│   ├── module-noise/       # fBm, ridged, domain-warp, voronoi and simplex noise
-│   ├── module-dimensions/  # Custom dimensions, terrain generation and biome spawn entries
-│   ├── module-spawnrules/  # Full-control Lua mob spawn handlers
-│   ├── module-structures/  # Single-template NBT structures (validated registry + datapack emission)
-│   └── module-update/      # Declarative update checker + permission-gated HTTP GET
-└── neoforge-platform/  # Reference PAL implementation (NeoForge launcher, registrars, render)
-```
-
-The `core-engine` and `modules/*` depend only on `common-api`. New loaders = a new platform module implementing PAL; no core changes.
-
----
-
-## Game Directory Layout
-
-On launch, LuaTweaker generates its workspace in your game directory:
-
-```text
-minecraft-instance/
-├── luamods/                  # Autonomous Lua mods (folders or .zip)
-│   └── my_mod/
-│       ├── manifest.json     # id, name, author, version, main, permissions
-│       ├── default_config.json  # copied to luaconfig/my_mod.json on first run
-│       ├── main.lua          # single entrypoint
-│       └── src/
-│           ├── startup/      # content registration (items, blocks, entities...)
-│           ├── server/       # runtime logic (recipes, events, AI, skills)
-│           └── client/       # HUD, keybind feedback, client effects
-├── luaconfig/                # per-mod config JSON (editable, merged with defaults)
-├── .luatweaker/stubs/        # auto-generated EmmyLua stubs
-└── logs/luatweaker/          # engine log + per-mod logs
-```
-
-> The dev workspace lives in `neoforge-platform/luamods/` and is synced to `run/luamods/` by the `syncLuaMods` Gradle task.
-
----
-
-## Quick Start (Development)
+## Quick start
 
 ```sh
-# full build (CI)
-./gradlew build
-
-# dev build + asset sync (fast iteration)
-./gradlew :neoforge-platform:classes :neoforge-platform:syncLua
-
-# run client or server
-./gradlew :neoforge-platform:runClient
-./gradlew :neoforge-platform:runServer
-
-# tests (no Minecraft required — engine tests use mocks)
-./gradlew test
+./gradlew :neoforge-platform:runClient   # or :neoforge-platform:runServer
+./gradlew :neoforge-platform:classes :neoforge-platform:syncLua  # fast Lua-only iteration
+./gradlew test                            # all tests (no Minecraft needed, mocks only)
+/lt reload   # in-game: reload scripts, regenerate stubs, re-apply recipes
+/lt doctor   # in-game: mods + load errors + engine/service status
 ```
 
-Requirements: **Java 21 (Temurin)**, Gradle via the wrapper, NeoForge 21.1.242+.
+Requirements: **Java 21 (Temurin)**, Gradle wrapper, NeoForge 21.1.242.
+Full setup: [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md).
+
+Game-folder layout (generated on launch):
+
+```text
+luamods/<id>/           manifest.json, main.lua, src/startup|server|client,
+                        default_config.json, assets/, data/
+luaconfig/<id>.json     per-mod config (editable, merged over defaults)
+.luatweaker/stubs/      auto-generated EmmyLua stubs (VS Code / IntelliJ)
+logs/luatweaker/        engine log + per-mod logs
+```
 
 ---
 
-## Lua Code Examples
-
-All scripts follow the Roblox (Luau) module style. Load services explicitly with `require`.
-
-### 1. Register Content (startup)
+## Lua in 60 seconds
 
 ```lua
--- luamods/ruby_mod/src/startup/ruby_content.lua
+-- src/startup/content.lua
 local Content = require("LuaTweaker.Content")
+Content.NewItem("ruby_gem"):DisplayName("Ruby Gem"):MaxStackSize(16):Register()
 
-local CustomRuby = Content.NewItem("custom_ruby")
-    :MaxStackSize(64)
-    :Rarity("EPIC")
-    :DisplayName("Enchanted Ruby Gem")
-    :CreativeTab("ruby_tab")
-    :Register()
-
--- Custom boss entity (zombie adapter)
-Content.createEntity("ruby_boss", function(entity)
-    entity:parentMob("zombie")
-    entity:maxHealth(300)
-    entity:dimensions(0.9, 2.5)
+Content.createEntity("crystal_wisp", function(e)
+    e:category("MONSTER"):rig("quadruped")
+     :texture("luatweaker:textures/entity/crystal_beast.png")
+     :dimensions(0.9, 1.4):maxHealth(40):movementSpeed(0.3)
+     :tickRate(5)
+     :onTick(function(ent) -- server-side AI goes here end)
 end)
-
--- Custom projectile definition (damage / explosion power actually applied)
-Content.registerProjectile("luatweaker:ruby_orb", { damage = 25, explosionPower = 2, trailParticle = "minecraft:flame" })
 ```
 
-### 2. Recipes (server)
-
 ```lua
-local Recipe = require("LuaTweaker.Recipe")
-Recipe.Shaped("ruby_block_craft")
-    :Pattern({ "RRR", "RRR", "RRR" })
-    :Key("R", ingredient("luatweaker:custom_ruby"))
-    :Output(item("luatweaker:ruby_block", 1))
-    :Register()
-```
-
-### 3. Events, Tasks & Entity API (server)
-
-```lua
+-- src/server/main.lua
 local Events = require("LuaTweaker.Events")
-local Task = require("LuaTweaker.Task")
+local Brain  = require("LuaTweaker.Brain")
 
--- Event names are plain strings, but they are an API contract: every
--- Java-posted event has ONE canonical name (see Java EventNames), e.g.
--- 'ContainerOpened' / 'ContainerItemRejected' for container blocks.
-Events:Listen("MagicStaffUsed", function(payload)
-    local player = payload.player
-    -- unified entity API: method style AND property style
-    player:shootProjectile("luatweaker:ruby_orb", 1.8)
-    player.Health = player.Health - 20
-end)
-
-Task:delay(2.0, function()
-    print("Delayed task fired!")
-end)
+local tree = Brain.Selector("guard", {
+    Brain.Sequence("survive", {
+        Brain.Condition("dying", function(ctx)
+            return Brain.HealthFraction(ctx.ent) < 0.2
+        end),
+        Brain.Action("flee", function(ctx) -- ... moveTo away ... end),
+    }),
+    Brain.Action("patrol", function(ctx) -- ... waypoint walk ... end),
+})
 ```
 
-### 4. Client HUD (client)
-
-```lua
-local GuiService = require("LuaTweaker.GuiService")
-GuiService.OnRenderHUD:Connect(function(dt)
-    local size = GuiService:GetScreenSize()
-    GuiService:DrawTextCentered("Mana: 100/100", math.floor(size.Width / 2), 20, 0xFFFFFFFF, true)
-end)
-```
-
-### 5. Update Checking & Network Permission (manifest + read-only API)
-
-```json
-{
-  "id": "gt_addon",
-  "version": "1.0.2",
-  "environment": "universal",
-  "update_url": "https://raw.githubusercontent.com/.../update.json"
-}
-```
-
-```lua
--- The engine already fetched the feed outside Lua; scripts only read the result.
-local updateInfo = mod:GetUpdateStatus("gt_addon")  -- or Update:GetStatus("gt_addon")
-if updateInfo and updateInfo.HasUpdate then
-    print("New version available: " .. updateInfo.LatestVersion)
-end
-```
-
-Free HTTP needs an explicit permission — without it the call is rejected loudly:
-
-```json
-{ "permissions": ["net.http"] }
-```
-
-```lua
-local Net = require("LuaTweaker.Net")
-local result = Net:HttpGet("https://example.com/api/price", 5)  -- {Success, StatusCode, Body, Json}
-```
+Conventions: `local` everything, explicit `require("LuaTweaker.X")`,
+colon methods (`obj:method()`), PascalCase services, `UPPER_SNAKE` constants.
+Details: [`docs/SCRIPTING_GUIDE.md`](docs/SCRIPTING_GUIDE.md).
 
 ---
 
-## In-Game Commands
+## What you can build
+
+| Area | Entry point | Doc |
+| :--- | :--- | :--- |
+| Items / blocks / fluids / entities | `Content.NewItem / NewBlock / NewFluid / createEntity` | [CUSTOM_CONTENT](docs/CUSTOM_CONTENT.md) |
+| Recipes (shaped, shapeless, furnace, smithing, brewing, anvil, trades) | `Recipe.Shaped(...)` | [RECIPES](docs/RECIPES.md) |
+| Events + signals | `Events:Listen("ServerTick", ...)`, `Signal.new()` | [EVENTS](docs/EVENTS.md) |
+| NPC brains (Selector/Sequence/Parallel/Utility/Latch + blackboards + packs) | `require("LuaTweaker.Brain")` | [BEHAVIOR_TREES](docs/BEHAVIOR_TREES.md) |
+| Entity AI goals + sensing | `AIGoals`, `ent:canSee/canSee` | [MOB_AND_SPAWN](docs/MOB_AND_SPAWN.md) |
+| Ore / vegetation / biome mods, custom biomes, structures | `Worldgen`, `Biomes`, `Structures` | [WORLDGEN](docs/WORLDGEN.md) |
+| Loot tables | `Loot:AddMobDrop(...)` | [MOB_AND_SPAWN](docs/MOB_AND_SPAWN.md) |
+| Commands (`/lt ...` + own `/<cmd>`) | `Commands:Register(...)` | [COMMANDS](docs/COMMANDS.md) |
+| Client HUD / keybinds / sounds / shaders | `GuiService`, `KeyBindService`, `ClientEffects`, `Shaders` | [CLIENT_AND_SOUND_API](docs/CLIENT_AND_SOUND_API.md), [SHADER_API](docs/SHADER_API.md) |
+| Storage / tasks / math | `Storage`, `Task:delay/spawn/wait`, `Vector3` | [SERVICE_AND_SPATIAL_MATH_API](docs/SERVICE_AND_SPATIAL_MATH_API.md), [SCRIPTING_GUIDE](docs/SCRIPTING_GUIDE.md) |
+| Network (RemoteEvent/Function) | `NetworkService` | [NETWORK](docs/NETWORK.md) |
+| Update checks + gated HTTP | `update_url` in manifest, `Net:HttpGet` + `net.http` | [COMMANDS](docs/COMMANDS.md), [LUA_MOD_SYSTEM](docs/LUA_MOD_SYSTEM.md) |
+| Java plugins (third-party mods) | `ILuaTweakerPlugin` | [ADDON_DEVELOPER_GUIDE](docs/ADDON_DEVELOPER_GUIDE.md) |
+
+---
+
+## In-game commands
 
 | Command | Description |
 | :--- | :--- |
-| `/lt reload` | Hot-reload all Lua scripts, regenerate stubs, re-apply recipes. |
-| `/lt doctor` | Health diagnostics: loaded mods, per-mod load errors, engine + service status. |
-| `/lt hand` | Inspect the item/block currently held in hand. |
-| `/lt syntax <file>` | Syntax-check a Lua file. |
-| `/lt list` | List loaded Lua mods / files. |
-| `/lt debug [on|off]` | Toggle debug logging. |
+| `/lt reload [data\|resources\|all]` | Hot-reload scripts + stubs + recipes. |
+| `/lt doctor` | Mods, per-mod load errors, engine/service status. |
+| `/lt hand` | Inspect held item / targeted block. |
+| `/lt syntax <file>` | Syntax-check a Lua file without running it. |
+| `/lt list` | List loaded Lua mods / scripts. |
+| `/lt debug [on\|off]` | Toggle debug logging. |
+| `/lt help` | Core commands + every Lua-registered `/<cmd>`. |
+
+Details: [`docs/COMMANDS.md`](docs/COMMANDS.md).
 
 ---
 
-## Documentation Index
+## Project structure
 
-See [`docs/`](docs/README.md):
+```text
+common-api/          Pure Java 21: PAL, VM interfaces, @LuaDoc / @LuaDefault
+core-engine/         Luava VM wrapper, LuaBinder, DynamicJavaProxy, logger, stubs
+modules/module-*     One domain each (content, recipes, events, entities, brain.lua,
+                     interaction, network, client, storage, tasks, math, ... )
+neoforge-platform/   ONLY runnable module: PAL impl, registrars, commands, luamods/
+```
 
-- [GETTING_STARTED.md](docs/GETTING_STARTED.md) — Environment & IDE setup
-- [ARCHITECTURE_AND_SECURITY.md](docs/ARCHITECTURE_AND_SECURITY.md) — PAL, sandboxing, module boundaries
-- [SCRIPTING_GUIDE.md](docs/SCRIPTING_GUIDE.md) — Lua API conventions
-- [RECIPES.md](docs/RECIPES.md) — Recipe manipulation
-- [CUSTOM_CONTENT.md](docs/CUSTOM_CONTENT.md) — Items, blocks, entities, tabs
-- [EVENTS.md](docs/EVENTS.md) — Built-in events
-- [GUI_GRAPHICS.md](docs/GUI_GRAPHICS.md) — HUD rendering
-- [MOB_AND_SPAWN.md](docs/MOB_AND_SPAWN.md) — Entity API & AI goals
-- [LUA_MOD_SYSTEM.md](docs/LUA_MOD_SYSTEM.md) — Packaging autonomous Lua mods
-- [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — Debugging & known issues
+`core-engine` and `modules/*` depend only on `common-api`.
+New loader = new platform module implementing PAL; no core changes.
+
+---
+
+## Documentation
+
+Start here: [`docs/README.md`](docs/README.md) (full index) ·
+[`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) ·
+[`docs/SCRIPTING_GUIDE.md`](docs/SCRIPTING_GUIDE.md) ·
+[`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)
+
+> Some docs under `docs/` describe older API surfaces and are marked
+> `stale` at the top. The `docs/README.md` index labels them —
+> do not implement from stale files.
 
 ---
 
 ## License
 
-This project is licensed under the **[Apache License 2.0](LICENSE.txt)**.
+[Apache License 2.0](LICENSE.txt).

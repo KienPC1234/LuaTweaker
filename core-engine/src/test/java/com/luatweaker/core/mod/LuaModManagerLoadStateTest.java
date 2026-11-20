@@ -8,6 +8,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -101,8 +103,46 @@ class LuaModManagerLoadStateTest {
         assertEquals(2, LuaModManager.getLoadErrors().size());
     }
 
+    @Test
+    void loadObserverFollowsTheDependencySortedOrder() throws Exception {
+        writeMod("zeta_base", "universal", "zetaLoaded = true");
+        writeModWithDependencies("alpha_child", "universal", "alphaLoaded = true", "zeta_base");
+        RecordingObserver observer = new RecordingObserver();
+
+        LuaModManager.loadLuaMods(root.toFile(), LuaEngineFactory.create(false), "universal", observer);
+
+        assertEquals(List.of(
+                "1:zeta_base",
+                "2:alpha_child",
+                "done:2/2"), observer.events);
+    }
+
+    @Test
+    void loadObserverCountsOnlyModsThatActuallyLoaded() throws Exception {
+        writeMod("ok_mod", "universal", "okLoaded = true");
+        writeMod("broken_mod", "universal", "error('observer boom')");
+        RecordingObserver observer = new RecordingObserver();
+
+        LuaModManager.loadLuaMods(root.toFile(), LuaEngineFactory.create(false), "universal", observer);
+
+        assertEquals(List.of(
+                "1:broken_mod",
+                "2:ok_mod",
+                "done:1/2"), observer.events);
+    }
+
     private void writeMod(String id, String env, String mainLua) throws Exception {
         Path modDir = writeManifestOnly(id, env);
+        Files.writeString(modDir.resolve("main.lua"), mainLua);
+    }
+
+    private void writeModWithDependencies(String id, String env, String mainLua, String... dependencies)
+            throws Exception {
+        Path modDir = Files.createDirectories(root.resolve("luamods").resolve(id));
+        String deps = "[\"" + String.join("\",\"", dependencies) + "\"]";
+        Files.writeString(modDir.resolve("manifest.json"),
+                "{\"id\":\"" + id + "\",\"version\":\"1\",\"main\":\"main.lua\",\"environment\":\""
+                        + env + "\",\"dependencies\":" + deps + "}");
         Files.writeString(modDir.resolve("main.lua"), mainLua);
     }
 
@@ -116,5 +156,19 @@ class LuaModManagerLoadStateTest {
     private static void assertLuaBoolean(ILuaEngine engine, String globalName, boolean expected) {
         boolean actual = Boolean.TRUE.equals(engine.getGlobalEnvironment().rawget(globalName).toJavaObject());
         assertEquals(expected, actual, globalName);
+    }
+
+    private static final class RecordingObserver implements LuaModLoadObserver {
+        private final List<String> events = new ArrayList<>();
+
+        @Override
+        public void onModStart(int index, int total, String modId) {
+            events.add(index + ":" + modId);
+        }
+
+        @Override
+        public void onLoadComplete(int loadedMods, int total) {
+            events.add("done:" + loadedMods + "/" + total);
+        }
     }
 }

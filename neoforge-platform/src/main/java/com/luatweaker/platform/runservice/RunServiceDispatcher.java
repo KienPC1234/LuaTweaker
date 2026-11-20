@@ -40,6 +40,14 @@ public final class RunServiceDispatcher {
                 return;
             }
             ILuaTable signal = signalValue.asTable();
+            // Hot-tick fast path: when nothing connected to this signal, skip the
+            // wrapNumber + Lua pcall entirely. _listeners is maintained by
+            // Signal:Connect/Disconnect in luatweaker_bootstrap.lua.
+            ILuaValue listeners = signal.rawget("_listeners");
+            if (listeners == null || !listeners.isTable()
+                    || listeners.asTable().length() == 0) {
+                return;
+            }
             ILuaValue fireFn = signal.rawget("FireSync");
             if (fireFn == null || !fireFn.isFunction()) {
                 ILuaValue signalClass = globals.rawget("Signal");

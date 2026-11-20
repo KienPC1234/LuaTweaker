@@ -34,13 +34,19 @@ public record MachineBarSpec(
         String tooltipFormat,
         String texture,
         int u,
-        int v
+        int v,
+        String currentKey,
+        String maxKey
 ) {
     public MachineBarSpec(String id, int x, int y, int width, int height, String source, int color) {
-        this(id, x, y, width, height, source, color, null, null, 0, 0);
+        this(id, x, y, width, height, source, color, null, null, 0, 0, null, null);
     }
 
     public MachineBarSpec(String id, int x, int y, int width, int height, String source, int color, String tooltipFormat) {
-        this(id, x, y, width, height, source, color, tooltipFormat, null, 0, 0);
+        this(id, x, y, width, height, source, color, tooltipFormat, null, 0, 0, null, null);
+    }
+
+    public MachineBarSpec(String id, int x, int y, int width, int height, String source, int color, String tooltipFormat, String texture, int u, int v) {
+        this(id, x, y, width, height, source, color, tooltipFormat, texture, u, v, null, null);
     }
 }

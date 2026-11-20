@@ -40,6 +40,29 @@ public class NeoForgeLuaGoal extends Goal {
     }
 
     /**
+     * Human-readable label for {@code AIGoals:listGoals} debugging. Reads the optional
+     * {@code name} field of the goal table ({@code AIGoals:addGoal(ent, 1, { name = "ambush", ... })});
+     * unnamed goals fall back to {@code "LuaGoal"} so every custom node is identifiable
+     * instead of all showing the Java class name.
+     */
+    @NotNull
+    public String getGoalName() {
+        try {
+            ILuaValue nameVal = goalTable.rawget("name");
+            if (nameVal != null && !nameVal.isNil()) {
+                String name = nameVal.asString();
+                if (name != null && !name.isBlank()) {
+                    return name.strip();
+                }
+            }
+        } catch (Exception e) {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                    "Lua goal name read failed: " + e.getMessage());
+        }
+        return "LuaGoal";
+    }
+
+    /**
      * Calls a goal callback, tolerating an engine replaced by {@code /lt reload}. The closures in
      * this goal belong to the old VM, so once that VM is shut down the goal must become inert
      * instead of throwing from {@code canUse}/{@code tick} on the server thread.

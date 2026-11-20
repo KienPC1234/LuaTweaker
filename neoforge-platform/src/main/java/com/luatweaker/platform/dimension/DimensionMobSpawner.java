@@ -15,6 +15,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Optional;
@@ -93,8 +94,18 @@ public final class DimensionMobSpawner {
             Optional<EntityType<?>> type =
                     com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(entityVal.asString());
             if (type.isEmpty()) continue;
-            BlockPos pos = new BlockPos(xVal.asInt(), yVal != null && !yVal.isNil() ? yVal.asInt()
-                    : level.getHeight(Heightmap.Types.MOTION_BLOCKING, xVal.asInt(), zVal.asInt()) + 1, zVal.asInt());
+            Integer x = blockCoord(xVal);
+            Integer z = blockCoord(zVal);
+            if (x == null || z == null) {
+                LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                        "Spawn handler for '" + dimensionId + "' returned non-numeric coordinates; ignoring entry");
+                continue;
+            }
+            Integer requestedY = blockCoord(yVal);
+            int y = requestedY != null
+                    ? requestedY
+                    : level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
+            BlockPos pos = new BlockPos(x, y, z);
             if (!level.isLoaded(pos)) continue;
             if (!fireSpawnAttempt(dimensionId, entityVal.asString(), pos, "handler")) continue;
             Entity entity = type.get().create(level);
@@ -104,6 +115,20 @@ public final class DimensionMobSpawner {
             level.addFreshEntity(entity);
             fireSpawned(dimensionId, entityVal.asString(), pos);
         }
+    }
+
+    /**
+     * Converts a Lua coordinate to a block coordinate by flooring it. Lua numbers are doubles:
+     * {@code ILuaValue#asInt()} throws "number has no integer representation" for values such as
+     * {@code player.X + math.random(-8, 8)}, which used to crash the server tick.
+     *
+     * @return the block coordinate, or {@code null} when the value is not a finite world coordinate
+     */
+    static @Nullable Integer blockCoord(com.luatweaker.api.vm.ILuaValue value) {
+        if (value == null || value.isNil() || !value.isNumber()) return null;
+        double raw = value.asDouble();
+        if (!Double.isFinite(raw) || raw < -30_000_000.0 || raw > 30_000_000.0) return null;
+        return (int) Math.floor(raw);
     }
 
     /** Fires the cancellable "MobSpawnAttempt" event; false = cancelled. */

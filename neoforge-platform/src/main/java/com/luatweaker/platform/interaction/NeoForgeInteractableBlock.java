@@ -47,8 +47,10 @@ public class NeoForgeInteractableBlock implements IInteractableBlock {
         ServerLevel level = getLevel();
         if (level != null) {
             BlockPos pos = new BlockPos(x, y, z);
-            BlockState state = level.getBlockState(pos);
-            return BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+            if (level.hasChunkAt(pos)) {
+                BlockState state = level.getBlockState(pos);
+                return BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+            }
         }
         return "minecraft:air";
     }
@@ -58,6 +60,9 @@ public class NeoForgeInteractableBlock implements IInteractableBlock {
         ServerLevel level = getLevel();
         if (level != null) {
             BlockPos pos = new BlockPos(x, y, z);
+            if (!level.hasChunkAt(pos)) {
+                return;
+            }
             ResourceLocation rl = ResourceLocation.parse(blockId);
             if (!BuiltInRegistries.BLOCK.containsKey(rl)) {
                 com.luatweaker.api.log.LuaTweakerLog.get().warn(
@@ -97,7 +102,9 @@ public class NeoForgeInteractableBlock implements IInteractableBlock {
         ServerLevel level = getLevel();
         if (level != null) {
             BlockPos pos = new BlockPos(x, y, z);
-            return level.destroyBlock(pos, true);
+            if (level.hasChunkAt(pos)) {
+                return level.destroyBlock(pos, true);
+            }
         }
         return false;
     }
@@ -107,6 +114,9 @@ public class NeoForgeInteractableBlock implements IInteractableBlock {
         ServerLevel level = getLevel();
         if (level != null && actorEntity instanceof Entity mcActor) {
             BlockPos pos = new BlockPos(x, y, z);
+            if (!level.hasChunkAt(pos)) {
+                return false;
+            }
             BlockState state = level.getBlockState(pos);
             if (mcActor instanceof Player player) {
                 BlockHitResult hit = new BlockHitResult(
@@ -127,7 +137,9 @@ public class NeoForgeInteractableBlock implements IInteractableBlock {
         ServerLevel level = getLevel();
         if (level != null) {
             BlockPos pos = new BlockPos(x, y, z);
-            return level.getBlockState(pos).getDestroySpeed(level, pos);
+            if (level.hasChunkAt(pos)) {
+                return level.getBlockState(pos).getDestroySpeed(level, pos);
+            }
         }
         return 0.0f;
     }
@@ -137,7 +149,9 @@ public class NeoForgeInteractableBlock implements IInteractableBlock {
         ServerLevel level = getLevel();
         if (level != null) {
             BlockPos pos = new BlockPos(x, y, z);
-            return level.getBlockState(pos).getLightEmission();
+            if (level.hasChunkAt(pos)) {
+                return level.getBlockState(pos).getLightEmission();
+            }
         }
         return 0;
     }
@@ -146,7 +160,10 @@ public class NeoForgeInteractableBlock implements IInteractableBlock {
     public boolean isAir() {
         ServerLevel level = getLevel();
         if (level != null) {
-            return level.getBlockState(new BlockPos(x, y, z)).isAir();
+            BlockPos pos = new BlockPos(x, y, z);
+            if (level.hasChunkAt(pos)) {
+                return level.getBlockState(pos).isAir();
+            }
         }
         return true;
     }
@@ -156,7 +173,9 @@ public class NeoForgeInteractableBlock implements IInteractableBlock {
         ServerLevel level = getLevel();
         if (level != null) {
             BlockPos pos = new BlockPos(x, y, z);
-            return level.getBlockState(pos).isSolid();
+            if (level.hasChunkAt(pos)) {
+                return level.getBlockState(pos).isSolid();
+            }
         }
         return false;
     }
@@ -166,20 +185,23 @@ public class NeoForgeInteractableBlock implements IInteractableBlock {
         ServerLevel level = getLevel();
         if (level != null) {
             BlockPos pos = new BlockPos(x, y, z);
-            return !level.getFluidState(pos).isEmpty();
+            if (level.hasChunkAt(pos)) {
+                return !level.getFluidState(pos).isEmpty();
+            }
         }
         return false;
     }
 
     @Override
-    @NotNull
-    public String getNbt() {
+    public @NotNull String getNbt() {
         ServerLevel level = getLevel();
         if (level != null) {
             BlockPos pos = new BlockPos(x, y, z);
-            var be = level.getBlockEntity(pos);
-            if (be != null) {
-                return be.saveWithFullMetadata(level.registryAccess()).toString();
+            if (level.hasChunkAt(pos)) {
+                var be = level.getBlockEntity(pos);
+                if (be != null) {
+                    return be.saveWithFullMetadata(level.registryAccess()).toString();
+                }
             }
         }
         return "{}";
@@ -190,19 +212,21 @@ public class NeoForgeInteractableBlock implements IInteractableBlock {
         ServerLevel level = getLevel();
         if (level != null) {
             BlockPos pos = new BlockPos(x, y, z);
-            var be = level.getBlockEntity(pos);
-            if (be != null) {
-                try {
-                    net.minecraft.nbt.CompoundTag tag = net.minecraft.nbt.TagParser.parseTag(nbtJson);
-                    be.loadWithComponents(tag, level.registryAccess());
-                    be.setChanged();
-                    BlockState state = level.getBlockState(pos);
-                    level.sendBlockUpdated(pos, state, state, 3);
-                } catch (Exception e) {
-                    com.luatweaker.api.log.LuaTweakerLog.get().error(
-                        com.luatweaker.api.log.LogStage.SYSTEM,
-                        "Failed to parse NBT JSON for block at (" + x + "," + y + "," + z + "): " + e.getMessage()
-                    );
+            if (level.hasChunkAt(pos)) {
+                var be = level.getBlockEntity(pos);
+                if (be != null) {
+                    try {
+                        net.minecraft.nbt.CompoundTag tag = net.minecraft.nbt.TagParser.parseTag(nbtJson);
+                        be.loadWithComponents(tag, level.registryAccess());
+                        be.setChanged();
+                        BlockState state = level.getBlockState(pos);
+                        level.sendBlockUpdated(pos, state, state, 3);
+                    } catch (Exception e) {
+                        com.luatweaker.api.log.LuaTweakerLog.get().error(
+                            com.luatweaker.api.log.LogStage.SYSTEM,
+                            "Failed to parse NBT JSON for block at (" + x + "," + y + "," + z + "): " + e.getMessage()
+                        );
+                    }
                 }
             }
         }
@@ -213,11 +237,13 @@ public class NeoForgeInteractableBlock implements IInteractableBlock {
         ServerLevel level = getLevel();
         if (level != null) {
             BlockPos pos = new BlockPos(x, y, z);
-            var be = level.getBlockEntity(pos);
-            if (be != null) {
-                net.minecraft.nbt.CompoundTag tag = be.saveWithFullMetadata(level.registryAccess());
-                if (tag.contains(key)) {
-                    return tag.get(key).getAsString();
+            if (level.hasChunkAt(pos)) {
+                var be = level.getBlockEntity(pos);
+                if (be != null) {
+                    net.minecraft.nbt.CompoundTag tag = be.saveWithFullMetadata(level.registryAccess());
+                    if (tag.contains(key)) {
+                        return tag.get(key).getAsString();
+                    }
                 }
             }
         }
@@ -229,14 +255,16 @@ public class NeoForgeInteractableBlock implements IInteractableBlock {
         ServerLevel level = getLevel();
         if (level != null) {
             BlockPos pos = new BlockPos(x, y, z);
-            var be = level.getBlockEntity(pos);
-            if (be != null) {
-                net.minecraft.nbt.CompoundTag tag = be.saveWithFullMetadata(level.registryAccess());
-                tag.putString(key, value);
-                be.loadWithComponents(tag, level.registryAccess());
-                be.setChanged();
-                BlockState state = level.getBlockState(pos);
-                level.sendBlockUpdated(pos, state, state, 3);
+            if (level.hasChunkAt(pos)) {
+                var be = level.getBlockEntity(pos);
+                if (be != null) {
+                    net.minecraft.nbt.CompoundTag tag = be.saveWithFullMetadata(level.registryAccess());
+                    tag.putString(key, value);
+                    be.loadWithComponents(tag, level.registryAccess());
+                    be.setChanged();
+                    BlockState state = level.getBlockState(pos);
+                    level.sendBlockUpdated(pos, state, state, 3);
+                }
             }
         }
     }
@@ -246,7 +274,10 @@ public class NeoForgeInteractableBlock implements IInteractableBlock {
     public Object getRawBlockState() {
         ServerLevel level = getLevel();
         if (level != null) {
-            return level.getBlockState(new BlockPos(x, y, z));
+            BlockPos pos = new BlockPos(x, y, z);
+            if (level.hasChunkAt(pos)) {
+                return level.getBlockState(pos);
+            }
         }
         return Blocks.AIR.defaultBlockState();
     }

@@ -3,7 +3,6 @@ package com.luatweaker.network;
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.api.network.IRocketNetworkService;
-import com.luatweaker.api.network.RpcPhase;
 import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
@@ -18,6 +17,11 @@ import java.util.concurrent.TimeUnit;
 
 public class NetworkServiceImpl implements IRocketNetworkService {
 
+    /** Channel that carries RemoteFunction request/response envelopes. */
+    public static final String RPC_CHANNEL = "LuaTweaker:Rpc";
+    /** Prefix reserved for engine channels; scripts must not register listeners there. */
+    public static final String RESERVED_CHANNEL_PREFIX = "LuaTweaker:";
+
     /** Upper bound on outstanding request/response round trips in this VM. */
     private static final int MAX_PENDING_RPC = 256;
     /** A request nobody polls (dead coroutine, reload) is dropped after this. */
@@ -26,12 +30,25 @@ public class NetworkServiceImpl implements IRocketNetworkService {
     private static final double RPC_BURST = 60.0;
     /** Invoke flood protection: sustained requests per second per player. */
     private static final double RPC_REFILL_PER_SECOND = 30.0;
+    /** RemoteEvent flood protection: burst size per player for client-to-server events. */
+    static final double EVENT_BURST = 120.0;
+    /** RemoteEvent flood protection: sustained events per second per player. */
+    static final double EVENT_REFILL_PER_SECOND = 60.0;
+    /** Number of per-player buckets kept before idle ones are evicted. */
+    private static final int MAX_BUDGET_ENTRIES = 4_096;
+    /** Bucket key for the client's own outbound RemoteEvents (there is one connection). */
+    private static final String LOCAL_CLIENT_BUDGET_KEY = "local-client";
+
+    private static final ILuaValue[] NO_ARGS = new ILuaValue[0];
+    /** Wire form of "no arguments"; used for error answers that carry no value. */
+    private static final byte[] EMPTY_PAYLOAD = LuaPayloadCodec.encodeArgs(NO_ARGS);
 
     private final ILuaEngine engine;
     private final Map<String, ILuaTable> remoteEvents = new ConcurrentHashMap<>();
     private final Map<String, ILuaTable> remoteFunctions = new ConcurrentHashMap<>();
     private final Map<String, PendingRpc> pendingRpcs = new ConcurrentHashMap<>();
-    private final Map<String, RpcBudget> rpcBudgets = new ConcurrentHashMap<>();
+    private final Map<String, TokenBucket> rpcBudgets = new ConcurrentHashMap<>();
+    private final Map<String, TokenBucket> eventBudgets = new ConcurrentHashMap<>();
 
     public NetworkServiceImpl(ILuaEngine engine) {
         this.engine = engine;
@@ -86,6 +103,7 @@ public class NetworkServiceImpl implements IRocketNetworkService {
 
     @Override
     public ILuaTable GetOrCreateRemoteEvent(String channelName) {
+        requireScriptChannelName(channelName, "RemoteEvent");
         ILuaTable resTable = remoteEvents.computeIfAbsent(channelName, name -> {
             ILuaValue remoteEventClass = engine.getGlobalEnvironment().rawget("RemoteEvent");
             if (remoteEventClass == null || remoteEventClass.isNil()) {
@@ -104,6 +122,7 @@ public class NetworkServiceImpl implements IRocketNetworkService {
 
     @Override
     public ILuaTable GetOrCreateRemoteFunction(String functionName) {
+        requireScriptChannelName(functionName, "RemoteFunction");
         return remoteFunctions.computeIfAbsent(functionName, name -> {
             ILuaValue remoteFnClass = engine.getGlobalEnvironment().rawget("RemoteFunction");
             if (remoteFnClass == null || remoteFnClass.isNil()) {
@@ -127,8 +146,8 @@ public class NetworkServiceImpl implements IRocketNetworkService {
         requireRegisteredFunction(functionName);
         String requestId = registerRequest();
         try {
-            String json = NetworkPayloadCodec.encodeArgs(args != null ? args : new ILuaValue[0]);
-            Platform.getNetwork().sendRpcPacketToServer(requestId, RpcPhase.INVOKE, functionName, json, "");
+            byte[] envelope = encodeInvoke(requestId, functionName, args);
+            Platform.getNetwork().sendPayloadBytesToServer(RPC_CHANNEL, envelope);
         } catch (RuntimeException e) {
             pendingRpcs.remove(requestId);
             throw e;
@@ -145,13 +164,18 @@ public class NetworkServiceImpl implements IRocketNetworkService {
         }
         String requestId = registerRequest();
         try {
-            String json = NetworkPayloadCodec.encodeArgs(args != null ? args : new ILuaValue[0]);
-            Platform.getNetwork().sendRpcPacket(playerUuid, requestId, RpcPhase.INVOKE, functionName, json, "");
+            byte[] envelope = encodeInvoke(requestId, functionName, args);
+            Platform.getNetwork().sendPayloadBytes(playerUuid, RPC_CHANNEL, envelope);
         } catch (RuntimeException e) {
             pendingRpcs.remove(requestId);
             throw e;
         }
         return requestId;
+    }
+
+    private static byte[] encodeInvoke(String requestId, String functionName, ILuaValue[] args) {
+        byte[] payload = LuaPayloadCodec.encodeArgs(args == null ? NO_ARGS : args);
+        return new RpcEnvelope(requestId, RpcEnvelope.PHASE_INVOKE, functionName, "", payload).encode();
     }
 
     @Override
@@ -196,7 +220,7 @@ public class NetworkServiceImpl implements IRocketNetworkService {
     }
 
     @Override
-    public void OnRpcInvoke(String requestId, String functionName, String playerUuid, String argsJson) {
+    public void OnRpcInvoke(String requestId, String functionName, String playerUuid, byte[] argsData) {
         boolean fromClient = playerUuid != null && !playerUuid.isBlank();
         if (requestId == null || requestId.isBlank() || functionName == null || functionName.isBlank()) {
             LuaTweakerLog.get().error(LogStage.SYSTEM,
@@ -207,7 +231,7 @@ public class NetworkServiceImpl implements IRocketNetworkService {
 
         // Rate-limit before anything else: unknown function names must not bypass the bucket
         // and turn the server into an error-packet amplifier.
-        if (fromClient && !consumeBudget(playerUuid)) {
+        if (fromClient && !consumeBudget(rpcBudgets, playerUuid, RPC_BURST, RPC_REFILL_PER_SECOND)) {
             LuaTweakerLog.get().warn(LogStage.SYSTEM,
                     "[Network] Rate-limited RemoteFunction '" + functionName + "' from player " + playerUuid);
             respondRpc(requestId, fromClient, playerUuid, functionName, null,
@@ -226,7 +250,7 @@ public class NetworkServiceImpl implements IRocketNetworkService {
 
         ILuaValue[] args;
         try {
-            args = NetworkPayloadCodec.decodeArgs(engine, argsJson == null ? "" : argsJson);
+            args = decodeArgs(argsData);
         } catch (RuntimeException e) {
             respondRpc(requestId, fromClient, playerUuid, functionName, null,
                     "Malformed RemoteFunction request payload: " + e.getMessage());
@@ -254,19 +278,19 @@ public class NetworkServiceImpl implements IRocketNetworkService {
             return;
         }
 
-        String resultJson;
+        byte[] resultPayload;
         try {
-            resultJson = NetworkPayloadCodec.encodeArgs(new ILuaValue[]{result});
+            resultPayload = LuaPayloadCodec.encodeArgs(new ILuaValue[]{result});
         } catch (RuntimeException e) {
             respondRpc(requestId, fromClient, playerUuid, functionName, null,
                     "Return value of RemoteFunction '" + functionName + "' cannot be sent: " + e.getMessage());
             return;
         }
-        respondRpc(requestId, fromClient, playerUuid, functionName, resultJson, "");
+        respondRpc(requestId, fromClient, playerUuid, functionName, resultPayload, "");
     }
 
     @Override
-    public void OnRpcResult(String requestId, String resultJson, String error) {
+    public void OnRpcResult(String requestId, byte[] payload, String error) {
         PendingRpc pending = requestId == null ? null : pendingRpcs.get(requestId);
         if (pending == null) {
             // Late answer for a timed-out/cancelled request, or a spoofed id.
@@ -285,12 +309,27 @@ public class NetworkServiceImpl implements IRocketNetworkService {
             return;
         }
         try {
-            ILuaValue[] values = NetworkPayloadCodec.decodeArgs(engine, resultJson == null ? "" : resultJson);
+            ILuaValue[] values = decodeArgs(payload);
             pending.value = values.length > 0 ? values[0] : engine.nilValue();
             pending.state = RpcState.DONE;
         } catch (RuntimeException e) {
             pending.error = "Malformed RemoteFunction response payload: " + e.getMessage();
             pending.state = RpcState.ERROR;
+        }
+    }
+
+    /**
+     * Engine channels ({@code LuaTweaker:*}) are routed before RemoteEvents, so a script
+     * listener registered under one would either shadow a control command or be silently
+     * unreachable. Reject it loudly.
+     */
+    private static void requireScriptChannelName(@Nullable String name, @NotNull String kind) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException(kind + " name must not be empty");
+        }
+        if (name.startsWith(RESERVED_CHANNEL_PREFIX)) {
+            throw new IllegalArgumentException(kind + " name '" + name + "' uses the reserved '"
+                    + RESERVED_CHANNEL_PREFIX + "' prefix");
         }
     }
 
@@ -323,8 +362,12 @@ public class NetworkServiceImpl implements IRocketNetworkService {
                         && now - entry.getValue().createdAtNanos > PENDING_RPC_TTL_NANOS);
     }
 
-    private boolean consumeBudget(String playerUuid) {
-        return rpcBudgets.computeIfAbsent(playerUuid, ignored -> new RpcBudget()).tryConsume();
+    private boolean consumeBudget(Map<String, TokenBucket> budgets, String key,
+                                  double burst, double refillPerSecond) {
+        if (budgets.size() > MAX_BUDGET_ENTRIES) {
+            budgets.clear();
+        }
+        return budgets.computeIfAbsent(key, ignored -> new TokenBucket(burst, refillPerSecond)).tryConsume();
     }
 
     private @Nullable ILuaValue resolvePlayerTable(String playerUuid) {
@@ -339,16 +382,23 @@ public class NetworkServiceImpl implements IRocketNetworkService {
     }
 
     private void respondRpc(String requestId, boolean toClient, String playerUuid, String functionName,
-                            @Nullable String resultJson, @Nullable String error) {
-        String safeJson = resultJson == null ? "" : resultJson;
-        String safeError = error == null ? "" : error;
+                            @Nullable byte[] payload, @Nullable String error) {
+        byte[] safePayload = payload == null ? EMPTY_PAYLOAD : payload;
+        byte[] envelope;
+        try {
+            envelope = new RpcEnvelope(requestId, RpcEnvelope.PHASE_RESULT, functionName,
+                    RpcEnvelope.truncateError(error), safePayload).encode();
+        } catch (RuntimeException e) {
+            LuaTweakerLog.get().error(LogStage.SYSTEM,
+                    "[Network] Cannot build RemoteFunction answer for '" + functionName + "': "
+                            + e.getMessage());
+            return;
+        }
         try {
             if (toClient) {
-                Platform.getNetwork().sendRpcPacket(playerUuid, requestId, RpcPhase.RESULT,
-                        functionName, safeJson, safeError);
+                Platform.getNetwork().sendPayloadBytes(playerUuid, RPC_CHANNEL, envelope);
             } else {
-                Platform.getNetwork().sendRpcPacketToServer(requestId, RpcPhase.RESULT,
-                        functionName, safeJson, safeError);
+                Platform.getNetwork().sendPayloadBytesToServer(RPC_CHANNEL, envelope);
             }
         } catch (RuntimeException e) {
             LuaTweakerLog.get().error(LogStage.SYSTEM,
@@ -360,24 +410,42 @@ public class NetworkServiceImpl implements IRocketNetworkService {
 
     @Override
     public void FireClient(String channelName, String playerUuid, ILuaValue[] args) {
-        String json = NetworkPayloadCodec.encodeArgs(args != null ? args : new ILuaValue[0]);
-        Platform.getNetwork().sendPayloadPacket(playerUuid, channelName, json);
+        Platform.getNetwork().sendPayloadBytes(playerUuid, channelName,
+                LuaPayloadCodec.encodeArgs(args == null ? NO_ARGS : args));
     }
 
     @Override
     public void FireAllClients(String channelName, ILuaValue[] args) {
-        String json = NetworkPayloadCodec.encodeArgs(args != null ? args : new ILuaValue[0]);
-        Platform.getNetwork().broadcastPayloadPacket(channelName, json);
+        Platform.getNetwork().broadcastPayloadBytes(channelName,
+                LuaPayloadCodec.encodeArgs(args == null ? NO_ARGS : args));
     }
 
     @Override
     public void FireServer(String channelName, ILuaValue[] args) {
-        String json = NetworkPayloadCodec.encodeArgs(args != null ? args : new ILuaValue[0]);
-        Platform.getNetwork().sendPayloadPacketToServer(channelName, json);
+        // Client-side budget: a runaway loop should not fill the socket with packets the
+        // server is going to drop anyway. Same numbers as the server-side check.
+        if (!consumeBudget(eventBudgets, LOCAL_CLIENT_BUDGET_KEY, EVENT_BURST, EVENT_REFILL_PER_SECOND)) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[Network] Rate-limited outbound RemoteEvent '" + channelName + "'");
+            return;
+        }
+        Platform.getNetwork().sendPayloadBytesToServer(channelName,
+                LuaPayloadCodec.encodeArgs(args == null ? NO_ARGS : args));
     }
 
     @Override
-    public void OnClientFired(String channelName, String playerUuid, ILuaValue[] args) {
+    public void OnClientFired(String channelName, String playerUuid, byte[] data) {
+        if (playerUuid == null || playerUuid.isBlank()) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[Network] Dropped serverbound RemoteEvent '" + channelName + "': no player identity");
+            return;
+        }
+        // Budget before decode: an unknown channel must not turn into free parsing work.
+        if (!consumeBudget(eventBudgets, playerUuid, EVENT_BURST, EVENT_REFILL_PER_SECOND)) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[Network] Rate-limited RemoteEvent '" + channelName + "' from player " + playerUuid);
+            return;
+        }
         ILuaTable remoteEvent = remoteEvents.get(channelName);
         if (remoteEvent == null) {
             LuaTweakerLog.get().warn(LogStage.SYSTEM,
@@ -409,6 +477,16 @@ public class NetworkServiceImpl implements IRocketNetworkService {
             player = com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, resolved);
         }
 
+        ILuaValue[] args;
+        try {
+            args = decodeArgs(data);
+        } catch (RuntimeException e) {
+            LuaTweakerLog.get().error(LogStage.SYSTEM,
+                    "[Network] Dropped RemoteEvent '" + channelName + "' with malformed payload: "
+                            + e.getMessage());
+            return;
+        }
+
         LuaTweakerLog.get().debug(LogStage.SYSTEM,
                 "[Network] OnClientFired firing RemoteEvent '" + channelName
                         + "' for player: " + (resolved != null ? resolved.getName() : "Unknown"));
@@ -420,7 +498,7 @@ public class NetworkServiceImpl implements IRocketNetworkService {
     }
 
     @Override
-    public void OnServerFired(String channelName, String playerUuid, ILuaValue[] args) {
+    public void OnServerFired(String channelName, String playerUuid, byte[] data) {
         ILuaTable remoteEvent = remoteEvents.get(channelName);
         if (remoteEvent == null) {
             LuaTweakerLog.get().debug(LogStage.SYSTEM,
@@ -434,9 +512,27 @@ public class NetworkServiceImpl implements IRocketNetworkService {
             return;
         }
         ILuaValue fireFn = resolveFireSync();
-        if (fireFn != null) {
-            engine.callFunction(fireFn, appendThis(onClientEvent, args));
+        if (fireFn == null) {
+            return;
         }
+        ILuaValue[] args;
+        try {
+            args = decodeArgs(data);
+        } catch (RuntimeException e) {
+            LuaTweakerLog.get().error(LogStage.SYSTEM,
+                    "[Network] Dropped RemoteEvent '" + channelName + "' with malformed payload: "
+                            + e.getMessage());
+            return;
+        }
+        engine.callFunction(fireFn, appendThis(onClientEvent, args));
+    }
+
+    /** Empty payloads mean "no arguments"; anything else must decode cleanly. */
+    private ILuaValue[] decodeArgs(@Nullable byte[] data) {
+        if (data == null || data.length == 0) {
+            return NO_ARGS;
+        }
+        return LuaPayloadCodec.decodeArgs(engine, data);
     }
 
     /**
@@ -475,15 +571,23 @@ public class NetworkServiceImpl implements IRocketNetworkService {
         private volatile String error;
     }
 
-    private static final class RpcBudget {
-        private double tokens = RPC_BURST;
+    private static final class TokenBucket {
+        private final double burst;
+        private final double refillPerSecond;
+        private double tokens;
         private long lastRefillNanos = System.nanoTime();
+
+        private TokenBucket(double burst, double refillPerSecond) {
+            this.burst = burst;
+            this.refillPerSecond = refillPerSecond;
+            this.tokens = burst;
+        }
 
         private synchronized boolean tryConsume() {
             long now = System.nanoTime();
             double elapsedSeconds = (now - lastRefillNanos) / 1_000_000_000.0;
             lastRefillNanos = now;
-            tokens = Math.min(RPC_BURST, tokens + elapsedSeconds * RPC_REFILL_PER_SECOND);
+            tokens = Math.min(burst, tokens + elapsedSeconds * refillPerSecond);
             if (tokens < 1.0) {
                 return false;
             }
