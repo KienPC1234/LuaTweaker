@@ -107,7 +107,11 @@ public class NeoForgeEntityPlatform implements IPlatformEntity {
                 if (player != null) {
                     return new NeoForgePlayerWrapper(player);
                 }
-            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
+            } catch (IllegalArgumentException e) {
+                com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                        com.luatweaker.api.log.LogStage.SYSTEM,
+                        "Ignoring malformed player uuid '" + uuid + "': " + e.getMessage());
+            }
         }
         return null;
     }

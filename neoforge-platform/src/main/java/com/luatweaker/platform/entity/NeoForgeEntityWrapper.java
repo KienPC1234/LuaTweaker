@@ -441,36 +441,21 @@ public class NeoForgeEntityWrapper implements IEntity {
         if (entity == null) {
             return "STANDING";
         }
-        try {
-            net.minecraft.world.entity.Pose pose = entity.getPose();
-            return pose == null ? "STANDING" : pose.name();
-        } catch (Exception e) {
-            return "STANDING";
-        }
+        net.minecraft.world.entity.Pose pose = entity.getPose();
+        return pose == null ? "STANDING" : pose.name();
     }
 
     @Override
     public boolean canSee(IEntity target) {
-        if (entity instanceof LivingEntity living && target != null
-                && target.getRawEntity() instanceof Entity targetEntity) {
-            try {
-                return living.hasLineOfSight(targetEntity);
-            } catch (Exception e) {
-                return false;
-            }
-        }
-        return false;
+        return entity instanceof LivingEntity living && target != null
+                && target.getRawEntity() instanceof Entity targetEntity
+                && living.hasLineOfSight(targetEntity);
     }
 
     @Override
     public void stopMoving() {
         if (entity instanceof Mob mob) {
-            try {
-                mob.getNavigation().stop();
-            } catch (Exception e) {
-                com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
-                        "stopMoving failed: " + e.getMessage());
-            }
+            mob.getNavigation().stop();
         } else if (entity != null) {
             entity.setDeltaMovement(0, 0, 0);
         }
@@ -502,26 +487,14 @@ public class NeoForgeEntityWrapper implements IEntity {
     @Override
     public long getGameTime() {
         if (entity != null && entity.level() != null) {
-            try {
-                return entity.level().getGameTime();
-            } catch (Exception e) {
-                com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
-                        "getGameTime failed: " + e.getMessage());
-            }
+            return entity.level().getGameTime();
         }
         return 0;
     }
 
     @Override
     public boolean isNavigating() {
-        if (entity instanceof Mob mob) {
-            try {
-                return mob.getNavigation().isInProgress();
-            } catch (Exception e) {
-                return false;
-            }
-        }
-        return false;
+        return entity instanceof Mob mob && mob.getNavigation().isInProgress();
     }
 
     @Override public void setTarget(IEntity target) {

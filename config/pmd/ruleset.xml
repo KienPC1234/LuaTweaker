@@ -171,7 +171,7 @@
   <rule ref="category/java/design.xml/AvoidCatchingGenericException">
     <properties>
       <property name="violationSuppressXPath"
-                value="ancestor-or-self::*[(self::ClassDeclaration or self::InterfaceDeclaration or self::EnumDeclaration or self::RecordDeclaration or self::AnnotationTypeDeclaration) and (@SimpleName='CallbackFirewall' or @SimpleName='ImGuiNativeGuard' or @SimpleName='LuaCustomMob' or @SimpleName='LuaTweakerMod' or @SimpleName='LuamodClientActions' or @SimpleName='NeoForgeEntityPlatform' or @SimpleName='NeoForgeEntityWrapper')]"/>
+                value="ancestor-or-self::*[(self::ClassDeclaration or self::InterfaceDeclaration or self::EnumDeclaration or self::RecordDeclaration or self::AnnotationTypeDeclaration) and (@SimpleName='CallbackFirewall' or @SimpleName='ImGuiNativeGuard' or @SimpleName='LuaTweakerMod')]"/>
     </properties>
   </rule>
 
@@ -231,7 +231,7 @@
   <rule ref="category/java/design.xml/CyclomaticComplexity">
     <properties>
       <property name="violationSuppressXPath"
-                value="ancestor-or-self::*[(self::ClassDeclaration or self::InterfaceDeclaration or self::EnumDeclaration or self::RecordDeclaration or self::AnnotationTypeDeclaration) and (@SimpleName='BlockBuilderImpl' or @SimpleName='CustomContainerBlockEntity' or @SimpleName='DimensionMobSpawner' or @SimpleName='DimensionServiceImpl' or @SimpleName='EntityBuilderImpl' or @SimpleName='ImGuiGuiEditor' or @SimpleName='InterceptionHelper' or @SimpleName='ItemBuilderImpl' or @SimpleName='LuaAssetsPackFinder' or @SimpleName='LuaChunkGenerator' or @SimpleName='LuaCustomMob' or @SimpleName='LuaTweakerMod' or @SimpleName='LuamodDetailScreen' or @SimpleName='LuavaEngine' or @SimpleName='MobGoalHelper' or @SimpleName='NeoForgeClientPlatform' or @SimpleName='NeoForgeEntityWrapper' or @SimpleName='NeoForgePlayerWrapper' or @SimpleName='SpawnRuleEvaluator')]"/>
+                value="ancestor-or-self::*[(self::ClassDeclaration or self::InterfaceDeclaration or self::EnumDeclaration or self::RecordDeclaration or self::AnnotationTypeDeclaration) and (@SimpleName='BlockBuilderImpl' or @SimpleName='CustomContainerBlockEntity' or @SimpleName='DimensionMobSpawner' or @SimpleName='DimensionServiceImpl' or @SimpleName='EntityBuilderImpl' or @SimpleName='ImGuiGuiEditor' or @SimpleName='InterceptionHelper' or @SimpleName='ItemBuilderImpl' or @SimpleName='LuaAssetsPackFinder' or @SimpleName='LuaChunkGenerator' or @SimpleName='LuaTweakerMod' or @SimpleName='LuamodDetailScreen' or @SimpleName='LuavaEngine' or @SimpleName='MobGoalHelper' or @SimpleName='NeoForgeClientPlatform' or @SimpleName='NeoForgeEntityWrapper' or @SimpleName='NeoForgePlayerWrapper' or @SimpleName='SpawnRuleEvaluator')]"/>
     </properties>
   </rule>
 

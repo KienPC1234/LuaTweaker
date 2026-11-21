@@ -75,12 +75,8 @@ public class LuaCustomMob extends PathfinderMob {
     }
 
     private @Nullable String typeKey() {
-        try {
-            ResourceLocation key = BuiltInRegistries.ENTITY_TYPE.getKey(this.getType());
-            return key == null ? null : key.toString();
-        } catch (Exception e) {
-            return null;
-        }
+        ResourceLocation key = BuiltInRegistries.ENTITY_TYPE.getKey(this.getType());
+        return key == null ? null : key.toString();
     }
 
     @Override
@@ -100,29 +96,28 @@ public class LuaCustomMob extends PathfinderMob {
     }
 
     private @Nullable SoundEvent lookupSound(String slot) {
-        try {
-            String key = typeKey();
-            LuaMobConfigs.Snapshot snapshot = key == null ? null : LuaMobConfigs.get(key);
-            String soundId = null;
-            if (snapshot != null) {
-                soundId = switch (slot) {
-                    case "hurt" -> snapshot.hurtSound();
-                    case "death" -> snapshot.deathSound();
-                    default -> snapshot.ambientSound();
-                };
-            }
-            if (soundId == null || soundId.isBlank()) {
-                return null;
-            }
-            ResourceLocation rl = soundId.contains(":")
-                    ? ResourceLocation.tryParse(soundId)
-                    : ResourceLocation.fromNamespaceAndPath("minecraft", soundId);
-            if (rl == null) {
-                return null;
-            }
-            return BuiltInRegistries.SOUND_EVENT.getOptional(rl).orElse(null);
-        } catch (Exception e) {
+        String key = typeKey();
+        LuaMobConfigs.Snapshot snapshot = key == null ? null : LuaMobConfigs.get(key);
+        String soundId = null;
+        if (snapshot != null) {
+            soundId = switch (slot) {
+                case "hurt" -> snapshot.hurtSound();
+                case "death" -> snapshot.deathSound();
+                default -> snapshot.ambientSound();
+            };
+        }
+        if (soundId == null || soundId.isBlank()) {
             return null;
         }
+        ResourceLocation rl = soundId.contains(":")
+                ? ResourceLocation.tryParse(soundId)
+                : ResourceLocation.tryParse("minecraft:" + soundId);
+        if (rl == null) {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    "Ignoring invalid " + slot + " sound id '" + soundId + "'");
+            return null;
+        }
+        return BuiltInRegistries.SOUND_EVENT.getOptional(rl).orElse(null);
     }
 }

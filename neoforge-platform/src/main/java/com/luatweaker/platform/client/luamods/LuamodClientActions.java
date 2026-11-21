@@ -41,30 +41,22 @@ public final class LuamodClientActions {
      */
     public static @NotNull java.util.Set<String> updateAvailableIds() {
         java.util.Set<String> ids = new java.util.HashSet<>();
-        try {
-            for (com.luatweaker.update.UpdateStatus status : com.luatweaker.update.UpdateServiceImpl.getUpdates()) {
-                if (status != null && status.modId() != null) {
-                    ids.add(status.modId());
-                }
+        for (com.luatweaker.update.UpdateStatus status : com.luatweaker.update.UpdateServiceImpl.getUpdates()) {
+            if (status != null && status.modId() != null) {
+                ids.add(status.modId());
             }
-        } catch (Exception ignored) {
-            // Update module absent: no badges, never a crash.
         }
         return ids;
     }
 
     /** One-line update hint for the detail screen, or {@code null} when up to date. */
     public static @Nullable String updateInfoFor(@NotNull String modId) {
-        try {
-            for (com.luatweaker.update.UpdateStatus status : com.luatweaker.update.UpdateServiceImpl.getUpdates()) {
-                if (status != null && modId.equals(status.modId()) && status.latestVersion() != null) {
-                    String name = status.updateName();
-                    return "update: v" + status.currentVersion() + " -> v" + status.latestVersion()
-                            + ((name == null || name.isBlank()) ? "" : " (" + name + ")");
-                }
+        for (com.luatweaker.update.UpdateStatus status : com.luatweaker.update.UpdateServiceImpl.getUpdates()) {
+            if (status != null && modId.equals(status.modId()) && status.latestVersion() != null) {
+                String name = status.updateName();
+                return "update: v" + status.currentVersion() + " -> v" + status.latestVersion()
+                        + ((name == null || name.isBlank()) ? "" : " (" + name + ")");
             }
-        } catch (Exception ignored) {
-            // Update module absent.
         }
         return null;
     }
