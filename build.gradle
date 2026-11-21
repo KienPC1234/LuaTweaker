@@ -59,11 +59,31 @@ tasks.register('pmdCanary', org.gradle.api.plugins.quality.Pmd) {
     ignoreFailures = true
     reports {
         xml.required.set(true)
+        xml.outputLocation.set(rootProject.layout.buildDirectory.file('reports/pmd/canary.xml'))
         html.required.set(false)
     }
+}
+
+// The assertion lives in its own task on purpose: when the probe directory has no
+// *.java file, Gradle skips the Pmd task as NO-SOURCE and `doLast` never runs, so a
+// deleted/renamed probe would make the canary pass while proving nothing. This task
+// always runs and verifies both that the analysis executed and what it reported.
+def canaryProbe = rootProject.file('config/pmd/probe/Probe.java')
+def canaryReportFile = rootProject.layout.buildDirectory.file('reports/pmd/canary.xml').get().asFile
+tasks.register('pmdCanaryVerify') {
+    group = 'verification'
+    description = 'Asserts the PMD canary analysis ran and reported the expected finding.'
+    dependsOn 'pmdCanary'
     doLast {
-        def reportFile = reports.xml.outputLocation.get().asFile
-        def found = new groovy.xml.XmlSlurper(false, false).parse(reportFile)
+        // A missing probe makes the Pmd task NO-SOURCE, which silently proves nothing.
+        if (!canaryProbe.isFile()) {
+            throw new GradleException(
+                    "PMD canary failed: ${canaryProbe} is missing, so the gate would prove nothing.")
+        }
+        if (!canaryReportFile.isFile()) {
+            throw new GradleException("PMD canary failed: no report was written to ${canaryReportFile}.")
+        }
+        def found = new groovy.xml.XmlSlurper(false, false).parse(canaryReportFile)
                 .file.violation.collect { it.'@rule'.text() }
         if (found != ['SystemPrintln']) {
             throw new GradleException(
@@ -87,7 +107,7 @@ subprojects {
     }
 
     tasks.withType(org.gradle.api.plugins.quality.Pmd).configureEach {
-        dependsOn rootProject.tasks.named('pmdCanary')
+        dependsOn rootProject.tasks.named('pmdCanaryVerify')
         reports {
             xml.required.set(true)
             html.required.set(true)
