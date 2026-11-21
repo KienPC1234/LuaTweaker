@@ -105,7 +105,7 @@ public class NeoForgeEntityPlatform implements IPlatformEntity {
                 java.util.UUID id = java.util.UUID.fromString(uuid);
                 net.minecraft.server.level.ServerPlayer player = server.getPlayerList().getPlayer(id);
                 if (player != null) {
-                    return new com.luatweaker.platform.entity.NeoForgePlayerWrapper(player);
+                    return new NeoForgePlayerWrapper(player);
                 }
             } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
         }
@@ -118,7 +118,7 @@ public class NeoForgeEntityPlatform implements IPlatformEntity {
         if (server != null) {
             java.util.List<com.luatweaker.api.entity.IPlayer> list = new java.util.ArrayList<>();
             for (net.minecraft.server.level.ServerPlayer player : server.getPlayerList().getPlayers()) {
-                list.add(new com.luatweaker.platform.entity.NeoForgePlayerWrapper(player));
+                list.add(new NeoForgePlayerWrapper(player));
             }
             return list;
         }

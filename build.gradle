@@ -25,6 +25,35 @@ allprojects {
     }
 }
 
+// PMD static analysis (dirty-code scan, see config/pmd/ruleset.xml).
+// Run: ./gradlew pmdMain pmdTest   (reports: <module>/build/reports/pmd/)
+// Flip ignoreFailures to false once the baseline is clean so CI rejects new dirt.
+subprojects {
+    apply plugin: 'pmd'
+
+    pmd {
+        toolVersion = pmd_version
+        ruleSetFiles = files(rootProject.file('config/pmd/ruleset.xml'))
+        ruleSets = []
+        ignoreFailures = true
+        consoleOutput = true
+    }
+
+    tasks.withType(org.gradle.api.plugins.quality.Pmd).configureEach {
+        reports {
+            xml.required.set(true)
+            html.required.set(true)
+        }
+    }
+
+    // PMD runs as part of `check` / `build` in every module.
+    plugins.withId('java') {
+        tasks.named('check') {
+            dependsOn('pmdMain', 'pmdTest')
+        }
+    }
+}
+
 
 // Ensure all subproject jars exist before the IDE sync task runs.
 // This prevents "archive does not exist" classpath errors after a clean build.

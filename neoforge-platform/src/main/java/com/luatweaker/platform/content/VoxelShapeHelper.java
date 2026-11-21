@@ -34,7 +34,7 @@ public final class VoxelShapeHelper {
     }
 
     public static Map<Direction, VoxelShape> buildHorizontalShapes(List<BoxSpec> boxes) {
-        Map<Direction, VoxelShape> map = new EnumMap<>(Direction.class);
+        var map = new EnumMap<Direction, VoxelShape>(Direction.class);
         if (boxes == null || boxes.isEmpty()) {
             VoxelShape full = Shapes.block();
             for (Direction d : Direction.values()) {

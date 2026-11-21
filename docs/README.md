@@ -11,6 +11,7 @@ do not implement from them.
 | [GETTING_STARTED](GETTING_STARTED.md) | Install, run client/server, set up IDE stubs, use `/lt` commands. |
 | [SCRIPTING_GUIDE](SCRIPTING_GUIDE.md) | Learn the `require` + Builder + Signal conventions with correct examples. |
 | [LUA_MOD_SYSTEM](LUA_MOD_SYSTEM.md) | Package an autonomous `luamods/` mod (manifest, config, lifecycle, IPC). |
+| [JSON_API](JSON_API.md) | `Json` service (encode/decode), `mod:Files():ReadJson`, `mod:Exports():WriteJson`. |
 | [ARCHITECTURE_AND_SECURITY](ARCHITECTURE_AND_SECURITY.md) | Understand PAL, module boundaries, sandbox rules. |
 | [TROUBLESHOOTING](TROUBLESHOOTING.md) | Diagnose load errors, logs, loop limits. |
 
@@ -21,6 +22,7 @@ do not implement from them.
 | [CUSTOM_CONTENT](CUSTOM_CONTENT.md) | `Content` builders: items, blocks, fluids, entities (`rig()`), storage, datapacks. |
 | [GECKOLIB_ANIMATIONS](GECKOLIB_ANIMATIONS.md) | GeckoLib 4 custom 3D animated models and animation triggers for items, blocks, entities. |
 | [RECIPES](RECIPES.md) | `Recipe` builders: shaped/shapeless, smelting, smithing, anvil, brewing, trades. |
+| [DATA_DRIVEN_RECIPES_AND_CAPABILITIES](DATA_DRIVEN_RECIPES_AND_CAPABILITIES.md) | Generic data-driven recipes (Mekanism/Create) and OOP block capability transfer API. |
 | [WORLDGEN](WORLDGEN.md) | `Worldgen` (ore/vegetation/biome mods), `Biomes:Define`, structures, mixed veins. |
 | [MOB_AND_SPAWN](MOB_AND_SPAWN.md) | Spawning, AI goals, loot tables (`Loot`). |
 | [BLOCK_CAPABILITY_API](BLOCK_CAPABILITY_API.md) | RF/FE machines: energy/fluid/item capabilities. |
@@ -39,6 +41,7 @@ do not implement from them.
 | Doc | Covers |
 | :--- | :--- |
 | [CLIENT_AND_SOUND_API](CLIENT_AND_SOUND_API.md) | `GuiService` HUD, `KeyBindService`, `ClientEffects`, sounds. |
+| [IMGUI_API](IMGUI_API.md) | `ImGui` advanced panels: `OnFrame` rule, widgets, item slots, input gating. |
 | [COMMANDS](COMMANDS.md) | `/lt` diagnostics + `Commands:Register` for Lua-owned `/<cmd>`. |
 | [ADDON_DEVELOPER_GUIDE](ADDON_DEVELOPER_GUIDE.md) | Third-party Java plugins (`ILuaTweakerPlugin`), templates. |
 | [JAVA_PATCHER](JAVA_PATCHER.md) | `LuaTweaker.Runtime`: class resolution, proxies, gated bytecode hooks. |

@@ -1,26 +1,27 @@
 package com.luatweaker.api.network;
 
 import com.luatweaker.api.annotation.LuaDoc;
+import com.luatweaker.api.doc.LuaDocFragments;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 
 @LuaDoc(description = "Rocket Network Service for managing client-server packet channels, RemoteEvents, and RemoteFunctions.")
 public interface IRocketNetworkService {
 
-    @LuaDoc(description = "Registers a remote event channel.", params = {"channelName: string"}, returnType = "any")
+    @LuaDoc(description = "Registers a remote event channel.", params = {LuaDocFragments.Network.CHANNEL_NAME}, returnType = "any")
     ILuaTable GetOrCreateRemoteEvent(String channelName);
 
     @LuaDoc(description = "Registers a remote function channel for two-way request-response.", params = {"functionName: string"}, returnType = "any")
     ILuaTable GetOrCreateRemoteFunction(String functionName);
 
-    @LuaDoc(description = "Fires a remote event from server to a specific player.", params = {"channelName: string", "playerUuid: string", "args: table"})
-    void FireClient(String channelName, String playerUuid, ILuaValue[] args);
+    @LuaDoc(description = "Fires a remote event from server to a specific player.", params = {LuaDocFragments.Network.CHANNEL_NAME, LuaDocFragments.Network.PLAYER_UUID, LuaDocFragments.Network.ARGS_TABLE})
+    void FireClient(String channelName, String playerUuid, ILuaValue... args);
 
-    @LuaDoc(description = "Fires a remote event from server to all players.", params = {"channelName: string", "args: table"})
-    void FireAllClients(String channelName, ILuaValue[] args);
+    @LuaDoc(description = "Fires a remote event from server to all players.", params = {LuaDocFragments.Network.CHANNEL_NAME, LuaDocFragments.Network.ARGS_TABLE})
+    void FireAllClients(String channelName, ILuaValue... args);
 
-    @LuaDoc(description = "Fires a remote event from client to server.", params = {"channelName: string", "args: table"})
-    void FireServer(String channelName, ILuaValue[] args);
+    @LuaDoc(description = "Fires a remote event from client to server.", params = {LuaDocFragments.Network.CHANNEL_NAME, LuaDocFragments.Network.ARGS_TABLE})
+    void FireServer(String channelName, ILuaValue... args);
 
     /**
      * Starts a RemoteFunction round trip to the server and returns its correlation id.
@@ -33,10 +34,10 @@ public interface IRocketNetworkService {
      */
     @LuaDoc(
         description = "Starts a RemoteFunction request to the server and returns the request id.",
-        params = {"functionName: string", "args: table"},
+        params = {"functionName: string", LuaDocFragments.Network.ARGS_TABLE},
         returnType = "string"
     )
-    String RpcInvokeServer(String functionName, ILuaValue[] args);
+    String RpcInvokeServer(String functionName, ILuaValue... args);
 
     /**
      * Starts a RemoteFunction round trip to one client and returns its correlation id.
@@ -45,10 +46,10 @@ public interface IRocketNetworkService {
      */
     @LuaDoc(
         description = "Starts a RemoteFunction request to one client and returns the request id.",
-        params = {"functionName: string", "playerUuid: string", "args: table"},
+        params = {"functionName: string", LuaDocFragments.Network.PLAYER_UUID, LuaDocFragments.Network.ARGS_TABLE},
         returnType = "string"
     )
-    String RpcInvokeClient(String functionName, String playerUuid, ILuaValue[] args);
+    String RpcInvokeClient(String functionName, String playerUuid, ILuaValue... args);
 
     /**
      * Pops the state of a pending request.
@@ -90,10 +91,10 @@ public interface IRocketNetworkService {
     void OnRpcResult(String requestId, byte[] payload, String error);
 
     @LuaDoc(description = "Routes a client packet message received by server to active listeners.",
-            params = {"channelName: string", "playerUuid: string", "data: bytes"})
+            params = {LuaDocFragments.Network.CHANNEL_NAME, LuaDocFragments.Network.PLAYER_UUID, "data: bytes"})
     void OnClientFired(String channelName, String playerUuid, byte[] data);
 
     @LuaDoc(description = "Routes a server packet message received by client to active listeners.",
-            params = {"channelName: string", "playerUuid: string", "data: bytes"})
+            params = {LuaDocFragments.Network.CHANNEL_NAME, LuaDocFragments.Network.PLAYER_UUID, "data: bytes"})
     void OnServerFired(String channelName, String playerUuid, byte[] data);
 }

@@ -22,7 +22,7 @@ public final class CoreCommandNames {
     /** Command roots and names owned by LuaTweaker or by vanilla Minecraft. */
     public static final Set<String> RESERVED = Set.of(
             "lt", "luatweaker",
-            "reload", "hand", "syntax", "list", "debug", "doctor", "help"
+            "reload", "hand", "syntax", "list", "debug", "doctor", "help", "gui"
     );
 
     private CoreCommandNames() {}

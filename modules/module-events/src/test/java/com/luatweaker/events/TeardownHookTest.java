@@ -1,104 +1,113 @@
 package com.luatweaker.events;
 
-import com.luatweaker.core.vm.LuaEngineFactory;
-
 import com.luatweaker.api.event.EventNames;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaValue;
+import com.luatweaker.core.logger.AsyncFileLogger;
+import com.luatweaker.core.vm.LuaEngineFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import com.luatweaker.core.logger.AsyncFileLogger;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class TeardownHookTest {
+class TeardownHookTest {
+
+    private static final String LISTEN_UNLOAD =
+            "Events:Listen('OnScriptUnload', function()\n";
+    private static final String END_LISTEN = "end)";
 
     @AfterAll
-    public static void shutdownLogger() {
+    static void shutdownLogger() {
         AsyncFileLogger.get().shutdown();
     }
 
     @BeforeEach
-    void setup() {
+    void setUp() {
         EventServiceImpl.fireTeardownHooks();
     }
 
     @Test
-    void testOnScriptUnload_CalledOnTeardown() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        EventLuaBinding.registerBindings(engine);
-
-        engine.executeString(
-            "_G._teardownCalled = false\n" +
-            "Events:Listen('OnScriptUnload', function()\n" +
-            "    _G._teardownCalled = true\n" +
-            "end)",
-            "register_teardown"
-        );
+    void onScriptUnloadIsCalledOnTeardown() {
+        ILuaEngine engine = runScript(
+            "_G._teardownCalled = false\n"
+            + LISTEN_UNLOAD
+            + "    _G._teardownCalled = true\n"
+            + END_LISTEN);
 
         EventServiceImpl.fireTeardownHooks();
 
         ILuaValue result = engine.getGlobalEnvironment().rawget("_teardownCalled");
-        assertNotNull(result, "teardown flag should exist");
-        assertTrue(result.asBoolean(), "OnScriptUnload callback should have been called");
+        assertTrue(result != null && result.asBoolean(),
+                "the OnScriptUnload callback must have been called during teardown");
     }
 
     @Test
-    void testOnScriptUnload_ListenersClearedAfterTeardown() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        EventLuaBinding.registerBindings(engine);
-
-        engine.executeString(
-            "_G._callCount = 0\n" +
-            "Events:Listen('OnScriptUnload', function()\n" +
-            "    _G._callCount = _G._callCount + 1\n" +
-            "end)",
-            "register_teardown"
-        );
+    void onScriptUnloadListenerRunsOncePerTeardown() {
+        ILuaEngine engine = runScript(
+            "_G._callCount = 0\n"
+            + LISTEN_UNLOAD
+            + "    _G._callCount = _G._callCount + 1\n"
+            + END_LISTEN);
 
         EventServiceImpl.fireTeardownHooks();
 
-        ILuaValue firstCall = engine.getGlobalEnvironment().rawget("_callCount");
-        assertEquals(1, firstCall.asInt(), "Should be called once");
+        assertEquals(1, engine.getGlobalEnvironment().rawget("_callCount").asInt(),
+                "the teardown callback must run exactly once");
+    }
 
+    @Test
+    void teardownClearsListenersSoTheyDoNotRunAgain() {
+        ILuaEngine engine = runScript(
+            "_G._callCount = 0\n"
+            + LISTEN_UNLOAD
+            + "    _G._callCount = _G._callCount + 1\n"
+            + END_LISTEN);
+        EventServiceImpl.fireTeardownHooks();
         engine.executeString("_G._callCount = 0", "reset_counter");
+
         EventServiceImpl.fireTeardownHooks();
 
-        ILuaValue secondCall = engine.getGlobalEnvironment().rawget("_callCount");
-        assertEquals(0, secondCall.asInt(), "Should NOT be called again (listeners cleared)");
+        assertEquals(0, engine.getGlobalEnvironment().rawget("_callCount").asInt(),
+                "a second teardown must not re-run the already cleared listener");
     }
 
     @Test
-    void testOnScriptUnload_ReplaceSemantics() {
+    void onlyTheLastTeardownListenerIsKept() {
+        ILuaEngine engine = runScript(
+            "_G._whichCallback = 'none'\n"
+            + LISTEN_UNLOAD
+            + "    _G._whichCallback = 'first'\n"
+            + END_LISTEN
+            + "\n"
+            + LISTEN_UNLOAD
+            + "    _G._whichCallback = 'second'\n"
+            + END_LISTEN);
+
+        EventServiceImpl.fireTeardownHooks();
+
+        assertEquals("second", engine.getGlobalEnvironment().rawget("_whichCallback").asString(),
+                "Listen must replace the previous teardown listener (replace semantics)");
+    }
+
+    @Test
+    void teardownWithoutListenersDoesNotThrow() {
+        assertDoesNotThrow(EventServiceImpl::fireTeardownHooks,
+                "teardown with no listeners must be a no-op instead of an error");
+    }
+
+    @Test
+    void eventNameConstantPointAtOnScriptUnload() {
+        assertEquals("OnScriptUnload", EventNames.ON_SCRIPT_UNLOAD,
+                "EventNames.ON_SCRIPT_UNLOAD must name the teardown event");
+    }
+
+    private static ILuaEngine runScript(String script) {
         ILuaEngine engine = LuaEngineFactory.create(false);
         EventLuaBinding.registerBindings(engine);
-
-        engine.executeString(
-            "_G._whichCallback = 'none'\n" +
-            "Events:Listen('OnScriptUnload', function()\n" +
-            "    _G._whichCallback = 'first'\n" +
-            "end)\n" +
-            "Events:Listen('OnScriptUnload', function()\n" +
-            "    _G._whichCallback = 'second'\n" +
-            "end)",
-            "register_two"
-        );
-
-        EventServiceImpl.fireTeardownHooks();
-
-        ILuaValue result = engine.getGlobalEnvironment().rawget("_whichCallback");
-        assertEquals("second", result.asString(), "Only the last listener should be called (replace semantics)");
-    }
-
-    @Test
-    void testOnScriptUnload_NoListenerDoesNotCrash() {
-        assertDoesNotThrow(() -> EventServiceImpl.fireTeardownHooks(),
-                "Teardown with no listeners should not throw");
-    }
-
-    @Test
-    void testEventNames_Constant() {
-        assertEquals("OnScriptUnload", EventNames.ON_SCRIPT_UNLOAD);
+        engine.executeString(script, "register_teardown");
+        return engine;
     }
 }

@@ -1,5 +1,6 @@
 package com.luatweaker.platform.container;
 
+import com.luatweaker.api.content.MachineBarSpec;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -13,6 +14,8 @@ import org.jetbrains.annotations.Nullable;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.ToIntFunction;
 
 /**
  * Generic container menu for Lua-configured container blocks. The container region is a
@@ -24,7 +27,7 @@ import java.util.Set;
  * the grid position of a single slot and {@code lockSlot} makes a slot reject insertions
  * and pickups (shift-click included).</p>
  */
-public class CustomContainerMenu extends AbstractContainerMenu {
+public final class CustomContainerMenu extends AbstractContainerMenu {
 
     private final Container container;
     private final int containerRows;
@@ -45,27 +48,36 @@ public class CustomContainerMenu extends AbstractContainerMenu {
     private int blockPosX;
     private int blockPosY;
     private int blockPosZ;
-    private final Map<String, Integer> customValues = new java.util.HashMap<>();
+    /** Data-slot writers run on the network thread; the render thread reads it. */
+    private final Map<String, Integer> customValues = new ConcurrentHashMap<>();
 
     public CustomContainerMenu(@Nullable MenuType<?> menuType, int containerId, @NotNull Inventory playerInventory,
-                              @NotNull Container container, int containerRows, int containerCols) {
+                               @NotNull Container container, int containerRows, int containerCols) {
         this(menuType, containerId, playerInventory, container, containerRows, containerCols, null, null);
     }
 
     public CustomContainerMenu(@Nullable MenuType<?> menuType, int containerId, @NotNull Inventory playerInventory,
-                              @NotNull Container container, int containerRows, int containerCols,
-                              @Nullable Map<Integer, int[]> slotPositions,
-                              @Nullable Set<Integer> lockedSlots) {
+                               @NotNull Container container, int containerRows, int containerCols,
+                               @Nullable Map<Integer, int[]> slotPositions,
+                               @Nullable Set<Integer> lockedSlots) {
         super(menuType, containerId);
         this.container = container;
         this.containerRows = containerRows;
         this.containerCols = containerCols;
         this.startX = ContainerLayout.containerStartX(containerCols);
+        addContainerSlots(container, containerRows, containerCols, slotPositions, lockedSlots);
+        addPlayerSlots(playerInventory);
+        CustomContainerBlockEntity machine = container instanceof CustomContainerBlockEntity be ? be : null;
+        addMachineDataSlots(machine, menuType);
+    }
 
-        for (int row = 0; row < containerRows; row++) {
-            for (int col = 0; col < containerCols; col++) {
-                int index = row * containerCols + col;
-                int x = defaultX(col);
+    private void addContainerSlots(Container container, int rows, int cols,
+                                    @Nullable Map<Integer, int[]> slotPositions,
+                                    @Nullable Set<Integer> lockedSlots) {
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < cols; col++) {
+                int index = row * cols + col;
+                int x = startX + col * ContainerLayout.CELL;
                 int y = ContainerLayout.containerY(row);
                 int[] custom = slotPositions != null ? slotPositions.get(index) : null;
                 if (custom != null && custom.length >= 2) {
@@ -73,51 +85,79 @@ public class CustomContainerMenu extends AbstractContainerMenu {
                     y = custom[1];
                 }
                 boolean locked = lockedSlots != null && lockedSlots.contains(index);
-                addSlot(new ContainerFilteredSlot(container, index, x, y, locked));
+                addSlot(containerSlot(container, index, x, y, locked));
             }
         }
+    }
 
+    private static Slot containerSlot(Container container, int index, int x, int y, boolean locked) {
+        return new ContainerFilteredSlot(container, index, x, y, locked);
+    }
+
+    private void addPlayerSlots(Inventory playerInventory) {
         for (int row = 0; row < PLAYER_INV_ROWS; row++) {
             for (int col = 0; col < PLAYER_INV_COLS; col++) {
-                addSlot(new Slot(playerInventory, col + row * PLAYER_INV_COLS + PLAYER_INV_COLS,
-                        ContainerLayout.LEFT_MARGIN + col * ContainerLayout.CELL, ContainerLayout.playerY(row, containerRows)));
+                addSlot(playerSlot(playerInventory, col + row * PLAYER_INV_COLS + PLAYER_INV_COLS,
+                        col, ContainerLayout.playerY(row, containerRows)));
             }
         }
-
         for (int col = 0; col < PLAYER_INV_COLS; col++) {
-            addSlot(new Slot(playerInventory, col, ContainerLayout.LEFT_MARGIN + col * ContainerLayout.CELL, ContainerLayout.hotbarY(containerRows)));
+            addSlot(playerSlot(playerInventory, col, col, ContainerLayout.hotbarY(containerRows)));
         }
+    }
 
-        // Machine values synced to the client while the menu is open (bars).
-        CustomContainerBlockEntity machine = container instanceof CustomContainerBlockEntity be ? be : null;
-        addMachineDataSlot(() -> machine != null ? machine.getEnergyStored() : 0, v -> energyStored = v);
-        addMachineDataSlot(() -> machine != null ? machine.getEnergyCapacity() : 0, v -> energyCapacity = v);
-        addMachineDataSlot(() -> machine != null ? machine.getFluidAmount() : 0, v -> fluidAmount = v);
-        addMachineDataSlot(() -> machine != null ? machine.getFluidCapacity() : 0, v -> fluidCapacity = v);
-        addMachineDataSlot(() -> machine != null ? Math.round(machine.getProgress() * PROGRESS_SCALE) : 0, v -> progressFixed = v);
-        addMachineDataSlot(() -> machine != null ? machine.getBlockPos().getX() : 0, v -> blockPosX = v);
-        addMachineDataSlot(() -> machine != null ? machine.getBlockPos().getY() : 0, v -> blockPosY = v);
-        addMachineDataSlot(() -> machine != null ? machine.getBlockPos().getZ() : 0, v -> blockPosZ = v);
+    private static Slot playerSlot(Inventory playerInventory, int index, int col, int y) {
+        return new Slot(playerInventory, index, ContainerLayout.LEFT_MARGIN + col * ContainerLayout.CELL, y);
+    }
 
-        if (menuType != null) {
-            List<com.luatweaker.api.content.MachineBarSpec> bars = CustomContainerRegistry.CONTAINER_BARS.get(menuType);
-            if (bars != null) {
-                for (com.luatweaker.api.content.MachineBarSpec bar : bars) {
-                    if (bar.currentKey() != null) {
-                        String k = bar.currentKey();
-                        addMachineDataSlot(() -> machine != null ? machine.getCustomNumericValue(k) : 0, v -> customValues.put(k, v));
-                    }
-                    if (bar.maxKey() != null) {
-                        String mk = bar.maxKey();
-                        addMachineDataSlot(() -> machine != null ? machine.getCustomNumericValue(mk) : 0, v -> customValues.put(mk, v));
-                    }
-                }
+    /** Machine values synced to the client while the menu is open (bars). */
+    private void addMachineDataSlots(@Nullable CustomContainerBlockEntity machine, @Nullable MenuType<?> menuType) {
+        addCoreMachineDataSlots(machine);
+        List<MachineBarSpec> bars = menuType != null ? CustomContainerRegistry.CONTAINER_BARS.get(menuType) : null;
+        if (bars == null) {
+            return;
+        }
+        for (MachineBarSpec bar : bars) {
+            if (bar.currentKey() != null) {
+                String currentKey = bar.currentKey();
+                addMachineDataSlot(() -> readMachineValue(machine, m -> m.getCustomNumericValue(currentKey)),
+                        value -> customValues.put(currentKey, value));
+            }
+            if (bar.maxKey() != null) {
+                String maxKey = bar.maxKey();
+                addMachineDataSlot(() -> readMachineValue(machine, m -> m.getCustomNumericValue(maxKey)),
+                        value -> customValues.put(maxKey, value));
             }
         }
     }
 
     public int getCustomValue(@Nullable String key) {
         return key != null ? customValues.getOrDefault(key, 0) : 0;
+    }
+
+    /**
+     * Reads one value from the machine, or {@code 0} when the menu was opened without a
+     * machine (client-side screens read the value back from the synced data slots instead).
+     */
+    private static int readMachineValue(@Nullable CustomContainerBlockEntity machine,
+                                        ToIntFunction<CustomContainerBlockEntity> reader) {
+        return machine != null ? reader.applyAsInt(machine) : 0;
+    }
+
+    private void addCoreMachineDataSlots(@Nullable CustomContainerBlockEntity machine) {
+        addMachineDataSlot(() -> readMachineValue(machine, CustomContainerBlockEntity::getEnergyStored),
+                value -> energyStored = value);
+        addMachineDataSlot(() -> readMachineValue(machine, CustomContainerBlockEntity::getEnergyCapacity),
+                value -> energyCapacity = value);
+        addMachineDataSlot(() -> readMachineValue(machine, CustomContainerBlockEntity::getFluidAmount),
+                value -> fluidAmount = value);
+        addMachineDataSlot(() -> readMachineValue(machine, CustomContainerBlockEntity::getFluidCapacity),
+                value -> fluidCapacity = value);
+        addMachineDataSlot(() -> readMachineValue(machine, m -> Math.round(m.getProgress() * PROGRESS_SCALE)),
+                value -> progressFixed = value);
+        addMachineDataSlot(() -> readMachineValue(machine, m -> m.getBlockPos().getX()), value -> blockPosX = value);
+        addMachineDataSlot(() -> readMachineValue(machine, m -> m.getBlockPos().getY()), value -> blockPosY = value);
+        addMachineDataSlot(() -> readMachineValue(machine, m -> m.getBlockPos().getZ()), value -> blockPosZ = value);
     }
 
     private void addMachineDataSlot(java.util.function.IntSupplier reader, java.util.function.IntConsumer writer) {
@@ -155,10 +195,6 @@ public class CustomContainerMenu extends AbstractContainerMenu {
         return progressFixed / (float) PROGRESS_SCALE;
     }
 
-    private int defaultX(int col) {
-        return startX + col * ContainerLayout.CELL;
-    }
-
     public int getContainerRows() {
         return containerRows;
     }
@@ -179,31 +215,34 @@ public class CustomContainerMenu extends AbstractContainerMenu {
     @Override
     @NotNull
     public ItemStack quickMoveStack(@NotNull Player player, int index) {
-        ItemStack moved = ItemStack.EMPTY;
         Slot slot = this.slots.get(index);
-        if (slot != null && slot.hasItem()) {
-            if (slot instanceof ContainerFilteredSlot filtered && filtered.isLocked()) {
-                return ItemStack.EMPTY;
-            }
-            ItemStack stack = slot.getItem();
-            moved = stack.copy();
-            if (index < container.getContainerSize()) {
-                if (!moveItemStackTo(stack, container.getContainerSize(), this.slots.size(), true)) {
-                    return ItemStack.EMPTY;
-                }
-            } else if (!moveItemStackTo(stack, 0, container.getContainerSize(), false)) {
-                return ItemStack.EMPTY;
-            }
-            if (stack.isEmpty()) {
-                slot.setByPlayer(ItemStack.EMPTY);
-            } else {
-                slot.setChanged();
-            }
-            if (stack.getCount() == moved.getCount()) {
-                return ItemStack.EMPTY;
-            }
-            slot.onTake(player, stack);
+        if (slot == null || !slot.hasItem()) {
+            return ItemStack.EMPTY;
         }
+        if (slot instanceof ContainerFilteredSlot filtered && filtered.isLocked()) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack stack = slot.getItem();
+        ItemStack moved = stack.copy();
+        int containerSize = container.getContainerSize();
+        boolean movedToInventory = index < containerSize
+                ? moveItemStackTo(stack, containerSize, this.slots.size(), true)
+                : moveItemStackTo(stack, 0, containerSize, false);
+        if (!movedToInventory) {
+            return ItemStack.EMPTY;
+        }
+        if (stack.isEmpty()) {
+            slot.setByPlayer(ItemStack.EMPTY);
+        } else {
+            slot.setChanged();
+        }
+        if (stack.getCount() == moved.getCount()) {
+            return ItemStack.EMPTY;
+        }
+        slot.onTake(player, stack);
         return moved;
     }
 }
+
+
+

@@ -1,6 +1,7 @@
 package com.luatweaker.platform;
 
 import com.luatweaker.api.objects.IItem;
+import net.minecraft.ResourceLocationException;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
@@ -29,7 +30,8 @@ public class NeoForgeItem implements IItem {
         try {
             var tagKey = TagKey.create(Registries.ITEM, ResourceLocation.parse(tagId));
             return stack.is(tagKey);
-        } catch (Exception e) {
+        } catch (ResourceLocationException e) {
+            // A malformed tag id simply is not a tag this stack carries.
             return false;
         }
     }

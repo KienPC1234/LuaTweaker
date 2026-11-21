@@ -8,6 +8,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class ClientMobParentRegistry {
+    private static final String FALLBACK_RENDERER = "zombie";
+
+
+    private ClientMobParentRegistry() {
+    }
+    @FunctionalInterface
     public interface RendererFactory {
         EntityRenderer<?> create(EntityRendererProvider.Context ctx, ResourceLocation texture);
     }
@@ -23,24 +29,24 @@ public final class ClientMobParentRegistry {
     }
 
     public static RendererFactory getFactory(String id) {
-        if (id == null) return RENDERERS.get("zombie");
-        String clean = id.toLowerCase();
+        if (id == null) { return RENDERERS.get(FALLBACK_RENDERER); }
+        String clean = id.toLowerCase(java.util.Locale.ROOT);
         RendererFactory factory = RENDERERS.get(clean);
-        if (factory == null && !"zombie".equals(clean)) {
+        if (factory == null && !FALLBACK_RENDERER.equals(clean)) {
             com.luatweaker.api.log.LuaTweakerLog.get().warn(
                     com.luatweaker.api.log.LogStage.SYSTEM,
                     "No custom renderer for parent '" + id + "': falling back to the zombie renderer "
                             + "(visuals will be wrong). Use rig('humanoid' | 'quadruped') for a texture-driven generic renderer.");
-            return RENDERERS.get("zombie");
+            return RENDERERS.get(FALLBACK_RENDERER);
         }
-        return factory != null ? factory : RENDERERS.get("zombie");
+        return factory != null ? factory : RENDERERS.get(FALLBACK_RENDERER);
     }
 
     private static void registerDefaults() {
-        register("zombie", (ctx, tex) -> new net.minecraft.client.renderer.entity.ZombieRenderer(ctx) {
+        register(FALLBACK_RENDERER, (ctx, tex) -> new net.minecraft.client.renderer.entity.ZombieRenderer(ctx) {
             @Override public ResourceLocation getTextureLocation(net.minecraft.world.entity.monster.Zombie entity) { return tex; }
         });
-        register("skeleton", (ctx, tex) -> new net.minecraft.client.renderer.entity.SkeletonRenderer(ctx) {
+        register("skeleton", (ctx, tex) -> new net.minecraft.client.renderer.entity.SkeletonRenderer<>(ctx) {
             @Override public ResourceLocation getTextureLocation(net.minecraft.world.entity.monster.AbstractSkeleton entity) { return tex; }
         });
         register("creeper", (ctx, tex) -> new net.minecraft.client.renderer.entity.CreeperRenderer(ctx) {

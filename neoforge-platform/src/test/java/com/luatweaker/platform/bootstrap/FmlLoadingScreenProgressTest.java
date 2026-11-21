@@ -20,16 +20,29 @@ class FmlLoadingScreenProgressTest {
                 .toList();
     }
 
-    @Test
-    void reportsEveryStepOnTheFmlLoadingScreen() {
+    private static List<String> messagesAfterFullLoad(String modId, int totalMods) {
         FmlLoadingScreenProgress progress = new FmlLoadingScreenProgress();
 
-        progress.onModStart(1, 2, "alpha_mod");
-        progress.onLoadComplete(2, 2);
+        progress.onModStart(1, totalMods, modId);
+        progress.onLoadComplete(totalMods, totalMods);
 
-        List<String> messages = startupMessages();
-        assertTrue(messages.stream().anyMatch(m -> m.contains("alpha_mod (1/2)")), messages.toString());
-        assertTrue(messages.stream().anyMatch(m -> m.contains("LuaMods ready: 2/2")), messages.toString());
+        return startupMessages();
+    }
+
+    @Test
+    void reportsModStartLineOnTheFmlLoadingScreen() {
+        List<String> messages = messagesAfterFullLoad("alpha_mod", 2);
+
+        assertTrue(messages.stream().anyMatch(message -> message.contains("alpha_mod (1/2)")),
+                "the loading screen must show which mod started loading: " + messages);
+    }
+
+    @Test
+    void reportsReadyLineOnTheFmlLoadingScreen() {
+        List<String> messages = messagesAfterFullLoad("alpha_mod", 2);
+
+        assertTrue(messages.stream().anyMatch(message -> message.contains("LuaMods ready: 2/2")),
+                "the loading screen must show the final ready line: " + messages);
     }
 
     @Test
@@ -39,6 +52,7 @@ class FmlLoadingScreenProgressTest {
         progress.onModStart(1, 1, "mô_đun_việt");
 
         List<String> messages = startupMessages();
-        assertTrue(messages.stream().anyMatch(m -> m.contains("m_un_vit (1/1)")), messages.toString());
+        assertTrue(messages.stream().anyMatch(message -> message.contains("m_un_vit (1/1)")),
+                "non-ASCII mod ids must be sanitized instead of breaking the queue: " + messages);
     }
 }

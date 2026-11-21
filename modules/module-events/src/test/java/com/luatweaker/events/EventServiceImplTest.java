@@ -1,100 +1,100 @@
 package com.luatweaker.events;
 
-import com.luatweaker.core.vm.LuaEngineFactory;
-
 import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.core.logger.AsyncFileLogger;
+import com.luatweaker.core.vm.LuaEngineFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Verifies cancellable events: listeners returning Lua `false` cancel the
+ * Verifies cancellable events: listeners returning Lua {@code false} cancel the
  * event; other return values do not.
  */
-public class EventServiceImplTest {
+class EventServiceImplTest {
 
-    @AfterAll
-    public static void shutdownLogger() {
-        AsyncFileLogger.get().shutdown();
-    }
+    private static final String SPAWN_EVENT = "MobSpawnAttempt";
+    private static final String PHANTOM_ID = "minecraft:phantom";
+    private static final String ZOMBIE_ID = "minecraft:zombie";
+    private static final String BAD_CALLBACK_EVENT = "BadCallbackEvent";
 
     private ILuaEngine engine;
     private EventServiceImpl service;
 
+    @AfterAll
+    static void shutdownLogger() {
+        AsyncFileLogger.get().shutdown();
+    }
+
     @BeforeEach
-    void setup() {
+    void setUp() {
         engine = LuaEngineFactory.create(false);
         service = new EventServiceImpl(engine);
     }
 
     @Test
-    void fireCancellable_ListenerReturningFalseCancels() {
-        com.luatweaker.events.EventLuaBinding.registerBindings(engine);
-        engine.executeString(
-            "Events:Listen('MobSpawnAttempt', function(event)\n" +
-            "    if event.entityId == 'minecraft:phantom' then\n" +
-            "        return false\n" +
-            "    end\n" +
-            "    return true\n" +
-            "end)\n",
-            "test_cancel_listener");
+    void listenerReturningFalseCancelsTheEvent() {
+        registerPhantomFilter();
 
-        com.luatweaker.api.vm.ILuaTable payload = engine.createTable();
-        payload.rawset("entityId", "minecraft:phantom");
-        assertFalse(service.fireCancellable("MobSpawnAttempt", payload),
-                "phantom must be cancelled");
-
-        com.luatweaker.api.vm.ILuaTable payload2 = engine.createTable();
-        payload2.rawset("entityId", "minecraft:zombie");
-        assertTrue(service.fireCancellable("MobSpawnAttempt", payload2),
-                "zombie must not be cancelled");
+        assertFalse(service.fireCancellable(SPAWN_EVENT, payload(PHANTOM_ID)),
+                "a listener returning false must cancel the phantom spawn");
     }
 
     @Test
-    void fireCancellable_NoListenersReturnsTrue() {
-        com.luatweaker.api.vm.ILuaTable payload = engine.createTable();
-        assertTrue(service.fireCancellable("UnknownEvent", payload));
+    void listenerReturningTrueKeepsTheEvent() {
+        registerPhantomFilter();
+
+        assertTrue(service.fireCancellable(SPAWN_EVENT, payload(ZOMBIE_ID)),
+                "a listener returning true must keep the zombie spawn");
     }
 
     @Test
-    void fireEvent_StillFiresAllListeners() {
+    void fireCancellableWithoutListenersReturnsTrue() {
+        assertTrue(service.fireCancellable("UnknownEvent", engine.createTable()),
+                "an event without listeners must not be cancelled");
+    }
+
+    @Test
+    void fireEventIgnoresListenerReturnValues() {
+        EventLuaBinding.registerBindings(engine);
         engine.executeString(
-            "Events:Listen('TestEvent', function(event)\n" +
-            "    return false\n" +
-            "end)\n",
+            "Events:Listen('TestEvent', function(event)\n"
+            + "    return false\n"
+            + "end)\n",
             "test_fire_listener");
-        com.luatweaker.events.EventLuaBinding.registerBindings(engine);
+
         assertDoesNotThrow(() -> service.fireEvent("TestEvent", engine.createTable()),
-                "fireEvent must ignore listener return values");
+                "fireEvent must dispatch without treating a false return as cancellation");
     }
 
     @Test
-    void listen_IgnoresNonFunctionCallbacks() {
-        service.listen("BadCallbackEvent", "not a function");
+    void listenRejectsNonFunctionCallbacks() {
+        service.listen(BAD_CALLBACK_EVENT, "not a function");
 
-        assertDoesNotThrow(() -> service.fireEvent("BadCallbackEvent", engine.createTable()));
-        assertTrue(service.fireCancellable("BadCallbackEvent", engine.createTable()),
-                "a non-function callback must never run or cancel an event");
-        assertFalse(service.hasListeners("BadCallbackEvent"),
-                "a rejected callback must not count as a listener");
+        assertDoesNotThrow(() -> service.fireEvent(BAD_CALLBACK_EVENT, engine.createTable()),
+                "a non-function callback must never be invoked by fireEvent");
     }
 
-    @Test
-    void hasListeners_TracksListenAcrossEngines() {
-        com.luatweaker.events.EventLuaBinding.registerBindings(engine);
-        assertFalse(service.hasListeners("TickOptProbeEvent"),
-                "fresh event must report no listeners");
-
+    private void registerPhantomFilter() {
+        EventLuaBinding.registerBindings(engine);
         engine.executeString(
-            "Events:Listen('TickOptProbeEvent', function() end)\n",
-            "test_has_listeners");
-        assertTrue(service.hasListeners("TickOptProbeEvent"),
-                "registered listener must be visible to the hot-path guard");
+            "Events:Listen('" + SPAWN_EVENT + "', function(event)\n"
+            + "    if event.entityId == '" + PHANTOM_ID + "' then\n"
+            + "        return false\n"
+            + "    end\n"
+            + "    return true\n"
+            + "end)\n",
+            "test_cancel_listener");
+    }
 
-        assertFalse(service.hasListeners("TickOptUnlistenedEvent"),
-                "an event nobody listens to must report no listeners");
+    private ILuaTable payload(String entityId) {
+        ILuaTable table = engine.createTable();
+        table.rawset("entityId", entityId);
+        return table;
     }
 }

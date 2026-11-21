@@ -3,6 +3,7 @@ package com.luatweaker.core.stub;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -15,23 +16,23 @@ import org.jetbrains.annotations.NotNull;
  * Idempotent: re-registering the same name is a no-op for snapshot purposes.
  */
 public final class StubCatalog {
-    private static final Map<String, Class<?>> CATALOG = new LinkedHashMap<>();
+    private static final Map<String, Class<?>> CATALOG = new ConcurrentHashMap<>();
 
     private StubCatalog() {}
 
-    public static synchronized void register(@NotNull String name, @NotNull Class<?> api) {
+    public static void register(@NotNull String name, @NotNull Class<?> api) {
         if (name != null && api != null) {
             CATALOG.putIfAbsent(name, api);
         }
     }
 
     @NotNull
-    public static synchronized Map<String, Class<?>> snapshot() {
+    public static Map<String, Class<?>> snapshot() {
         return Collections.unmodifiableMap(new LinkedHashMap<>(CATALOG));
     }
 
     /** Test-only hook to isolate unit tests sharing this static registry. */
-    static synchronized void clearForTests() {
+    static void clearForTests() {
         CATALOG.clear();
     }
 }

@@ -14,7 +14,6 @@ import org.luava.runtime.LuaState;
  * Compilation stops before execution, so no script code is run.
  */
 public final class LuavaSyntaxChecker {
-    private static final String INTERNAL_ERROR_PREFIX = "Internal error: ";
     private static final String FILE_CHUNK_PREFIX = "@";
     private static final String LITERAL_CHUNK_PREFIX = "=";
 
@@ -41,8 +40,7 @@ public final class LuavaSyntaxChecker {
      */
     public static @Nullable String checkSyntax(@NotNull String chunkName, @NotNull String source) {
         String luaChunkName = toLuaChunkName(chunkName);
-        try {
-            LuaState state = new LuaState();
+        try (LuaState state = new LuaState()) {
             state.compile(source, luaChunkName, state.getGlobals());
             return null;
         } catch (LuaException e) {
@@ -50,9 +48,6 @@ public final class LuavaSyntaxChecker {
             return message != null ? message : e.toString();
         } catch (ParseException e) {
             return e.format(luaChunkName);
-        } catch (RuntimeException e) {
-            String message = e.getMessage();
-            return INTERNAL_ERROR_PREFIX + (message != null ? message : e.toString());
         }
     }
 }

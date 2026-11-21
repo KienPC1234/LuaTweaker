@@ -5,7 +5,10 @@ import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.core.bind.LuaBinder;
 import org.jetbrains.annotations.NotNull;
 
-public class BiomesLuaBinding {
+public final class BiomesLuaBinding {
+
+    private BiomesLuaBinding() {
+    }
 
     public static void registerBindings(@NotNull ILuaEngine engine) {
         BiomesServiceImpl service = new BiomesServiceImpl(engine);

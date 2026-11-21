@@ -73,44 +73,58 @@ public class NeoForgeContentPlatform implements IPlatformContent {
 
     @Override
     public Set<String> getSupportedMobParents() {
-        return com.luatweaker.platform.content.MobParentRegistry.getSupportedMobs();
+        return MobParentRegistry.getSupportedMobs();
     }
 
     @Override
     public List<IRecipe> getAllRecipes() {
         List<IRecipe> list = new ArrayList<>();
-        var server = ServerLifecycleHooks.getCurrentServer();
-        if (server != null) {
-            for (RecipeHolder<?> holder : server.getRecipeManager().getRecipes()) {
-                list.add(new IRecipe() {
-                    @Override
-                    public String getId() {
-                        return holder.id().toString();
-                    }
-
-                    @Override
-                    public String getType() {
-                        return holder.value().getType().toString();
-                    }
-
-                    @Override
-                    public List<com.luatweaker.api.wrapper.IngredientWrapper> getIngredients() {
-                        return List.of();
-                    }
-
-                    @Override
-                    public IItem getResult() {
-                        var registries = server.registryAccess();
-                        return new NeoForgeItem(holder.value().getResultItem(registries));
-                    }
-
-                    @Override
-                    public Object getRawRecipe() {
-                        return holder.value();
-                    }
-                });
-            }
-        }
+        collectRecipes(ServerLifecycleHooks.getCurrentServer(), list);
         return list;
+    }
+
+    private static void collectRecipes(net.minecraft.server.MinecraftServer server, List<IRecipe> list) {
+        if (server == null) {
+            return;
+        }
+        for (RecipeHolder<?> holder : server.getRecipeManager().getRecipes()) {
+            list.add(new RecipeView(holder, server));
+        }
+    }
+
+    /** Read-only Lua view of one loaded recipe. */
+    private static final class RecipeView implements IRecipe {
+        private final RecipeHolder<?> holder;
+        private final net.minecraft.server.MinecraftServer server;
+
+        RecipeView(RecipeHolder<?> holder, net.minecraft.server.MinecraftServer server) {
+            this.holder = holder;
+            this.server = server;
+        }
+
+        @Override
+        public String getId() {
+            return holder.id().toString();
+        }
+
+        @Override
+        public String getType() {
+            return holder.value().getType().toString();
+        }
+
+        @Override
+        public List<com.luatweaker.api.wrapper.IngredientWrapper> getIngredients() {
+            return List.of();
+        }
+
+        @Override
+        public IItem getResult() {
+            return new NeoForgeItem(holder.value().getResultItem(server.registryAccess()));
+        }
+
+        @Override
+        public Object getRawRecipe() {
+            return holder.value();
+        }
     }
 }

@@ -256,6 +256,21 @@ invalid kinds/sizes raise a Lua error instead of silently returning zeros.
 `Fill2D` already reads the same noise state as the scalar functions, so it is
 seed-reproducible (`Noise:SetSeed`).
 
+**Coarse lattice sampling.** Low-frequency fields have wavelengths of hundreds of blocks, so
+sampling them on a 4-block lattice is visually identical to per-block sampling. `Fill2DSmooth`
+does the lattice sampling **and** the bilinear expansion natively:
+
+```lua
+-- 5 x 5 noise samples expanded to a 16 x 16 field, indices as usual
+local continent = Noise:Fill2DSmooth(baseX, baseZ, 16, 16, continentSpec, 4, 4)
+-- the optional stepX/stepZ default to 4; width/height must be multiples of them
+local coarse = Noise:Fill2D(baseX, baseZ, 4, 4, spec, 4, 4) -- raw lattice, no interpolation
+```
+
+The lattice ends exactly on the next chunk's first column, so neighbouring chunks evaluate
+the same border samples and join without a seam. Use `step = 4` for continentalness, erosion,
+rivers and lakes, `2` for mountain ridges and fine detail.
+
 ## 9. Batch terrain per chunk (`Dimensions:SetChunkTerrain`)
 
 The per-column callbacks cost up to 768 Lua calls per chunk: `SetTerrainGenerator` 256,
@@ -424,16 +439,75 @@ stay dry. `surface` rules apply to the top solid block of each column.
 spawn island in a void dimension, or several for pillars; they are pure data and cost one
 distance check per block.
 
-There are still no vanilla-style carvers, structure sets or region pre-generation; use
-`SetChunkTerrain` overrides or the structure APIs for those.
+There are still no vanilla-style structure sets or region pre-generation; use `SetCaveSpec`
+for caves, `SetChunkTerrain` overrides for local block edits, or the structure APIs.
 
-## 12. Measuring the Lua pipeline
+## 12. Caves and world queries
+
+### Caves (`Dimensions:SetCaveSpec`)
+
+`SetCaveSpec` adds a native 3D carver to **any** terrain mode (legacy callbacks, chunk batch or
+declarative spec). The spec is the same density table used by terrain specs; a block becomes
+air where `SUM(amp * noise3) > threshold + thresholdSpline(y)`:
+
+```lua
+Dimensions:SetCaveSpec("mymod:wilds", {
+    density = {
+        layers = {
+            { kind = 'fbm3',     amp = 1.0, frequency = 0.02, octaves = 3 },
+            { kind = 'simplex3', amp = 0.4, frequency = 0.08 },
+        },
+        threshold = 0.75,
+        thresholdSpline = { { -64, 0.0 }, { 64, 0.0 }, { 100, 0.15 },
+                            { 160, 0.45 }, { 319, 0.9 } },
+        cellSize = 4,
+        cellHeight = 8,
+    },
+})
+```
+
+Rules that keep the world usable:
+
+- the top 3 blocks of every column and the bottom 3 blocks above `minHeight` are never carved,
+  so `getBaseHeight`/heightmaps and the bedrock floor stay valid;
+- caves are dry - water is only filled above the column top, so there are no underground lakes;
+- `cellSize = 4, cellHeight = 8` costs ~0.4 ms/chunk (~1,200 noise samples); `cellHeight = 4`
+  gives finer caves for ~1.4 ms/chunk.
+
+`SetCaveSpec` never changes the terrain, biome or surface configuration; it only removes blocks.
+`Dimensions:GetDimension(id).hasCaveSpec` reports whether a carver is registered.
+
+### World queries
+
+These read the same pipeline that generates chunks (no Minecraft access, so they work from any
+Lua thread):
+
+| Function | Result |
+|---|---|
+| `Dimensions:GetColumnHeight(id, x, z)` | surface Y, `minY - 1` for void columns |
+| `Dimensions:GetSurfaceBlock(id, x, z)` | top block id, `nil` for void columns |
+| `Dimensions:GetSlope(id, x, z)` | local slope in blocks per block |
+| `Dimensions:GetBiomeAt(id, x, z)` | biome id the biome source resolves |
+| `Dimensions:PreviewChunk(id, cx, cz)` | `{ heights, surfaces, slopes, biomes }` for one chunk |
+| `Dimensions:FindSurface(id, x, z, radius)` | nearest dry `{ x, y, z, block, biome }` or `nil` |
+
+`PreviewChunk` evaluates the terrain and biome pipelines **once** (`heights` = 256 absolute
+Y values, `surfaces` = 256 block ids, `slopes` = 256 numbers, `biomes` = 16 quart ids), so use
+it for maps, spawn scans and diagnostics instead of 256 `GetColumnHeight` calls. A single
+`GetColumnHeight` call in CHUNK mode runs the chunk callback once, and in a density dimension it
+samples that chunk's density field once - fine for occasional queries, not for per-tick loops.
+
+`FindSurface` scans chunks by ring (`radius` 0..64) and skips void columns and, when the
+dimension fills water, columns below sea level. Use it to place structures, portals or a safe
+spawn instead of trusting `(0, 0)`.
+
+## 13. Measuring the Lua pipeline
 
 `/lt dimension bench <id> [radius 0-8]` replays the active terrain pipeline and reports total
 milliseconds, milliseconds per chunk and Lua calls per chunk. It is a developer measurement
 of the Lua pipeline: block placement, lighting and feature generation are not included.
 
-## 13. Minecraft generator contract (what is and is not implemented)
+## 14. Minecraft generator contract (what is and is not implemented)
 
 The Lua chunk generator is a real `ChunkGenerator`, not a wrapper around
 `NoiseBasedChunkGenerator`. Audit against Minecraft 1.21.1 / NeoForge 21.1.242:
@@ -472,7 +546,7 @@ Intentional gaps:
 - Dimension levels are created when the server starts. A dimension added by `/lt reload` is
   written to the virtual datapack but its level is not hot-loaded; restart the server.
 
-## 14. Platform integration notes (provider owner)
+## 15. Platform integration notes (provider owner)
 - `buildBiomeModifierFiles()` returns every new `relPath -> json` pair;
   the provider feeds them to `IDatapackService#addData` next to its ore files,
   so `ModifyBiome`/`AddFeature` registrations materialize on every load.

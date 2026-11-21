@@ -1,20 +1,21 @@
 package com.luatweaker.api.storage;
 
 import com.luatweaker.api.annotation.LuaDoc;
+import com.luatweaker.api.doc.LuaDocFragments;
 
 @LuaDoc(description = "Storage service for Roblox-style World, Player, and Session data stores.")
 public interface IRobloxStorageService {
     
     interface IDataStore {
-        @LuaDoc(description = "Retrieves a stored value.", params = {"key: string"}, returnType = "any")
+        @LuaDoc(description = "Retrieves a stored value.", params = {LuaDocFragments.Common.KEY_STRING}, returnType = "any")
         Object GetAsync(String key);
 
-        @LuaDoc(description = "Sets a value. Nil removes the key.", params = {"key: string", "value: any"})
+        @LuaDoc(description = "Sets a value. Nil removes the key.", params = {LuaDocFragments.Common.KEY_STRING, "value: any"})
         void SetAsync(String key, Object value);
 
         @LuaDoc(
             description = "Removes a stored key and returns whether it existed.",
-            params = {"key: string"},
+            params = {LuaDocFragments.Common.KEY_STRING},
             returnType = "boolean"
         )
         boolean RemoveAsync(String key);
@@ -24,7 +25,7 @@ public interface IRobloxStorageService {
 
         @LuaDoc(
             description = "Atomically adds delta to a numeric value (missing key starts at 0) and returns the new value. Fails loudly when the stored value is not a number.",
-            params = {"key: string", "delta: number"},
+            params = {LuaDocFragments.Common.KEY_STRING, "delta: number"},
             returnType = "number"
         )
         double IncrementAsync(String key, double delta);

@@ -57,14 +57,15 @@ public final class LuaServiceBootstrap {
         MathLuaBinding.registerBindings(engine);
 
         // 6. Roblox BSON Storage (World, Player, Session)
-        com.luatweaker.storage.StorageServiceImpl robloxStorage = new com.luatweaker.storage.StorageServiceImpl(engine);
-        StorageLuaBinding.registerBindings(engine, robloxStorage);
+        StorageLuaBinding.registerBindings(engine, new com.luatweaker.storage.StorageServiceImpl(engine));
 
         // 7. Network Service (Rocket RemoteEvents & RemoteFunctions)
         NetworkServiceImpl networkService = new NetworkServiceImpl(engine);
         try {
             com.luatweaker.platform.LuaTweakerMod.setServerNetworkService(networkService);
-        } catch (Throwable t) {
+        } catch (LinkageError t) {
+            // LuaTweakerMod needs the NeoForge runtime classes; in a unit-test JVM the
+            // class fails to link, which must not abort service registration.
             com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
                     "setServerNetworkService failed (unit test environment?): " + t.getMessage());
         }
@@ -142,6 +143,11 @@ public final class LuaServiceBootstrap {
                                 .getStorageDirectory().getParentFile(), "shader-cache"));
         com.luatweaker.client.ShaderLuaBinding.registerBindings(engine, shaderService);
 
+        // 10d. Dear ImGui for advanced Lua-driven UI (config screens, machine
+        // panels, debug overlays). Same one-surface-everywhere rule as
+        // GuiService: headless on a dedicated server, live on a client.
+        com.luatweaker.client.ImGuiLuaBinding.registerBindings(engine, new com.luatweaker.client.ImGuiServiceImpl());
+
         // 10b. World-space render service + Client.OnRenderWorld signal (all engines,
         // so client scripts loaded on the runtime engine can require it).
         ILuaValue clientVal = engine.getGlobalEnvironment().rawget("Client");
@@ -149,7 +155,7 @@ public final class LuaServiceBootstrap {
             try {
                 Class<?> clazz = com.luatweaker.platform.client.NeoForgeWorldRenderEventListener.class;
                 clazz.getMethod("registerRenderService", ILuaEngine.class, ILuaTable.class).invoke(null, engine, clientVal.asTable());
-            } catch (Exception e) {
+            } catch (ReflectiveOperationException | LinkageError e) {
                 com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
                         "NeoForgeWorldRenderEventListener not available: " + e.getMessage());
             }
@@ -164,7 +170,8 @@ public final class LuaServiceBootstrap {
         // Built-ins above always register first so plugin overrides are explicit.
         try {
             com.luatweaker.core.plugin.LuaTweakerPluginLoader.loadPlugins(engine);
-        } catch (Exception e) {
+        } catch (org.luava.runtime.LuaException | IllegalStateException | java.util.ServiceConfigurationError
+                | LinkageError e) {
             com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.SYSTEM,
                     "[LuaServiceBootstrap] Java plugin loading failed: " + e.getMessage());
         }

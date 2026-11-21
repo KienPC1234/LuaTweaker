@@ -2,7 +2,6 @@ package com.luatweaker.platform.content;
 
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
@@ -12,6 +11,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 public final class MobParentRegistry {
+
+    private MobParentRegistry() {
+    }
+    @FunctionalInterface
     public interface EntityFactory {
         Mob create(EntityType<?> type, net.minecraft.world.level.Level level);
     }
@@ -232,8 +235,8 @@ public final class MobParentRegistry {
 
     public static void register(String id, EntityFactory factory, Supplier<AttributeSupplier.Builder> attributeSupplier) {
         try {
-            REGISTRY.put(id.toLowerCase(), new MobParentAdapter(id.toLowerCase(), factory, attributeSupplier));
-        } catch (Throwable t) {
+            REGISTRY.put(id.toLowerCase(Locale.ROOT), new MobParentAdapter(id.toLowerCase(Locale.ROOT), factory, attributeSupplier));
+        } catch (LinkageError t) {
             LuaTweakerLog.get().warn(LogStage.SYSTEM, "Mob adapter [" + id + "] is not supported in this MC version environment: " + t.getMessage());
         }
     }
@@ -241,13 +244,13 @@ public final class MobParentRegistry {
     public static void registerAlias(String alias, String target) {
         MobParentAdapter adapter = REGISTRY.get(target);
         if (adapter != null) {
-            REGISTRY.put(alias.toLowerCase(), adapter);
+            REGISTRY.put(alias.toLowerCase(Locale.ROOT), adapter);
         }
     }
 
     public static boolean isSupported(String parentId) {
-        if (parentId == null || parentId.isBlank()) return false;
-        String clean = parentId.toLowerCase().replace("minecraft:", "");
+        if (parentId == null || parentId.isBlank()) { return false; }
+        String clean = parentId.toLowerCase(Locale.ROOT).replace("minecraft:", "");
         return REGISTRY.containsKey(clean);
     }
 
@@ -255,7 +258,7 @@ public final class MobParentRegistry {
         if (parentId == null || parentId.isBlank()) {
             return REGISTRY.get(DEFAULT_PARENT);
         }
-        String clean = parentId.toLowerCase().replace("minecraft:", "");
+        String clean = parentId.toLowerCase(Locale.ROOT).replace("minecraft:", "");
         MobParentAdapter adapter = REGISTRY.get(clean);
         if (adapter == null) {
             LuaTweakerLog.get().warn(LogStage.SYSTEM, "Requested mob parent [" + parentId + "] is NOT supported in current version/environment. Falling back to '" + DEFAULT_PARENT + "'.");

@@ -7,10 +7,10 @@ import com.luatweaker.loot.LootServiceImpl;
 import com.luatweaker.loot.LootTableJsonBuilder;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Materializes the Lua-registered loot entries into virtual datapack loot tables.
@@ -109,12 +109,13 @@ public class NeoForgeLootProvider {
      */
     private void applyFishingLoot() {
         List<LootServiceImpl.FishingLootEntry> entries = lootService.getPendingFishingLoot();
-        if (entries.isEmpty()) return;
+        if (entries.isEmpty()) { return; }
 
-        Map<String, List<LootServiceImpl.FishingLootEntry>> byCategory = new LinkedHashMap<>();
-        for (LootServiceImpl.FishingLootEntry entry : entries) {
-            byCategory.computeIfAbsent(entry.category(), k -> new ArrayList<>()).add(entry);
-        }
+        // Insertion-ordered grouping: the emitted tables follow the order Lua registered them,
+        // which keeps generated JSON stable across reloads. Single-threaded (server startup).
+        Map<String, List<LootServiceImpl.FishingLootEntry>> byCategory = entries.stream()
+                .collect(Collectors.groupingBy(LootServiceImpl.FishingLootEntry::category,
+                        LinkedHashMap::new, Collectors.toList()));
         for (Map.Entry<String, List<LootServiceImpl.FishingLootEntry>> grouped : byCategory.entrySet()) {
             // Validated at registration: FISH, JUNK or TREASURE (see LootServiceImpl.addFishingLoot).
             String subTable = switch (grouped.getKey()) {

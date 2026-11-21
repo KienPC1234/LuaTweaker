@@ -1,5 +1,6 @@
 package com.luatweaker.update;
 
+import com.google.gson.JsonSyntaxException;
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.api.vm.ILuaEngine;
@@ -19,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Permission-gated HTTP GET service.
@@ -80,10 +82,14 @@ public class WebServiceImpl implements IWebService {
 
         int timeoutMs = (int) (Math.max(MIN_TIMEOUT_SECONDS,
                 Math.min(MAX_TIMEOUT_SECONDS, timeoutSeconds)) * 1000.0);
+        return fetchUrl(modId, url, timeoutMs);
+    }
+
+    private ILuaValue fetchUrl(String modId, String url, int timeoutMs) {
         try {
             URL parsed = new URL(url);
             String scheme = parsed.getProtocol().toLowerCase(Locale.ROOT);
-            if (!scheme.equals("http") && !scheme.equals("https")) {
+            if (!"http".equals(scheme) && !"https".equals(scheme)) {
                 return errorTable("Net:HttpGet() rejected: only http/https URLs are allowed, found: " + scheme);
             }
             // Reject SSRF targets (loopback, link-local, private, unique-local) after DNS.
@@ -99,17 +105,7 @@ public class WebServiceImpl implements IWebService {
 
                 int code = conn.getResponseCode();
                 String body = readBody(conn, code);
-
-                ILuaTable result = engine.createTable();
-                result.rawset("Success", code >= 200 && code < 300);
-                result.rawset("StatusCode", (double) code);
-                result.rawset("Body", body);
-                if (code >= 200 && code < 300) {
-                    Object parsedJson = tryParseJson(body);
-                    if (parsedJson != null) {
-                        result.rawset("Json", engine.toLuaValue(parsedJson));
-                    }
-                }
+                ILuaValue result = buildResultTable(code, body);
                 LuaTweakerLog.get().info(LogStage.SYSTEM,
                         "[Net][" + modId + "] HttpGet '" + url + "' -> HTTP " + code
                                 + " (" + body.length() + " bytes)");
@@ -117,11 +113,25 @@ public class WebServiceImpl implements IWebService {
             } finally {
                 conn.disconnect();
             }
-        } catch (Exception e) {
+        } catch (IOException | IllegalArgumentException e) {
             String msg = "Net:HttpGet() failed for '" + url + "': " + e.getMessage();
             LuaTweakerLog.get().error(LogStage.SYSTEM, "[Net][" + modId + "] " + msg);
             return errorTable(msg);
         }
+    }
+
+    private ILuaValue buildResultTable(int code, String body) {
+        ILuaTable result = engine.createTable();
+        result.rawset("Success", code >= 200 && code < 300);
+        result.rawset("StatusCode", (double) code);
+        result.rawset("Body", body);
+        if (code >= 200 && code < 300) {
+            Object parsedJson = tryParseJson(body);
+            if (parsedJson != null) {
+                result.rawset("Json", engine.toLuaValue(parsedJson));
+            }
+        }
+        return result;
     }
 
     private ILuaValue errorTable(String message) {
@@ -133,7 +143,9 @@ public class WebServiceImpl implements IWebService {
 
     private static String readBody(HttpURLConnection conn, int code) throws IOException {
         InputStream is = code >= 200 && code < 300 ? conn.getInputStream() : conn.getErrorStream();
-        if (is == null) return "";
+        if (is == null) {
+            return "";
+        }
         try (is) {
             return new String(UpdateChecker.readBounded(is, MAX_BODY_BYTES), StandardCharsets.UTF_8);
         }
@@ -143,7 +155,7 @@ public class WebServiceImpl implements IWebService {
     private static Object tryParseJson(String body) {
         try {
             return new com.google.gson.Gson().fromJson(body, Object.class);
-        } catch (Exception e) {
+        } catch (JsonSyntaxException e) {
             return null;
         }
     }
@@ -164,12 +176,13 @@ public class WebServiceImpl implements IWebService {
         return false;
     }
 
-    private static volatile boolean grantLogged = false;
+    private static final AtomicBoolean GRANT_LOGGED = new AtomicBoolean();
 
     /** Loudly lists every granting mod once per session when HTTP is first used. */
     private static void logGrantIfFirstUse() {
-        if (grantLogged) return;
-        grantLogged = true;
+        if (!GRANT_LOGGED.compareAndSet(false, true)) {
+            return;
+        }
         List<String> holders = new ArrayList<>();
         for (LuaMod mod : LuaModManager.getLoadedMods().values()) {
             if (mod.getManifest().permissions().contains(PERMISSION)) {

@@ -8,12 +8,17 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
-public class LootServiceImplTest {
+class LootServiceImplTest {
+
+    private static final String ZOMBIE = "minecraft:zombie";
+    private static final String DIAMOND = "minecraft:diamond";
+    private static final String IRON = "minecraft:iron_ingot";
 
     @AfterAll
-    public static void shutdownLogger() {
+    static void shutdownLogger() {
         AsyncFileLogger.get().shutdown();
     }
 
@@ -25,260 +30,64 @@ public class LootServiceImplTest {
     }
 
     @Test
-    void testAddMobDrop_StoresEntry() {
-        lootService.addMobDrop("minecraft:zombie", "minecraft:diamond", 0.1, 1, 3, 1);
+    void addMobDropStoresEntry() {
+        lootService.addMobDrop(ZOMBIE, DIAMOND, 0.1, 1, 3, 1);
 
-        Map<String, List<LootServiceImpl.MobDropEntry>> drops = lootService.getPendingMobDrops();
-        assertEquals(1, drops.size());
-        assertTrue(drops.containsKey("minecraft:zombie"));
+        LootServiceImpl.MobDropEntry expected =
+            new LootServiceImpl.MobDropEntry(ZOMBIE, DIAMOND, 0.1, 1, 3, 1);
 
-        LootServiceImpl.MobDropEntry entry = drops.get("minecraft:zombie").get(0);
-        assertEquals("minecraft:zombie", entry.entityId());
-        assertEquals("minecraft:diamond", entry.itemId());
-        assertEquals(0.1, entry.chance());
-        assertEquals(1, entry.minCount());
-        assertEquals(3, entry.maxCount());
-        assertEquals(1, entry.lootingBonus());
+        assertEquals(Map.of(ZOMBIE, List.of(expected)), lootService.getPendingMobDrops(),
+            "addMobDrop must store the exact entry under the entity id");
     }
 
     @Test
-    void testAddMobDrop_MultipleDropsSameEntity() {
-        lootService.addMobDrop("minecraft:zombie", "minecraft:diamond", 0.1, 1, 1, 0);
-        lootService.addMobDrop("minecraft:zombie", "minecraft:iron_ingot", 0.5, 2, 4, 1);
+    void addMobDropKeepsMultipleDropsPerEntity() {
+        lootService.addMobDrop(ZOMBIE, DIAMOND, 0.1, 1, 1, 0);
+        lootService.addMobDrop(ZOMBIE, IRON, 0.5, 2, 4, 1);
 
-        Map<String, List<LootServiceImpl.MobDropEntry>> drops = lootService.getPendingMobDrops();
-        assertEquals(2, drops.get("minecraft:zombie").size());
+        assertEquals(2, lootService.getPendingMobDrops().get(ZOMBIE).size(),
+            "several drops for one entity must coexist in registration order");
     }
 
     @Test
-    void testAddMobDrop_RejectsBlankEntityId() {
-        assertThrows(IllegalArgumentException.class, () ->
-            lootService.addMobDrop("", "minecraft:diamond", 0.1, 1, 1, 0));
+    void addMobDropRejectsBlankEntityId() {
+        assertThrows(IllegalArgumentException.class,
+            () -> lootService.addMobDrop("", DIAMOND, 0.1, 1, 1, 0),
+            "a blank entity id must be rejected");
     }
 
     @Test
-    void testAddMobDrop_RejectsBlankItemId() {
-        assertThrows(IllegalArgumentException.class, () ->
-            lootService.addMobDrop("minecraft:zombie", "", 0.1, 1, 1, 0));
+    void addMobDropRejectsBlankItemId() {
+        assertThrows(IllegalArgumentException.class,
+            () -> lootService.addMobDrop(ZOMBIE, "", 0.1, 1, 1, 0),
+            "a blank item id must be rejected");
     }
 
     @Test
-    void testAddMobDrop_RejectsNegativeChance() {
-        assertThrows(IllegalArgumentException.class, () ->
-            lootService.addMobDrop("minecraft:zombie", "minecraft:diamond", -0.1, 1, 1, 0));
+    void addMobDropRejectsNegativeChance() {
+        assertThrows(IllegalArgumentException.class,
+            () -> lootService.addMobDrop(ZOMBIE, DIAMOND, -0.1, 1, 1, 0),
+            "a negative drop chance must be rejected");
     }
 
     @Test
-    void testAddMobDrop_RejectsChanceAboveOne() {
-        assertThrows(IllegalArgumentException.class, () ->
-            lootService.addMobDrop("minecraft:zombie", "minecraft:diamond", 1.5, 1, 1, 0));
+    void addMobDropRejectsChanceAboveOne() {
+        assertThrows(IllegalArgumentException.class,
+            () -> lootService.addMobDrop(ZOMBIE, DIAMOND, 1.5, 1, 1, 0),
+            "a drop chance above 1.0 must be rejected");
     }
 
     @Test
-    void testAddMobDrop_RejectsInvalidCountRange() {
-        assertThrows(IllegalArgumentException.class, () ->
-            lootService.addMobDrop("minecraft:zombie", "minecraft:diamond", 0.5, 5, 2, 0));
+    void addMobDropRejectsInvalidCountRange() {
+        assertThrows(IllegalArgumentException.class,
+            () -> lootService.addMobDrop(ZOMBIE, DIAMOND, 0.5, 5, 2, 0),
+            "a min count above the max count must be rejected");
     }
 
     @Test
-    void testRemoveMobDrop_StoresRemoval() {
-        lootService.removeMobDrop("minecraft:zombie", "minecraft:rotten_flesh");
-
-        List<LootServiceImpl.RemovalEntry> removals = lootService.getPendingRemovals();
-        assertEquals(1, removals.size());
-        assertEquals("mob:minecraft:zombie", removals.get(0).targetId());
-        assertEquals("minecraft:rotten_flesh", removals.get(0).itemId());
-    }
-
-    @Test
-    void testAddChestLoot_StoresEntry() {
-        lootService.addChestLoot("minecraft:chests/simple_dungeon", "minecraft:diamond", 0.05, 1, 2);
-
-        Map<String, List<LootServiceImpl.ChestLootEntry>> loot = lootService.getPendingChestLoot();
-        assertEquals(1, loot.size());
-        assertTrue(loot.containsKey("minecraft:chests/simple_dungeon"));
-
-        LootServiceImpl.ChestLootEntry entry = loot.get("minecraft:chests/simple_dungeon").get(0);
-        assertEquals("minecraft:diamond", entry.itemId());
-        assertEquals(0.05, entry.chance());
-    }
-
-    @Test
-    void testAddChestLoot_RejectsBlankTableId() {
-        assertThrows(IllegalArgumentException.class, () ->
-            lootService.addChestLoot("", "minecraft:diamond", 0.1, 1, 1));
-    }
-
-    @Test
-    void testRemoveChestLoot_StoresRemoval() {
-        lootService.removeChestLoot("minecraft:chests/simple_dungeon", "minecraft:iron_ingot");
-
-        List<LootServiceImpl.RemovalEntry> removals = lootService.getPendingRemovals();
-        assertEquals(1, removals.size());
-        assertEquals("chest:minecraft:chests/simple_dungeon", removals.get(0).targetId());
-    }
-
-    @Test
-    void testSetBlockDrop_StoresEntry() {
-        lootService.setBlockDrop("mymod:ruby_ore", "mymod:ruby", 2, "mymod:ruby_ore");
-
-        Map<String, LootServiceImpl.BlockDropEntry> drops = lootService.getPendingBlockDrops();
-        assertEquals(1, drops.size());
-
-        LootServiceImpl.BlockDropEntry entry = drops.get("mymod:ruby_ore");
-        assertEquals("mymod:ruby", entry.itemId());
-        assertEquals(2, entry.fortuneBonus());
-        assertEquals("mymod:ruby_ore", entry.silkTouchDrop());
-    }
-
-    @Test
-    void testSetBlockDrop_NullSilkTouchDrop() {
-        lootService.setBlockDrop("minecraft:stone", "minecraft:cobblestone", 0, null);
-
-        LootServiceImpl.BlockDropEntry entry = lootService.getPendingBlockDrops().get("minecraft:stone");
-        assertNull(entry.silkTouchDrop());
-    }
-
-    @Test
-    void testAddFishingLoot_StoresEntry() {
-        lootService.addFishingLoot("mymod:treasure_chest", 0.01, "TREASURE");
-
-        List<LootServiceImpl.FishingLootEntry> entries = lootService.getPendingFishingLoot();
-        assertEquals(1, entries.size());
-        assertEquals("mymod:treasure_chest", entries.get(0).itemId());
-        assertEquals("TREASURE", entries.get(0).category());
-    }
-
-    @Test
-    void testAddFishingLoot_NormalizesCategory() {
-        lootService.addFishingLoot("minecraft:fish", 0.5, "fish");
-
-        assertEquals("FISH", lootService.getPendingFishingLoot().get(0).category());
-    }
-
-    @Test
-    void testAddFishingLoot_RejectsInvalidCategory() {
-        assertThrows(IllegalArgumentException.class, () ->
-            lootService.addFishingLoot("minecraft:fish", 0.5, "INVALID"));
-    }
-
-    @Test
-    void testAddFishingLoot_RejectsInvalidChance() {
-        assertThrows(IllegalArgumentException.class, () ->
-            lootService.addFishingLoot("minecraft:fish", 2.0, "FISH"));
-    }
-
-    @Test
-    void testGetModifications_ReturnsCorrectSummary() {
-        lootService.addMobDrop("minecraft:zombie", "minecraft:diamond", 0.1, 1, 1, 0);
-        lootService.addMobDrop("minecraft:skeleton", "minecraft:arrow", 0.5, 1, 3, 0);
-        lootService.addChestLoot("minecraft:chests/simple_dungeon", "minecraft:gold_ingot", 0.2, 1, 4);
-        lootService.setBlockDrop("mymod:ore", "mymod:gem", 1, null);
-        lootService.addFishingLoot("minecraft:stick", 0.1, "JUNK");
-        lootService.removeMobDrop("minecraft:creeper", "minecraft:gunpowder");
-
-        Map<String, Object> summary = lootService.getModifications();
-        assertEquals(2, summary.get("mobDrops"));
-        assertEquals(1, summary.get("chestLoot"));
-        assertEquals(1, summary.get("blockDrops"));
-        assertEquals(1, summary.get("fishingLoot"));
-        assertEquals(1, summary.get("removals"));
-    }
-
-    @Test
-    void testClearAll_RemovesEverything() {
-        lootService.addMobDrop("minecraft:zombie", "minecraft:diamond", 0.1, 1, 1, 0);
-        lootService.addChestLoot("minecraft:chests/simple_dungeon", "minecraft:gold", 0.2, 1, 1);
-        lootService.setBlockDrop("mymod:ore", "mymod:gem", 0, null);
-        lootService.addFishingLoot("minecraft:stick", 0.1, "JUNK");
-        lootService.removeMobDrop("minecraft:creeper", "minecraft:gunpowder");
-
-        lootService.clearAll();
-
-        assertTrue(lootService.getPendingMobDrops().isEmpty());
-        assertTrue(lootService.getPendingChestLoot().isEmpty());
-        assertTrue(lootService.getPendingBlockDrops().isEmpty());
-        assertTrue(lootService.getPendingFishingLoot().isEmpty());
-        assertTrue(lootService.getPendingRemovals().isEmpty());
-    }
-
-    @Test
-    void testRemoveMobDrop_RemovesMatchingPendingEntry() {
-        lootService.addMobDrop("minecraft:zombie", "minecraft:diamond", 0.1, 1, 3, 1);
-        lootService.addMobDrop("minecraft:zombie", "minecraft:iron_ingot", 0.5, 1, 1, 0);
-        assertEquals(2, lootService.getModifications().get("mobDrops"));
-
-        assertTrue(lootService.removeMobDrop("minecraft:zombie", "minecraft:diamond"));
-
-        List<LootServiceImpl.MobDropEntry> remaining = lootService.getPendingMobDrops().get("minecraft:zombie");
-        assertEquals(1, remaining.size());
-        assertEquals("minecraft:iron_ingot", remaining.get(0).itemId());
-        assertEquals(1, lootService.getModifications().get("mobDrops"));
-        assertEquals(1, lootService.getModifications().get("removals"));
-    }
-
-    @Test
-    void testRemoveChestLoot_RemovesMatchingPendingEntry() {
-        lootService.addChestLoot("minecraft:chests/simple_dungeon", "minecraft:diamond", 0.05, 1, 2);
-        lootService.addChestLoot("minecraft:chests/simple_dungeon", "minecraft:emerald", 0.2, 1, 1);
-        assertEquals(2, lootService.getModifications().get("chestLoot"));
-
-        assertTrue(lootService.removeChestLoot("minecraft:chests/simple_dungeon", "minecraft:diamond"));
-
-        List<LootServiceImpl.ChestLootEntry> remaining =
-            lootService.getPendingChestLoot().get("minecraft:chests/simple_dungeon");
-        assertEquals(1, remaining.size());
-        assertEquals("minecraft:emerald", remaining.get(0).itemId());
-        assertEquals(1, lootService.getModifications().get("chestLoot"));
-        assertEquals(1, lootService.getModifications().get("removals"));
-    }
-
-    @Test
-    void testRemovalBeforeAdd_IsAppliedAtApplyTime() {
-        lootService.removeMobDrop("minecraft:skeleton", "minecraft:bone");
-        lootService.addMobDrop("minecraft:skeleton", "minecraft:bone", 0.5, 1, 1, 0);
-        lootService.addMobDrop("minecraft:skeleton", "minecraft:arrow", 0.5, 1, 1, 0);
-
-        lootService.applyRemovalsToPending();
-
-        List<LootServiceImpl.MobDropEntry> remaining = lootService.getPendingMobDrops().get("minecraft:skeleton");
-        assertEquals(1, remaining.size());
-        assertEquals("minecraft:arrow", remaining.get(0).itemId());
-    }
-
-    @Test
-    void testRemovalLeavesUnrelatedItemsAndTables() {
-        lootService.addMobDrop("minecraft:zombie", "minecraft:diamond", 0.1, 1, 1, 0);
-        lootService.addMobDrop("minecraft:zombie", "minecraft:bone", 0.2, 1, 1, 0);
-        lootService.addMobDrop("minecraft:skeleton", "minecraft:diamond", 0.1, 1, 1, 0);
-        lootService.addChestLoot("minecraft:chests/simple_dungeon", "minecraft:diamond", 0.1, 1, 1);
-
-        lootService.removeMobDrop("minecraft:zombie", "minecraft:diamond");
-
-        List<LootServiceImpl.MobDropEntry> zombieDrops = lootService.getPendingMobDrops().get("minecraft:zombie");
-        assertNotNull(zombieDrops, "zombie entry list must still exist");
-        assertEquals(1, zombieDrops.size(), "only the removed diamond must be gone");
-        assertEquals("minecraft:bone", zombieDrops.get(0).itemId(), "unrelated bone drop must survive");
-        assertEquals(1, lootService.getPendingMobDrops().get("minecraft:skeleton").size());
-        assertEquals(1, lootService.getPendingChestLoot().get("minecraft:chests/simple_dungeon").size());
-    }
-
-    @Test
-    void testRemoveMobDrop_RejectsBlankIds() {
-        assertThrows(IllegalArgumentException.class, () -> lootService.removeMobDrop("", "minecraft:diamond"));
-        assertThrows(IllegalArgumentException.class, () -> lootService.removeMobDrop("minecraft:zombie", ""));
-    }
-
-    @Test
-    void testRemoveChestLoot_RejectsBlankIds() {
-        assertThrows(IllegalArgumentException.class, () -> lootService.removeChestLoot("", "minecraft:diamond"));
-        assertThrows(IllegalArgumentException.class, () ->
-            lootService.removeChestLoot("minecraft:chests/simple_dungeon", ""));
-    }
-
-    @Test
-    void testAddMobDrop_RejectsNegativeLootingBonus() {
-        assertThrows(IllegalArgumentException.class, () ->
-            lootService.addMobDrop("minecraft:zombie", "minecraft:diamond", 0.5, 1, 1, -1));
+    void addMobDropRejectsNegativeLootingBonus() {
+        assertThrows(IllegalArgumentException.class,
+            () -> lootService.addMobDrop(ZOMBIE, DIAMOND, 0.5, 1, 1, -1),
+            "a negative looting bonus must be rejected");
     }
 }

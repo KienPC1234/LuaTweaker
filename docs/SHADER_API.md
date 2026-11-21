@@ -165,7 +165,61 @@ Rules:
 - `supportsCustomPasses()` gates all of this; check it before building
   pass-dependent flows.
 
-## 4. Cost rules
+## 4. Debugging shaders (two layers, both name names)
+
+**Layer 1 — register time (instant, with line numbers).** `registerGlslPass`
+lints the body before publishing: redeclared engine names, GLSL 1.00 idioms
+(`texture2D(`, `gl_FragColor`, `attribute`, `varying`), and unbalanced
+delimiters all fail with `pass id + line N + fix`:
+
+```text
+Shaders:registerGlslPass('warp') line 4: 'texture2D(' is GLSL 1.00; use 'texture(' in this 150 pipeline.
+Shaders:registerGlslPass('warp') line 9: unbalanced '}' — nothing to close here.
+```
+
+Comments and `"strings"` are masked before checking, so examples in comments
+never trip the lint.
+
+**Layer 2 — activation time (driver verdict).** A body can pass the lint and
+still be rejected by the driver (type errors, undeclared identifiers). The
+driver reports those as `IOException("Couldn't compile …: <info log>")` with
+its own line numbers — vanilla swallows it into a warn. The platform
+re-checks after every activation: success lands a debug line naming the
+chain, failure a loud warn naming the pass plus where to look:
+
+```text
+[Shaders] pass 'luatweaker:shaders/post/lt_warp.json' failed to activate — the driver
+rejected the chain. Look above for "Couldn't compile" with the driver's line numbers,
+then fix the fragment and re-register.
+```
+
+If nothing changes on screen after `activatePass`, that warn (or its absence
+meaning success) is the first thing to check. After an F3+T resource reload,
+re-call `activatePass` — the chain is re-read from the virtual pack then.
+
+## 5. Worked example: ore radar (complex pass + live uniforms)
+
+Right-click the Crystal Detector and the screen becomes a radar: range rings,
+a rotating sweep with trail, and orange blips toward real scanned ores.
+`neoforge-platform/luamods/luatweaker_test/src/client/radar_demo.lua`
+(listen on the existing `HighlightOres` event, no item changes needed):
+
+```lua
+Shaders:registerGlslPass("radar_sweep", [[
+uniform vec3 BlipA; uniform vec3 BlipB; uniform vec3 BlipC;
+uniform float Count; uniform float Strength;
+-- rings, sweep beam, trail, blips from BlipA/B/C (xz dir, z = closeness)
+void main() { ... }
+]])
+-- per scan: nearest 3 ores -> setPassUniformVec("BlipA", {dx, dz, close})
+Shaders:activatePass("radar_sweep")  -- auto-cleared after radar_demo.duration_seconds
+```
+
+Lua owns data (scan → direction/distance math, cheapest-first ordering) and
+choreography (activate, per-tick uniforms, timed deactivate); GLSL owns
+pixels. Copy the pattern for boss telegraphs, sonar pulses, or aura vision.
+
+## 6. Cost rules
 
 1. One chain at a time; `activatePass` closes the previous one.
 2. Overlays are fullscreen rects: combine, don't stack five tints.
@@ -173,7 +227,7 @@ Rules:
    always-on looks, passes for moments.
 4. Uniform writes are fire-and-forget to the client thread; batch them per tick.
 
-## 5. Forward path (Vulkan)
+## 7. Forward path (Vulkan)
 
 Tier 1 needs no changes on any backend. Tier 2 bodies stay inside the
 header-injected subset precisely so a future backend can compile the same

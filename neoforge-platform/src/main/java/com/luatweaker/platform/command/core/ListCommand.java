@@ -4,9 +4,7 @@ import com.luatweaker.api.command.ICommandSender;
 import com.luatweaker.api.command.ILuaTweakerCommand;
 
 import java.io.File;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 
 /**
  * /luatweaker list [folder]

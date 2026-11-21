@@ -12,6 +12,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPlayer {
+    private static final String AIR_ITEM_ID = "minecraft:air";
+
 
     private final Player player;
 
@@ -67,18 +69,20 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
 
     @Override
     public void giveItem(String itemId, int count) {
-        if (player != null && itemId != null) {
-            ResourceLocation rl = parseItemLocation(itemId);
-            Item item = BuiltInRegistries.ITEM.get(rl);
-            if (item != null && item != Items.AIR) {
-                ItemStack stack = new ItemStack(item, Math.max(1, count));
-                boolean added = player.getInventory().add(stack);
-                if (!stack.isEmpty()) {
-                    player.drop(stack, false);
-                }
-                player.containerMenu.broadcastChanges();
-            }
+        if (player == null || itemId == null) {
+            return;
         }
+        ResourceLocation rl = parseItemLocation(itemId);
+        Item item = BuiltInRegistries.ITEM.get(rl);
+        if (item == null || item == Items.AIR) {
+            return;
+        }
+        ItemStack stack = new ItemStack(item, Math.max(1, count));
+        player.getInventory().add(stack);
+        if (!stack.isEmpty()) {
+            player.drop(stack, false);
+        }
+        player.containerMenu.broadcastChanges();
     }
 
     @Override
@@ -92,9 +96,9 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
     public String getMainHandItem() {
         if (player != null) {
             ItemStack stack = player.getMainHandItem();
-            return stack.isEmpty() ? "minecraft:air" : BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+            return stack.isEmpty() ? AIR_ITEM_ID : BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
         }
-        return "minecraft:air";
+        return AIR_ITEM_ID;
     }
 
     @Override
@@ -109,9 +113,9 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
     public String getOffHandItem() {
         if (player != null) {
             ItemStack stack = player.getOffhandItem();
-            return stack.isEmpty() ? "minecraft:air" : BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+            return stack.isEmpty() ? AIR_ITEM_ID : BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
         }
-        return "minecraft:air";
+        return AIR_ITEM_ID;
     }
 
     @Override
@@ -144,12 +148,16 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
             if (stack.isEmpty()) {
                 continue;
             }
-            java.util.Map<String, Object> entry = new java.util.LinkedHashMap<>();
-            entry.put("Slot", slot);
-            entry.putAll(describeStack(stack));
-            slots.add(entry);
+            slots.add(inventoryRow(slot, stack));
         }
         return slots;
+    }
+
+    private static java.util.Map<String, Object> inventoryRow(int slot, ItemStack stack) {
+        java.util.Map<String, Object> entry = new java.util.LinkedHashMap<>();
+        entry.put("Slot", slot);
+        entry.putAll(describeStack(stack));
+        return entry;
     }
 
     @Override
@@ -165,7 +173,7 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
         net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
             ItemStack stack = inventory.getItem(slot);
-            if (!stack.isEmpty() && stack.getItem() == item) {
+            if (!stack.isEmpty() && java.util.Objects.equals(stack.getItem(), item)) {
                 total += stack.getCount();
             }
         }
@@ -185,7 +193,7 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
         net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
         for (int slot = 0; slot < inventory.getContainerSize() && remaining > 0; slot++) {
             ItemStack stack = inventory.getItem(slot);
-            if (stack.isEmpty() || stack.getItem() != item) {
+            if (stack.isEmpty() || !java.util.Objects.equals(stack.getItem(), item)) {
                 continue;
             }
             int taken = Math.min(remaining, stack.getCount());
@@ -294,15 +302,9 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
     public void syncCustomData(String key, Object value) {
         setCustomData(key, value);
         if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-            Object unwrapped = value;
-            if (value instanceof com.luatweaker.api.vm.ILuaValue lv) {
-                if (lv.isNil()) unwrapped = null;
-                else if (lv.isBoolean()) unwrapped = lv.asBoolean();
-                else if (lv.isNumber()) unwrapped = lv.asDouble();
-                else unwrapped = lv.asString();
-            }
+            Object unwrapped = unwrapLuaValue(value);
             String valStr = unwrapped != null ? unwrapped.toString() : "null";
-            String type = unwrapped == null ? "null" : (unwrapped instanceof Boolean ? "bool" : (unwrapped instanceof Number ? "num" : "str"));
+            String type = unwrapped == null ? "null" : unwrapped instanceof Boolean ? "bool" : unwrapped instanceof Number ? "num" : "str";
             // Built with Gson so quotes/newlines in a value cannot produce malformed JSON.
             com.google.gson.JsonObject payloadJson = new com.google.gson.JsonObject();
             payloadJson.addProperty("key", key);
@@ -314,6 +316,17 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
                     payloadJson.toString()
             );
         }
+    }
+
+    /** Mirrors the NBT storage rules so the client sees the same primitive type. */
+    private static Object unwrapLuaValue(Object value) {
+        if (!(value instanceof com.luatweaker.api.vm.ILuaValue lv)) {
+            return value;
+        }
+        if (lv.isNil()) { return null; }
+        if (lv.isBoolean()) { return lv.asBoolean(); }
+        if (lv.isNumber()) { return lv.asDouble(); }
+        return lv.asString();
     }
 
     @Override

@@ -3,6 +3,7 @@ package com.luatweaker.core.mod;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonSyntaxException;
 
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
@@ -12,29 +13,34 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
-import java.io.InputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Encapsulates an active, autonomous LuaMod instance.
  */
 public class LuaMod {
 
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+
+    /** Log prefix shared by every per-mod diagnostic line. */
+    static final String LOG_PREFIX = "[LuaMod][";
 
     private final LuaModManifest manifest;
     private final File modFileOrDir;
     private final File configFile;
+    private final File exportsRoot;
     private final Map<String, ILuaTable> exportedApis = new ConcurrentHashMap<>();
     private final Map<String, LuaMod> loadedModsRegistry;
 
     private final String environment;
 
-    private volatile ILuaTable modTable;
+    private final AtomicReference<ILuaTable> modTable = new AtomicReference<>();
 
     public LuaMod(@NotNull LuaModManifest manifest,
                   @NotNull File modFileOrDir,
@@ -51,9 +57,17 @@ public class LuaMod {
         // the process working directory (a relative "luaconfig" silently returned
         // an empty table and every cfg.mana / cfg.skills access crashed).
         File configDir = new File(luamodsDir.getAbsoluteFile().getParentFile(), "luaconfig");
-        if (!configDir.exists()) configDir.mkdirs();
+        if (!configDir.exists()) { configDir.mkdirs(); }
         Path configPath = LuaModPathSecurity.resolveContained(configDir.toPath(), manifest.id() + ".json");
         this.configFile = configPath.toFile();
+
+        // Per-mod export sandbox: gameDir/luatweaker/exports/<mod_id>/. Resolved
+        // from the luamods path so it works regardless of the process cwd.
+        File gameRoot = luamodsDir.getAbsoluteFile().getParentFile();
+        if (gameRoot == null) {
+            throw new IllegalArgumentException("LuaMods directory has no parent: " + luamodsDir);
+        }
+        this.exportsRoot = new File(new File(gameRoot, "luatweaker"), "exports");
     }
 
     public @NotNull LuaModManifest getManifest() {
@@ -63,7 +77,7 @@ public class LuaMod {
     /** Returns the mod table bound into the Lua environment, or null before createModTable(). */
     @Nullable
     public ILuaTable getModTable() {
-        return modTable;
+        return modTable.get();
     }
 
     public @NotNull Map<String, ILuaTable> getExportedApis() {
@@ -76,12 +90,14 @@ public class LuaMod {
      * default keys are deep-merged into an existing config (user values win).
      */
     public void ensureConfigFile(@Nullable String defaultConfigJson) {
-        if (defaultConfigJson == null || defaultConfigJson.isBlank()) return;
+        if (defaultConfigJson == null || defaultConfigJson.isBlank()) {
+            return;
+        }
         try {
             if (!configFile.exists()) {
                 Files.writeString(configFile.toPath(), defaultConfigJson, StandardCharsets.UTF_8);
                 LuaTweakerLog.get().info(LogStage.SYSTEM,
-                        "[LuaMod][" + manifest.id() + "] Created default config: " + configFile.getAbsolutePath());
+                        LOG_PREFIX + manifest.id() + "] Created default config: " + configFile.getAbsolutePath());
                 return;
             }
             String existing = Files.readString(configFile.toPath(), StandardCharsets.UTF_8);
@@ -89,11 +105,11 @@ public class LuaMod {
             if (!merged.equals(existing)) {
                 Files.writeString(configFile.toPath(), merged, StandardCharsets.UTF_8);
                 LuaTweakerLog.get().info(LogStage.SYSTEM,
-                        "[LuaMod][" + manifest.id() + "] Merged new default config keys into: " + configFile.getAbsolutePath());
+                        LOG_PREFIX + manifest.id() + "] Merged new default config keys into: " + configFile.getAbsolutePath());
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             LuaTweakerLog.get().error(LogStage.SYSTEM,
-                    "[LuaMod][" + manifest.id() + "] Failed to write default config: " + e.getMessage());
+                    LOG_PREFIX + manifest.id() + "] Failed to write default config: " + e.getMessage());
         }
     }
 
@@ -105,8 +121,8 @@ public class LuaMod {
     public static String mergeConfigs(@NotNull String existingJson, @NotNull String defaultJson) {
         JsonObject existing = tryParse(existingJson);
         JsonObject defaults = tryParse(defaultJson);
-        if (existing == null) return defaultJson;
-        if (defaults == null) return existingJson;
+        if (existing == null) { return defaultJson; }
+        if (defaults == null) { return existingJson; }
         deepMerge(defaults, existing);
         return GSON.toJson(defaults);
     }
@@ -114,7 +130,7 @@ public class LuaMod {
     private static JsonObject tryParse(String json) {
         try {
             return GSON.fromJson(json, JsonObject.class);
-        } catch (Exception e) {
+        } catch (JsonSyntaxException e) {
             return null;
         }
     }
@@ -135,118 +151,9 @@ public class LuaMod {
      * Binds the 'mod' table into the Lua Engine environment for this LuaMod.
      */
     public ILuaTable createModTable(@NotNull ILuaEngine engine) {
-        ILuaTable table = engine.createTable();
-        this.modTable = table;
-
-        table.rawset("ID", engine.wrapString(manifest.id()));
-        table.rawset("Name", engine.wrapString(manifest.name()));
-        table.rawset("Version", engine.wrapString(manifest.version()));
-        table.rawset("Author", engine.wrapString(manifest.author()));
-
-        // mod:GetConfig()
-        table.rawset("GetConfig", args -> {
-            if (configFile.exists()) {
-                try {
-                    String content = Files.readString(configFile.toPath(), StandardCharsets.UTF_8);
-                    JsonObject json = GSON.fromJson(content, JsonObject.class);
-                    if (json != null) {
-                        return engine.toLuaValue(GSON.fromJson(json, Map.class));
-                    }
-                    LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                            "[LuaMod][" + manifest.id() + "] Config parse returned null: " + configFile.getAbsolutePath());
-                } catch (Exception e) {
-                    LuaTweakerLog.get().error(LogStage.SYSTEM,
-                            "[LuaMod][" + manifest.id() + "] Failed to read config " + configFile.getAbsolutePath() + ": " + e.getMessage());
-                }
-            } else {
-                LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                        "[LuaMod][" + manifest.id() + "] Config file missing: " + configFile.getAbsolutePath());
-            }
-            return engine.createTable();
-        });
-        table.rawset("getConfig", table.rawget("GetConfig"));
-
-        // mod:ExportAPI("ApiName", apiTable)
-        table.rawset("ExportAPI", args -> {
-            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
-            if (args.length - off < 2) throw new IllegalArgumentException("mod:ExportAPI requires (apiName, apiTable)");
-            String apiName = args[off].asString();
-            ILuaValue apiVal = args[off + 1];
-            if (apiVal instanceof ILuaTable apiTable) {
-                exportedApis.put(apiName, apiTable);
-                LuaTweakerLog.get().info(LogStage.SYSTEM,
-                        "[LuaMod][" + manifest.id() + "] Exported IPC API: " + apiName);
-            }
-            return table;
-        });
-        table.rawset("exportAPI", table.rawget("ExportAPI"));
-
-        // mod:ImportAPI("target_mod_id", "ApiName")
-        table.rawset("ImportAPI", args -> {
-            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
-            if (args.length - off < 2) throw new IllegalArgumentException("mod:ImportAPI requires (targetModId, apiName)");
-            String targetId = args[off].asString();
-            String apiName = args[off + 1].asString();
-
-            LuaMod targetMod = loadedModsRegistry.get(targetId);
-            if (targetMod != null) {
-                ILuaTable exported = targetMod.getExportedApis().get(apiName);
-                if (exported != null) {
-                    return exported;
-                }
-            }
-            LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                    "[LuaMod][" + manifest.id() + "] ImportAPI failed: target '" + targetId + "' api '" + apiName + "' not found.");
-            return engine.nilValue();
-        });
-        table.rawset("importAPI", table.rawget("ImportAPI"));
-
-        table.rawset("IsClient", args -> engine.wrapBoolean("client".equalsIgnoreCase(environment) || "universal".equalsIgnoreCase(environment)));
-        table.rawset("isClient", table.rawget("IsClient"));
-
-        table.rawset("IsServer", args -> engine.wrapBoolean("server".equalsIgnoreCase(environment) || "universal".equalsIgnoreCase(environment)));
-        table.rawset("isServer", table.rawget("IsServer"));
-
-        // mod:GetUpdateStatus([modId]) - read-only view over the update status
-        // cached by the engine's update checker (module-update). The checker runs
-        // entirely on the Java side; this method only reads its result table.
-        table.rawset("GetUpdateStatus", args -> {
-            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
-            String targetId = manifest.id();
-            if (args.length - off >= 1 && args[off] != null && !args[off].isNil()) {
-                targetId = args[off].asString();
-            }
-            Object svc = com.luatweaker.core.service.LuaServiceRegistry.get("UpdateServiceImpl");
-            if (svc instanceof com.luatweaker.api.update.IUpdateService updateService) {
-                ILuaValue status = updateService.GetStatus(targetId);
-                return status != null ? status : engine.nilValue();
-            }
-            LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                    "[LuaMod][" + manifest.id() + "] GetUpdateStatus: UpdateServiceImpl not registered (module-update missing).");
-            return engine.nilValue();
-        });
-        table.rawset("getUpdateStatus", table.rawget("GetUpdateStatus"));
-
-        // mod:HasMod(modId) - low-level presence check for optional interop.
-        table.rawset("HasMod", args -> {
-            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
-            if (args.length - off < 1) throw new IllegalArgumentException("mod:HasMod requires (modId)");
-            return engine.wrapBoolean(loadedModsRegistry.containsKey(args[off].asString()));
-        });
-        table.rawset("hasMod", table.rawget("HasMod"));
-
-        // mod:GetModVersion(modId) - version string of a loaded LuaMod, nil when absent.
-        table.rawset("GetModVersion", args -> {
-            int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
-            if (args.length - off < 1) throw new IllegalArgumentException("mod:GetModVersion requires (modId)");
-            LuaMod target = loadedModsRegistry.get(args[off].asString());
-            if (target == null) {
-                return engine.nilValue();
-            }
-            return engine.wrapString(target.getManifest().version());
-        });
-        table.rawset("getModVersion", table.rawget("GetModVersion"));
-
+        ILuaTable table = new ModTableBuilder(engine, manifest, configFile, exportedApis,
+                loadedModsRegistry, environment, modFileOrDir, exportsRoot).build();
+        modTable.set(table);
         return table;
     }
 }

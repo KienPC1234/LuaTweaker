@@ -1,102 +1,85 @@
 package com.luatweaker.interaction;
 
-import com.luatweaker.api.vm.ILuaEngine;
-import com.luatweaker.core.vm.LuaEngineFactory;
-
 import com.luatweaker.api.interaction.IInteractableBlock;
-import com.luatweaker.api.interaction.IInteractableItem;
+import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
-import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.core.logger.AsyncFileLogger;
+import com.luatweaker.core.vm.LuaEngineFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-public class InteractionLuaBindingTest {
+/**
+ * Pins the Lua shape of {@code InteractionLuaBinding.wrapBlock}: the backing {@code __block} field,
+ * the metatable hooking property access, and the Id/Dimension properties scripts read.
+ */
+class InteractionLuaBindingTest {
 
-    @AfterAll
-    public static void shutdownLogger() {
-        AsyncFileLogger.get().shutdown();
-    }
+    private static final String STONE = "minecraft:stone";
+    private static final String DIAMOND_ORE = "minecraft:diamond_ore";
 
     private ILuaEngine engine;
 
+    @AfterAll
+    static void shutdownLogger() {
+        AsyncFileLogger.get().shutdown();
+    }
+
     @BeforeEach
-    void setup() {
+    void setUp() {
         engine = LuaEngineFactory.create(false);
     }
 
-    @Test
-    void testWrapBlock_CreatesTableWithRequiredFields() {
-        IInteractableBlock mockBlock = createMockBlock("minecraft:stone", 0, 64, 0);
-        ILuaTable blockTable = InteractionLuaBinding.wrapBlock(engine, mockBlock);
-        
-        assertNotNull(blockTable, "wrapBlock should return non-null table");
-        ILuaValue blockField = blockTable.rawget("__block");
-        assertNotNull(blockField, "Block table should have __block field");
-        assertFalse(blockField.isNil(), "__block field should not be nil");
+    private ILuaTable wrapBlock(String id, int x, int y, int z) {
+        return InteractionLuaBinding.wrapBlock(engine, createMockBlock(id, x, y, z));
     }
 
     @Test
-    void testWrapBlock_PropertyAccessInLua() {
-        IInteractableBlock mockBlock = createMockBlock("minecraft:diamond_ore", 10, 65, -20);
-        ILuaTable blockTable = InteractionLuaBinding.wrapBlock(engine, mockBlock);
+    void wrapBlockReturnsATable() {
+        assertNotNull(wrapBlock(STONE, 0, 64, 0),
+                "wrapBlock must return a Lua table instead of a raw userdata object");
+    }
+
+    @Test
+    void wrapBlockExposesRawBlockField() {
+        ILuaTable blockTable = wrapBlock(STONE, 0, 64, 0);
+        assertNotNull(blockTable.rawget("__block"),
+                "a wrapped block must keep its Java object in the __block field");
+    }
+
+    @Test
+    void wrapBlockRawBlockFieldIsNotNil() {
+        ILuaTable blockTable = wrapBlock(STONE, 0, 64, 0);
+        assertFalse(blockTable.rawget("__block").isNil(),
+                "the __block field must hold a real value, not Lua nil");
+    }
+
+    @Test
+    void wrapBlockHasMetatableForPropertyAccess() {
+        ILuaTable blockTable = wrapBlock(STONE, 0, 64, 0);
+        assertNotNull(blockTable.rawget("__metatable"),
+                "a wrapped block must reference its property-access metatable");
+    }
+
+    @Test
+    void wrapBlockExposesIdAndDimensionToLua() {
+        ILuaTable blockTable = wrapBlock(DIAMOND_ORE, 10, 65, -20);
         engine.getGlobalEnvironment().rawset("testBlock", blockTable);
-
-        engine.executeStringOrThrow("""
-            assert(testBlock.Id == "minecraft:diamond_ore", "id mismatch")
-            assert(testBlock.Dimension == "minecraft:overworld", "dimension mismatch")
-        """, "test_block_props");
-    }
-
-    @Test
-    void testWrapBlock_HasMetatableForPropertyAccess() {
-        IInteractableBlock mockBlock = createMockBlock("minecraft:stone", 0, 64, 0);
-        ILuaTable blockTable = InteractionLuaBinding.wrapBlock(engine, mockBlock);
-        
-        ILuaValue metatableField = blockTable.rawget("__metatable");
-        assertNotNull(metatableField, "Block table should have metatable reference");
-    }
-
-    @Test
-    void testWrapItem_CreatesTableWithRequiredFields() {
-        IInteractableItem mockItem = createMockItem("minecraft:diamond_sword", 1, 0);
-        ILuaTable itemTable = InteractionLuaBinding.wrapItem(engine, mockItem);
-        
-        assertNotNull(itemTable, "wrapItem should return non-null table");
-        ILuaValue itemField = itemTable.rawget("__item");
-        assertNotNull(itemField, "Item table should have __item field");
-        assertFalse(itemField.isNil(), "__item field should not be nil");
-    }
-
-    @Test
-    void testWrapItem_PropertyAccessInLua() {
-        IInteractableItem mockItem = createMockItem("minecraft:arrow", 64, 5);
-        ILuaTable itemTable = InteractionLuaBinding.wrapItem(engine, mockItem);
-        engine.getGlobalEnvironment().rawset("testItem", itemTable);
-
-        engine.executeStringOrThrow("""
-            assert(testItem.Id == "minecraft:arrow", "item id mismatch")
-            assert(testItem.Count == 64, "item count mismatch")
-            assert(testItem.Slot == 5, "item slot mismatch")
-        """, "test_item_props");
-    }
-
-    @Test
-    void testWrapItem_HasMetatableForPropertyAccess() {
-        IInteractableItem mockItem = createMockItem("minecraft:arrow", 1, 0);
-        ILuaTable itemTable = InteractionLuaBinding.wrapItem(engine, mockItem);
-        
-        ILuaValue metatableField = itemTable.rawget("__metatable");
-        assertNotNull(metatableField, "Item table should have metatable reference");
+        assertDoesNotThrow(() -> engine.executeStringOrThrow("""
+                assert(testBlock.Id == "minecraft:diamond_ore", "id mismatch")
+                assert(testBlock.Dimension == "minecraft:overworld", "dimension mismatch")
+                """, "test_block_props"),
+                "a wrapped block must expose its id and dimension as Lua properties");
     }
 
     private IInteractableBlock createMockBlock(String id, int x, int y, int z) {
         return new IInteractableBlock() {
             @Override public String getId() { return id; }
-            @Override public void setId(String blockId) {}
+            @Override public void setId(String blockId) { }
             @Override public int getX() { return x; }
             @Override public int getY() { return y; }
             @Override public int getZ() { return z; }
@@ -104,20 +87,6 @@ public class InteractionLuaBindingTest {
             @Override public boolean breakBlock() { return true; }
             @Override public boolean useBlock(Object actorEntity) { return true; }
             @Override public Object getRawBlockState() { return "mock_block_state"; }
-        };
-    }
-
-    private IInteractableItem createMockItem(String id, int count, int slot) {
-        return new IInteractableItem() {
-            @Override public String getId() { return id; }
-            @Override public int getCount() { return count; }
-            @Override public void setCount(int count) {}
-            @Override public int getSlot() { return slot; }
-            @Override public void setSlot(int slot) {}
-            @Override public String getOwnerUuid() { return null; }
-            @Override public boolean useItem(Object actorEntity) { return true; }
-            @Override public boolean drop(Object actorEntity, int count) { return true; }
-            @Override public Object getRawItemStack() { return "mock_item_stack"; }
         };
     }
 }

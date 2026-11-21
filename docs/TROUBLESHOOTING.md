@@ -1,6 +1,6 @@
 # 🔍 Troubleshooting & Security Hardening Guide
 
-This guide helps diagnose syntax errors, security policy settings, watchdog instruction limits, and hot-reload behavior in LuaTweaker.
+This guide helps diagnose syntax errors, security policy settings, resource caps, and hot-reload behavior in LuaTweaker.
 
 ---
 
@@ -11,27 +11,22 @@ LuaTweaker enforces strict security guards to protect server environments and pr
 ### A. Path Traversal Guard
 File operations and script loaders enforce path normalization checks (`resolvedPath.normalize().startsWith(rootDir)`). Any attempt to access files outside the game root `lua/` directory using `../` directory traversal will be blocked automatically with a `SecurityException`.
 
-### B. HTTP SSRF & Scheme URL Security Guard
-`http:get()` and `http:post()` validate request URLs:
-- Only `http://` and `https://` protocol schemes are permitted. Schemes like `file://` or `ftp://` are blocked.
-- Connections to loopback or private IP addresses (`localhost`, `127.0.0.1`, `192.168.x.x`, `10.x.x.x`) are blocked by default to prevent Server-Side Request Forgery (SSRF).
-- To allow localhost connection for local development, set `"allowLocalhostHttp": true` in `config/luatweaker.json`.
+### B. HTTP & `Net:HttpGet` Guard
+`Net:HttpGet` is denied by default. A LuaMod must declare the `net.http` permission in its `manifest.json` to call it; without that permission the call returns an error and LuaTweaker prints a red warning in chat and the log. Only `http://` and `https://` schemes are accepted.
 
-### C. `Runtime` API Configurable Security Guard
-JVM manipulation through `LuaTweaker.Runtime` is guarded by the `config/luatweaker.json` setting:
-```json
-{
-  "enableUnsafeAPI": true
-}
-```
-When set to `false`, `Runtime.Class` / `Runtime.Hook` operations are safely intercepted and blocked. Note that mods must also declare the `runtime.reflection` and `runtime.bytecode_hook` permissions in their `manifest.json` before the `LuaTweaker.Runtime` module will even load.
+### C. `Runtime` API Permission Guard
+JVM access through `LuaTweaker.Runtime` is gated by manifest permissions, not by a config file:
+- `runtime.reflection` for `Runtime.Class`, field/static access and `Runtime.Proxy`.
+- `runtime.bytecode_hook` for bytecode patching.
+
+Mods that do not declare these permissions never get the `Runtime` module bound, so the calls fail at the binding layer before any JVM access happens.
 
 ---
 
-## 📝 2. Log File Location (`lua/logs/luatweaker.log`)
+## 📝 2. Log File Location (`logs/luatweaker/latest.log`)
 
 Execution logs and script timing metrics are written to:
-`lua/logs/luatweaker.log`
+`logs/luatweaker/latest.log`, with one file per LuaMod under `logs/luatweaker/mods/<mod_id>.log`.
 
 Log messages follow CraftTweaker-style categorization:
 - `[LuaTweaker/INFO]`: Script load & bootstrap status.
@@ -57,13 +52,33 @@ To validate syntax across all script stage directories:
 
 ---
 
-## ⏱️ 4. Infinite Loop Watchdog Limit
+## ⏱️ 4. Runaway Script Protection
 
-If a script enters an infinite loop (e.g. `while true do end`), LuaTweaker's instruction counter watchdog terminates execution automatically based on `maxInstructionLimit` in `config/luatweaker.json`:
+LuaTweaker does **not** install an instruction-count watchdog. An infinite loop such as
+`while true do end` blocks the thread running it (the server thread for tick-time Lua) and the
+game must be restarted. No config key can interrupt it today.
+
+What the VM does enforce are resource caps, configured in `config/luatweaker-startup.toml`
+(the STARTUP config, so the caps are in place before LuaMods load). Every cap is `0` (disabled)
+by default:
+
+```toml
+[limits]
+maxMemoryBytes = 0        # heap budget for the VM; strongest protection against table/string runaway
+maxCallDepth = 0          # frames; note luava disables its JIT while this is non-zero
+maxCoroutines = 0         # live coroutines; covers deferred-task leaks
+```
+
+A tripped cap raises a normal Lua error instead of exhausting the JVM heap:
 
 ```log
-[LuaTweaker/ERROR] Lua execution terminated: Exceeded instruction limit (500000). Infinite loop detected.
+[LuaTweaker/ERROR] ... stack overflow
+[LuaTweaker/ERROR] ... memory limit exceeded
+[LuaTweaker/ERROR] ... coroutine limit exceeded
 ```
+
+Recommendations: set `maxMemoryBytes` to a value above your heaviest worldgen mod's peak usage,
+and leave `maxCallDepth` at `0` unless you are diagnosing runaway recursion (it costs JIT speed).
 
 ---
 

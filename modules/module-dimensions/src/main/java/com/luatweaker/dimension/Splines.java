@@ -9,19 +9,31 @@ final class Splines {
 
     /** Returns 0 for an empty spline; clamps outside the control points. */
     static double evaluate(List<TerrainSpec.SplinePoint> points, double input) {
-        if (points.isEmpty()) return 0.0;
-        TerrainSpec.SplinePoint first = points.get(0);
-        if (input <= first.input()) return first.output();
-        TerrainSpec.SplinePoint last = points.get(points.size() - 1);
-        if (input >= last.input()) return last.output();
-        for (int i = 1; i < points.size(); i++) {
-            TerrainSpec.SplinePoint right = points.get(i);
-            if (input > right.input()) continue;
-            TerrainSpec.SplinePoint left = points.get(i - 1);
-            double span = right.input() - left.input();
-            double t = span == 0.0 ? 0.0 : (input - left.input()) / span;
-            return left.output() + t * (right.output() - left.output());
+        if (points.isEmpty()) {
+            return 0.0;
         }
-        return last.output();
+        TerrainSpec.SplinePoint first = points.get(0);
+        if (input <= first.input()) {
+            return first.output();
+        }
+        TerrainSpec.SplinePoint last = points.get(points.size() - 1);
+        if (input >= last.input()) {
+            return last.output();
+        }
+        int segment = segmentIndex(points, input);
+        TerrainSpec.SplinePoint right = points.get(segment);
+        TerrainSpec.SplinePoint left = points.get(segment - 1);
+        double span = right.input() - left.input();
+        double t = span == 0.0 ? 0.0 : (input - left.input()) / span;
+        return left.output() + t * (right.output() - left.output());
+    }
+
+    private static int segmentIndex(List<TerrainSpec.SplinePoint> points, double input) {
+        for (int i = 1; i < points.size(); i++) {
+            if (input <= points.get(i).input()) {
+                return i;
+            }
+        }
+        return points.size() - 1;
     }
 }

@@ -5,7 +5,10 @@ import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.core.bind.LuaBinder;
 import org.jetbrains.annotations.NotNull;
 
-public class DimensionLuaBinding {
+public final class DimensionLuaBinding {
+
+    private DimensionLuaBinding() {
+    }
 
     public static void registerBindings(@NotNull ILuaEngine engine) {
         DimensionServiceImpl service = new DimensionServiceImpl(engine);

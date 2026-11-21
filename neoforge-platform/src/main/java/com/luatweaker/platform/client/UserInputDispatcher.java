@@ -6,6 +6,8 @@ import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.luava.runtime.LuaException;
 
 /**
  * Fires {@code UserInputService.InputBegan/InputEnded} from the client input events.
@@ -23,6 +25,7 @@ public final class UserInputDispatcher {
 
     public static final String TYPE_KEY = "key";
     public static final String TYPE_MOUSE = "mouse";
+    private static final String SIGNAL_FIRE_SYNC = "FireSync";
 
     private UserInputDispatcher() {
     }
@@ -41,29 +44,45 @@ public final class UserInputDispatcher {
             if (serviceValue == null || !serviceValue.isTable()) {
                 return;
             }
-            ILuaValue signalValue = serviceValue.asTable().rawget(signalName);
-            if (signalValue == null || !signalValue.isTable()) {
+            ILuaTable signal = signalTable(serviceValue.asTable(), signalName);
+            if (signal == null) {
                 return;
             }
-            ILuaTable signal = signalValue.asTable();
-            ILuaValue fireFn = signal.rawget("FireSync");
-            if (fireFn == null || !fireFn.isFunction()) {
-                ILuaValue signalClass = globals.rawget("Signal");
-                if (signalClass != null && signalClass.isTable()) {
-                    fireFn = signalClass.asTable().rawget("FireSync");
-                }
+            ILuaValue fireFn = fireFunction(globals, signal);
+            if (fireFn == null) {
+                return;
             }
-            if (fireFn != null && fireFn.isFunction()) {
-                engine.callFunction(fireFn, signal,
-                        engine.wrapString(inputType),
-                        engine.wrapNumber(code),
-                        engine.wrapNumber(action),
-                        engine.wrapNumber(modifiers),
-                        engine.wrapBoolean(gameProcessed));
-            }
-        } catch (RuntimeException e) {
+            engine.callFunction(fireFn, signal,
+                    engine.wrapString(inputType),
+                    engine.wrapNumber(code),
+                    engine.wrapNumber(action),
+                    engine.wrapNumber(modifiers),
+                    engine.wrapBoolean(gameProcessed));
+        } catch (LuaException | IllegalStateException e) {
             LuaTweakerLog.get().debug(LogStage.SYSTEM,
                     "UserInputService signal '" + signalName + "' dispatch failed: " + e.getMessage());
         }
+    }
+
+    private static @Nullable ILuaTable signalTable(@NotNull ILuaTable service, @NotNull String signalName) {
+        ILuaValue signalValue = service.rawget(signalName);
+        return signalValue != null && signalValue.isTable() ? signalValue.asTable() : null;
+    }
+
+    /**
+     * Resolves {@code FireSync}, preferring the signal's own method and falling back to the
+     * shared {@code Signal} class table (signals created before the bootstrap upgrade).
+     */
+    private static @Nullable ILuaValue fireFunction(@NotNull ILuaTable globals, @NotNull ILuaTable signal) {
+        ILuaValue fireFn = signal.rawget(SIGNAL_FIRE_SYNC);
+        if (fireFn != null && fireFn.isFunction()) {
+            return fireFn;
+        }
+        ILuaValue signalClass = globals.rawget("Signal");
+        if (signalClass == null || !signalClass.isTable()) {
+            return null;
+        }
+        ILuaValue classFire = signalClass.asTable().rawget(SIGNAL_FIRE_SYNC);
+        return classFire != null && classFire.isFunction() ? classFire : null;
     }
 }

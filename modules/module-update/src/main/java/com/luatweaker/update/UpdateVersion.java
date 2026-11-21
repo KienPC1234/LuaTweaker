@@ -31,7 +31,9 @@ public final class UpdateVersion {
             String sa = i < pa.size() ? pa.get(i) : "0";
             String sb = i < pb.size() ? pb.get(i) : "0";
             int c = compareSegment(sa, sb);
-            if (c != 0) return c;
+            if (c != 0) {
+                return c;
+            }
         }
         return 0;
     }
@@ -44,14 +46,22 @@ public final class UpdateVersion {
     private static int compareSegment(String a, String b) {
         Integer na = parseNum(a);
         Integer nb = parseNum(b);
-        if (na != null && nb != null) return Integer.compare(na, nb);
-        if (na != null) return -1;
-        if (nb != null) return 1;
+        if (na != null && nb != null) {
+            return Integer.compare(na, nb);
+        }
+        if (na != null) {
+            return -1;
+        }
+        if (nb != null) {
+            return 1;
+        }
         return a.compareTo(b);
     }
 
     private static Integer parseNum(String segment) {
-        if (segment.isEmpty()) return null;
+        if (segment.isEmpty()) {
+            return null;
+        }
         try {
             return Integer.parseInt(segment);
         } catch (NumberFormatException e) {

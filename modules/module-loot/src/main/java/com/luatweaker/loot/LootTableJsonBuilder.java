@@ -18,90 +18,100 @@ import java.util.List;
  */
 public final class LootTableJsonBuilder {
 
+    private static final String NAME_FIELD = "\"name\":\"";
+
     private LootTableJsonBuilder() {
     }
 
     public static String buildEntityLootTableJson(List<LootServiceImpl.MobDropEntry> drops) {
-        StringBuilder pools = new StringBuilder();
+        StringBuilder pools = new StringBuilder(512);
         for (int i = 0; i < drops.size(); i++) {
-            LootServiceImpl.MobDropEntry drop = drops.get(i);
             if (i > 0) {
-                pools.append(",");
+                pools.append(',');
             }
-
-            StringBuilder functions = new StringBuilder();
-            if (drop.minCount() != 1 || drop.maxCount() != 1) {
-                functions.append(",{\"function\":\"minecraft:set_count\",")
-                    .append("\"count\":{\"type\":\"minecraft:uniform\",")
-                    .append("\"min\":").append(drop.minCount()).append(",")
-                    .append("\"max\":").append(drop.maxCount()).append("}}");
-            }
-            if (drop.lootingBonus() > 0) {
-                // Vanilla shape: uniform(0, bonus) extra items per Looting level, bounded by bonus.
-                functions.append(",{\"function\":\"minecraft:enchanted_count_increase\",")
-                    .append("\"enchantment\":\"minecraft:looting\",")
-                    .append("\"count\":{\"type\":\"minecraft:uniform\",")
-                    .append("\"min\":0.0,\"max\":").append(drop.lootingBonus()).append(".0}}");
-            }
-
-            pools.append("{\"rolls\":1,\"entries\":[{")
-                .append("\"type\":\"minecraft:item\",")
-                .append("\"name\":\"").append(drop.itemId()).append("\"");
-            appendFunctions(pools, functions);
-            appendRandomChance(pools, drop.chance());
-            pools.append("}]}");
+            pools.append(renderEntityEntry(drops.get(i)));
         }
 
         return "{\"type\":\"minecraft:entity\",\"pools\":[" + pools + "]}";
     }
 
+    private static String renderEntityEntry(LootServiceImpl.MobDropEntry drop) {
+        StringBuilder entry = new StringBuilder(256);
+        entry.append("{\"rolls\":1,\"entries\":[{\"type\":\"minecraft:item\",")
+                .append(NAME_FIELD).append(drop.itemId()).append('\"');
+        LootJsonFragments.appendFunctions(entry, renderEntityFunctions(drop));
+        LootJsonFragments.appendRandomChance(entry, drop.chance());
+        entry.append("}]}");
+        return entry.toString();
+    }
+
+    private static String renderEntityFunctions(LootServiceImpl.MobDropEntry drop) {
+        StringBuilder functions = new StringBuilder(256);
+        if (drop.minCount() != 1 || drop.maxCount() != 1) {
+            functions.append(",{\"function\":\"minecraft:set_count\","
+                    + "\"count\":{\"type\":\"minecraft:uniform\",\"min\":")
+                    .append(drop.minCount())
+                    .append(",\"max\":").append(drop.maxCount()).append("}}");
+        }
+        if (drop.lootingBonus() > 0) {
+            // Vanilla shape: uniform(0, bonus) extra items per Looting level, bounded by bonus.
+            functions.append(",{\"function\":\"minecraft:enchanted_count_increase\","
+                    + "\"enchantment\":\"minecraft:looting\","
+                    + "\"count\":{\"type\":\"minecraft:uniform\",\"min\":0.0,\"max\":")
+                    .append(drop.lootingBonus()).append(".0}}");
+        }
+        return LootJsonFragments.stripLeadingComma(functions);
+    }
+
     public static String buildChestLootTableJson(List<LootServiceImpl.ChestLootEntry> entries) {
-        StringBuilder poolEntries = new StringBuilder();
+        StringBuilder poolEntries = new StringBuilder(512);
         for (int i = 0; i < entries.size(); i++) {
-            LootServiceImpl.ChestLootEntry entry = entries.get(i);
             if (i > 0) {
-                poolEntries.append(",");
+                poolEntries.append(',');
             }
-
-            StringBuilder functions = new StringBuilder();
-            if (entry.minCount() != 1 || entry.maxCount() != 1) {
-                functions.append(",{\"function\":\"minecraft:set_count\",")
-                    .append("\"count\":{\"type\":\"minecraft:uniform\",")
-                    .append("\"min\":").append(entry.minCount()).append(",")
-                    .append("\"max\":").append(entry.maxCount()).append("}}");
-            }
-
-            poolEntries.append("{\"type\":\"minecraft:item\",")
-                .append("\"name\":\"").append(entry.itemId()).append("\"");
-            appendFunctions(poolEntries, functions);
-            appendRandomChance(poolEntries, entry.chance());
-            poolEntries.append("}");
+            poolEntries.append(renderChestEntry(entries.get(i)));
         }
 
         return "{\"type\":\"minecraft:chest\",\"pools\":[{\"rolls\":1,\"entries\":["
             + poolEntries + "]}]}";
     }
 
-    public static String buildBlockLootTableJson(LootServiceImpl.BlockDropEntry drop) {
-        StringBuilder pool = new StringBuilder();
-        pool.append("{\"rolls\":1,\"entries\":[{")
-            .append("\"type\":\"minecraft:item\",")
-            .append("\"name\":\"").append(drop.itemId()).append("\"");
-
-        StringBuilder functions = new StringBuilder();
-        if (drop.fortuneBonus() > 0) {
-            functions.append(",{\"function\":\"minecraft:apply_bonus\",")
-                .append("\"enchantment\":\"minecraft:fortune\",")
-                .append("\"formula\":\"minecraft:uniform_bonus_count\",")
-                .append("\"parameters\":{\"bonusMultiplier\":").append(drop.fortuneBonus()).append("}}");
+    private static String renderChestEntry(LootServiceImpl.ChestLootEntry entry) {
+        StringBuilder rendered = new StringBuilder(256);
+        rendered.append("{\"type\":\"minecraft:item\",")
+                .append(NAME_FIELD).append(entry.itemId()).append('\"');
+        if (entry.minCount() != 1 || entry.maxCount() != 1) {
+            StringBuilder functions = new StringBuilder(128);
+            functions.append("{\"function\":\"minecraft:set_count\","
+                    + "\"count\":{\"type\":\"minecraft:uniform\",\"min\":")
+                    .append(entry.minCount())
+                    .append(",\"max\":").append(entry.maxCount()).append("}}");
+            LootJsonFragments.appendFunctions(rendered, functions.toString());
         }
-        appendFunctions(pool, functions);
+        LootJsonFragments.appendRandomChance(rendered, entry.chance());
+        rendered.append('}');
+        return rendered.toString();
+    }
+
+    public static String buildBlockLootTableJson(LootServiceImpl.BlockDropEntry drop) {
+        StringBuilder pool = new StringBuilder(256);
+        pool.append("{\"rolls\":1,\"entries\":[{\"type\":\"minecraft:item\",")
+                .append(NAME_FIELD).append(drop.itemId()).append('\"');
+
+        if (drop.fortuneBonus() > 0) {
+            StringBuilder functions = new StringBuilder(192);
+            functions.append("{\"function\":\"minecraft:apply_bonus\","
+                    + "\"enchantment\":\"minecraft:fortune\","
+                    + "\"formula\":\"minecraft:uniform_bonus_count\","
+                    + "\"parameters\":{\"bonusMultiplier\":")
+                    .append(drop.fortuneBonus()).append("}}");
+            LootJsonFragments.appendFunctions(pool, functions.toString());
+        }
         if (drop.silkTouchDrop() != null) {
-            pool.append(",\"conditions\":[{")
-                .append("\"condition\":\"minecraft:match_tool\",")
-                .append("\"predicate\":{\"enchantments\":[{")
-                .append("\"enchantment\":\"minecraft:silk_touch\",")
-                .append("\"levels\":{\"min\":1}}]}}]");
+            pool.append(",\"conditions\":[{\"condition\":\"minecraft:match_tool\","
+                    + "\"predicate\":{\"enchantments\":[{"
+                    + "\"enchantment\":\"minecraft:silk_touch\","
+                    + "\"levels\":{\"min\":1}}]}}]");
         }
         pool.append("}]}");
 
@@ -123,35 +133,20 @@ public final class LootTableJsonBuilder {
         if (randomSequence == null || randomSequence.isBlank()) {
             throw new IllegalArgumentException("randomSequence must not be blank");
         }
-        StringBuilder poolEntries = new StringBuilder();
+        StringBuilder poolEntries = new StringBuilder(512);
         for (int i = 0; i < entries.size(); i++) {
-            LootServiceImpl.FishingLootEntry entry = entries.get(i);
             if (i > 0) {
-                poolEntries.append(",");
+                poolEntries.append(',');
             }
-
-            poolEntries.append("{\"type\":\"minecraft:item\",")
-                .append("\"name\":\"").append(entry.itemId()).append("\",")
-                .append("\"weight\":").append((int) (entry.chance() * 100))
-                .append("}");
+            poolEntries.append(renderFishingEntry(entries.get(i)));
         }
 
         return "{\"type\":\"minecraft:fishing\",\"pools\":[{\"bonus_rolls\":0.0,\"entries\":["
             + poolEntries + "],\"rolls\":1.0}],\"random_sequence\":\"" + randomSequence + "\"}";
     }
 
-    private static void appendFunctions(StringBuilder out, StringBuilder functions) {
-        if (functions.length() > 0) {
-            out.append(",\"functions\":[").append(functions.substring(1)).append("]");
-        }
-    }
-
-    private static void appendRandomChance(StringBuilder out, double chance) {
-        if (chance < 1.0) {
-            out.append(",\"conditions\":[{")
-                .append("\"condition\":\"minecraft:random_chance\",")
-                .append("\"chance\":").append(chance)
-                .append("}]");
-        }
+    private static String renderFishingEntry(LootServiceImpl.FishingLootEntry entry) {
+        return "{\"type\":\"minecraft:item\"," + NAME_FIELD + entry.itemId() + "\","
+                + "\"weight\":" + LootJsonFragments.percentWeight(entry.chance()) + "}";
     }
 }

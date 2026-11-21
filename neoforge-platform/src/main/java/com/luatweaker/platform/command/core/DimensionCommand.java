@@ -19,6 +19,9 @@ import java.util.List;
  * pipeline (Lua calls per chunk and milliseconds per chunk).</p>
  */
 public class DimensionCommand implements ILuaTweakerCommand {
+    private static final int MIN_ARGS_FOR_ID = 2;
+    private static final int MIN_ARGS_FOR_VALUE = 3;
+
 
     @Override
     public String getName() { return "dimension"; }
@@ -68,8 +71,8 @@ public class DimensionCommand implements ILuaTweakerCommand {
         return 1;
     }
 
-    private int info(ICommandSender sender, DimensionServiceImpl service, String[] args) {
-        if (args.length < 2) {
+    private int info(ICommandSender sender, DimensionServiceImpl service, String... args) {
+        if (args.length < MIN_ARGS_FOR_ID) {
             sender.sendError("Usage: /lt dimension info <dimensionId>");
             return 0;
         }
@@ -92,14 +95,14 @@ public class DimensionCommand implements ILuaTweakerCommand {
         return 1;
     }
 
-    private int bench(ICommandSender sender, DimensionServiceImpl service, String[] args) {
-        if (args.length < 2) {
+    private int bench(ICommandSender sender, DimensionServiceImpl service, String... args) {
+        if (args.length < MIN_ARGS_FOR_ID) {
             sender.sendError("Usage: /lt dimension bench <dimensionId> [radius 0-"
                     + DimensionBenchmark.MAX_RADIUS + "]");
             return 0;
         }
         int radius = DimensionBenchmark.DEFAULT_RADIUS;
-        if (args.length >= 3) {
+        if (args.length >= MIN_ARGS_FOR_VALUE) {
             try {
                 radius = Integer.parseInt(args[2]);
             } catch (NumberFormatException e) {
@@ -133,8 +136,8 @@ public class DimensionCommand implements ILuaTweakerCommand {
         };
     }
 
-    private int teleport(ICommandSender sender, DimensionServiceImpl service, String[] args) {
-        if (args.length < 2) {
+    private int teleport(ICommandSender sender, DimensionServiceImpl service, String... args) {
+        if (args.length < MIN_ARGS_FOR_ID) {
             sender.sendError("Usage: /lt dimension tp <dimensionId>");
             return 0;
         }

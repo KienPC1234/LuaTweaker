@@ -1,6 +1,6 @@
 # Getting Started
 
-Target: **Minecraft 1.21.1 (NeoForge)** · **Java 21 (Temurin)** · **Lua 5.4 (luava 0.2.5)**.
+Target: **Minecraft 1.21.1 (NeoForge)** · **Java 21 (Temurin)** · **Lua 5.4 (luava 0.2.7)**.
 
 ## 1. Run it
 
@@ -17,9 +17,15 @@ On launch the game folder gains:
 luamods/<id>/           manifest.json, main.lua, src/startup|server|client,
                         default_config.json, assets/, data/
 luaconfig/<id>.json     per-mod config (editable, merged over defaults)
+config/luatweaker-startup.toml   engine VM caps (memory/call depth/coroutines)
+config/luatweaker-common.toml    debug, stub export, experimental-warning
 .luatweaker/stubs/      auto-generated EmmyLua stubs for your editor
 logs/luatweaker/        engine log + per-mod logs
 ```
+
+`config/luatweaker-startup.toml` is read before any LuaMod loads, so its `[limits]` values
+also cover the startup load phase. All caps ship disabled (`0`); see
+[TROUBLESHOOTING](TROUBLESHOOTING.md#-4-runaway-script-protection) for recommended values.
 
 Dev workspace `neoforge-platform/luamods/` syncs to `run/luamods/` via `syncLuaMods`.
 The shipped example mod is `luatweaker_test` (content + recipes + brain demos).
@@ -77,6 +83,13 @@ Point your Lua language server at that folder:
 | `/lt syntax <file>` | Check a file without running it. |
 | `/lt list` | List loaded mods / scripts. |
 | `/lt debug [on\|off]` | Verbose logging while debugging. |
+
+Prefer clicking? The title and pause menus have a small square **LT** button
+that opens the in-game LuaMod manager: mod list with load status, per-mod
+details and dependencies, direct `luaconfig/<mod>.json` editing (Save, or Save
+& Reload for hot config), per-mod log viewer, and ON/OFF switches. Turning a
+mod OFF auto-disables the mods that require it (shown for confirm first);
+changes apply on Reload. The list is searchable, shows update badges, and a bindable manager key exists in Controls. Config saves keep a .bak backup; mods can be deleted from the detail screen.
 
 Full reference: [COMMANDS](COMMANDS.md). When stuck: [TROUBLESHOOTING](TROUBLESHOOTING.md).
 Next: [SCRIPTING_GUIDE](SCRIPTING_GUIDE.md) for conventions, then a system doc

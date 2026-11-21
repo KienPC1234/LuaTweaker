@@ -19,7 +19,7 @@ public class LuaInstance {
     public LuaInstance(@NotNull String className, @Nullable LuaInstance parent) {
         this.className = className;
         this.name = className;
-        setParent(parent);
+        attachParent(parent);
     }
 
     @NotNull
@@ -45,6 +45,10 @@ public class LuaInstance {
         if (this.parent != null) {
             this.parent.children.remove(this);
         }
+        attachParent(parent);
+    }
+
+    private void attachParent(@Nullable LuaInstance parent) {
         this.parent = parent;
         if (parent != null) {
             parent.children.add(this);

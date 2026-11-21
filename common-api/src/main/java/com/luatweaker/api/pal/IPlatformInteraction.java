@@ -141,7 +141,7 @@ public interface IPlatformInteraction {
     }
 
     default boolean checkPattern(@NotNull String dimension, int originX, int originY, int originZ,
-                                @NotNull java.util.List<java.util.Map<String, Object>> pattern) {
+                                @NotNull List<java.util.Map<String, Object>> pattern) {
         return false;
     }
 
@@ -178,13 +178,13 @@ public interface IPlatformInteraction {
     }
 
     @NotNull
-    default java.util.List<java.util.Map<String, Object>> findBlocks(
+    default List<java.util.Map<String, Object>> findBlocks(
             @NotNull String dimension,
             int x, int y, int z,
             int radius,
             @NotNull String filter,
             int maxResults) {
-        return java.util.List.of();
+        return List.of();
     }
 
     default boolean setEnergy(@NotNull String dimension, int x, int y, int z, int amount) {
@@ -214,6 +214,18 @@ public interface IPlatformInteraction {
      * @return True if the animation was successfully dispatched, false otherwise
      */
     default boolean triggerGeoAnimation(@NotNull Object target, @NotNull String controllerName, @NotNull String animName, double speed, boolean loop) {
+        return false;
+    }
+
+    /**
+     * Stops a triggered skeletal animation via GeckoLib on an Entity, BlockEntity, or Item.
+     *
+     * @param target The target instance (IEntity, IInteractableBlock, IInteractableItem, BlockPos/BlockEntity)
+     * @param controllerName Name of the animation controller (default "controller")
+     * @param animName Name of the animation from the .animation.json file
+     * @return True if the stop was successfully dispatched, false otherwise
+     */
+    default boolean stopGeoAnimation(@NotNull Object target, @NotNull String controllerName, @NotNull String animName) {
         return false;
     }
 }

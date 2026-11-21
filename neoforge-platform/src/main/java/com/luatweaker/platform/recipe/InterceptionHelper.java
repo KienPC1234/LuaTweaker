@@ -2,10 +2,10 @@ package com.luatweaker.platform.recipe;
 
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
-import com.luatweaker.api.recipe.IRecipeManagerService;
 import com.luatweaker.api.wrapper.IngredientWrapper;
 import com.luatweaker.api.wrapper.ItemCount;
 import net.minecraft.core.HolderLookup;
+import org.jetbrains.annotations.NotNull;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -19,10 +19,10 @@ import net.minecraft.world.item.crafting.*;
 
 import net.minecraft.world.item.trading.ItemCost;
 import net.minecraft.world.item.trading.MerchantOffer;
-import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.event.AnvilUpdateEvent;
 import net.neoforged.neoforge.event.brewing.RegisterBrewingRecipesEvent;
 import net.neoforged.neoforge.event.village.VillagerTradesEvent;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,7 +32,17 @@ import java.lang.reflect.Field;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-public class InterceptionHelper {
+public final class InterceptionHelper {
+    private static final int MAX_FIELDS_TO_SCAN = 50;
+    private static final char PATTERN_EMPTY_SLOT = ' ';
+    /** Shared debug message for reflective lookups that do not apply. */
+    private static final String IGNORED_EXCEPTION = "Ignored exception: {}";
+    /** Merchant offer price multiplier used by every Lua trade (vanilla default). */
+    private static final float TRADE_PRICE_MULTIPLIER = 0.05f;
+
+    private InterceptionHelper() {
+    }
+
     private static final Logger LOGGER = LoggerFactory.getLogger(InterceptionHelper.class);
 
     /** Pending villager trades to apply via VillagerTradesEvent */
@@ -55,14 +65,26 @@ public class InterceptionHelper {
     private static final Map<RecipeManager, Object[]> LAST_WRITTEN_MAPS =
             Collections.synchronizedMap(new WeakHashMap<>());
 
+    /** Guards the read-modify-write of {@link #RECIPE_SNAPSHOTS} and {@link #LAST_WRITTEN_MAPS}. */
+    private static final java.util.concurrent.locks.ReentrantLock SNAPSHOT_LOCK =
+            new java.util.concurrent.locks.ReentrantLock();
+
     private record RecipeSnapshot(Object byTypeIdentity, Object byNameIdentity,
                                   Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> byType,
                                   Map<ResourceLocation, RecipeHolder<?>> byName) {
     }
 
-    public static List<NeoForgeRecipeManager.TradeData> getPendingTrades() { return Collections.unmodifiableList(PENDING_TRADES); }
-    public static List<NeoForgeRecipeManager.BrewingData> getPendingBrewing() { return Collections.unmodifiableList(PENDING_BREWING); }
-    public static List<NeoForgeRecipeManager.AnvilData> getPendingAnvil() { return Collections.unmodifiableList(PENDING_ANVIL); }
+    public static List<NeoForgeRecipeManager.TradeData> getPendingTrades() {
+        return Collections.unmodifiableList(PENDING_TRADES);
+    }
+
+    public static List<NeoForgeRecipeManager.BrewingData> getPendingBrewing() {
+        return Collections.unmodifiableList(PENDING_BREWING);
+    }
+
+    public static List<NeoForgeRecipeManager.AnvilData> getPendingAnvil() {
+        return Collections.unmodifiableList(PENDING_ANVIL);
+    }
 
     public static void clearPending() {
         PENDING_TRADES.clear();
@@ -74,265 +96,393 @@ public class InterceptionHelper {
         clearPending();
         for (NeoForgeRecipeManager.RecipeModification mod : modifications) {
             switch (mod.type()) {
-                case ADD_ANVIL   -> schedulePendingAnvil((NeoForgeRecipeManager.AnvilData) mod.data());
+                case ADD_ANVIL -> schedulePendingAnvil((NeoForgeRecipeManager.AnvilData) mod.data());
                 case ADD_BREWING -> schedulePendingBrewing((NeoForgeRecipeManager.BrewingData) mod.data());
-                case ADD_TRADE   -> schedulePendingTrade((NeoForgeRecipeManager.TradeData) mod.data());
-                default -> {}
+                case ADD_TRADE -> schedulePendingTrade((NeoForgeRecipeManager.TradeData) mod.data());
+                default -> {
+                }
             }
         }
     }
 
     @SuppressWarnings("unchecked")
-    public static void applyModifications(RecipeManager recipeManager, List<NeoForgeRecipeManager.RecipeModification> modifications) {
+    public static void applyModifications(RecipeManager recipeManager,
+                                          List<NeoForgeRecipeManager.RecipeModification> modifications) {
         try {
-            Field byTypeField = findRecipesByTypeField(recipeManager);
-            Field byNameField = findByNameMapField(recipeManager);
-
-            if (byTypeField == null || byNameField == null) {
-                com.luatweaker.api.log.LuaTweakerLog.get().error(
+            applyReflectively(recipeManager, modifications);
+        } catch (ReflectiveOperationException e) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(
                     com.luatweaker.api.log.LogStage.RECIPE_APPLY,
-                    "Cannot find RecipeManager fields: byType=" + byTypeField + " byName=" + byNameField
-                );
-                return;
-            }
-            if (byTypeField.equals(byNameField)) {
-                com.luatweaker.api.log.LuaTweakerLog.get().error(
+                    "Failed to reflectively intercept RecipeManager: "
+                            + e.getClass().getName() + ": " + e.getMessage());
+            logStack(e);
+        }
+    }
+
+    private static void applyReflectively(RecipeManager recipeManager,
+                                          List<NeoForgeRecipeManager.RecipeModification> modifications)
+            throws ReflectiveOperationException {
+        Field byTypeField = findRecipesByTypeField(recipeManager);
+        Field byNameField = findByNameMapField(recipeManager);
+        if (byTypeField == null || byNameField == null) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(
                     com.luatweaker.api.log.LogStage.RECIPE_APPLY,
-                    "byType and byName fields are the same field, aborting."
-                );
-                return;
-            }
-
-            byTypeField.setAccessible(true);
-            byNameField.setAccessible(true);
-
-            Object byTypeRaw = byTypeField.get(recipeManager);
-            Object byNameRaw = byNameField.get(recipeManager);
-
-            // Extract byName map dynamically
-            Map<ResourceLocation, RecipeHolder<?>> byName = new HashMap<>();
-            if (byNameRaw instanceof Map<?, ?> rawByName) {
-                for (Map.Entry<?, ?> entry : rawByName.entrySet()) {
-                    Object rawKey = entry.getKey();
-                    Object rawVal = entry.getValue();
-                    if (rawVal instanceof RecipeHolder<?> holder) {
-                        ResourceLocation id;
-                        if (rawKey instanceof ResourceLocation rl) {
-                            id = rl;
-                        } else {
-                            id = holder.id();
-                        }
-                        byName.put(id, holder);
-                    }
-                }
-            }
-
-            // Extract byType map dynamically without assuming concrete generic keys
-            Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> baseRecipes = new HashMap<>();
-            if (byTypeRaw instanceof Multimap<?, ?> rawMulti) {
-                for (Map.Entry<?, ?> entry : rawMulti.entries()) {
-                    Object rawKey = entry.getKey();
-                    Object rawVal = entry.getValue();
-                    if (rawVal instanceof RecipeHolder<?> holder) {
-                        RecipeType<?> type = null;
-                        if (rawKey instanceof RecipeType<?> rt) {
-                            type = rt;
-                        } else if (rawKey instanceof ResourceLocation rl) {
-                            type = BuiltInRegistries.RECIPE_TYPE.get(rl);
-                        }
-                        if (type != null) {
-                            baseRecipes.computeIfAbsent(type, k -> new HashMap<>()).put(holder.id(), holder);
-                        }
-                    }
-                }
-            } else if (byTypeRaw instanceof Map<?, ?> rawMap) {
-                for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
-                    Object rawKey = entry.getKey();
-                    Object rawVal = entry.getValue();
-                    RecipeType<?> type = null;
-                    if (rawKey instanceof RecipeType<?> rt) {
-                        type = rt;
-                    } else if (rawKey instanceof ResourceLocation rl) {
-                        type = BuiltInRegistries.RECIPE_TYPE.get(rl);
-                    }
-                    if (type != null) {
-                        Map<ResourceLocation, RecipeHolder<?>> innerMap = baseRecipes.computeIfAbsent(type, k -> new HashMap<>());
-                        if (rawVal instanceof Map<?, ?> valMap) {
-                            for (Object v : valMap.values()) {
-                                if (v instanceof RecipeHolder<?> holder) {
-                                    innerMap.put(holder.id(), holder);
-                                }
-                            }
-                        } else if (rawVal instanceof Collection<?> valCol) {
-                            for (Object v : valCol) {
-                                if (v instanceof RecipeHolder<?> holder) {
-                                    innerMap.put(holder.id(), holder);
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                    "Cannot find RecipeManager fields: byType=" + byTypeField + " byName=" + byNameField);
+            return;
+        }
+        if (byTypeField.equals(byNameField)) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(
                     com.luatweaker.api.log.LogStage.RECIPE_APPLY,
-                    "Unexpected byType type: " + (byTypeRaw != null ? byTypeRaw.getClass().getName() : "null")
-                );
-            }
+                    "byType and byName fields are the same field, aborting.");
+            return;
+        }
+        byTypeField.trySetAccessible();
+        byNameField.trySetAccessible();
+        Object byTypeRaw = byTypeField.get(recipeManager);
+        Object byNameRaw = byNameField.get(recipeManager);
+        var byName = extractByName(byNameRaw);
+        var baseRecipes = extractByType(byTypeRaw);
+        RecipeSnapshot snapshot = captureSnapshot(recipeManager, byTypeRaw, byNameRaw, baseRecipes, byName);
+        var newRecipes = copyByType(snapshot.byType());
+        HolderLookup.Provider registries = findRegistries(recipeManager);
+        var newByName = new HashMap<>(snapshot.byName());
+        for (NeoForgeRecipeManager.RecipeModification mod : modifications) {
+            // One malformed recipe must not discard every other mod's changes.
+            com.luatweaker.platform.util.CallbackFirewall.run(
+                    () -> dispatch(mod, newRecipes, newByName, registries),
+                    com.luatweaker.api.log.LogStage.RECIPE_APPLY,
+                    () -> "Skipped recipe modification " + mod.type());
+        }
+        writeBack(recipeManager, byTypeField, byNameField, newRecipes, newByName);
+        com.luatweaker.api.log.LuaTweakerLog.get().info(
+                com.luatweaker.api.log.LogStage.RECIPE_APPLY,
+                "Applied " + modifications.size() + " recipe modifications successfully to RecipeManager.");
+    }
 
-            Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> baseSnapshot;
-            Map<ResourceLocation, RecipeHolder<?>> nameSnapshot;
-            synchronized (RECIPE_SNAPSHOTS) {
-                RecipeSnapshot snapshot = RECIPE_SNAPSHOTS.get(recipeManager);
-                Object[] lastWritten = LAST_WRITTEN_MAPS.get(recipeManager);
-                boolean vanillaRestored = snapshot == null
-                        || (snapshot.byTypeIdentity() != byTypeRaw
-                            && (lastWritten == null || lastWritten[0] != byTypeRaw))
-                        || (snapshot.byNameIdentity() != byNameRaw
-                            && (lastWritten == null || lastWritten[1] != byNameRaw));
-                if (vanillaRestored) {
-                    snapshot = new RecipeSnapshot(byTypeRaw, byNameRaw,
-                            copyByType(baseRecipes), new HashMap<>(byName));
-                    RECIPE_SNAPSHOTS.put(recipeManager, snapshot);
-                    com.luatweaker.api.log.LuaTweakerLog.get().info(
+    private static void dispatch(NeoForgeRecipeManager.RecipeModification mod,
+                                 Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes,
+                                 Map<ResourceLocation, RecipeHolder<?>> byName,
+                                 HolderLookup.Provider registries) {
+        switch (mod.type()) {
+            case REMOVE_BY_OUTPUT, REMOVE_BY_INPUT, REMOVE_BY_ID, REMOVE_BY_MOD, REMOVE_BY_TAG, REMOVE_ALL ->
+                    dispatchRemoval(mod, recipes, byName, registries);
+            case REPLACE_INPUT, REPLACE_OUTPUT, ADD_SHAPELESS, ADD_SHAPED ->
+                    dispatchCrafting(mod, recipes, byName, registries);
+            case ADD_SMELTING, ADD_BLASTING, ADD_SMOKING, ADD_CAMPFIRE, ADD_STONECUTTING, ADD_SMITHING ->
+                    dispatchCooking(mod, recipes, byName);
+            case ADD_ANVIL, ADD_BREWING, ADD_TRADE -> dispatchEvent(mod);
+            default -> LOGGER.warn("[LuaTweaker] Unhandled recipe modification type {}", mod.type());
+        }
+    }
+
+    private static void dispatchRemoval(NeoForgeRecipeManager.RecipeModification mod,
+                                        Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes,
+                                        Map<ResourceLocation, RecipeHolder<?>> byName,
+                                        HolderLookup.Provider registries) {
+        switch (mod.type()) {
+            case REMOVE_BY_OUTPUT -> removeByOutput(recipes, byName, (String) mod.data(), registries);
+            case REMOVE_BY_INPUT -> removeByInput(recipes, byName, (String) mod.data());
+            case REMOVE_BY_ID -> removeById(recipes, byName, (String) mod.data());
+            case REMOVE_BY_MOD -> removeByMod(recipes, byName, (String) mod.data());
+            case REMOVE_BY_TAG -> removeByTag(recipes, byName, (String) mod.data(), registries);
+            case REMOVE_ALL -> {
+                recipes.clear();
+                byName.clear();
+            }
+            default -> LOGGER.warn("[LuaTweaker] Unhandled removal type {}", mod.type());
+        }
+    }
+
+    private static void dispatchCrafting(NeoForgeRecipeManager.RecipeModification mod,
+                                         Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes,
+                                         Map<ResourceLocation, RecipeHolder<?>> byName,
+                                         HolderLookup.Provider registries) {
+        switch (mod.type()) {
+            case ADD_SHAPELESS -> addShapeless(recipes, byName, (NeoForgeRecipeManager.ShapelessData) mod.data());
+            case ADD_SHAPED -> addShaped(recipes, byName, (NeoForgeRecipeManager.ShapedData) mod.data());
+            case REPLACE_INPUT -> replaceInput(recipes, byName,
+                    (NeoForgeRecipeManager.ReplacementData) mod.data(), registries);
+            case REPLACE_OUTPUT -> replaceOutput(recipes, byName,
+                    (NeoForgeRecipeManager.ReplacementData) mod.data(), registries);
+            default -> LOGGER.warn("[LuaTweaker] Unhandled crafting type {}", mod.type());
+        }
+    }
+
+    private static void dispatchCooking(NeoForgeRecipeManager.RecipeModification mod,
+                                        Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes,
+                                        Map<ResourceLocation, RecipeHolder<?>> byName) {
+        switch (mod.type()) {
+            case ADD_SMELTING -> addSmelting(recipes, byName, (NeoForgeRecipeManager.CookingData) mod.data());
+            case ADD_BLASTING -> addBlasting(recipes, byName, (NeoForgeRecipeManager.CookingData) mod.data());
+            case ADD_SMOKING -> addSmoking(recipes, byName, (NeoForgeRecipeManager.CookingData) mod.data());
+            case ADD_CAMPFIRE -> addCampfire(recipes, byName, (NeoForgeRecipeManager.CookingData) mod.data());
+            case ADD_STONECUTTING -> addStonecutting(recipes, byName,
+                    (NeoForgeRecipeManager.StonecuttingData) mod.data());
+            case ADD_SMITHING -> addSmithing(recipes, byName, (NeoForgeRecipeManager.SmithingData) mod.data());
+            default -> LOGGER.warn("[LuaTweaker] Unhandled cooking type {}", mod.type());
+        }
+    }
+
+    private static void dispatchEvent(NeoForgeRecipeManager.RecipeModification mod) {
+        switch (mod.type()) {
+            case ADD_ANVIL -> schedulePendingAnvil((NeoForgeRecipeManager.AnvilData) mod.data());
+            case ADD_BREWING -> schedulePendingBrewing((NeoForgeRecipeManager.BrewingData) mod.data());
+            case ADD_TRADE -> schedulePendingTrade((NeoForgeRecipeManager.TradeData) mod.data());
+            default -> LOGGER.warn("[LuaTweaker] Unhandled event type {}", mod.type());
+        }
+    }
+
+    private static Map<ResourceLocation, RecipeHolder<?>> extractByName(Object byNameRaw) {
+        var byName = new HashMap<ResourceLocation, RecipeHolder<?>>();
+        if (!(byNameRaw instanceof Map<?, ?> rawByName)) {
+            return byName;
+        }
+        for (Map.Entry<?, ?> entry : rawByName.entrySet()) {
+            if (entry.getValue() instanceof RecipeHolder<?> holder) {
+                ResourceLocation id = entry.getKey() instanceof ResourceLocation rl ? rl : holder.id();
+                byName.put(id, holder);
+            }
+        }
+        return byName;
+    }
+
+    private static Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> extractByType(Object byTypeRaw) {
+        var baseRecipes = new HashMap<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>>();
+        if (byTypeRaw instanceof Multimap<?, ?> rawMulti) {
+            collectMultiEntries(baseRecipes, rawMulti);
+        } else if (byTypeRaw instanceof Map<?, ?> rawMap) {
+            collectMapEntries(baseRecipes, rawMap);
+        } else {
+            com.luatweaker.api.log.LuaTweakerLog.get().warn(
+                    com.luatweaker.api.log.LogStage.RECIPE_APPLY,
+                    "Unexpected byType type: " + (byTypeRaw != null ? byTypeRaw.getClass().getName() : "null"));
+        }
+        return baseRecipes;
+    }
+
+    private static void collectMultiEntries(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> baseRecipes,
+                                            Multimap<?, ?> rawMulti) {
+        for (Map.Entry<?, ?> entry : rawMulti.entries()) {
+            RecipeType<?> type = recipeTypeOf(entry.getKey());
+            if (type != null && entry.getValue() instanceof RecipeHolder<?> holder) {
+                putByType(baseRecipes, type, holder);
+            }
+        }
+    }
+
+    private static void collectMapEntries(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> baseRecipes,
+                                          Map<?, ?> rawMap) {
+        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            RecipeType<?> type = recipeTypeOf(entry.getKey());
+            if (type != null) {
+                collectTypeRecipes(baseRecipes, type, entry.getValue());
+            }
+        }
+    }
+
+    @Nullable
+    private static RecipeType<?> recipeTypeOf(@Nullable Object key) {
+        if (key instanceof RecipeType<?> type) {
+            return type;
+        }
+        if (key instanceof ResourceLocation rl) {
+            return BuiltInRegistries.RECIPE_TYPE.get(rl);
+        }
+        return null;
+    }
+
+    private static void collectTypeRecipes(
+            Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> baseRecipes,
+            RecipeType<?> type, Object rawValue) {
+        if (rawValue instanceof Map<?, ?> valueMap) {
+            for (Object value : valueMap.values()) {
+                addHolder(baseRecipes, type, value);
+            }
+        } else if (rawValue instanceof Collection<?> valueCollection) {
+            for (Object value : valueCollection) {
+                addHolder(baseRecipes, type, value);
+            }
+        }
+    }
+
+    private static void addHolder(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> baseRecipes,
+                                  RecipeType<?> type, Object value) {
+        if (value instanceof RecipeHolder<?> holder) {
+            putByType(baseRecipes, type, holder);
+        }
+    }
+
+    private static void putByType(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> baseRecipes,
+                                  RecipeType<?> type, RecipeHolder<?> holder) {
+        baseRecipes.computeIfAbsent(type, ignored -> new HashMap<>()).put(holder.id(), holder);
+    }
+
+    private static RecipeSnapshot captureSnapshot(RecipeManager recipeManager, Object byTypeRaw, Object byNameRaw,
+                                                   Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> baseRecipes,
+                                                   Map<ResourceLocation, RecipeHolder<?>> byName) {
+        SNAPSHOT_LOCK.lock();
+        try {
+            RecipeSnapshot snapshot = RECIPE_SNAPSHOTS.get(recipeManager);
+            Object[] lastWritten = LAST_WRITTEN_MAPS.get(recipeManager);
+            // Identity check on purpose: these are the raw map instances the RecipeManager
+            // holds. A reload replaces them, and that replacement (not equal content) is the
+            // signal that vanilla recipes must be re-snapshotted. Content equality would also
+            // cost O(recipes) and would miss a reload that produced identical content.
+            // PMD CompareObjectsWithEquals flags the four != below; that is the intentional
+            // identity check described here, not an accidental reference comparison.
+            boolean vanillaRestored = snapshot == null
+                    || (snapshot.byTypeIdentity() != byTypeRaw
+                        && (lastWritten == null || lastWritten[0] != byTypeRaw))
+                    || (snapshot.byNameIdentity() != byNameRaw
+                        && (lastWritten == null || lastWritten[1] != byNameRaw));
+            if (vanillaRestored) {
+                snapshot = new RecipeSnapshot(byTypeRaw, byNameRaw, copyByType(baseRecipes), new HashMap<>(byName));
+                RECIPE_SNAPSHOTS.put(recipeManager, snapshot);
+                com.luatweaker.api.log.LuaTweakerLog.get().info(
                         com.luatweaker.api.log.LogStage.RECIPE_APPLY,
                         "Captured vanilla recipe snapshot (" + byName.size() + " recipes) for RecipeManager@"
-                            + System.identityHashCode(recipeManager));
-                }
-                baseSnapshot = snapshot.byType();
-                nameSnapshot = snapshot.byName();
+                                + System.identityHashCode(recipeManager));
             }
-            Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> newRecipes = copyByType(baseSnapshot);
-            HolderLookup.Provider registries = findRegistries(recipeManager);
-            Map<ResourceLocation, RecipeHolder<?>> newByName = new HashMap<>(nameSnapshot);
+            return snapshot;
+        } finally {
+            SNAPSHOT_LOCK.unlock();
+        }
+    }
 
-            for (NeoForgeRecipeManager.RecipeModification mod : modifications) {
-                // One malformed recipe must not discard every other mod's changes.
-                try {
-                switch (mod.type()) {
-                    case REMOVE_BY_OUTPUT   -> removeByOutput(newRecipes, newByName, (String) mod.data(), registries);
-                    case REMOVE_BY_INPUT    -> removeByInput(newRecipes, newByName, (String) mod.data());
-                    case REMOVE_BY_ID       -> removeById(newRecipes, newByName, (String) mod.data());
-                    case REMOVE_BY_MOD      -> removeByMod(newRecipes, newByName, (String) mod.data());
-                    case REMOVE_BY_TAG      -> removeByTag(newRecipes, newByName, (String) mod.data(), registries);
-                    case REMOVE_ALL         -> { newRecipes.clear(); newByName.clear(); }
-                    case ADD_SHAPELESS      -> addShapeless(newRecipes, newByName, (NeoForgeRecipeManager.ShapelessData) mod.data());
-                    case ADD_SHAPED         -> addShaped(newRecipes, newByName, (NeoForgeRecipeManager.ShapedData) mod.data());
-                    case REPLACE_INPUT      -> replaceInput(newRecipes, newByName, (NeoForgeRecipeManager.ReplacementData) mod.data(), registries);
-                    case REPLACE_OUTPUT     -> replaceOutput(newRecipes, newByName, (NeoForgeRecipeManager.ReplacementData) mod.data(), registries);
-                    case ADD_SMELTING       -> addSmelting(newRecipes, newByName, (NeoForgeRecipeManager.CookingData) mod.data());
-                    case ADD_BLASTING       -> addBlasting(newRecipes, newByName, (NeoForgeRecipeManager.CookingData) mod.data());
-                    case ADD_SMOKING        -> addSmoking(newRecipes, newByName, (NeoForgeRecipeManager.CookingData) mod.data());
-                    case ADD_CAMPFIRE       -> addCampfire(newRecipes, newByName, (NeoForgeRecipeManager.CookingData) mod.data());
-                    case ADD_STONECUTTING   -> addStonecutting(newRecipes, newByName, (NeoForgeRecipeManager.StonecuttingData) mod.data());
-                    case ADD_SMITHING       -> addSmithing(newRecipes, newByName, (NeoForgeRecipeManager.SmithingData) mod.data());
-                    case ADD_ANVIL          -> schedulePendingAnvil((NeoForgeRecipeManager.AnvilData) mod.data());
-                    case ADD_BREWING        -> schedulePendingBrewing((NeoForgeRecipeManager.BrewingData) mod.data());
-                    case ADD_TRADE          -> schedulePendingTrade((NeoForgeRecipeManager.TradeData) mod.data());
-                }
-                } catch (RuntimeException e) {
-                    com.luatweaker.api.log.LuaTweakerLog.get().error(
-                        com.luatweaker.api.log.LogStage.RECIPE_APPLY,
-                        "Skipped recipe modification " + mod.type() + ": "
-                            + e.getClass().getSimpleName() + ": " + e.getMessage()
-                    );
-                }
+    private static void writeBack(RecipeManager recipeManager, Field byTypeField, Field byNameField,
+                                  Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> newRecipes,
+                                  Map<ResourceLocation, RecipeHolder<?>> newByName) throws IllegalAccessException {
+        Object writtenByType;
+        if (Multimap.class.isAssignableFrom(byTypeField.getType())) {
+            ArrayListMultimap<RecipeType<?>, RecipeHolder<?>> newMulti = ArrayListMultimap.create();
+            for (Map.Entry<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> entry : newRecipes.entrySet()) {
+                newMulti.putAll(entry.getKey(), entry.getValue().values());
             }
-
-            // Write back in original field format
-            Object writtenByType;
-            if (Multimap.class.isAssignableFrom(byTypeField.getType())) {
-                ArrayListMultimap<RecipeType<?>, RecipeHolder<?>> newMulti = ArrayListMultimap.create();
-                for (Map.Entry<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> entry : newRecipes.entrySet()) {
-                    newMulti.putAll(entry.getKey(), entry.getValue().values());
-                }
-                writtenByType = newMulti;
-            } else {
-                writtenByType = newRecipes;
-            }
-            byTypeField.set(recipeManager, writtenByType);
-            byNameField.set(recipeManager, newByName);
-            // Remember our own writes so the next apply keeps the vanilla snapshot instead of
-            // capturing the already-modified state as "vanilla".
+            writtenByType = newMulti;
+        } else {
+            writtenByType = newRecipes;
+        }
+        byTypeField.set(recipeManager, writtenByType);
+        byNameField.set(recipeManager, newByName);
+        // Remember our own writes so the next apply keeps the vanilla snapshot instead of
+        // capturing the already-modified state as "vanilla".
+        SNAPSHOT_LOCK.lock();
+        try {
             LAST_WRITTEN_MAPS.put(recipeManager, new Object[]{writtenByType, newByName});
+        } finally {
+            SNAPSHOT_LOCK.unlock();
+        }
+    }
 
-            com.luatweaker.api.log.LuaTweakerLog.get().info(
-                com.luatweaker.api.log.LogStage.RECIPE_APPLY,
-                "Applied " + modifications.size() + " recipe modifications successfully to RecipeManager."
-            );
-        } catch (Exception e) {
-            com.luatweaker.api.log.LuaTweakerLog.get().error(
-                com.luatweaker.api.log.LogStage.RECIPE_APPLY,
-                "Failed to reflectively intercept RecipeManager: " + e.getClass().getName() + ": " + e.getMessage()
-            );
-            // Print full stack trace for debugging
-            StringWriter sw = new StringWriter();
-            PrintWriter pw = new PrintWriter(sw);
-            e.printStackTrace(pw);
-            pw.flush();
-            String separator = System.lineSeparator();
-            // escape regex special chars in separator for split()
-            String escaped = separator.replace("\\", "\\\\").replace(".", "\\.").replace("|", "\\|");
-            for (String line : sw.toString().split(escaped)) {
-                if (!line.isBlank()) {
-                    com.luatweaker.api.log.LuaTweakerLog.get().info(
-                        com.luatweaker.api.log.LogStage.RECIPE_APPLY,
-                        "  " + line
-                    );
-                }
+    private static void logStack(ReflectiveOperationException failure) {
+        StringWriter writer = new StringWriter();
+        PrintWriter printer = new PrintWriter(writer);
+        failure.printStackTrace(printer);
+        printer.flush();
+        String separator = System.lineSeparator();
+        String escaped = separator.replace("\\", "\\\\").replace(".", "\\.").replace("|", "\\|");
+        for (String line : writer.toString().split(escaped)) {
+            if (!line.isBlank()) {
+                com.luatweaker.api.log.LuaTweakerLog.get().info(
+                        com.luatweaker.api.log.LogStage.RECIPE_APPLY, "  " + line);
             }
         }
     }
 
     private static Field findRecipesByTypeField(RecipeManager recipeManager) throws NoSuchFieldException {
-        // Level 1: Type inspection of live instance — prefer Multimap, then Map-of-Maps
-        for (Field f : RecipeManager.class.getDeclaredFields()) {
-            f.setAccessible(true);
+        // Level 1: Type inspection of live instance - prefer Multimap, then Map-of-Maps.
+        Field multimapField = scanForMultimapField(recipeManager);
+        if (multimapField != null) {
+            return multimapField;
+        }
+        Field mapOfMapsField = scanForMapOfMapsField(recipeManager);
+        if (mapOfMapsField != null) {
+            return mapOfMapsField;
+        }
+        // Level 2: Known field names.
+        Field multimapByName = knownField("byType", "recipes", "f_44007_", true);
+        if (multimapByName != null) {
+            return multimapByName;
+        }
+        Field mapByName = knownField("byType", "recipes", "f_44007_", false);
+        if (mapByName != null) {
+            return mapByName;
+        }
+        // Level 3: Find a Map/Multimap field different from byName.
+        return anyOtherMapField(recipeManager);
+    }
+
+    @Nullable
+    private static Field scanForMultimapField(RecipeManager recipeManager) {
+        for (Field field : RecipeManager.class.getDeclaredFields()) {
+            field.trySetAccessible();
             try {
-                Object val = f.get(recipeManager);
-                if (val instanceof Multimap) {
-                    return f;
+                if (field.get(recipeManager) instanceof Multimap) {
+                    return field;
                 }
-            } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
+            } catch (ReflectiveOperationException | IllegalArgumentException e) {
+                LOGGER.debug(IGNORED_EXCEPTION, e.getMessage());
+            }
         }
-        for (Field f : RecipeManager.class.getDeclaredFields()) {
-            f.setAccessible(true);
+        return null;
+    }
+
+    @Nullable
+    private static Field scanForMapOfMapsField(RecipeManager recipeManager) {
+        for (Field field : RecipeManager.class.getDeclaredFields()) {
+            field.trySetAccessible();
             try {
-                Object val = f.get(recipeManager);
-                if (val instanceof Map<?, ?> map) {
-                    for (Object v : map.values()) {
-                        if (v instanceof Map<?, ?>) {
-                            return f;
-                        }
-                    }
+                if (field.get(recipeManager) instanceof Map<?, ?> map && containsNestedMap(map)) {
+                    return field;
                 }
-            } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
+            } catch (ReflectiveOperationException | IllegalArgumentException e) {
+                LOGGER.debug(IGNORED_EXCEPTION, e.getMessage());
+            }
         }
-        // Level 2: Known field names
-        for (String name : new String[]{"byType", "recipes", "f_44007_"}) {
+        return null;
+    }
+
+    private static boolean containsNestedMap(Map<?, ?> map) {
+        for (Object value : map.values()) {
+            if (value instanceof Map<?, ?>) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Nullable
+    private static Field knownField(String first, String second, String third, boolean requireMultimap) {
+        for (String name : new String[]{first, second, third}) {
             try {
-                Field f = RecipeManager.class.getDeclaredField(name);
-                f.setAccessible(true);
-                if (Multimap.class.isAssignableFrom(f.getType())) return f;
-            } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
+                Field field = RecipeManager.class.getDeclaredField(name);
+                field.trySetAccessible();
+                boolean matches = requireMultimap
+                        ? Multimap.class.isAssignableFrom(field.getType())
+                        : Map.class.isAssignableFrom(field.getType());
+                if (matches) {
+                    return field;
+                }
+            } catch (ReflectiveOperationException | IllegalArgumentException e) {
+                LOGGER.debug(IGNORED_EXCEPTION, e.getMessage());
+            }
         }
-        for (String name : new String[]{"byType", "recipes", "f_44007_"}) {
-            try {
-                Field f = RecipeManager.class.getDeclaredField(name);
-                f.setAccessible(true);
-                if (Map.class.isAssignableFrom(f.getType())) return f;
-            } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
-        }
-        // Level 3: Find a Map/Multimap field different from byName
+        return null;
+    }
+
+    @Nullable
+    private static Field anyOtherMapField(RecipeManager recipeManager) throws NoSuchFieldException {
         Field byNameField = null;
         try {
             byNameField = findByNameMapField(recipeManager);
-        } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
-
-        for (Field f : RecipeManager.class.getDeclaredFields()) {
-            if (Map.class.isAssignableFrom(f.getType()) || Multimap.class.isAssignableFrom(f.getType())) {
-                f.setAccessible(true);
-                if (byNameField == null || !f.equals(byNameField)) {
-                    return f;
+        } catch (ReflectiveOperationException e) {
+            LOGGER.debug(IGNORED_EXCEPTION, e.getMessage());
+        }
+        for (Field field : RecipeManager.class.getDeclaredFields()) {
+            if (Map.class.isAssignableFrom(field.getType()) || Multimap.class.isAssignableFrom(field.getType())) {
+                field.trySetAccessible();
+                if (byNameField == null || !field.equals(byNameField)) {
+                    return field;
                 }
             }
         }
@@ -340,68 +490,109 @@ public class InterceptionHelper {
     }
 
     private static Field findByNameMapField(RecipeManager recipeManager) throws NoSuchFieldException {
-        // Level 1: Type inspection of live instance — entries must have ResourceLocation keys and RecipeHolder values
-        for (Field f : RecipeManager.class.getDeclaredFields()) {
-            f.setAccessible(true);
-            try {
-                Object val = f.get(recipeManager);
-                if (val instanceof Map<?, ?> map) {
-                    int checked = 0;
-                    for (Map.Entry<?, ?> entry : map.entrySet()) {
-                        if (entry.getKey() instanceof ResourceLocation && entry.getValue() instanceof RecipeHolder<?>) {
-                            return f;
-                        }
-                        if (++checked > 50) break;
-                    }
-                }
-            } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
+        Field entriesField = scanForNameEntriesField(recipeManager);
+        if (entriesField != null) {
+            return entriesField;
         }
-        // Level 2: Known field names in NeoForge/Mojang mappings
-        for (String name : new String[]{"byName", "bySingleName", "f_44008_"}) {
-            try {
-                Field f = RecipeManager.class.getDeclaredField(name);
-                f.setAccessible(true);
-                if (Map.class.isAssignableFrom(f.getType())) return f;
-            } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
+        Field knownField = knownMapField("byName", "bySingleName", "f_44008_");
+        if (knownField != null) {
+            return knownField;
         }
-        // Level 3: Last Map field (byName is typically the last Map field in RecipeManager)
-        Field lastMap = null;
-        for (Field f : RecipeManager.class.getDeclaredFields()) {
-            if (Map.class.isAssignableFrom(f.getType())) {
-                f.setAccessible(true);
-                lastMap = f;
-            }
+        Field lastMap = lastMapField();
+        if (lastMap != null) {
+            return lastMap;
         }
-        if (lastMap != null) return lastMap;
         throw new NoSuchFieldException("byName Map field in RecipeManager");
     }
 
+    @Nullable
+    private static Field scanForNameEntriesField(RecipeManager recipeManager) {
+        for (Field field : RecipeManager.class.getDeclaredFields()) {
+            field.trySetAccessible();
+            try {
+                if (field.get(recipeManager) instanceof Map<?, ?> map && hasRecipeEntries(map)) {
+                    return field;
+                }
+            } catch (ReflectiveOperationException | IllegalArgumentException e) {
+                LOGGER.debug(IGNORED_EXCEPTION, e.getMessage());
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasRecipeEntries(Map<?, ?> map) {
+        int checked = 0;
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            if (entry.getKey() instanceof ResourceLocation && entry.getValue() instanceof RecipeHolder<?>) {
+                return true;
+            }
+            checked++;
+            if (checked > MAX_FIELDS_TO_SCAN) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    @Nullable
+    private static Field knownMapField(String first, String second, String third) {
+        for (String name : new String[]{first, second, third}) {
+            try {
+                Field field = RecipeManager.class.getDeclaredField(name);
+                field.trySetAccessible();
+                if (Map.class.isAssignableFrom(field.getType())) {
+                    return field;
+                }
+            } catch (ReflectiveOperationException | IllegalArgumentException e) {
+                LOGGER.debug(IGNORED_EXCEPTION, e.getMessage());
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    private static Field lastMapField() {
+        Field lastMap = null;
+        for (Field field : RecipeManager.class.getDeclaredFields()) {
+            if (Map.class.isAssignableFrom(field.getType())) {
+                field.trySetAccessible();
+                lastMap = field;
+            }
+        }
+        return lastMap;
+    }
     private static HolderLookup.Provider findRegistries(RecipeManager recipeManager) {
         for (Field f : RecipeManager.class.getDeclaredFields()) {
             if (HolderLookup.Provider.class.isAssignableFrom(f.getType())) {
-                f.setAccessible(true);
+                f.trySetAccessible();
                 try {
                     Object val = f.get(recipeManager);
                     if (val instanceof HolderLookup.Provider provider) {
                         return provider;
                     }
-                } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
+                } catch (ReflectiveOperationException | IllegalArgumentException e) {
+                    LOGGER.debug(IGNORED_EXCEPTION, e.getMessage());
+                }
             }
         }
         return null;
     }
 
     private static ItemStack getResultItemSafely(Recipe<?> recipe, HolderLookup.Provider registries) {
-        if (recipe == null) return ItemStack.EMPTY;
-        try {
-            if (registries != null) {
-                return recipe.getResultItem(registries);
+        if (recipe == null) {
+            return ItemStack.EMPTY;
+        }
+        if (registries != null) {
+            ItemStack resolved = com.luatweaker.platform.util.CallbackFirewall.supply(
+                    () -> recipe.getResultItem(registries), ItemStack.EMPTY,
+                    com.luatweaker.api.log.LogStage.RECIPE_APPLY, () -> "Recipe result lookup failed");
+            if (!resolved.isEmpty()) {
+                return resolved;
             }
-        } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
-        try {
-            return recipe.getResultItem(null);
-        } catch (Exception e) { LOGGER.debug("Ignored exception: {}", e.getMessage()); }
-        return ItemStack.EMPTY;
+        }
+        return com.luatweaker.platform.util.CallbackFirewall.supply(
+                () -> recipe.getResultItem(null), ItemStack.EMPTY,
+                com.luatweaker.api.log.LogStage.RECIPE_APPLY, () -> "Recipe result lookup failed");
     }
 
     private static void removeByOutput(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, String outputId, HolderLookup.Provider registries) {
@@ -423,7 +614,7 @@ public class InterceptionHelper {
         List<ResourceLocation> toRemove = new ArrayList<>();
         for (RecipeHolder<?> holder : byName.values()) {
             for (Ingredient ing : holder.value().getIngredients()) {
-                if (Arrays.stream(ing.getItems()).anyMatch(stack -> Arrays.stream(target.getItems()).anyMatch(t -> t.getItem() == stack.getItem()))) {
+                if (Arrays.stream(ing.getItems()).anyMatch(stack -> Arrays.stream(target.getItems()).anyMatch(t -> Objects.equals(t.getItem(), stack.getItem())))) {
                     toRemove.add(holder.id());
                     break;
                 }
@@ -507,7 +698,7 @@ public class InterceptionHelper {
                 LOGGER.warn("[LuaTweaker] Unknown villager profession: {}", data.profession());
                 continue;
             }
-            if (!event.getType().equals(profession)) continue;
+            if (!event.getType().equals(profession)) { continue; }
 
             var levelMap = event.getTrades();
             if (!levelMap.containsKey(data.level())) {
@@ -515,26 +706,22 @@ public class InterceptionHelper {
                 continue;
             }
 
-            Item sell = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.sell().itemId()));
-            ItemStack sellStack = new ItemStack(sell, data.sell().count());
-            Item buy1Item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.buy1().itemId()));
-            ItemCost buy1Cost = new ItemCost(buy1Item, data.buy1().count());
-            ItemCost buy2Cost = null;
-            if (data.buy2() != null) {
-                Item buy2Item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.buy2().itemId()));
-                buy2Cost = new ItemCost(buy2Item, data.buy2().count());
-            }
-            final ItemCost finalBuy2 = buy2Cost;
-
-            levelMap.get(data.level()).add((trader, random) -> new MerchantOffer(
-                buy1Cost,
-                Optional.ofNullable(finalBuy2),
-                sellStack,
-                data.maxUses(),
-                data.xp(),
-                0.05f
-            ));
+            MerchantOffer offer = offerFor(data);
+            levelMap.get(data.level()).add((trader, random) -> offer);
         }
+    }
+
+    @NotNull
+    private static MerchantOffer offerFor(NeoForgeRecipeManager.TradeData data) {
+        ItemStack sellStack = new ItemStack(itemOf(data.sell()), data.sell().count());
+        ItemCost buy1Cost = new ItemCost(itemOf(data.buy1()), data.buy1().count());
+        ItemCost buy2Cost = data.buy2() != null ? new ItemCost(itemOf(data.buy2()), data.buy2().count()) : null;
+        return new MerchantOffer(buy1Cost, Optional.ofNullable(buy2Cost), sellStack,
+                data.maxUses(), data.xp(), TRADE_PRICE_MULTIPLIER);
+    }
+
+    private static Item itemOf(ItemCount count) {
+        return BuiltInRegistries.ITEM.get(ResourceLocation.parse(count.itemId()));
     }
 
     /**
@@ -544,42 +731,40 @@ public class InterceptionHelper {
     public static void applyPendingBrewing(RegisterBrewingRecipesEvent event) {
         net.minecraft.world.item.alchemy.PotionBrewing.Builder builder = event.getBuilder();
         for (NeoForgeRecipeManager.BrewingData data : PENDING_BREWING) {
-            try {
-                ResourceLocation inputLoc = ResourceLocation.parse(data.inputPotion());
-                ResourceLocation outputLoc = ResourceLocation.parse(data.outputPotion());
-
-                var inputKey = net.minecraft.resources.ResourceKey.create(Registries.POTION, inputLoc);
-                var outputKey = net.minecraft.resources.ResourceKey.create(Registries.POTION, outputLoc);
-
-                var inputHolder = BuiltInRegistries.POTION.getHolder(inputKey).orElse(null);
-                var outputHolder = BuiltInRegistries.POTION.getHolder(outputKey).orElse(null);
-
-                if (inputHolder == null || outputHolder == null) {
-                    LOGGER.warn("[LuaTweaker] Unknown potion in brewing recipe '{}': in={}, out={}",
-                        data.recipeId(), data.inputPotion(), data.outputPotion());
-                    continue;
-                }
-
-                // addMix takes (Holder<Potion>, Item, Holder<Potion>) — extract Item from descriptor
-                String desc = data.ingredient().descriptor();
-                String itemId = desc.startsWith("#") ? desc.substring(1) : desc;
-                Item catalystItem = BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId));
-
-                // addMix registers the recipe for all container potion types (potion, splash, lingering)
-                builder.addMix(inputHolder, catalystItem, outputHolder);
-
-                com.luatweaker.api.log.LuaTweakerLog.get().info(
+            Boolean registered = com.luatweaker.platform.util.CallbackFirewall.supply(
+                    () -> registerBrewing(builder, data), Boolean.FALSE,
                     com.luatweaker.api.log.LogStage.RECIPE_APPLY,
-                    "[Brewing] Registered: " + data.inputPotion() + " + " +
-                        data.ingredient().descriptor() + " \u2192 " + data.outputPotion()
-                );
-            } catch (Exception e) {
-                LOGGER.error("[LuaTweaker] Failed to register brewing recipe '{}': {}",
-                    data.recipeId(), e.getMessage());
+                    () -> "Failed to register brewing recipe '" + data.recipeId() + "'");
+            if (!Boolean.TRUE.equals(registered)) {
+                LOGGER.warn("[LuaTweaker] Brewing recipe '{}' was not registered", data.recipeId());
             }
         }
     }
 
+    private static boolean registerBrewing(net.minecraft.world.item.alchemy.PotionBrewing.Builder builder,
+                                           NeoForgeRecipeManager.BrewingData data) {
+        ResourceLocation inputLoc = ResourceLocation.parse(data.inputPotion());
+        ResourceLocation outputLoc = ResourceLocation.parse(data.outputPotion());
+        var inputKey = net.minecraft.resources.ResourceKey.create(Registries.POTION, inputLoc);
+        var outputKey = net.minecraft.resources.ResourceKey.create(Registries.POTION, outputLoc);
+        var inputHolder = BuiltInRegistries.POTION.getHolder(inputKey).orElse(null);
+        var outputHolder = BuiltInRegistries.POTION.getHolder(outputKey).orElse(null);
+        if (inputHolder == null || outputHolder == null) {
+            LOGGER.warn("[LuaTweaker] Unknown potion in brewing recipe '{}': in={}, out={}",
+                    data.recipeId(), data.inputPotion(), data.outputPotion());
+            return false;
+        }
+        // addMix takes (Holder<Potion>, Item, Holder<Potion>) - extract Item from descriptor
+        String descriptor = data.ingredient().descriptor();
+        String itemId = descriptor.startsWith("#") ? descriptor.substring(1) : descriptor;
+        Item catalystItem = BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId));
+        builder.addMix(inputHolder, catalystItem, outputHolder);
+        com.luatweaker.api.log.LuaTweakerLog.get().info(
+                com.luatweaker.api.log.LogStage.RECIPE_APPLY,
+                "[Brewing] Registered: " + data.inputPotion() + " + "
+                        + data.ingredient().descriptor() + " -> " + data.outputPotion());
+        return true;
+    }
     /**
      * Call this from a @SubscribeEvent AnvilUpdateEvent handler.
      * If the items in the anvil match a pending anvil recipe, set the output and cost.
@@ -595,7 +780,7 @@ public class InterceptionHelper {
             if (leftMatch && rightMatch) {
                 ItemStack outputStack = createItemStack(data.output());
 
-                if (outputStack.getItem() == event.getLeft().getItem() && (data.output().customName() == null || data.output().customName().isEmpty())) {
+                if (Objects.equals(outputStack.getItem(), event.getLeft().getItem()) && (data.output().customName() == null || data.output().customName().isEmpty())) {
                     outputStack.applyComponents(event.getLeft().getComponentsPatch());
                 }
 
@@ -628,26 +813,32 @@ public class InterceptionHelper {
     }
 
     private static net.minecraft.network.chat.Component parseColoredText(String text) {
-        if (text == null || text.isEmpty()) return net.minecraft.network.chat.Component.empty();
+        if (text == null || text.isEmpty()) { return net.minecraft.network.chat.Component.empty(); }
         String formatted = text.replace("Â§", "§").replaceAll("&([0-9a-fA-FK-ORk-or])", "§$1");
         
         net.minecraft.network.chat.MutableComponent root = null;
-        String[] parts = formatted.split("§");
-        for (String part : parts) {
-            if (part.isEmpty()) continue;
-            net.minecraft.ChatFormatting style = net.minecraft.ChatFormatting.getByCode(part.charAt(0));
-            String content = (style != null && part.length() > 1) ? part.substring(1) : part;
-            net.minecraft.network.chat.MutableComponent comp = net.minecraft.network.chat.Component.literal(content);
-            if (style != null) {
-                comp.withStyle(style);
-            }
-            if (root == null) {
-                root = comp;
-            } else {
-                root.append(comp);
+        for (String part : formatted.split("§")) {
+            if (!part.isEmpty()) {
+                net.minecraft.network.chat.MutableComponent component = styledPart(part);
+                if (root == null) {
+                    root = component;
+                } else {
+                    root.append(component);
+                }
             }
         }
         return root != null ? root : net.minecraft.network.chat.Component.literal(formatted);
+    }
+
+    @Nullable
+    private static net.minecraft.network.chat.MutableComponent styledPart(String part) {
+        net.minecraft.ChatFormatting style = net.minecraft.ChatFormatting.getByCode(part.charAt(0));
+        String content = (style != null && part.length() > 1) ? part.substring(1) : part;
+        net.minecraft.network.chat.MutableComponent component = net.minecraft.network.chat.Component.literal(content);
+        if (style != null) {
+            component.withStyle(style);
+        }
+        return component;
     }
 
     public static net.minecraft.core.RegistryAccess getRegistryAccess() {
@@ -657,65 +848,91 @@ public class InterceptionHelper {
                 return client.level.registryAccess();
             }
         }
-        net.minecraft.server.MinecraftServer server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
-        if (server != null) {
-            return server.registryAccess();
-        }
-        return null;
+        return serverRegistryAccess(net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer());
+    }
+
+    @Nullable
+    private static net.minecraft.core.RegistryAccess serverRegistryAccess(
+            @Nullable net.minecraft.server.MinecraftServer server) {
+        return server != null ? server.registryAccess() : null;
     }
 
     private static ItemStack createItemStack(ItemCount data) {
-        if (data == null || data.itemId() == null) return ItemStack.EMPTY;
+        if (data == null || data.itemId() == null) {
+            return ItemStack.EMPTY;
+        }
         Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.itemId()));
-        if (item == null || item == Items.AIR) {
-            com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RECIPE_APPLY, "Invalid or unregistered item ID: '" + data.itemId() + "'");
+        if (item == Items.AIR) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(
+                    com.luatweaker.api.log.LogStage.RECIPE_APPLY,
+                    "Invalid or unregistered item ID: '" + data.itemId() + "'");
             return ItemStack.EMPTY;
         }
         ItemStack stack = new ItemStack(item, Math.max(1, data.count()));
-
-        if (data.damage() > 0 && stack.isDamageableItem()) {
-            stack.setDamageValue(data.damage());
-        }
-
-        if (data.customName() != null && !data.customName().isEmpty()) {
-            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, parseColoredText(data.customName()));
-        }
-
-        if (data.lore() != null && !data.lore().isEmpty()) {
-            List<net.minecraft.network.chat.Component> loreComponents = data.lore().stream()
-                .map(InterceptionHelper::parseColoredText)
-                .map(c -> (net.minecraft.network.chat.Component) c)
-                .toList();
-            stack.set(net.minecraft.core.component.DataComponents.LORE, new net.minecraft.world.item.component.ItemLore(loreComponents));
-        }
-
-        if (data.enchantments() != null && !data.enchantments().isEmpty()) {
-            net.minecraft.core.RegistryAccess registryAccess = getRegistryAccess();
-            if (registryAccess != null) {
-                var enchRegistry = registryAccess.registryOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT);
-                net.minecraft.world.item.enchantment.EnchantmentHelper.updateEnchantments(stack, mutable -> {
-                    for (var entry : data.enchantments().entrySet()) {
-                        ResourceLocation enchLoc = ResourceLocation.parse(entry.getKey());
-                        var key = net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.ENCHANTMENT, enchLoc);
-                        var holderOpt = enchRegistry.getHolder(key);
-                        holderOpt.ifPresent(holder -> mutable.set(holder, entry.getValue()));
-                    }
-                });
-            }
-        }
-
-        if (data.nbtJson() != null && !data.nbtJson().isEmpty()) {
-            try {
-                net.minecraft.nbt.CompoundTag compound = net.minecraft.nbt.TagParser.parseTag(data.nbtJson());
-                net.minecraft.world.item.component.CustomData.update(net.minecraft.core.component.DataComponents.CUSTOM_DATA, stack, tag -> tag.merge(compound));
-            } catch (Exception e) {
-                com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RECIPE_APPLY, "Failed to parse NBT JSON for " + data.itemId() + ": " + data.nbtJson() + " (" + e.getMessage() + ")");
-            }
-        }
-
+        applyDamage(stack, data);
+        applyName(stack, data);
+        applyLore(stack, data);
+        applyEnchantments(stack, data);
+        applyNbt(stack, data);
         return stack;
     }
 
+    private static void applyDamage(ItemStack stack, ItemCount data) {
+        if (data.damage() > 0 && stack.isDamageableItem()) {
+            stack.setDamageValue(data.damage());
+        }
+    }
+
+    private static void applyName(ItemStack stack, ItemCount data) {
+        if (data.customName() != null && !data.customName().isEmpty()) {
+            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, parseColoredText(data.customName()));
+        }
+    }
+
+    private static void applyLore(ItemStack stack, ItemCount data) {
+        if (data.lore() == null || data.lore().isEmpty()) {
+            return;
+        }
+        List<net.minecraft.network.chat.Component> loreComponents = data.lore().stream()
+                .map(InterceptionHelper::parseColoredText)
+                .toList();
+        stack.set(net.minecraft.core.component.DataComponents.LORE,
+                new net.minecraft.world.item.component.ItemLore(loreComponents));
+    }
+
+    private static void applyEnchantments(ItemStack stack, ItemCount data) {
+        if (data.enchantments() == null || data.enchantments().isEmpty()) {
+            return;
+        }
+        net.minecraft.core.RegistryAccess registryAccess = getRegistryAccess();
+        if (registryAccess == null) {
+            return;
+        }
+        var enchantments = registryAccess.registryOrThrow(Registries.ENCHANTMENT);
+        net.minecraft.world.item.enchantment.EnchantmentHelper.updateEnchantments(stack, mutable -> {
+            for (var entry : data.enchantments().entrySet()) {
+                ResourceLocation location = ResourceLocation.parse(entry.getKey());
+                var key = net.minecraft.resources.ResourceKey.create(Registries.ENCHANTMENT, location);
+                enchantments.getHolder(key).ifPresent(holder -> mutable.set(holder, entry.getValue()));
+            }
+        });
+    }
+
+    private static void applyNbt(ItemStack stack, ItemCount data) {
+        if (data.nbtJson() == null || data.nbtJson().isEmpty()) {
+            return;
+        }
+        try {
+            net.minecraft.nbt.CompoundTag compound = net.minecraft.nbt.TagParser.parseTag(data.nbtJson());
+            net.minecraft.world.item.component.CustomData.update(
+                    net.minecraft.core.component.DataComponents.CUSTOM_DATA, stack, tag -> tag.merge(compound));
+        } catch (com.mojang.brigadier.exceptions.CommandSyntaxException e) {
+            com.luatweaker.api.log.LuaTweakerLog.get().error(
+                    com.luatweaker.api.log.LogStage.RECIPE_APPLY,
+                    "Failed to parse NBT JSON for " + data.itemId() + ": " + data.nbtJson()
+                            + " (" + e.getMessage() + ")");
+        }
+    }
     private static void addShapeless(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.ShapelessData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
@@ -724,7 +941,7 @@ public class InterceptionHelper {
             return;
         }
 
-        NonNullList<Ingredient> ingredients = NonNullList.create();
+        var ingredients = NonNullList.<Ingredient>create();
         for (IngredientWrapper wrap : data.ingredients()) {
             ingredients.add(parseIngredient(wrap));
         }
@@ -747,19 +964,19 @@ public class InterceptionHelper {
         int height = data.pattern().size();
         int width = data.pattern().get(0).length();
 
-        Map<Character, Ingredient> keyMap = new HashMap<>();
+        var keyMap = new HashMap<Character, Ingredient>();
         for (Map.Entry<String, IngredientWrapper> entry : data.keys().entrySet()) {
             if (!entry.getKey().isEmpty()) {
                 keyMap.put(entry.getKey().charAt(0), parseIngredient(entry.getValue()));
             }
         }
 
-        NonNullList<Ingredient> ingredients = NonNullList.withSize(width * height, Ingredient.EMPTY);
+        var ingredients = NonNullList.withSize(width * height, Ingredient.EMPTY);
         for (int r = 0; r < height; r++) {
             String row = data.pattern().get(r);
             for (int c = 0; c < row.length(); c++) {
                 char ch = row.charAt(c);
-                if (ch != ' ') {
+                if (ch != PATTERN_EMPTY_SLOT) {
                     Ingredient ing = keyMap.get(ch);
                     if (ing != null) {
                         ingredients.set(r * width + c, ing);
@@ -779,7 +996,7 @@ public class InterceptionHelper {
     private static void addSmelting(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.CookingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
-        if (outputStack.isEmpty()) return;
+        if (outputStack.isEmpty()) { return; }
         SmeltingRecipe recipe = new SmeltingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input()), outputStack, data.xp(), data.cookTime());
         RecipeHolder<SmeltingRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
@@ -789,7 +1006,7 @@ public class InterceptionHelper {
     private static void addBlasting(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.CookingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
-        if (outputStack.isEmpty()) return;
+        if (outputStack.isEmpty()) { return; }
         BlastingRecipe recipe = new BlastingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input()), outputStack, data.xp(), data.cookTime());
         RecipeHolder<BlastingRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
@@ -799,7 +1016,7 @@ public class InterceptionHelper {
     private static void addSmoking(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.CookingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
-        if (outputStack.isEmpty()) return;
+        if (outputStack.isEmpty()) { return; }
         SmokingRecipe recipe = new SmokingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input()), outputStack, data.xp(), data.cookTime());
         RecipeHolder<SmokingRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
@@ -809,7 +1026,7 @@ public class InterceptionHelper {
     private static void addCampfire(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.CookingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
-        if (outputStack.isEmpty()) return;
+        if (outputStack.isEmpty()) { return; }
         CampfireCookingRecipe recipe = new CampfireCookingRecipe("", CookingBookCategory.MISC, parseIngredient(data.input()), outputStack, data.xp(), data.cookTime());
         RecipeHolder<CampfireCookingRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
@@ -819,7 +1036,7 @@ public class InterceptionHelper {
     private static void addStonecutting(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.StonecuttingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack outputStack = createItemStack(data.output());
-        if (outputStack.isEmpty()) return;
+        if (outputStack.isEmpty()) { return; }
         StonecutterRecipe recipe = new StonecutterRecipe("", parseIngredient(data.input()), outputStack);
         RecipeHolder<StonecutterRecipe> holder = new RecipeHolder<>(id, recipe);
         byName.put(id, holder);
@@ -829,7 +1046,7 @@ public class InterceptionHelper {
     private static void addSmithing(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.SmithingData data) {
         ResourceLocation id = ResourceLocation.parse(data.recipeId());
         ItemStack resultStack = createItemStack(data.result());
-        if (resultStack.isEmpty()) return;
+        if (resultStack.isEmpty()) { return; }
         SmithingTransformRecipe recipe = new SmithingTransformRecipe(
             parseIngredient(data.template()),
             parseIngredient(data.base()),
@@ -842,105 +1059,114 @@ public class InterceptionHelper {
         recipes.computeIfAbsent(RecipeType.SMITHING, k -> new HashMap<>()).put(id, holder);
     }
 
-    private static void replaceInput(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.ReplacementData data, HolderLookup.Provider registries) {
+    private static void replaceInput(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes,
+                                     Map<ResourceLocation, RecipeHolder<?>> byName,
+                                     NeoForgeRecipeManager.ReplacementData data,
+                                     HolderLookup.Provider registries) {
         Ingredient target = parseIngredient(data.target());
         Ingredient replacement = parseIngredient(data.replacement());
-
         for (Map.Entry<ResourceLocation, RecipeHolder<?>> entry : new ArrayList<>(byName.entrySet())) {
             RecipeHolder<?> holder = entry.getValue();
-            Recipe<?> rawRecipe = holder.value();
-
-            Recipe<?> newRecipe = createInputReplacedRecipe(rawRecipe, target, replacement, registries);
+            Recipe<?> newRecipe = createInputReplacedRecipe(holder.value(), target, replacement, registries);
             if (newRecipe != null) {
-                RecipeHolder<?> intercepted = new RecipeHolder<>(holder.id(), newRecipe);
-                byName.put(entry.getKey(), intercepted);
-                Map<ResourceLocation, RecipeHolder<?>> typeMap = recipes.get(rawRecipe.getType());
-                if (typeMap != null) {
-                    typeMap.put(entry.getKey(), intercepted);
-                }
+                putIntercepted(recipes, byName, entry.getKey(), holder, newRecipe);
             }
         }
     }
 
-    private static void replaceOutput(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes, Map<ResourceLocation, RecipeHolder<?>> byName, NeoForgeRecipeManager.ReplacementData data, HolderLookup.Provider registries) {
-        ResourceLocation targetLoc = ResourceLocation.parse(data.target());
+    private static void replaceOutput(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes,
+                                      Map<ResourceLocation, RecipeHolder<?>> byName,
+                                      NeoForgeRecipeManager.ReplacementData data,
+                                      HolderLookup.Provider registries) {
+        ResourceLocation targetId = ResourceLocation.parse(data.target());
         Item replacementItem = BuiltInRegistries.ITEM.get(ResourceLocation.parse(data.replacement()));
-
         for (Map.Entry<ResourceLocation, RecipeHolder<?>> entry : new ArrayList<>(byName.entrySet())) {
             RecipeHolder<?> holder = entry.getValue();
             Recipe<?> rawRecipe = holder.value();
-
             ItemStack result = getResultItemSafely(rawRecipe, registries);
-            if (!result.isEmpty() && BuiltInRegistries.ITEM.getKey(result.getItem()).equals(targetLoc)) {
-                ItemStack newResult = new ItemStack(replacementItem, result.getCount());
-                Recipe<?> newRecipe = createOutputReplacedRecipe(rawRecipe, newResult, registries);
+            if (!result.isEmpty() && BuiltInRegistries.ITEM.getKey(result.getItem()).equals(targetId)) {
+                Recipe<?> newRecipe = createOutputReplacedRecipe(rawRecipe, replacementItem, result.getCount());
                 if (newRecipe != null) {
-                    RecipeHolder<?> intercepted = new RecipeHolder<>(holder.id(), newRecipe);
-                    byName.put(entry.getKey(), intercepted);
-                    Map<ResourceLocation, RecipeHolder<?>> typeMap = recipes.get(rawRecipe.getType());
-                    if (typeMap != null) {
-                        typeMap.put(entry.getKey(), intercepted);
-                    }
+                    putIntercepted(recipes, byName, entry.getKey(), holder, newRecipe);
                 }
             }
         }
     }
 
-    private static Recipe<?> createInputReplacedRecipe(Recipe<?> rawRecipe, Ingredient target, Ingredient replacement, HolderLookup.Provider registries) {
-        NonNullList<Ingredient> ingredients = rawRecipe.getIngredients();
+    private static void putIntercepted(Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> recipes,
+                                       Map<ResourceLocation, RecipeHolder<?>> byName,
+                                       ResourceLocation key, RecipeHolder<?> original, Recipe<?> newRecipe) {
+        RecipeHolder<?> intercepted = new RecipeHolder<>(key, newRecipe);
+        byName.put(key, intercepted);
+        Map<ResourceLocation, RecipeHolder<?>> typeMap = recipes.get(original.value().getType());
+        if (typeMap != null) {
+            typeMap.put(key, intercepted);
+        }
+    }
+
+    @Nullable
+    private static Recipe<?> createInputReplacedRecipe(Recipe<?> rawRecipe, Ingredient target,
+                                                       Ingredient replacement, HolderLookup.Provider registries) {
         boolean hasMatch = false;
-        NonNullList<Ingredient> newIngredients = NonNullList.create();
-        for (Ingredient ing : ingredients) {
-            if (Arrays.stream(ing.getItems()).anyMatch(stack -> Arrays.stream(target.getItems()).anyMatch(t -> t.getItem() == stack.getItem()))) {
+        var newIngredients = NonNullList.<Ingredient>create();
+        for (Ingredient ingredient : rawRecipe.getIngredients()) {
+            if (matchesIngredient(ingredient, target)) {
                 newIngredients.add(replacement);
                 hasMatch = true;
             } else {
-                newIngredients.add(ing);
+                newIngredients.add(ingredient);
             }
         }
-        if (!hasMatch) return null;
+        if (!hasMatch) {
+            return null;
+        }
+        return rebuild(rawRecipe, newIngredients, getResultItemSafely(rawRecipe, registries));
+    }
 
-        ItemStack resultStack = getResultItemSafely(rawRecipe, registries);
+    private static boolean matchesIngredient(Ingredient ingredient, Ingredient target) {
+        return Arrays.stream(ingredient.getItems())
+                .anyMatch(stack -> Arrays.stream(target.getItems())
+                        .anyMatch(t -> Objects.equals(t.getItem(), stack.getItem())));
+    }
 
+    @Nullable
+    private static Recipe<?> createOutputReplacedRecipe(Recipe<?> rawRecipe, Item replacementItem, int count) {
+        return rebuild(rawRecipe, rawRecipe.getIngredients(), new ItemStack(replacementItem, count));
+    }
+
+    /** Rebuilds a recipe of the same type with new ingredients/result; null for unsupported types. */
+    @Nullable
+    private static Recipe<?> rebuild(Recipe<?> rawRecipe, List<Ingredient> ingredients, ItemStack resultStack) {
         if (rawRecipe instanceof ShapelessRecipe shapeless) {
-            return new ShapelessRecipe(shapeless.getGroup(), shapeless.category(), resultStack, newIngredients);
-        } else if (rawRecipe instanceof ShapedRecipe shaped) {
-            ShapedRecipePattern newPattern = new ShapedRecipePattern(shaped.getWidth(), shaped.getHeight(), newIngredients, Optional.empty());
-            return new ShapedRecipe(shaped.getGroup(), shaped.category(), newPattern, resultStack);
-        } else if (rawRecipe instanceof SmeltingRecipe smelting) {
-            return new SmeltingRecipe(smelting.getGroup(), smelting.category(), newIngredients.get(0), resultStack, smelting.getExperience(), smelting.getCookingTime());
-        } else if (rawRecipe instanceof BlastingRecipe blasting) {
-            return new BlastingRecipe(blasting.getGroup(), blasting.category(), newIngredients.get(0), resultStack, blasting.getExperience(), blasting.getCookingTime());
-        } else if (rawRecipe instanceof SmokingRecipe smoking) {
-            return new SmokingRecipe(smoking.getGroup(), smoking.category(), newIngredients.get(0), resultStack, smoking.getExperience(), smoking.getCookingTime());
-        } else if (rawRecipe instanceof CampfireCookingRecipe campfire) {
-            return new CampfireCookingRecipe(campfire.getGroup(), campfire.category(), newIngredients.get(0), resultStack, campfire.getExperience(), campfire.getCookingTime());
-        } else if (rawRecipe instanceof StonecutterRecipe stonecut) {
-            return new StonecutterRecipe(stonecut.getGroup(), newIngredients.get(0), resultStack);
+            return new ShapelessRecipe(shapeless.getGroup(), shapeless.category(), resultStack,
+                    NonNullList.copyOf(ingredients));
+        }
+        if (rawRecipe instanceof ShapedRecipe shaped) {
+            ShapedRecipePattern pattern = new ShapedRecipePattern(shaped.getWidth(), shaped.getHeight(),
+                    NonNullList.copyOf(ingredients), Optional.empty());
+            return new ShapedRecipe(shaped.getGroup(), shaped.category(), pattern, resultStack);
+        }
+        if (rawRecipe instanceof SmeltingRecipe smelting) {
+            return new SmeltingRecipe(smelting.getGroup(), smelting.category(), ingredients.get(0), resultStack,
+                    smelting.getExperience(), smelting.getCookingTime());
+        }
+        if (rawRecipe instanceof BlastingRecipe blasting) {
+            return new BlastingRecipe(blasting.getGroup(), blasting.category(), ingredients.get(0), resultStack,
+                    blasting.getExperience(), blasting.getCookingTime());
+        }
+        if (rawRecipe instanceof SmokingRecipe smoking) {
+            return new SmokingRecipe(smoking.getGroup(), smoking.category(), ingredients.get(0), resultStack,
+                    smoking.getExperience(), smoking.getCookingTime());
+        }
+        if (rawRecipe instanceof CampfireCookingRecipe campfire) {
+            return new CampfireCookingRecipe(campfire.getGroup(), campfire.category(), ingredients.get(0),
+                    resultStack, campfire.getExperience(), campfire.getCookingTime());
+        }
+        if (rawRecipe instanceof StonecutterRecipe stonecut) {
+            return new StonecutterRecipe(stonecut.getGroup(), ingredients.get(0), resultStack);
         }
         return null;
     }
-
-    private static Recipe<?> createOutputReplacedRecipe(Recipe<?> rawRecipe, ItemStack newOutput, HolderLookup.Provider registries) {
-        if (rawRecipe instanceof ShapelessRecipe shapeless) {
-            return new ShapelessRecipe(shapeless.getGroup(), shapeless.category(), newOutput, shapeless.getIngredients());
-        } else if (rawRecipe instanceof ShapedRecipe shaped) {
-            ShapedRecipePattern pattern = new ShapedRecipePattern(shaped.getWidth(), shaped.getHeight(), shaped.getIngredients(), Optional.empty());
-            return new ShapedRecipe(shaped.getGroup(), shaped.category(), pattern, newOutput);
-        } else if (rawRecipe instanceof SmeltingRecipe smelting) {
-            return new SmeltingRecipe(smelting.getGroup(), smelting.category(), smelting.getIngredients().get(0), newOutput, smelting.getExperience(), smelting.getCookingTime());
-        } else if (rawRecipe instanceof BlastingRecipe blasting) {
-            return new BlastingRecipe(blasting.getGroup(), blasting.category(), blasting.getIngredients().get(0), newOutput, blasting.getExperience(), blasting.getCookingTime());
-        } else if (rawRecipe instanceof SmokingRecipe smoking) {
-            return new SmokingRecipe(smoking.getGroup(), smoking.category(), smoking.getIngredients().get(0), newOutput, smoking.getExperience(), smoking.getCookingTime());
-        } else if (rawRecipe instanceof CampfireCookingRecipe campfire) {
-            return new CampfireCookingRecipe(campfire.getGroup(), campfire.category(), campfire.getIngredients().get(0), newOutput, campfire.getExperience(), campfire.getCookingTime());
-        } else if (rawRecipe instanceof StonecutterRecipe stonecut) {
-            return new StonecutterRecipe(stonecut.getGroup(), stonecut.getIngredients().get(0), newOutput);
-        }
-        return null;
-    }
-
     private static Ingredient parseIngredient(String desc) {
         String normalized = IngredientWrapper.normalizeDescriptor(desc);
         if (normalized.startsWith("#")) {
@@ -981,10 +1207,27 @@ public class InterceptionHelper {
 
     private static Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> copyByType(
             Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> source) {
-        Map<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> copy = new HashMap<>();
+        var copy = new HashMap<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>>();
         for (Map.Entry<RecipeType<?>, Map<ResourceLocation, RecipeHolder<?>>> entry : source.entrySet()) {
-            copy.put(entry.getKey(), new HashMap<>(entry.getValue()));
+            copy.put(entry.getKey(), copyType(entry.getValue()));
         }
         return copy;
     }
+
+    private static Map<ResourceLocation, RecipeHolder<?>> copyType(
+            Map<ResourceLocation, RecipeHolder<?>> source) {
+        return new HashMap<>(source);
+    }
 }
+
+
+
+
+
+
+
+
+
+
+
+

@@ -27,8 +27,7 @@ public interface IWorldgenExtendedService {
             + "step = 'underground_ores' (default for adds), "
             + "remove = {'modid:feature', ...}, removeSteps = {'underground_ores'} }.",
         params = {"biomeId: string - owning biome, used only for file naming and logs",
-                  "options: table - biomes/add/step/remove/removeSteps as described"},
-        returnType = "void"
+                  "options: table - biomes/add/step/remove/removeSteps as described"}
     )
     void modifyBiome(@NotNull String biomeId, @NotNull ILuaTable options);
 
@@ -45,8 +44,7 @@ public interface IWorldgenExtendedService {
             + "inner=8 (biased height inner bound) }. "
             + "Simple veins need only block+biomes; the rest mirrors vanilla ore distributions.",
         params = {"featureId: string - id for the generated feature (e.g. 'mymod:ruby_vein')",
-                  "spec: table - block/biomes/placement fields as described"},
-        returnType = "void"
+                  "spec: table - block/biomes/placement fields as described"}
     )
     void addFeature(@NotNull String featureId, @NotNull ILuaTable spec);
 
@@ -55,10 +53,9 @@ public interface IWorldgenExtendedService {
             + "(vanilla patch_grass shape) instead of the minecraft:flower type used by addVegetation.",
         params = {"blockId: string - block to scatter (e.g. 'minecraft:short_grass')",
                   "chance: number - per-chunk chance (0.0-1.0)",
-                  "biomes: table - list of biome IDs"},
-        returnType = "void"
+                  "biomes: table - list of biome IDs"}
     )
-    void addVegetationPatch(@NotNull String blockId, double chance, @NotNull String[] biomes);
+    void addVegetationPatch(@NotNull String blockId, double chance, @NotNull String... biomes);
 
     @LuaDoc(
         description = "Register a GTNH-style mixed vein: one blob mixing several ores by weight "
@@ -69,8 +66,7 @@ public interface IWorldgenExtendedService {
             + "minHeight/maxHeight, heightType/anchorMin/anchorMax, discardChance, inner }. "
             + "Placement fields behave exactly like addFeature.",
         params = {"veinId: string - id for the generated vein (e.g. 'mymod:magnetite_vein')",
-                  "spec: table - ores/replace/biomes/placement fields as described"},
-        returnType = "void"
+                  "spec: table - ores/replace/biomes/placement fields as described"}
     )
     void addMixedVein(@NotNull String veinId, @NotNull ILuaTable spec);
 
@@ -82,7 +78,7 @@ public interface IWorldgenExtendedService {
                   "features: table - placed-feature IDs (e.g. {'mymod:ruby_ore_upper'})"},
         returnType = "boolean"
     )
-    boolean registerRemovalFeatures(@NotNull String blockId, @NotNull String[] features);
+    boolean registerRemovalFeatures(@NotNull String blockId, @NotNull String... features);
 
     @LuaDoc(
         description = "Register a dimension and its biome tag so ores/removals resolve for dimensions "

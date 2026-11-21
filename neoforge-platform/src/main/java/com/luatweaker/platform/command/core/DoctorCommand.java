@@ -2,10 +2,25 @@ package com.luatweaker.platform.command.core;
 
 import com.luatweaker.api.command.ICommandSender;
 import com.luatweaker.api.command.ILuaTweakerCommand;
+import com.luatweaker.api.log.LogStage;
+import com.luatweaker.api.log.LuaTweakerLog;
+import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.api.vm.ILuaTable;
+import com.luatweaker.api.vm.ILuaValue;
+import com.luatweaker.command.CommandDefinition;
+import com.luatweaker.command.CommandServiceImpl;
+import com.luatweaker.core.mod.LuaMod;
 import com.luatweaker.core.mod.LuaModManager;
 import com.luatweaker.core.service.LuaServiceRegistry;
 import com.luatweaker.platform.LuaTweakerMod;
+import com.luatweaker.tasks.TaskServiceImpl;
+import com.luatweaker.update.UpdateServiceImpl;
+import com.luatweaker.update.UpdateStatus;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.luava.runtime.LuaException;
 
+import java.util.Collection;
 import java.util.Map;
 
 /**
@@ -16,38 +31,7 @@ import java.util.Map;
  */
 public class DoctorCommand implements ILuaTweakerCommand {
 
-    /** Number of deferred + delayed callbacks in the active engine's bootstrap scheduler. */
-    private static int readSchedulerQueueSize() {
-        com.luatweaker.api.vm.ILuaEngine engine = LuaTweakerMod.getActiveEngine();
-        if (engine == null) {
-            return 0;
-        }
-        try {
-            com.luatweaker.api.vm.ILuaValue taskValue = engine.getGlobalEnvironment().rawget("task");
-            if (taskValue == null || !taskValue.isTable()) {
-                return 0;
-            }
-            com.luatweaker.api.vm.ILuaValue statsFn = taskValue.asTable().rawget("_stats");
-            if (statsFn == null || !statsFn.isFunction()) {
-                return 0;
-            }
-            com.luatweaker.api.vm.ILuaValue stats = engine.callFunction(statsFn, taskValue);
-            if (stats == null || !stats.isTable()) {
-                return 0;
-            }
-            com.luatweaker.api.vm.ILuaValue queued = stats.asTable().rawget("queued");
-            return queued == null || queued.isNil() ? 0 : queued.asInt();
-        } catch (RuntimeException e) {
-            logQueueReadFailure(e);
-            return 0;
-        }
-    }
-
-    private static void logQueueReadFailure(RuntimeException e) {
-        com.luatweaker.api.log.LuaTweakerLog.get().debug(
-                com.luatweaker.api.log.LogStage.SYSTEM,
-                "/lt doctor could not read the Lua scheduler queue: " + e.getMessage());
-    }
+    private static final String SECTION_HEADER = "§6========== LuaTweaker Doctor ==========";
 
     @Override
     public String getName() { return "doctor"; }
@@ -60,69 +44,117 @@ public class DoctorCommand implements ILuaTweakerCommand {
 
     @Override
     public int execute(ICommandSender sender, String[] args) {
-        sender.sendMessage("§6========== LuaTweaker Doctor ==========");
+        sender.sendMessage(SECTION_HEADER);
+        reportEngine(sender);
+        reportMods(sender);
+        reportUpdates(sender);
+        reportServices(sender);
+        reportTaskQueue(sender);
+        reportLuaCommands(sender);
+        return 1;
+    }
 
+    private void reportEngine(@NotNull ICommandSender sender) {
         boolean engineOk = LuaTweakerMod.getActiveEngine() != null;
         sender.sendMessage("§7Engine: §" + (engineOk ? "aACTIVE" : "cMISSING"));
+    }
 
-        Map<String, com.luatweaker.core.mod.LuaMod> mods = LuaModManager.getLoadedMods();
+    private void reportMods(@NotNull ICommandSender sender) {
+        Map<String, LuaMod> mods = LuaModManager.getLoadedMods();
         sender.sendMessage("§7Loaded LuaMods: §e" + mods.size());
 
         Map<String, String> loadErrors = LuaModManager.getLoadErrors();
         if (loadErrors.isEmpty()) {
             sender.sendMessage("§a  All mods loaded cleanly.");
-        } else {
-            sender.sendMessage("§c  Load errors (" + loadErrors.size() + "):");
-            for (Map.Entry<String, String> entry : loadErrors.entrySet()) {
-                sender.sendMessage("§c    - " + entry.getKey() + ": " + entry.getValue());
-            }
+            return;
         }
-
-        for (com.luatweaker.core.mod.LuaMod mod : mods.values()) {
-            String status = loadErrors.containsKey(mod.getManifest().id()) ? "§c[ERROR]" : "§a[OK]";
-            sender.sendMessage("§7  " + status + " §f" + mod.getManifest().id() + " §7v" + mod.getManifest().version()
-                    + (mod.getManifest().updateUrl() == null ? "" : " §8(update feed declared)"));
-            if (mod.getManifest().permissions().contains(com.luatweaker.update.WebServiceImpl.PERMISSION)) {
-                sender.sendMessage("§c    ! holds 'net.http' permission (internet access)");
-            }
+        sender.sendMessage("§c  Load errors (" + loadErrors.size() + "):");
+        for (Map.Entry<String, String> entry : loadErrors.entrySet()) {
+            sender.sendMessage("§c    - " + entry.getKey() + ": " + entry.getValue());
         }
+    }
 
-        var updateStatuses = com.luatweaker.update.UpdateServiceImpl.getUpdateStatuses();
-        if (!updateStatuses.isEmpty()) {
-            sender.sendMessage("§7Update checks: §e" + updateStatuses.size()
-                    + " declared, §a" + com.luatweaker.update.UpdateServiceImpl.getUpdates().size() + " available");
-            for (com.luatweaker.update.UpdateStatus us : com.luatweaker.update.UpdateServiceImpl.getUpdates()) {
-                sender.sendMessage("§a  - " + us.modId() + " §fv" + us.currentVersion() + " §7-> §a" + us.latestVersion());
-            }
+    private void reportUpdates(@NotNull ICommandSender sender) {
+        Map<String, UpdateStatus> updateStatuses = UpdateServiceImpl.getUpdateStatuses();
+        if (updateStatuses.isEmpty()) {
+            return;
         }
+        sender.sendMessage("§7Update checks: §e" + updateStatuses.size()
+                + " declared, §a" + UpdateServiceImpl.getUpdates().size() + " available");
+        for (UpdateStatus status : UpdateServiceImpl.getUpdates()) {
+            sender.sendMessage("§a  - " + status.modId() + " §fv" + status.currentVersion()
+                    + " §7-> §a" + status.latestVersion());
+        }
+    }
 
-        int serviceCount = LuaServiceRegistry.size();
-        sender.sendMessage("§7Registered services: §e" + serviceCount);
+    private void reportServices(@NotNull ICommandSender sender) {
+        sender.sendMessage("§7Registered services: §e" + LuaServiceRegistry.size());
+    }
 
+    private void reportTaskQueue(@NotNull ICommandSender sender) {
         int luaQueued = readSchedulerQueueSize();
         Object taskService = LuaServiceRegistry.get("TaskServiceImpl");
-        if (taskService instanceof com.luatweaker.tasks.TaskServiceImpl tasks) {
+        if (taskService instanceof TaskServiceImpl tasks) {
             sender.sendMessage("§7Lua tasks: §e" + luaQueued + " queued§7 (scheduler), §e"
                     + tasks.getExecutedTaskCount() + " executed§7, §c"
                     + tasks.getDroppedTaskCount() + " dropped, §6"
                     + tasks.getSlowTaskCount() + " slow callbacks");
-        } else {
-            sender.sendMessage("§7Lua tasks: §e" + luaQueued + " queued§7 (scheduler)");
+            return;
         }
+        sender.sendMessage("§7Lua tasks: §e" + luaQueued + " queued§7 (scheduler)");
+    }
 
+    private void reportLuaCommands(@NotNull ICommandSender sender) {
         Object cmdService = LuaServiceRegistry.get("CommandServiceImpl");
-        if (cmdService instanceof com.luatweaker.command.CommandServiceImpl commandService) {
-            var luaCommands = commandService.getSnapshot();
-            sender.sendMessage("§7Lua-registered commands: §e" + luaCommands.size());
-            for (var def : luaCommands) {
-                sender.sendMessage("§7  - /§f" + def.name()
-                        + " §7(mod:§f" + def.modId()
-                        + "§7, op:§f" + def.permissionLevel()
-                        + "§7, console:§f" + def.consoleAllowed()
-                        + (def.aliases().isEmpty() ? "" : "§7, aliases:§f " + String.join(", ", def.aliases()))
-                        + "§7)");
-            }
+        if (!(cmdService instanceof CommandServiceImpl commandService)) {
+            return;
         }
-        return 1;
+        Collection<CommandDefinition> luaCommands = commandService.getSnapshot();
+        sender.sendMessage("§7Lua-registered commands: §e" + luaCommands.size());
+        for (CommandDefinition def : luaCommands) {
+            sender.sendMessage("§7  - /§f" + def.name()
+                    + " §7(mod:§f" + def.modId()
+                    + "§7, op:§f" + def.permissionLevel()
+                    + "§7, console:§f" + def.consoleAllowed()
+                    + (def.aliases().isEmpty() ? "" : "§7, aliases:§f " + String.join(", ", def.aliases()))
+                    + "§7)");
+        }
+    }
+
+    /** Number of deferred + delayed callbacks in the active engine's bootstrap scheduler. */
+    private static int readSchedulerQueueSize() {
+        ILuaEngine engine = LuaTweakerMod.getActiveEngine();
+        if (engine == null) {
+            return 0;
+        }
+        try {
+            ILuaTable stats = readStatsTable(engine);
+            if (stats == null) {
+                return 0;
+            }
+            ILuaValue queued = stats.rawget("queued");
+            return queued == null || queued.isNil() ? 0 : queued.asInt();
+        } catch (LuaException | IllegalStateException e) {
+            logQueueReadFailure(e);
+            return 0;
+        }
+    }
+
+    private static @Nullable ILuaTable readStatsTable(@NotNull ILuaEngine engine) {
+        ILuaValue taskValue = engine.getGlobalEnvironment().rawget("task");
+        if (taskValue == null || !taskValue.isTable()) {
+            return null;
+        }
+        ILuaValue statsFn = taskValue.asTable().rawget("_stats");
+        if (statsFn == null || !statsFn.isFunction()) {
+            return null;
+        }
+        ILuaValue stats = engine.callFunction(statsFn, taskValue);
+        return stats != null && stats.isTable() ? stats.asTable() : null;
+    }
+
+    private static void logQueueReadFailure(@NotNull RuntimeException e) {
+        LuaTweakerLog.get().debug(LogStage.SYSTEM,
+                "/lt doctor could not read the Lua scheduler queue: " + e.getMessage());
     }
 }

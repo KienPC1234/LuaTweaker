@@ -2,11 +2,8 @@ package com.luatweaker.platform.container;
 
 import com.luatweaker.api.content.BoxSpec;
 import com.luatweaker.api.log.LogStage;
-import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.platform.content.VoxelShapeHelper;
-import com.luatweaker.platform.entity.NeoForgePlayerWrapper;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.context.BlockPlaceContext;
@@ -26,20 +23,21 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 
 public class CustomBlock extends Block {
     protected final String blockId;
     protected final String facingMode;
-    protected final Map<Direction, VoxelShape> shapesByDirection;
+    protected final Map<net.minecraft.core.Direction, VoxelShape> shapesByDirection;
     protected final VoxelShape defaultShape;
     @Nullable
-    protected volatile BiConsumer<Object, Object> rightClickHandler;
+    protected final AtomicReference<BiConsumer<Object, Object>> rightClickHandler;
 
     private static final ThreadLocal<String> INIT_FACING = new ThreadLocal<>();
 
     private static Properties pushFacing(Properties props, String facing) {
-        INIT_FACING.set(facing != null ? facing.toUpperCase() : "NONE");
+        INIT_FACING.set(FacingSupport.normalize(facing));
         return props;
     }
 
@@ -49,22 +47,16 @@ public class CustomBlock extends Block {
     }
 
     private CustomBlock(Properties properties, String blockId, String facingMode,
-                        List<BoxSpec> boxes, @Nullable BiConsumer<Object, Object> rightClickHandler, boolean unused) {
+                        List<BoxSpec> boxes, @Nullable BiConsumer<Object, Object> rightClickHandler,
+                        boolean unused) {
         super(properties);
         INIT_FACING.remove();
         this.blockId = blockId;
-        this.facingMode = facingMode != null ? facingMode.toUpperCase() : "NONE";
+        this.facingMode = FacingSupport.normalize(facingMode);
         this.shapesByDirection = VoxelShapeHelper.buildHorizontalShapes(boxes);
         this.defaultShape = VoxelShapeHelper.buildShape(boxes);
-        this.rightClickHandler = rightClickHandler;
-
-        BlockState defaultState = this.stateDefinition.any();
-        if ("HORIZONTAL".equals(this.facingMode)) {
-            defaultState = defaultState.setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH);
-        } else if ("DIRECTIONAL".equals(this.facingMode) || "6WAY".equals(this.facingMode)) {
-            defaultState = defaultState.setValue(BlockStateProperties.FACING, Direction.NORTH);
-        }
-        registerDefaultState(defaultState);
+        this.rightClickHandler = new AtomicReference<>(rightClickHandler);
+        registerDefaultState(FacingSupport.defaultState(this.stateDefinition.any(), this.facingMode));
     }
 
     public String getBlockId() {
@@ -72,25 +64,26 @@ public class CustomBlock extends Block {
     }
 
     /** Replaces the right-click callback after {@code /lt reload}. */
-    public void setRightClickHandler(@Nullable BiConsumer<Object, Object> rightClickHandler) {
-        this.rightClickHandler = rightClickHandler;
+    public void setRightClickHandler(@Nullable BiConsumer<Object, Object> handler) {
+        rightClickHandler.set(handler);
     }
 
     @Override
-    public void neighborChanged(BlockState state, Level level, BlockPos pos, Block neighborBlock, BlockPos neighborPos, boolean isMoving) {
+    public void neighborChanged(BlockState state, Level level, BlockPos pos, Block neighborBlock,
+                                BlockPos neighborPos, boolean isMoving) {
         super.neighborChanged(state, level, pos, neighborBlock, neighborPos, isMoving);
-        if (!level.isClientSide()) {
-            BiConsumer<Object, Object> handler = CustomContainerRegistry.NEIGHBOR_HANDLERS.get(this);
-            if (handler != null) {
-                try {
-                    Map<String, Object> posMap = Map.of("X", pos.getX(), "Y", pos.getY(), "Z", pos.getZ());
-                    Map<String, Object> nPosMap = Map.of("X", neighborPos.getX(), "Y", neighborPos.getY(), "Z", neighborPos.getZ());
-                    handler.accept(posMap, nPosMap);
-                } catch (Exception e) {
-                    LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed neighborChanged handler for " + blockId + ": " + e.getMessage());
-                }
-            }
+        if (level.isClientSide()) {
+            return;
         }
+        BiConsumer<Object, Object> handler = CustomContainerRegistry.NEIGHBOR_HANDLERS.get(this);
+        if (handler == null) {
+            return;
+        }
+        com.luatweaker.platform.util.CallbackFirewall.run(() -> handler.accept(
+                        Map.of("X", pos.getX(), "Y", pos.getY(), "Z", pos.getZ()),
+                        Map.of("X", neighborPos.getX(), "Y", neighborPos.getY(), "Z", neighborPos.getZ())),
+                LogStage.SYSTEM,
+                () -> "Failed neighborChanged handler for " + blockId);
     }
 
     public String getFacingMode() {
@@ -99,33 +92,25 @@ public class CustomBlock extends Block {
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
-        String mode = this.facingMode != null ? this.facingMode : INIT_FACING.get();
-        if ("HORIZONTAL".equals(mode)) {
-            builder.add(BlockStateProperties.HORIZONTAL_FACING);
-        } else if ("DIRECTIONAL".equals(mode) || "6WAY".equals(mode)) {
-            builder.add(BlockStateProperties.FACING);
-        }
+        FacingSupport.addProperty(builder, resolveFacingMode());
+    }
+
+    private String resolveFacingMode() {
+        return this.facingMode != null ? this.facingMode : INIT_FACING.get();
     }
 
     @Override
     @Nullable
     public BlockState getStateForPlacement(BlockPlaceContext context) {
-        BlockState state = defaultBlockState();
-        if ("HORIZONTAL".equals(facingMode)) {
-            state = state.setValue(BlockStateProperties.HORIZONTAL_FACING,
-                    context.getHorizontalDirection().getOpposite());
-        } else if ("DIRECTIONAL".equals(facingMode) || "6WAY".equals(facingMode)) {
-            state = state.setValue(BlockStateProperties.FACING,
-                    context.getNearestLookingDirection().getOpposite());
-        }
-        return state;
+        return FacingSupport.placementState(defaultBlockState(), facingMode, context);
     }
 
     @Override
     @NotNull
     public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
-        if ("HORIZONTAL".equals(facingMode) && state.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
-            return shapesByDirection.getOrDefault(state.getValue(BlockStateProperties.HORIZONTAL_FACING), defaultShape);
+        if (FacingSupport.isHorizontal(facingMode) && state.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
+            return shapesByDirection.getOrDefault(state.getValue(BlockStateProperties.HORIZONTAL_FACING),
+                    defaultShape);
         }
         return defaultShape;
     }
@@ -139,7 +124,8 @@ public class CustomBlock extends Block {
     @Override
     @NotNull
     public VoxelShape getOcclusionShape(BlockState state, BlockGetter level, BlockPos pos) {
-        if (!shapesByDirection.isEmpty() || defaultShape != net.minecraft.world.phys.shapes.Shapes.block()) {
+        if (!shapesByDirection.isEmpty()
+                || !java.util.Objects.equals(defaultShape, net.minecraft.world.phys.shapes.Shapes.block())) {
             return net.minecraft.world.phys.shapes.Shapes.empty();
         }
         return super.getOcclusionShape(state, level, pos);
@@ -147,41 +133,24 @@ public class CustomBlock extends Block {
 
     @Override
     public BlockState rotate(BlockState state, Rotation rotation) {
-        if ("HORIZONTAL".equals(facingMode) && state.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
-            return state.setValue(BlockStateProperties.HORIZONTAL_FACING,
-                    rotation.rotate(state.getValue(BlockStateProperties.HORIZONTAL_FACING)));
-        } else if (("DIRECTIONAL".equals(facingMode) || "6WAY".equals(facingMode)) && state.hasProperty(BlockStateProperties.FACING)) {
-            return state.setValue(BlockStateProperties.FACING,
-                    rotation.rotate(state.getValue(BlockStateProperties.FACING)));
-        }
-        return super.rotate(state, rotation);
+        return FacingSupport.rotate(state, facingMode, rotation);
     }
 
     @Override
     public BlockState mirror(BlockState state, Mirror mirror) {
-        if ("HORIZONTAL".equals(facingMode) && state.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
-            return state.setValue(BlockStateProperties.HORIZONTAL_FACING,
-                    mirror.mirror(state.getValue(BlockStateProperties.HORIZONTAL_FACING)));
-        } else if (("DIRECTIONAL".equals(facingMode) || "6WAY".equals(facingMode)) && state.hasProperty(BlockStateProperties.FACING)) {
-            return state.setValue(BlockStateProperties.FACING,
-                    mirror.mirror(state.getValue(BlockStateProperties.FACING)));
-        }
-        return super.mirror(state, mirror);
+        return FacingSupport.mirror(state, facingMode, mirror);
     }
 
     @Override
     @NotNull
-    public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
-        if (!level.isClientSide() && rightClickHandler != null) {
-            try {
-                String dim = level.dimension().location().toString();
-                var blockWrapper = new com.luatweaker.platform.interaction.NeoForgeInteractableBlock(dim, pos.getX(), pos.getY(), pos.getZ());
-                rightClickHandler.accept(new NeoForgePlayerWrapper(player), blockWrapper);
-            } catch (Exception e) {
-                LuaTweakerLog.get().error(LogStage.SYSTEM, "Failed custom block right-click handler for " + blockId + ": " + e.getMessage());
-            }
-            return InteractionResult.sidedSuccess(level.isClientSide());
+    public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player,
+                                            BlockHitResult hitResult) {
+        if (level.isClientSide() || rightClickHandler.get() == null) {
+            return super.useWithoutItem(state, level, pos, player, hitResult);
         }
-        return super.useWithoutItem(state, level, pos, player, hitResult);
+        ContainerBlockActions.fireRightClick(rightClickHandler.get(), player, level, pos, blockId);
+        return InteractionResult.sidedSuccess(level.isClientSide());
     }
 }
+
+

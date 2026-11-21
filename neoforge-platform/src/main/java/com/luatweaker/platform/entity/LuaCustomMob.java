@@ -27,6 +27,9 @@ import org.jetbrains.annotations.Nullable;
  * preset plus Lua-added goals. Anything not configured does nothing.
  */
 public class LuaCustomMob extends PathfinderMob {
+    private static final String GOAL_PRESET_ANIMAL = "animal";
+    private static final String GOAL_PRESET_MONSTER = "monster";
+
     public LuaCustomMob(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
     }
@@ -44,13 +47,13 @@ public class LuaCustomMob extends PathfinderMob {
     @Override
     protected void registerGoals() {
         String preset = resolveDefaultGoals();
-        if ("animal".equals(preset)) {
+        if (GOAL_PRESET_ANIMAL.equals(preset)) {
             this.goalSelector.addGoal(0, new FloatGoal(this));
             this.goalSelector.addGoal(1, new PanicGoal(this, 1.25));
             this.goalSelector.addGoal(5, new WaterAvoidingRandomStrollGoal(this, 1.0));
             this.goalSelector.addGoal(6, new LookAtPlayerGoal(this, Player.class, 6.0F));
             this.goalSelector.addGoal(7, new RandomLookAroundGoal(this));
-        } else if ("monster".equals(preset)) {
+        } else if (GOAL_PRESET_MONSTER.equals(preset)) {
             this.goalSelector.addGoal(0, new FloatGoal(this));
             this.goalSelector.addGoal(2, new MeleeAttackGoal(this, 1.2, false));
             this.goalSelector.addGoal(5, new WaterAvoidingRandomStrollGoal(this, 1.0));

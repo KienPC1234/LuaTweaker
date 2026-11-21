@@ -6,6 +6,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -16,49 +17,64 @@ import java.util.Map;
  */
 final class ContentTagMapper {
 
+    private static final String TAG_ROOT = "tags/block/";
+    private static final String DEFAULT_NAMESPACE = "luatweaker";
+
     private ContentTagMapper() {}
 
     /** tag path (e.g. "tags/block/mineable/pickaxe.json") -> block ids. */
     @NotNull
     static Map<String, List<String>> computeBlockTags(@NotNull IContentService contentService) {
-        Map<String, List<String>> tagMap = new LinkedHashMap<>();
-        for (IBlockBuilder b : contentService.getRegisteredBlocks()) {
-            String[] parts = parseId(b.getId());
-            String fullId = parts[0] + ":" + parts[1];
-
-            if (b.getMineableWith() != null) {
-                String tool = b.getMineableWith().toLowerCase();
-                tagMap.computeIfAbsent("tags/block/mineable/" + tool + ".json", k -> new java.util.ArrayList<>()).add(fullId);
-            }
-
-            if (b.getMiningLevel() > 0) {
-                String levelTag = switch (b.getMiningLevel()) {
-                    case 1 -> "tags/block/needs_stone_tool.json";
-                    case 2 -> "tags/block/needs_iron_tool.json";
-                    case 3 -> "tags/block/needs_diamond_tool.json";
-                    case 4 -> "tags/block/needs_netherite_tool.json";
-                    default -> "tags/block/needs_stone_tool.json";
-                };
-                tagMap.computeIfAbsent(levelTag, k -> new java.util.ArrayList<>()).add(fullId);
-            }
-
-            if (parts[1].endsWith("_wall")) {
-                tagMap.computeIfAbsent("tags/block/walls.json", k -> new java.util.ArrayList<>()).add(fullId);
-            }
-            if (parts[1].endsWith("_stairs")) {
-                tagMap.computeIfAbsent("tags/block/stairs.json", k -> new java.util.ArrayList<>()).add(fullId);
-            }
-            if (parts[1].endsWith("_slab")) {
-                tagMap.computeIfAbsent("tags/block/slabs.json", k -> new java.util.ArrayList<>()).add(fullId);
-            }
+        var tagMap = new LinkedHashMap<String, List<String>>();
+        for (IBlockBuilder builder : contentService.getRegisteredBlocks()) {
+            addTagsFor(tagMap, builder);
         }
         return tagMap;
     }
 
+    private static void addTagsFor(@NotNull Map<String, List<String>> tagMap, @NotNull IBlockBuilder builder) {
+        String[] parts = parseId(builder.getId());
+        String fullId = parts[0] + ":" + parts[1];
+        if (builder.getMineableWith() != null) {
+            String tool = builder.getMineableWith().toLowerCase(Locale.ROOT);
+            addTag(tagMap, TAG_ROOT + "mineable/" + tool + ".json", fullId);
+        }
+        if (builder.getMiningLevel() > 0) {
+            addTag(tagMap, levelTag(builder.getMiningLevel()), fullId);
+        }
+        if (parts[1].endsWith("_wall")) {
+            addTag(tagMap, TAG_ROOT + "walls.json", fullId);
+        }
+        if (parts[1].endsWith("_stairs")) {
+            addTag(tagMap, TAG_ROOT + "stairs.json", fullId);
+        }
+        if (parts[1].endsWith("_slab")) {
+            addTag(tagMap, TAG_ROOT + "slabs.json", fullId);
+        }
+    }
+
+    private static void addTag(@NotNull Map<String, List<String>> tagMap, @NotNull String key, @NotNull String id) {
+        tagMap.computeIfAbsent(key, ignored -> new java.util.ArrayList<>()).add(id);
+    }
+
+    @NotNull
+    private static String levelTag(int miningLevel) {
+        return switch (miningLevel) {
+            case 2 -> TAG_ROOT + "needs_iron_tool.json";
+            case 3 -> TAG_ROOT + "needs_diamond_tool.json";
+            case 4 -> TAG_ROOT + "needs_netherite_tool.json";
+            default -> TAG_ROOT + "needs_stone_tool.json";
+        };
+    }
+
     private static String[] parseId(String id) {
-        if (id == null) return new String[]{"luatweaker", "unknown"};
+        if (id == null) {
+            return new String[]{DEFAULT_NAMESPACE, "unknown"};
+        }
         int colon = id.indexOf(':');
-        if (colon > 0) return new String[]{id.substring(0, colon), id.substring(colon + 1)};
-        return new String[]{"luatweaker", id};
+        if (colon > 0) {
+            return new String[]{id.substring(0, colon), id.substring(colon + 1)};
+        }
+        return new String[]{DEFAULT_NAMESPACE, id};
     }
 }

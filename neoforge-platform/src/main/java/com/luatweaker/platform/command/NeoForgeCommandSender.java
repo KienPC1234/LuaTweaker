@@ -67,9 +67,9 @@ public class NeoForgeCommandSender implements ICommandSender {
 
     @Override
     public String getHeldItemId() {
-        if (!(source.getEntity() instanceof Player player)) return "";
+        if (!(source.getEntity() instanceof Player player)) { return ""; }
         ItemStack held = player.getMainHandItem();
-        if (held.isEmpty() || held.getItem() == Items.AIR) return "";
+        if (held.isEmpty() || held.getItem() == Items.AIR) { return ""; }
         return net.minecraft.core.registries.BuiltInRegistries.ITEM
                 .getKey(held.getItem())
                 .toString();

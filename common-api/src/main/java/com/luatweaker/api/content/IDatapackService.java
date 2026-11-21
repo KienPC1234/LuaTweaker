@@ -1,6 +1,7 @@
 package com.luatweaker.api.content;
 
 import com.luatweaker.api.annotation.LuaDoc;
+import com.luatweaker.api.doc.LuaDocFragments;
 
 import java.util.Map;
 
@@ -26,15 +27,15 @@ import java.util.Map;
 public interface IDatapackService {
 
     @LuaDoc(description = "Registers a crafting recipe JSON. Supports any namespace, e.g. 'minecraft:my_recipe' or 'create:cool_recipe'.",
-            params = {"recipeId: string — ResourceLocation e.g. 'luatweaker:ruby_gear'", "jsonContent: string — raw JSON"})
+            params = {"recipeId: string — ResourceLocation e.g. 'luatweaker:ruby_gear'", LuaDocFragments.Content.JSON_CONTENT})
     void addJsonRecipe(String recipeId, String jsonContent);
 
     @LuaDoc(description = "Registers a loot table JSON. Supports any namespace, e.g. 'minecraft:blocks/diamond_ore' to patch vanilla.",
-            params = {"path: string — ResourceLocation e.g. 'luatweaker:blocks/ruby_ore'", "jsonContent: string — raw JSON"})
+            params = {"path: string — ResourceLocation e.g. 'luatweaker:blocks/ruby_ore'", LuaDocFragments.Content.JSON_CONTENT})
     void addLootTable(String path, String jsonContent);
 
     @LuaDoc(description = "Registers an advancement JSON under any namespace.",
-            params = {"path: string — ResourceLocation", "jsonContent: string — raw JSON"})
+            params = {"path: string — ResourceLocation", LuaDocFragments.Content.JSON_CONTENT})
     void addAdvancement(String path, String jsonContent);
 
     @LuaDoc(description = "Registers an .mcfunction file under any namespace.",
@@ -42,7 +43,7 @@ public interface IDatapackService {
     void addFunction(String path, String commands);
 
     @LuaDoc(description = "Registers any raw data file by its relative path inside the 'data/' directory. e.g. 'minecraft/tags/block/mineable/pickaxe.json'.",
-            params = {"relPath: string — path relative to data/ directory", "jsonContent: string — raw JSON"})
+            params = {"relPath: string — path relative to data/ directory", LuaDocFragments.Content.JSON_CONTENT})
     void addData(String relPath, String jsonContent);
 
     @LuaDoc(description = "Creates or appends to a tag JSON (item, block, entity, etc.) under any namespace. e.g. datapack:addTag('item', 'luatweaker:ruby_items', {'luatweaker:custom_ruby','luatweaker:ruby_block'}) or datapack:addTag('block', 'minecraft:beacon_base_blocks', {'luatweaker:ruby_block'}).",

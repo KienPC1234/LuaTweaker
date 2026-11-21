@@ -108,13 +108,19 @@ public final class TerrainSampler {
             }
         }
 
+        double[] thresholdByY = computeThresholds(density, minY, maxY);
+        return new DensityField(values,
+                new DensityField.Grid(cellsX, cellsY, cellSize, cellHeight, baseX, baseZ),
+                minY, maxY, thresholdByY, spec.platforms());
+    }
+
+    private static double[] computeThresholds(@NotNull TerrainSpec.Density density, int minY, int maxY) {
         double[] thresholdByY = new double[maxY - minY];
         for (int i = 0; i < thresholdByY.length; i++) {
             thresholdByY[i] = density.threshold()
                     + Splines.evaluate(density.thresholdSpline(), minY + i);
         }
-        return new DensityField(values, cellsX, cellsY, cellSize, cellHeight,
-                baseX, baseZ, minY, maxY, thresholdByY, spec.platforms());
+        return thresholdByY;
     }
 
     /**
@@ -123,7 +129,7 @@ public final class TerrainSampler {
      * <p>Slopes are derived from an 18 x 18 height grid so columns on the chunk border use their
      * real neighbours instead of a flat edge.</p>
      */
-    public void sampleChunk(int chunkX, int chunkZ, @NotNull int[] heights, @NotNull float[] slopes) {
+    public void sampleChunk(int chunkX, int chunkZ, @NotNull int[] heights, @NotNull float... slopes) {
         if (heights.length != CHUNK_SIZE * CHUNK_SIZE || slopes.length != CHUNK_SIZE * CHUNK_SIZE) {
             throw new IllegalArgumentException("height and slope arrays must have "
                     + (CHUNK_SIZE * CHUNK_SIZE) + " entries");
@@ -139,7 +145,7 @@ public final class TerrainSampler {
         for (int z = 0; z < CHUNK_SIZE; z++) {
             for (int x = 0; x < CHUNK_SIZE; x++) {
                 int index = z * CHUNK_SIZE + x;
-                int gridIndex = (z + 1) * SLOPE_GRID + (x + 1);
+                int gridIndex = (z + 1) * SLOPE_GRID + x + 1;
                 heights[index] = grid[gridIndex];
                 double slopeX = (grid[gridIndex + 1] - grid[gridIndex - 1]) * 0.5;
                 double slopeZ = (grid[gridIndex + SLOPE_GRID] - grid[gridIndex - SLOPE_GRID]) * 0.5;
@@ -158,12 +164,21 @@ public final class TerrainSampler {
      */
     @Nullable
     public String surfaceBlockAt(int depth, int y, double slope) {
-        for (TerrainSpec.SurfaceRule rule : spec.surfaceRules()) {
-            if (depth < 0 || depth > rule.maxDepth()) continue;
-            if (y < rule.minY() || y > rule.maxY()) continue;
-            if (slope < rule.minSlope()) continue;
-            return rule.block();
+        return spec.surfaceRules().stream()
+                .filter(rule -> matchesSurfaceRule(rule, depth, y, slope))
+                .map(TerrainSpec.SurfaceRule::block)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static boolean matchesSurfaceRule(@NotNull TerrainSpec.SurfaceRule rule,
+            int depth, int y, double slope) {
+        if (depth < 0 || depth > rule.maxDepth()) {
+            return false;
         }
-        return null;
+        if (y < rule.minY() || y > rule.maxY()) {
+            return false;
+        }
+        return slope >= rule.minSlope();
     }
 }

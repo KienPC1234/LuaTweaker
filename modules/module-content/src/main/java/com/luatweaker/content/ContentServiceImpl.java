@@ -1,140 +1,112 @@
 package com.luatweaker.content;
 
-import com.luatweaker.api.content.*;
+import com.luatweaker.api.content.IArmorMaterialBuilder;
+import com.luatweaker.api.content.IBlockBuilder;
+import com.luatweaker.api.content.ICreativeTabBuilder;
+import com.luatweaker.api.content.IContentService;
+import com.luatweaker.api.content.IEntityBuilder;
+import com.luatweaker.api.content.IFluidBuilder;
+import com.luatweaker.api.content.IItemBuilder;
 
 import java.util.Collection;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 public class ContentServiceImpl implements IContentService {
 
-    private final Map<String, IItemBuilder> items = new LinkedHashMap<>();
-    private final Map<String, IBlockBuilder> blocks = new LinkedHashMap<>();
-    private final Map<String, IFluidBuilder> fluids = new LinkedHashMap<>();
+    /** Tool/armor presets are unstackable; a Lua callback may still override this. */
+    private static final int SINGLE_ITEM_STACK = 1;
+
+    private final Map<String, IItemBuilder> items = new ConcurrentHashMap<>();
+    private final Map<String, IBlockBuilder> blocks = new ConcurrentHashMap<>();
+    private final Map<String, IFluidBuilder> fluids = new ConcurrentHashMap<>();
+    private final Map<String, ICreativeTabBuilder> tabs = new ConcurrentHashMap<>();
+    private final Map<String, IArmorMaterialBuilder> armorMaterials = new ConcurrentHashMap<>();
+    private final Map<String, IEntityBuilder> entities = new ConcurrentHashMap<>();
 
     @Override
     public IItemBuilder createItem(String id, Consumer<IItemBuilder> builderConsumer) {
-        ItemBuilderImpl builder = new ItemBuilderImpl(id);
-        if (builderConsumer != null) {
-            builderConsumer.accept(builder);
-        }
-        items.put(id, builder);
-        return builder;
+        return register(items, id, new ItemBuilderImpl(id), builderConsumer);
     }
 
     @Override
     public IItemBuilder createSword(String id, Consumer<IItemBuilder> builderConsumer) {
-        return createItem(id, b -> {
-            b.type("SWORD").maxStackSize(1);
-            if (builderConsumer != null) builderConsumer.accept(b);
-        });
+        return createTypedItem(id, "SWORD", builderConsumer);
     }
 
     @Override
     public IItemBuilder createPickaxe(String id, Consumer<IItemBuilder> builderConsumer) {
-        return createItem(id, b -> {
-            b.type("PICKAXE").maxStackSize(1);
-            if (builderConsumer != null) builderConsumer.accept(b);
-        });
+        return createTypedItem(id, "PICKAXE", builderConsumer);
     }
 
     @Override
     public IItemBuilder createAxe(String id, Consumer<IItemBuilder> builderConsumer) {
-        return createItem(id, b -> {
-            b.type("AXE").maxStackSize(1);
-            if (builderConsumer != null) builderConsumer.accept(b);
-        });
+        return createTypedItem(id, "AXE", builderConsumer);
     }
 
     @Override
     public IItemBuilder createShovel(String id, Consumer<IItemBuilder> builderConsumer) {
-        return createItem(id, b -> {
-            b.type("SHOVEL").maxStackSize(1);
-            if (builderConsumer != null) builderConsumer.accept(b);
-        });
+        return createTypedItem(id, "SHOVEL", builderConsumer);
     }
 
     @Override
     public IItemBuilder createHoe(String id, Consumer<IItemBuilder> builderConsumer) {
-        return createItem(id, b -> {
-            b.type("HOE").maxStackSize(1);
-            if (builderConsumer != null) builderConsumer.accept(b);
-        });
+        return createTypedItem(id, "HOE", builderConsumer);
     }
 
     @Override
     public IItemBuilder createHelmet(String id, Consumer<IItemBuilder> builderConsumer) {
-        return createItem(id, b -> {
-            b.type("HELMET").maxStackSize(1);
-            if (builderConsumer != null) builderConsumer.accept(b);
-        });
+        return createTypedItem(id, "HELMET", builderConsumer);
     }
 
     @Override
     public IItemBuilder createChestplate(String id, Consumer<IItemBuilder> builderConsumer) {
-        return createItem(id, b -> {
-            b.type("CHESTPLATE").maxStackSize(1);
-            if (builderConsumer != null) builderConsumer.accept(b);
-        });
+        return createTypedItem(id, "CHESTPLATE", builderConsumer);
     }
 
     @Override
     public IItemBuilder createLeggings(String id, Consumer<IItemBuilder> builderConsumer) {
-        return createItem(id, b -> {
-            b.type("LEGGINGS").maxStackSize(1);
-            if (builderConsumer != null) builderConsumer.accept(b);
-        });
+        return createTypedItem(id, "LEGGINGS", builderConsumer);
     }
 
     @Override
     public IItemBuilder createBoots(String id, Consumer<IItemBuilder> builderConsumer) {
-        return createItem(id, b -> {
-            b.type("BOOTS").maxStackSize(1);
-            if (builderConsumer != null) builderConsumer.accept(b);
-        });
+        return createTypedItem(id, "BOOTS", builderConsumer);
     }
 
     @Override
     public IItemBuilder createRangedItem(String id, Consumer<IItemBuilder> builderConsumer) {
-        return createItem(id, b -> {
-            b.type("RANGED").maxStackSize(1);
-            if (builderConsumer != null) builderConsumer.accept(b);
+        return createTypedItem(id, "RANGED", builderConsumer);
+    }
+
+    /**
+     * Shared body of the tool/armor presets: seeds the DSL type before the Lua
+     * callback runs, so a script can still override type or stack size.
+     */
+    private IItemBuilder createTypedItem(String id, String itemType, Consumer<IItemBuilder> builderConsumer) {
+        return createItem(id, builder -> {
+            builder.type(itemType).maxStackSize(SINGLE_ITEM_STACK);
+            if (builderConsumer != null) {
+                builderConsumer.accept(builder);
+            }
         });
     }
 
     @Override
-
     public IBlockBuilder createBlock(String id, Consumer<IBlockBuilder> builderConsumer) {
-        BlockBuilderImpl builder = new BlockBuilderImpl(id);
-        if (builderConsumer != null) {
-            builderConsumer.accept(builder);
-        }
-        blocks.put(id, builder);
-        return builder;
+        return register(blocks, id, new BlockBuilderImpl(id), builderConsumer);
     }
 
     @Override
     public IFluidBuilder createFluid(String id, Consumer<IFluidBuilder> builderConsumer) {
-        FluidBuilderImpl builder = new FluidBuilderImpl(id);
-        if (builderConsumer != null) {
-            builderConsumer.accept(builder);
-        }
-        fluids.put(id, builder);
-        return builder;
+        return register(fluids, id, new FluidBuilderImpl(id), builderConsumer);
     }
-
-    private final Map<String, ICreativeTabBuilder> tabs = new LinkedHashMap<>();
 
     @Override
     public ICreativeTabBuilder createTab(String id, Consumer<ICreativeTabBuilder> builderConsumer) {
-        CreativeTabBuilderImpl builder = new CreativeTabBuilderImpl(id);
-        if (builderConsumer != null) {
-            builderConsumer.accept(builder);
-        }
-        tabs.put(id, builder);
-        return builder;
+        return register(tabs, id, new CreativeTabBuilderImpl(id), builderConsumer);
     }
 
     @Override
@@ -152,28 +124,22 @@ public class ContentServiceImpl implements IContentService {
         return createBlock(id, b -> b.shape("WALL").baseBlock(baseBlockId));
     }
 
-
-    private final Map<String, IArmorMaterialBuilder> armorMaterials = new LinkedHashMap<>();
-
     @Override
     public IArmorMaterialBuilder createArmorMaterial(String id, Consumer<IArmorMaterialBuilder> builderConsumer) {
-        ArmorMaterialBuilderImpl builder = new ArmorMaterialBuilderImpl(id);
-        if (builderConsumer != null) {
-            builderConsumer.accept(builder);
-        }
-        armorMaterials.put(id, builder);
-        return builder;
+        return register(armorMaterials, id, new ArmorMaterialBuilderImpl(id), builderConsumer);
     }
-
-    private final Map<String, IEntityBuilder> entities = new LinkedHashMap<>();
 
     @Override
     public IEntityBuilder createEntity(String id, Consumer<IEntityBuilder> builderConsumer) {
-        EntityBuilderImpl builder = new EntityBuilderImpl(id);
+        return register(entities, id, new EntityBuilderImpl(id), builderConsumer);
+    }
+
+    /** Applies the optional Lua builder callback first, then records the builder. */
+    private static <B> B register(Map<String, B> registry, String id, B builder, Consumer<B> builderConsumer) {
         if (builderConsumer != null) {
             builderConsumer.accept(builder);
         }
-        entities.put(id, builder);
+        registry.put(id, builder);
         return builder;
     }
 
@@ -212,5 +178,3 @@ public class ContentServiceImpl implements IContentService {
         return armorMaterials.get(id);
     }
 }
-
-

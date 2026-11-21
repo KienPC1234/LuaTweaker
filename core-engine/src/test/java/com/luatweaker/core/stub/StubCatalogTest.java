@@ -3,9 +3,11 @@ package com.luatweaker.core.stub;
 import com.luatweaker.api.client.ICameraService;
 import com.luatweaker.api.loot.ILootService;
 import com.luatweaker.core.lsp.LtvmStubGenerator;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -13,80 +15,142 @@ import static org.junit.jupiter.api.Assertions.*;
  * Verifies the static stub catalog bridging bound services to autocomplete:
  * registration idempotency, snapshot contents, and generator merge coverage.
  */
-public class StubCatalogTest {
+class StubCatalogTest {
+
+    private static final String LOOT = "Loot";
+    private static final String CAMERA = "Camera";
+    private static final String LOOT_REQUIRE = "'LuaTweaker.Loot'";
+    private static final String CAMERA_REQUIRE = "'LuaTweaker.Camera'";
+    private static final String ADD_MOB_DROP = "function Loot:AddMobDrop(";
+    private static final String ADD_MOB_DROP_ALIAS = "function Loot:addMobDrop(";
 
     @BeforeEach
-    public void clearCatalog() {
+    void clearCatalog() {
         StubCatalog.clearForTests();
     }
 
-    @Test
-    public void registerIsIdempotent() {
-        StubCatalog.register("Loot", ILootService.class);
-        StubCatalog.register("Loot", ILootService.class);
+    @Nested
+    class Registration {
 
-        Map<String, Class<?>> snap = StubCatalog.snapshot();
-        assertEquals(ILootService.class, snap.get("Loot"));
-        assertEquals(1, snap.size(), "Duplicate register must not duplicate entries");
+        @Test
+        void registerIsIdempotentLoot() {
+            StubCatalog.register(LOOT, ILootService.class);
+            StubCatalog.register(LOOT, ILootService.class);
+            Map<String, Class<?>> snap = StubCatalog.snapshot();
+            assertEquals(ILootService.class, snap.get(LOOT),
+                    "registering the same service twice must keep the original class");
+        }
+
+        @Test
+        void registerIsIdempotentDuplicateRegisterMustNotDuplicateEntries() {
+            StubCatalog.register(LOOT, ILootService.class);
+            StubCatalog.register(LOOT, ILootService.class);
+            Map<String, Class<?>> snap = StubCatalog.snapshot();
+            assertEquals(1, snap.size(), "Duplicate register must not duplicate entries");
+        }
     }
 
-    @Test
-    public void snapshotContainsRegisteredEntries() {
-        StubCatalog.register("Loot", ILootService.class);
-        StubCatalog.register("Camera", ICameraService.class);
+    @Nested
+    class Snapshot {
 
-        Map<String, Class<?>> snap = StubCatalog.snapshot();
-        assertEquals(ILootService.class, snap.get("Loot"));
-        assertEquals(ICameraService.class, snap.get("Camera"));
-        assertEquals(2, snap.size());
+        @Test
+        void snapshotContainsRegisteredEntriesLoot() {
+            StubCatalog.register(LOOT, ILootService.class);
+            StubCatalog.register(CAMERA, ICameraService.class);
+            Map<String, Class<?>> snap = StubCatalog.snapshot();
+            assertEquals(ILootService.class, snap.get(LOOT),
+                    "the snapshot must carry the Loot service class");
+        }
+
+        @Test
+        void snapshotContainsRegisteredEntriesCamera() {
+            StubCatalog.register(LOOT, ILootService.class);
+            StubCatalog.register(CAMERA, ICameraService.class);
+            Map<String, Class<?>> snap = StubCatalog.snapshot();
+            assertEquals(ICameraService.class, snap.get(CAMERA),
+                    "the snapshot must carry the Camera service class");
+        }
+
+        @Test
+        void snapshotContainsRegisteredEntriesSnap() {
+            StubCatalog.register(LOOT, ILootService.class);
+            StubCatalog.register(CAMERA, ICameraService.class);
+            Map<String, Class<?>> snap = StubCatalog.snapshot();
+            assertEquals(2, snap.size(),
+                    "the snapshot must contain exactly the two registered entries");
+        }
     }
 
-    @Test
-    public void generatorMergeIncludesCatalogEntries() {
-        StubCatalog.register("Loot", ILootService.class);
+    @Nested
+    class GeneratorMerge {
 
-        LtvmStubGenerator generator = new LtvmStubGenerator();
-        String stubs = generator.getResult();
+        @Test
+        void generatorMergeIncludesCatalogEntriesLuaTweakerLoot() {
+            StubCatalog.register(LOOT, ILootService.class);
+            LtvmStubGenerator generator = new LtvmStubGenerator();
+            String stubs = generator.getResult();
+            assertTrue(stubs.contains(LOOT_REQUIRE),
+                    "Merged stubs must include the catalog require overload:\n" + stubs);
+        }
 
-        assertTrue(stubs.contains("'LuaTweaker.Loot'"),
-                "Merged stubs must include catalog require overload:\n" + stubs);
-        assertTrue(stubs.contains("function Loot:AddMobDrop(") || stubs.contains("function Loot:addMobDrop("),
-                "Merged stubs must include catalog service methods:\n" + stubs);
-    }
+        @Test
+        void generatorMergeIncludesCatalogEntriesFunctionLootAddMobDrop() {
+            StubCatalog.register(LOOT, ILootService.class);
+            LtvmStubGenerator generator = new LtvmStubGenerator();
+            String stubs = generator.getResult();
+            assertTrue(stubs.contains(ADD_MOB_DROP) || stubs.contains(ADD_MOB_DROP_ALIAS),
+                    "Merged stubs must include catalog service methods:\n" + stubs);
+        }
 
-    @Test
-    public void generatorMergeIsIdempotentNoDupes() {
-        StubCatalog.register("Camera", ICameraService.class);
+        @Test
+        void generatorMergeIsIdempotentNoDupesLuaTweakerCamera() {
+            StubCatalog.register(CAMERA, ICameraService.class);
+            LtvmStubGenerator generator = new LtvmStubGenerator();
+            String first = generator.getResult();
+            assertEquals(1, countOccurrences(first, CAMERA_REQUIRE),
+                    "the first getResult() must emit the catalog overload exactly once");
+        }
 
-        LtvmStubGenerator generator = new LtvmStubGenerator();
-        String first = generator.getResult();
-        String second = generator.getResult();
+        @Test
+        void generatorMergeIsIdempotentNoDupesLuaTweakerCamera2() {
+            StubCatalog.register(CAMERA, ICameraService.class);
+            LtvmStubGenerator generator = new LtvmStubGenerator();
+            String second = generator.getResult();
+            assertEquals(1, countOccurrences(second, CAMERA_REQUIRE),
+                    "Second getResult() must not duplicate catalog overloads");
+        }
 
-        assertEquals(countOccurrences(first, "'LuaTweaker.Camera'"), 1);
-        assertEquals(countOccurrences(second, "'LuaTweaker.Camera'"), 1,
-                "Second getResult() must not duplicate catalog overloads");
-    }
+        @Test
+        void instanceRegistrationWinsOverCatalogLuaTweakerLoot() {
+            StubCatalog.register(LOOT, ICameraService.class);
+            LtvmStubGenerator generator = new LtvmStubGenerator();
+            generator.registerService(LOOT, ILootService.class);
+            String stubs = generator.getResult();
+            assertEquals(1, countOccurrences(stubs, LOOT_REQUIRE),
+                    "Same name in instance + catalog must emit exactly one overload:\n" + stubs);
+        }
 
-    @Test
-    public void instanceRegistrationWinsOverCatalog() {
-        StubCatalog.register("Loot", ICameraService.class);
-
-        LtvmStubGenerator generator = new LtvmStubGenerator();
-        generator.registerService("Loot", ILootService.class);
-        String stubs = generator.getResult();
-
-        assertEquals(1, countOccurrences(stubs, "'LuaTweaker.Loot'"),
-                "Same name in instance + catalog must emit exactly one overload:\n" + stubs);
-        assertTrue(stubs.contains("function Loot:AddMobDrop(") || stubs.contains("function Loot:addMobDrop("),
-                "Instance registration must win over catalog entry:\n" + stubs);
+        @Test
+        void instanceRegistrationWinsOverCatalogFunctionLootAddMobDrop() {
+            StubCatalog.register(LOOT, ICameraService.class);
+            LtvmStubGenerator generator = new LtvmStubGenerator();
+            generator.registerService(LOOT, ILootService.class);
+            String stubs = generator.getResult();
+            assertTrue(stubs.contains(ADD_MOB_DROP) || stubs.contains(ADD_MOB_DROP_ALIAS),
+                    "Instance registration must win over catalogue entry:\n" + stubs);
+        }
     }
 
     private static int countOccurrences(String haystack, String needle) {
         int count = 0;
         int from = 0;
-        while ((from = haystack.indexOf(needle, from)) != -1) {
+        while (true) {
+            int found = haystack.indexOf(needle, from);
+            if (found == -1) {
+                break;
+            }
             count++;
-            from += needle.length();
+            from = found + needle.length();
         }
         return count;
     }

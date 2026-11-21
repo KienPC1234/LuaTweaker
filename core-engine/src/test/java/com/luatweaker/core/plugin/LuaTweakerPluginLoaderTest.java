@@ -19,7 +19,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class LuaTweakerPluginLoaderTest {
+class LuaTweakerPluginLoaderTest {
     @AfterAll
     static void stopLogger() {
         AsyncFileLogger.get().shutdown();
@@ -31,6 +31,7 @@ public class LuaTweakerPluginLoaderTest {
         NativeModuleResolver.clearDynamicAliasesForTests();
     }
 
+    @FunctionalInterface
     @LuaDoc(description = "Test plugin API.")
     public interface TestApi {
         @LuaDoc(description = "Returns a marker.", returnType = "string")
@@ -88,54 +89,91 @@ public class LuaTweakerPluginLoaderTest {
     }
 
     @Test
-    void pluginsRegisterInLoadOrderAndAliasesResolve() {
+    void pluginsRegisterInLoadOrderAndAliasesResolveTestPlugin5() {
         List<String> order = new ArrayList<>();
         LuaTweakerPluginRegistry.register(new GoodPlugin(order, 20));
         LuaTweakerPluginRegistry.register(new GoodPlugin(order, 5));
-
         ILuaEngine engine = LuaEngineFactory.create(false);
         LuaTweakerPluginLoader.loadPlugins(engine);
-
-        assertEquals(List.of("test-plugin-5", "test-plugin-20"), order);
         engine.executeString(
-            "assert(TestPlugin5:marker() == 'ok-5')\n"
-                + "local viaRequire = require('LuaTweaker.TestPlugin20')\n"
-                + "assert(viaRequire:marker() == 'ok-20')\n",
-            "plugin_alias_test");
-        assertNull(engine.getAndClearLastExecutionError());
+        "assert(TestPlugin5:marker() == 'ok-5')\n"
+            + "local viaRequire = require('LuaTweaker.TestPlugin20')\n"
+            + "assert(viaRequire:marker() == 'ok-20')\n",
+        "plugin_alias_test");
         NativeModuleResolver.clearDynamicAliasesForTests();
+        assertEquals(List.of("test-plugin-5", "test-plugin-20"), order,
+                "plugins must be registered in ascending loadOrder");
+    }
+    @Test
+    void pluginsRegisterInLoadOrderAndAliasesResolveGetAndClearLastExecutionError() {
+        List<String> order = new ArrayList<>();
+        LuaTweakerPluginRegistry.register(new GoodPlugin(order, 20));
+        LuaTweakerPluginRegistry.register(new GoodPlugin(order, 5));
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        LuaTweakerPluginLoader.loadPlugins(engine);
+        engine.executeString(
+        "assert(TestPlugin5:marker() == 'ok-5')\n"
+            + "local viaRequire = require('LuaTweaker.TestPlugin20')\n"
+            + "assert(viaRequire:marker() == 'ok-20')\n",
+        "plugin_alias_test");
+        NativeModuleResolver.clearDynamicAliasesForTests();
+        assertNull(engine.getAndClearLastExecutionError(),
+                "the plugin alias script must run without a Lua error");
     }
 
     @Test
-    void failingPluginDoesNotAbortOthers() {
+    void failingPluginDoesNotAbortOthersTestPlugin7() {
         List<String> order = new ArrayList<>();
         LuaTweakerPluginRegistry.register(new BadPlugin());
         LuaTweakerPluginRegistry.register(new GoodPlugin(order, 7));
-
         ILuaEngine engine = LuaEngineFactory.create(false);
         LuaTweakerPluginLoader.loadPlugins(engine);
-
-        assertEquals(List.of("test-plugin-7"), order);
         engine.executeString("assert(TestPlugin7:marker() == 'ok-7')\n", "plugin_survive_test");
-        assertNull(engine.getAndClearLastExecutionError());
+        assertEquals(List.of("test-plugin-7"), order,
+                "a plugin that throws must not stop the next plugin from registering");
+    }
+    @Test
+    void failingPluginDoesNotAbortOthersGetAndClearLastExecutionError() {
+        List<String> order = new ArrayList<>();
+        LuaTweakerPluginRegistry.register(new BadPlugin());
+        LuaTweakerPluginRegistry.register(new GoodPlugin(order, 7));
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        LuaTweakerPluginLoader.loadPlugins(engine);
+        engine.executeString("assert(TestPlugin7:marker() == 'ok-7')\n", "plugin_survive_test");
+        assertNull(engine.getAndClearLastExecutionError(),
+                "a failing plugin must not leave a Lua execution error behind");
     }
 
     @Test
-    void blankPluginIdIsRefused() {
+    void blankPluginIdIsRefusedList() {
         LuaTweakerPluginRegistry.register(new ILuaTweakerPlugin() {
             @Override public @NotNull String pluginId() {
                 return "  ";
             }
-
             @Override public @NotNull String pluginVersion() {
                 return "1";
             }
-
             @Override public void registerServices(@NotNull ILuaEngine engine) {
                 throw new AssertionError("must never be called");
             }
         });
-        assertTrue(LuaTweakerPluginRegistry.list().isEmpty());
-        assertTrue(LuaTweakerPluginLoader.discoverPlugins().isEmpty());
+        assertTrue(LuaTweakerPluginRegistry.list().isEmpty(),
+                "a plugin whose id is blank must not be registered");
+    }
+    @Test
+    void blankPluginIdIsRefusedDiscoverPlugins() {
+        LuaTweakerPluginRegistry.register(new ILuaTweakerPlugin() {
+            @Override public @NotNull String pluginId() {
+                return "  ";
+            }
+            @Override public @NotNull String pluginVersion() {
+                return "1";
+            }
+            @Override public void registerServices(@NotNull ILuaEngine engine) {
+                throw new AssertionError("must never be called");
+            }
+        });
+        assertTrue(LuaTweakerPluginLoader.discoverPlugins().isEmpty(),
+                "discovery must skip a plugin whose id is blank");
     }
 }

@@ -1,12 +1,16 @@
 package com.luatweaker.platform.container;
 
+import com.luatweaker.api.content.MachineButtonSpec;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.Slot;
-import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.List;
 
 /**
  * Client screen for Lua-configured container blocks. The panel height follows the
@@ -16,7 +20,6 @@ import org.jetbrains.annotations.NotNull;
  * overlay so players instantly see they cannot be used.
  */
 public class CustomContainerScreen extends AbstractContainerScreen<CustomContainerMenu> {
-
     private static final ResourceLocation PANEL_TEXTURE =
             ResourceLocation.fromNamespaceAndPath("luatweaker", "textures/gui/crate_panel.png");
     private static final ResourceLocation SLOT_TEXTURE =
@@ -33,12 +36,6 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
     private static final int LABEL_COLOR = 0x404040;
     /** Slot cell texture overhang outside the slot bounds (vanilla 1px border overlap). */
     private static final int SLOT_CELL_INSET = 1;
-    /** Semi-transparent dark background painted under every GUI bar (engine-fixed). */
-    private static final int BAR_BACKGROUND = 0x7F101010;
-    /** Default ARGB fill colors per bar source when the Lua config passes 0. */
-    private static final int DEFAULT_ENERGY_COLOR = 0xFF00E676;
-    private static final int DEFAULT_FLUID_COLOR = 0xFF2196F3;
-    private static final int DEFAULT_PROGRESS_COLOR = 0xFFFFC107;
     /** Overlay color for read-only (locked) slots (engine-fixed, no per-mod config path). */
     private static final int LOCKED_SLOT_OVERLAY = 0x7F1C1C1C;
     private static final Component PLAYER_INV_LABEL = Component.translatable("container.inventory");
@@ -54,197 +51,125 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
     @Override
     protected void init() {
         super.init();
-        if (menu.getType() != null) {
-            java.util.List<com.luatweaker.api.content.MachineButtonSpec> buttons =
-                    CustomContainerRegistry.CONTAINER_BUTTONS.get(menu.getType());
-            if (buttons != null) {
-                int x = (width - imageWidth) / 2;
-                int y = (height - imageHeight) / 2;
-                for (com.luatweaker.api.content.MachineButtonSpec btn : buttons) {
-                    addRenderableWidget(net.minecraft.client.gui.components.Button.builder(
-                            Component.literal(btn.label()),
-                            b -> {
-                                if (menu.getBlockPos() != null) {
-                                    net.neoforged.neoforge.network.PacketDistributor.sendToServer(
-                                            new com.luatweaker.platform.network.ContainerButtonPayload(menu.getBlockPos(), btn.id()));
-                                }
-                            })
-                            .bounds(x + btn.x(), y + btn.y(), btn.width(), btn.height())
-                            .build());
-                }
-            }
+        addButtons();
+    }
+
+    private void addButtons() {
+        if (menu.getType() == null) {
+            return;
         }
+        List<MachineButtonSpec> buttons = CustomContainerRegistry.CONTAINER_BUTTONS.get(menu.getType());
+        if (buttons == null) {
+            return;
+        }
+        int originX = (width - imageWidth) / 2;
+        int originY = (height - imageHeight) / 2;
+        for (MachineButtonSpec spec : buttons) {
+            addRenderableWidget(createButton(spec, originX, originY));
+        }
+    }
+
+    private Button createButton(MachineButtonSpec spec, int originX, int originY) {
+        return Button.builder(Component.literal(spec.label()), clicked -> {
+                    if (menu.getBlockPos() != null) {
+                        net.neoforged.neoforge.network.PacketDistributor.sendToServer(
+                                new com.luatweaker.platform.network.ContainerButtonPayload(
+                                        menu.getBlockPos(), spec.id()));
+                    }
+                })
+                .bounds(originX + spec.x(), originY + spec.y(), spec.width(), spec.height())
+                .build();
     }
 
     @Override
     protected void renderBg(GuiGraphics guiGraphics, float partialTick, int mouseX, int mouseY) {
-        int x = (width - imageWidth) / 2;
-        int y = (height - imageHeight) / 2;
-        renderPanel(guiGraphics, x, y);
-        renderSlotCells(guiGraphics, x, y);
-        renderBars(guiGraphics, x, y);
+        int originX = (width - imageWidth) / 2;
+        int originY = (height - imageHeight) / 2;
+        renderPanel(guiGraphics, originX, originY);
+        renderSlotCells(guiGraphics, originX, originY);
+        if (menu.getType() != null) {
+            List<com.luatweaker.api.content.MachineBarSpec> bars =
+                    CustomContainerRegistry.CONTAINER_BARS.get(menu.getType());
+            if (bars != null) {
+                ContainerScreenDecor.renderBars(guiGraphics, menu, bars, originX, originY);
+            }
+        }
     }
 
-    private void renderPanel(GuiGraphics guiGraphics, int x, int y) {
-        ResourceLocation panel = PANEL_TEXTURE;
-        if (menu.getType() != null) {
-            String custom = CustomContainerRegistry.CONTAINER_TEXTURES.get(menu.getType());
-            if (custom != null && !custom.isBlank()) {
-                ResourceLocation parsed = ResourceLocation.tryParse(custom);
-                if (parsed != null) {
-                    // A custom texture is a full panel for the configured row count
-                    // (176 x imageHeight region from its top-left corner).
-                    guiGraphics.blit(parsed, x, y, 0, 0, imageWidth, imageHeight, TEXTURE_SHEET_SIZE, TEXTURE_SHEET_SIZE);
-                    return;
-                }
-            }
+    private void renderPanel(GuiGraphics guiGraphics, int originX, int originY) {
+        ResourceLocation custom = menu.getType() != null
+                ? customTexture(CustomContainerRegistry.CONTAINER_TEXTURES.get(menu.getType()))
+                : null;
+        if (custom != null) {
+            // A custom texture is a full panel for the configured row count
+            // (176 x imageHeight region from its top-left corner).
+            guiGraphics.blit(custom, originX, originY, 0, 0, imageWidth, imageHeight,
+                    TEXTURE_SHEET_SIZE, TEXTURE_SHEET_SIZE);
+            return;
         }
         // Default crate frame: fixed top/bottom strips + stretchable side borders,
         // so any row count (1..6) renders with a complete frame.
         int middle = imageHeight - TOP_STRIP - BOTTOM_STRIP;
-        guiGraphics.blit(PANEL_TEXTURE, x, y, 0, 0, imageWidth, TOP_STRIP, TEXTURE_SHEET_SIZE, TEXTURE_SHEET_SIZE);
-        guiGraphics.blit(PANEL_TEXTURE, x, y + TOP_STRIP, 0, TOP_STRIP, 1, middle, TEXTURE_SHEET_SIZE, TEXTURE_SHEET_SIZE);
-        guiGraphics.blit(PANEL_TEXTURE, x + imageWidth - 1, y + TOP_STRIP, imageWidth - 1, TOP_STRIP, 1, middle, TEXTURE_SHEET_SIZE, TEXTURE_SHEET_SIZE);
-        guiGraphics.blit(PANEL_TEXTURE, x, y + imageHeight - BOTTOM_STRIP, 0, PANEL_SHEET_HEIGHT - BOTTOM_STRIP, imageWidth, BOTTOM_STRIP, TEXTURE_SHEET_SIZE, TEXTURE_SHEET_SIZE);
+        guiGraphics.blit(PANEL_TEXTURE, originX, originY, 0, 0, imageWidth, TOP_STRIP,
+                TEXTURE_SHEET_SIZE, TEXTURE_SHEET_SIZE);
+        guiGraphics.blit(PANEL_TEXTURE, originX, originY + TOP_STRIP, 0, TOP_STRIP, 1, middle,
+                TEXTURE_SHEET_SIZE, TEXTURE_SHEET_SIZE);
+        guiGraphics.blit(PANEL_TEXTURE, originX + imageWidth - 1, originY + TOP_STRIP,
+                imageWidth - 1, TOP_STRIP, 1, middle, TEXTURE_SHEET_SIZE, TEXTURE_SHEET_SIZE);
+        guiGraphics.blit(PANEL_TEXTURE, originX, originY + imageHeight - BOTTOM_STRIP,
+                0, PANEL_SHEET_HEIGHT - BOTTOM_STRIP, imageWidth, BOTTOM_STRIP,
+                TEXTURE_SHEET_SIZE, TEXTURE_SHEET_SIZE);
     }
 
-    private void renderSlotCells(GuiGraphics guiGraphics, int x, int y) {
+    @Nullable
+    private static ResourceLocation customTexture(@Nullable String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        return ResourceLocation.tryParse(raw);
+    }
+
+    private void renderSlotCells(GuiGraphics guiGraphics, int originX, int originY) {
         ResourceLocation cell = resolveSlotTexture();
         int cellSize = ContainerLayout.CELL;
         for (Slot slot : menu.slots) {
-            int sx = x + slot.x - SLOT_CELL_INSET;
-            int sy = y + slot.y - SLOT_CELL_INSET;
-            guiGraphics.blit(cell, sx, sy, 0, 0, cellSize, cellSize, cellSize, cellSize);
+            int slotX = originX + slot.x - SLOT_CELL_INSET;
+            int slotY = originY + slot.y - SLOT_CELL_INSET;
+            guiGraphics.blit(cell, slotX, slotY, 0, 0, cellSize, cellSize, cellSize, cellSize);
             if (slot instanceof ContainerFilteredSlot filtered && filtered.isLocked()) {
-                guiGraphics.fill(sx, sy, sx + cellSize, sy + cellSize, LOCKED_SLOT_OVERLAY);
+                guiGraphics.fill(slotX, slotY, slotX + cellSize, slotY + cellSize, LOCKED_SLOT_OVERLAY);
             }
         }
     }
 
     private ResourceLocation resolveSlotTexture() {
-        if (menu.getType() != null) {
-            String custom = CustomContainerRegistry.CONTAINER_SLOT_TEXTURES.get(menu.getType());
-            if (custom != null && !custom.isBlank()) {
-                ResourceLocation parsed = ResourceLocation.tryParse(custom);
-                if (parsed != null) {
-                    return parsed;
-                }
-            }
-        }
-        return SLOT_TEXTURE;
-    }
-
-    private void renderBars(GuiGraphics guiGraphics, int x, int y) {
-        if (menu.getType() == null) return;
-        java.util.List<com.luatweaker.api.content.MachineBarSpec> bars =
-                CustomContainerRegistry.CONTAINER_BARS.get(menu.getType());
-        if (bars == null) return;
-        for (com.luatweaker.api.content.MachineBarSpec bar : bars) {
-            int bx = x + bar.x();
-            int by = y + bar.y();
-            float ratio = barRatio(bar);
-            int color = bar.color() > 0 ? bar.color() : defaultBarColor(bar.source());
-            guiGraphics.fill(bx, by, bx + bar.width(), by + bar.height(), BAR_BACKGROUND);
-            if (ratio > 0f) {
-                if (bar.width() >= bar.height()) {
-                    int fillWidth = Math.round(bar.width() * ratio);
-                    guiGraphics.fill(bx, by, bx + fillWidth, by + bar.height(), color);
-                } else {
-                    int fillHeight = Math.round(bar.height() * ratio);
-                    guiGraphics.fill(bx, by + bar.height() - fillHeight, bx + bar.width(), by + bar.height(), color);
-                }
-            }
-        }
-    }
-
-    private float barRatio(com.luatweaker.api.content.MachineBarSpec bar) {
-        if (bar == null) return 0f;
-        if (bar.currentKey() != null && bar.maxKey() != null) {
-            int cur = menu.getCustomValue(bar.currentKey());
-            int max = menu.getCustomValue(bar.maxKey());
-            return max > 0 ? Math.min(1f, Math.max(0f, (float) cur / max)) : 0f;
-        }
-        String source = bar.source();
-        if (source == null) return 0f;
-        return switch (source) {
-            case "energy" -> menu.getEnergyCapacity() > 0
-                    ? Math.min(1f, (float) menu.getEnergyStored() / menu.getEnergyCapacity()) : 0f;
-            case "fluid" -> menu.getFluidCapacity() > 0
-                    ? Math.min(1f, (float) menu.getFluidAmount() / menu.getFluidCapacity()) : 0f;
-            case "progress" -> Math.min(1f, Math.max(0f, menu.getProgress()));
-            default -> 0f;
-        };
-    }
-
-    private int defaultBarColor(String source) {
-        if (source == null) return DEFAULT_ENERGY_COLOR;
-        return switch (source) {
-            case "energy" -> DEFAULT_ENERGY_COLOR;
-            case "fluid" -> DEFAULT_FLUID_COLOR;
-            case "progress" -> DEFAULT_PROGRESS_COLOR;
-            default -> DEFAULT_ENERGY_COLOR;
-        };
+        ResourceLocation custom = menu.getType() != null
+                ? customTexture(CustomContainerRegistry.CONTAINER_SLOT_TEXTURES.get(menu.getType()))
+                : null;
+        return custom != null ? custom : SLOT_TEXTURE;
     }
 
     @Override
     protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
         guiGraphics.drawString(this.font, this.title, this.titleLabelX, this.titleLabelY, LABEL_COLOR, false);
-        guiGraphics.drawString(this.font, PLAYER_INV_LABEL, this.inventoryLabelX, this.inventoryLabelY, LABEL_COLOR, false);
-
-        if (menu.getType() != null) {
-            java.util.List<com.luatweaker.api.content.MachineLabelSpec> labels =
-                    CustomContainerRegistry.CONTAINER_LABELS.get(menu.getType());
-            if (labels != null) {
-                for (com.luatweaker.api.content.MachineLabelSpec lbl : labels) {
-                    guiGraphics.drawString(this.font, lbl.textOrVar(), lbl.x(), lbl.y(), lbl.color(), false);
-                }
-            }
-        }
+        guiGraphics.drawString(this.font, PLAYER_INV_LABEL, this.inventoryLabelX, this.inventoryLabelY,
+                LABEL_COLOR, false);
+        ContainerScreenDecor.renderLabels(guiGraphics, this.font, menu);
     }
 
     @Override
     protected void renderTooltip(GuiGraphics guiGraphics, int mouseX, int mouseY) {
         super.renderTooltip(guiGraphics, mouseX, mouseY);
-        if (menu.getType() == null) return;
-        java.util.List<com.luatweaker.api.content.MachineBarSpec> bars =
+        if (menu.getType() == null) {
+            return;
+        }
+        List<com.luatweaker.api.content.MachineBarSpec> bars =
                 CustomContainerRegistry.CONTAINER_BARS.get(menu.getType());
-        if (bars == null) return;
-        int x = (width - imageWidth) / 2;
-        int y = (height - imageHeight) / 2;
-        for (com.luatweaker.api.content.MachineBarSpec bar : bars) {
-            int bx = x + bar.x();
-            int by = y + bar.y();
-            if (mouseX >= bx && mouseX <= bx + bar.width() && mouseY >= by && mouseY <= by + bar.height()) {
-                Component tooltip = formatBarTooltip(bar);
-                if (tooltip != null) {
-                    guiGraphics.renderTooltip(this.font, tooltip, mouseX, mouseY);
-                    break;
-                }
-            }
+        if (bars == null) {
+            return;
         }
-    }
-
-    private Component formatBarTooltip(com.luatweaker.api.content.MachineBarSpec bar) {
-        if (bar.currentKey() != null && bar.maxKey() != null) {
-            int cur = menu.getCustomValue(bar.currentKey());
-            int max = menu.getCustomValue(bar.maxKey());
-            if (bar.tooltipFormat() != null && !bar.tooltipFormat().isBlank()) {
-                try {
-                    return Component.literal(String.format(bar.tooltipFormat(), cur, max));
-                } catch (Exception e) {
-                    return Component.literal(bar.tooltipFormat());
-                }
-            }
-            return Component.literal(String.format("%,d / %,d", cur, max));
-        }
-        if (bar.tooltipFormat() != null && !bar.tooltipFormat().isBlank()) {
-            return Component.literal(bar.tooltipFormat());
-        }
-        return switch (bar.source()) {
-            case "energy" -> Component.literal(String.format("%,d / %,d FE", menu.getEnergyStored(), menu.getEnergyCapacity()));
-            case "fluid" -> Component.literal(String.format("%,d / %,d mB", menu.getFluidAmount(), menu.getFluidCapacity()));
-            case "progress" -> Component.literal(String.format("%d%%", Math.round(menu.getProgress() * 100)));
-            default -> null;
-        };
+        ContainerScreenDecor.renderBarTooltip(guiGraphics, this.font, menu, bars, mouseX, mouseY,
+                (width - imageWidth) / 2, (height - imageHeight) / 2);
     }
 }
+

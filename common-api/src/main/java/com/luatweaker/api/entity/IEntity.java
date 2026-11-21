@@ -1,34 +1,35 @@
 package com.luatweaker.api.entity;
 
 import com.luatweaker.api.annotation.LuaDoc;
+import com.luatweaker.api.doc.LuaDocFragments;
 import com.luatweaker.api.annotation.LuaDefault;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 @LuaDoc(description = "Represents a generic Minecraft entity wrapper for manipulating health, effects, position, damage, and sounds.")
 public interface IEntity {
-    @LuaDoc(description = "Returns the entity type ID (e.g. 'minecraft:zombie').", returnType = "string")
+    @LuaDoc(description = "Returns the entity type ID (e.g. 'minecraft:zombie').", returnType = LuaDocFragments.Types.STRING)
     String getType();
 
-    @LuaDoc(description = "Returns the display name of the entity.", returnType = "string")
+    @LuaDoc(description = "Returns the display name of the entity.", returnType = LuaDocFragments.Types.STRING)
     String getName();
 
-    @LuaDoc(description = "Returns the entity's UUID string.", returnType = "string")
+    @LuaDoc(description = "Returns the entity's UUID string.", returnType = LuaDocFragments.Types.STRING)
     default String getUuid() { return ""; }
 
     @LuaDoc(description = "Sends a chat message if this entity is a player; a no-op otherwise.", params = {"message: string"})
     default void sendMessage(String message) {}
 
-    @LuaDoc(description = "Returns current health of the entity.", returnType = "number")
+    @LuaDoc(description = "Returns current health of the entity.", returnType = LuaDocFragments.Types.NUMBER)
     float getHealth();
 
     @LuaDoc(description = "Sets health of the entity.", params = {"health: number"})
     void setHealth(float health);
 
-    @LuaDoc(description = "Returns maximum health of the entity.", returnType = "number")
+    @LuaDoc(description = "Returns maximum health of the entity.", returnType = LuaDocFragments.Types.NUMBER)
     float getMaxHealth();
 
-    @LuaDoc(description = "Deals damage with specific Minecraft 1.21 DamageType and optional attacker.", params = {"amount: number", "[damageTypeId: string]", "[attacker: IEntity]"})
+    @LuaDoc(description = "Deals damage with specific Minecraft 1.21 DamageType and optional attacker.", params = {LuaDocFragments.Content.AMOUNT_NUMBER, "[damageTypeId: string]", "[attacker: IEntity]"})
     default void applyDamage(float amount, @LuaDefault("minecraft:generic") String damageTypeId, @Nullable IEntity attacker) {
         damage(amount);
     }
@@ -41,7 +42,7 @@ public interface IEntity {
     @LuaDoc(description = "Sets armor or hand equipment (mainhand, offhand, head, chest, legs, feet).", params = {"slot: string", "itemId: string", "[count: integer]"})
     default void setEquipment(String slot, String itemId, @LuaDefault("1") int count) {}
 
-    @LuaDoc(description = "Gets equipment item ID in slot (mainhand, offhand, head, chest, legs, feet).", params = {"slot: string"}, returnType = "string")
+    @LuaDoc(description = "Gets equipment item ID in slot (mainhand, offhand, head, chest, legs, feet).", params = {"slot: string"}, returnType = LuaDocFragments.Types.STRING)
     default String getEquipment(String slot) { return "minecraft:air"; }
 
     @LuaDoc(
@@ -55,17 +56,17 @@ public interface IEntity {
      * Look direction components, matching Minecraft's {@code Entity#getLookAngle()}:
      * yaw 0 faces +Z, yaw 90 faces -X, positive pitch looks down.
      */
-    @LuaDoc(description = "Returns the look direction X component (same as Minecraft's look angle).", returnType = "number")
+    @LuaDoc(description = "Returns the look direction X component (same as Minecraft's look angle).", returnType = LuaDocFragments.Types.NUMBER)
     default double getLookVectorX() {
         return -Math.sin(Math.toRadians(getYaw())) * Math.cos(Math.toRadians(getPitch()));
     }
 
-    @LuaDoc(description = "Returns the look direction Y component: negative when looking down, positive when looking up.", returnType = "number")
+    @LuaDoc(description = "Returns the look direction Y component: negative when looking down, positive when looking up.", returnType = LuaDocFragments.Types.NUMBER)
     default double getLookVectorY() {
         return -Math.sin(Math.toRadians(getPitch()));
     }
 
-    @LuaDoc(description = "Returns the look direction Z component (same as Minecraft's look angle).", returnType = "number")
+    @LuaDoc(description = "Returns the look direction Z component (same as Minecraft's look angle).", returnType = LuaDocFragments.Types.NUMBER)
     default double getLookVectorZ() {
         return Math.cos(Math.toRadians(getYaw())) * Math.cos(Math.toRadians(getPitch()));
     }
@@ -75,22 +76,22 @@ public interface IEntity {
         return com.luatweaker.api.spatial.RaycastResult.miss(getX(), getY(), getZ());
     }
 
-    @LuaDoc(description = "Deals generic damage to the entity.", params = {"amount: number"})
+    @LuaDoc(description = "Deals generic damage to the entity.", params = {LuaDocFragments.Content.AMOUNT_NUMBER})
     default void damage(float amount) {}
 
     @LuaDoc(
         description = "Triggers a GeckoLib skeletal animation on this entity.",
-        params = {"animName: string", "[controllerName: string]"},
-        returnType = "boolean"
+        params = {LuaDocFragments.Content.ANIM_NAME, "[controllerName: string]"},
+        returnType = LuaDocFragments.Types.BOOLEAN
     )
     default boolean triggerAnimation(String animName, @LuaDefault("controller") String controllerName) {
         return com.luatweaker.api.pal.Platform.getInteraction().triggerGeoAnimation(this, controllerName, animName, 1.0, false);
     }
 
-    @LuaDoc(description = "Deals generic damage to the entity.", params = {"amount: number"})
+    @LuaDoc(description = "Deals generic damage to the entity.", params = {LuaDocFragments.Content.AMOUNT_NUMBER})
     default void hurt(float amount) { damage(amount); }
 
-    @LuaDoc(description = "Heals the entity by specified amount.", params = {"amount: number"})
+    @LuaDoc(description = "Heals the entity by specified amount.", params = {LuaDocFragments.Content.AMOUNT_NUMBER})
     default void heal(float amount) {
         setHealth(Math.min(getMaxHealth(), getHealth() + Math.max(0, amount)));
     }
@@ -107,10 +108,10 @@ public interface IEntity {
     @LuaDoc(description = "Removes all status potion effects from the entity.")
     default void removeAllEffects() {}
 
-    @LuaDoc(description = "Checks if the entity has a active status effect.", params = {"effectId: string"}, returnType = "boolean")
+    @LuaDoc(description = "Checks if the entity has a active status effect.", params = {"effectId: string"}, returnType = LuaDocFragments.Types.BOOLEAN)
     default boolean hasEffect(String effectId) { return false; }
 
-    @LuaDoc(description = "Checks if the entity is alive.", returnType = "boolean")
+    @LuaDoc(description = "Checks if the entity is alive.", returnType = LuaDocFragments.Types.BOOLEAN)
     boolean isAlive();
 
     @LuaDoc(description = "Sets the entity on fire for specified seconds.", params = {"seconds: integer"})
@@ -120,38 +121,37 @@ public interface IEntity {
     default void extinguish() {}
 
     @LuaDoc(description = "Plays a sound at the entity's position.", params = {"soundId: string", "[volume: number]", "[pitch: number]"})
-    default void playSound(String soundId, @LuaDefault("1.0") float volume, @LuaDefault("1.0") float pitch) {}
+    default void playSound(String soundId, @LuaDefault(LuaDocFragments.Defaults.ONE) float volume, @LuaDefault(LuaDocFragments.Defaults.ONE) float pitch) {}
 
     @LuaDoc(
         description = "Plays a sound at the entity's position in a specific Minecraft sound category "
                     + "(MASTER, MUSIC, RECORDS, WEATHER, BLOCKS, HOSTILE, NEUTRAL, PLAYERS, AMBIENT, VOICE), "
                     + "so it follows that category's volume slider. Unregistered ids are reported and skipped.",
-        params = {"soundId: string", "volume: number", "pitch: number", "source: string"},
-        returnType = "void"
+        params = {"soundId: string", "volume: number", "pitch: number", "source: string"}
     )
-    default void playSoundFrom(String soundId, @LuaDefault("1.0") float volume,
-                               @LuaDefault("1.0") float pitch, @LuaDefault("NEUTRAL") String source) {
+    default void playSoundFrom(String soundId, @LuaDefault(LuaDocFragments.Defaults.ONE) float volume,
+                               @LuaDefault(LuaDocFragments.Defaults.ONE) float pitch, @LuaDefault("NEUTRAL") String source) {
         playSound(soundId, volume, pitch);
     }
 
     @LuaDoc(description = "Spawns particle effect at entity location.", params = {"particleId: string", "count: integer", "speed: number"})
-    default void spawnParticle(String particleId, @LuaDefault("1") int count, @LuaDefault("0.0") double speed) {}
+    default void spawnParticle(String particleId, @LuaDefault("1") int count, @LuaDefault(LuaDocFragments.Defaults.ZERO) double speed) {}
 
     @LuaDoc(description = "Spawns an entity relative to this entity's position.", params = {"entityId: string", "offsetX: number", "offsetY: number", "offsetZ: number"}, returnType = "table")
-    default IEntity spawnEntity(String entityId, @LuaDefault("0.0") double offsetX, @LuaDefault("0.0") double offsetY, @LuaDefault("0.0") double offsetZ) { return null; }
+    default IEntity spawnEntity(String entityId, @LuaDefault(LuaDocFragments.Defaults.ZERO) double offsetX, @LuaDefault(LuaDocFragments.Defaults.ZERO) double offsetY, @LuaDefault(LuaDocFragments.Defaults.ZERO) double offsetZ) { return null; }
 
-    @LuaDoc(description = "Fires a projectile from this entity's eye position toward where it is looking.", params = {"projectileType: string (e.g. 'luatweaker:ruby_orb', 'minecraft:small_fireball')", "[speed: number]", "[inaccuracy: number]"})
-    default void shootProjectile(String projectileType, @LuaDefault("1.5") double speed, @LuaDefault("0.0") double inaccuracy) {}
+    @LuaDoc(description = "Fires a projectile from this entity's eye position toward where it is looking.", params = {"projectileType: string (e.g. 'luatweaker:ruby_orb', 'minecraft:small_fireball')", LuaDocFragments.Common.SPEED_OPTIONAL, "[inaccuracy: number]"})
+    default void shootProjectile(String projectileType, @LuaDefault("1.5") double speed, @LuaDefault(LuaDocFragments.Defaults.ZERO) double inaccuracy) {}
 
-    @LuaDoc(description = "Fires a projectile from this entity toward a target entity. Returns the spawned projectile so scripts can steer it.", params = {"projectileType: string", "target: table (entity)", "[speed: number]"}, returnType = "table | nil")
+    @LuaDoc(description = "Fires a projectile from this entity toward a target entity. Returns the spawned projectile so scripts can steer it.", params = {"projectileType: string", "target: table (entity)", LuaDocFragments.Common.SPEED_OPTIONAL}, returnType = "table | nil")
     default IEntity shootProjectileAt(String projectileType, IEntity target, @LuaDefault("1.5") double speed) { return null; }
 
-    @LuaDoc(description = "Plays a named animation on the entity (stored for client-side rendering).", params = {"animName: string", "[speed: number]", "[transition: number]"})
-    default void playAnimation(String animName, @LuaDefault("1.0") double speed, @LuaDefault("0.2") double transition) {}
+    @LuaDoc(description = "Plays a named animation on the entity (stored for client-side rendering).", params = {LuaDocFragments.Content.ANIM_NAME, LuaDocFragments.Common.SPEED_OPTIONAL, "[transition: number]"})
+    default void playAnimation(String animName, @LuaDefault(LuaDocFragments.Defaults.ONE) double speed, @LuaDefault("0.2") double transition) {}
 
     @LuaDoc(description = "Plays a custom item animation on this entity (e.g. 'recoil', 'thrust', 'cast', 'spin', 'inspect').",
-            params = {"animName: string", "[durationTicks: integer]", "[speed: number]"})
-    default void playItemAnimation(String animName, @LuaDefault("20") int durationTicks, @LuaDefault("1.0") double speed) {
+            params = {LuaDocFragments.Content.ANIM_NAME, "[durationTicks: integer]", LuaDocFragments.Common.SPEED_OPTIONAL})
+    default void playItemAnimation(String animName, @LuaDefault("20") int durationTicks, @LuaDefault(LuaDocFragments.Defaults.ONE) double speed) {
         playAnimation(animName, speed, durationTicks);
     }
 
@@ -159,13 +159,13 @@ public interface IEntity {
      * Legacy string view over the entity's persistent data. Shares the same key namespace as
      * {@link #setCustomData}, so the two APIs can read each other's values.
      */
-    @LuaDoc(description = "Stores a string in the entity's persistent data (same key space as SetCustomData; null removes it).", params = {"key: string", "value: string"})
+    @LuaDoc(description = "Stores a string in the entity's persistent data (same key space as SetCustomData; null removes it).", params = {LuaDocFragments.Common.KEY_STRING, "value: string"})
     default void setAttribute(String key, String value) {}
 
-    @LuaDoc(description = "Reads a persistent value as a string (same key space as GetCustomData).", params = {"key: string"}, returnType = "string | nil")
+    @LuaDoc(description = "Reads a persistent value as a string (same key space as GetCustomData).", params = {LuaDocFragments.Common.KEY_STRING}, returnType = "string | nil")
     default String getAttribute(String key) { return null; }
 
-    @LuaDoc(description = "Reads a typed persistent value (string, number or boolean).", params = {"key: string"}, returnType = "any")
+    @LuaDoc(description = "Reads a typed persistent value (string, number or boolean).", params = {LuaDocFragments.Common.KEY_STRING}, returnType = "any")
     default @Nullable Object getCustomData(@NotNull String key) { return null; }
 
     /**
@@ -174,7 +174,7 @@ public interface IEntity {
      * @throws IllegalArgumentException for tables, functions and other values that cannot be
      *                                  represented as a single persistent primitive
      */
-    @LuaDoc(description = "Stores a typed persistent value (string, number or boolean; nil removes it). Other Lua types are rejected.", params = {"key: string", "value: any"})
+    @LuaDoc(description = "Stores a typed persistent value (string, number or boolean; nil removes it). Other Lua types are rejected.", params = {LuaDocFragments.Common.KEY_STRING, "value: any"})
     default void setCustomData(@NotNull String key, @Nullable Object value) {}
 
     @LuaDoc(description = "Sets the maximum health attribute of the entity.", params = {"maxHealth: number"})
@@ -182,29 +182,29 @@ public interface IEntity {
 
     @LuaDoc(
         description = "Returns a Minecraft attribute value after modifiers (e.g. 'minecraft:generic.movement_speed', 'minecraft:generic.attack_damage'), or nil when the entity lacks it.",
-        params = {"attributeId: string"},
+        params = {LuaDocFragments.Content.ATTRIBUTE_ID},
         returnType = "number | nil"
     )
     default @Nullable Double getAttributeValue(String attributeId) { return null; }
 
     @LuaDoc(
         description = "Returns a Minecraft attribute base value (before modifiers), or nil when the entity lacks it.",
-        params = {"attributeId: string"},
+        params = {LuaDocFragments.Content.ATTRIBUTE_ID},
         returnType = "number | nil"
     )
     default @Nullable Double getAttributeBaseValue(String attributeId) { return null; }
 
     @LuaDoc(
         description = "Sets a Minecraft attribute base value. Returns false when the entity has no such attribute.",
-        params = {"attributeId: string", "value: number"},
-        returnType = "boolean"
+        params = {LuaDocFragments.Content.ATTRIBUTE_ID, "value: number"},
+        returnType = LuaDocFragments.Types.BOOLEAN
     )
     default boolean setAttributeBaseValue(String attributeId, double value) { return false; }
 
     @LuaDoc(
         description = "Adds or replaces a named modifier on a Minecraft attribute. operation: 'ADD_VALUE' (default), 'ADD_MULTIPLIED_BASE' or 'ADD_MULTIPLIED_TOTAL'.",
-        params = {"attributeId: string", "modifierId: string", "amount: number", "[operation: string]"},
-        returnType = "boolean"
+        params = {LuaDocFragments.Content.ATTRIBUTE_ID, "modifierId: string", LuaDocFragments.Content.AMOUNT_NUMBER, "[operation: string]"},
+        returnType = LuaDocFragments.Types.BOOLEAN
     )
     default boolean addAttributeModifier(String attributeId, String modifierId, double amount,
                                          @LuaDefault("ADD_VALUE") String operation) {
@@ -213,12 +213,12 @@ public interface IEntity {
 
     @LuaDoc(
         description = "Removes a named modifier from a Minecraft attribute. Returns whether it existed.",
-        params = {"attributeId: string", "modifierId: string"},
-        returnType = "boolean"
+        params = {LuaDocFragments.Content.ATTRIBUTE_ID, "modifierId: string"},
+        returnType = LuaDocFragments.Types.BOOLEAN
     )
     default boolean removeAttributeModifier(String attributeId, String modifierId) { return false; }
 
-    @LuaDoc(description = "Returns the current velocity (motion) of the entity.", returnType = "number")
+    @LuaDoc(description = "Returns the current velocity (motion) of the entity.", returnType = LuaDocFragments.Types.NUMBER)
     default double getMotionX() { return 0; }
     default double getMotionY() { return 0; }
     default double getMotionZ() { return 0; }
@@ -229,25 +229,25 @@ public interface IEntity {
     @LuaDoc(description = "Sets velocity / motion vector of the entity.", params = {"vx: number", "vy: number", "vz: number"})
     default void setMotion(double vx, double vy, double vz) {}
 
-    @LuaDoc(description = "Starts pathfinding toward a position (mobs only). Returns whether navigation started.", params = {"x: number", "y: number", "z: number", "speed: number"}, returnType = "boolean")
+    @LuaDoc(description = "Starts pathfinding toward a position (mobs only). Returns whether navigation started.", params = {"x: number", "y: number", "z: number", "speed: number"}, returnType = LuaDocFragments.Types.BOOLEAN)
     default boolean moveTo(double x, double y, double z, double speed) { return false; }
 
     @LuaDoc(description = "Adds impulse velocity to entity.", params = {"vx: number", "vy: number", "vz: number"})
     default void addVelocity(double vx, double vy, double vz) {}
 
-    @LuaDoc(description = "Returns the entity's X coordinate.", returnType = "number")
+    @LuaDoc(description = "Returns the entity's X coordinate.", returnType = LuaDocFragments.Types.NUMBER)
     default double getX() { return 0; }
 
-    @LuaDoc(description = "Returns the entity's Y coordinate.", returnType = "number")
+    @LuaDoc(description = "Returns the entity's Y coordinate.", returnType = LuaDocFragments.Types.NUMBER)
     default double getY() { return 0; }
 
-    @LuaDoc(description = "Returns the entity's Z coordinate.", returnType = "number")
+    @LuaDoc(description = "Returns the entity's Z coordinate.", returnType = LuaDocFragments.Types.NUMBER)
     default double getZ() { return 0; }
 
-    @LuaDoc(description = "Returns the entity's yaw (horizontal rotation, degrees).", returnType = "number")
+    @LuaDoc(description = "Returns the entity's yaw (horizontal rotation, degrees).", returnType = LuaDocFragments.Types.NUMBER)
     default float getYaw() { return 0; }
 
-    @LuaDoc(description = "Returns the entity's pitch (vertical rotation, degrees; positive looks down).", returnType = "number")
+    @LuaDoc(description = "Returns the entity's pitch (vertical rotation, degrees; positive looks down).", returnType = LuaDocFragments.Types.NUMBER)
     default float getPitch() { return 0; }
 
     @LuaDoc(description = "Sets the entity's yaw (horizontal rotation, degrees).", params = {"yaw: number"})
@@ -256,46 +256,46 @@ public interface IEntity {
     @LuaDoc(description = "Sets the entity's pitch (vertical rotation, degrees; positive looks down).", params = {"pitch: number"})
     default void setPitch(float pitch) {}
 
-    @LuaDoc(description = "Checks whether the entity is sneaking.", returnType = "boolean")
+    @LuaDoc(description = "Checks whether the entity is sneaking.", returnType = LuaDocFragments.Types.BOOLEAN)
     default boolean isSneaking() { return false; }
 
-    @LuaDoc(description = "Sets whether the entity is sneaking.", params = {"value: boolean"})
+    @LuaDoc(description = "Sets whether the entity is sneaking.", params = {LuaDocFragments.Common.VALUE_BOOLEAN})
     default void setSneaking(boolean value) {}
 
-    @LuaDoc(description = "Checks whether the entity is sprinting.", returnType = "boolean")
+    @LuaDoc(description = "Checks whether the entity is sprinting.", returnType = LuaDocFragments.Types.BOOLEAN)
     default boolean isSprinting() { return false; }
 
-    @LuaDoc(description = "Sets whether the entity is sprinting.", params = {"value: boolean"})
+    @LuaDoc(description = "Sets whether the entity is sprinting.", params = {LuaDocFragments.Common.VALUE_BOOLEAN})
     default void setSprinting(boolean value) {}
 
-    @LuaDoc(description = "Checks whether the entity has the glowing outline.", returnType = "boolean")
+    @LuaDoc(description = "Checks whether the entity has the glowing outline.", returnType = LuaDocFragments.Types.BOOLEAN)
     default boolean isGlowing() { return false; }
 
-    @LuaDoc(description = "Sets the glowing outline on or off.", params = {"value: boolean"})
+    @LuaDoc(description = "Sets the glowing outline on or off.", params = {LuaDocFragments.Common.VALUE_BOOLEAN})
     default void setGlowing(boolean value) {}
 
-    @LuaDoc(description = "Checks whether the entity ignores damage.", returnType = "boolean")
+    @LuaDoc(description = "Checks whether the entity ignores damage.", returnType = LuaDocFragments.Types.BOOLEAN)
     default boolean isInvulnerable() { return false; }
 
-    @LuaDoc(description = "Sets whether the entity ignores damage.", params = {"value: boolean"})
+    @LuaDoc(description = "Sets whether the entity ignores damage.", params = {LuaDocFragments.Common.VALUE_BOOLEAN})
     default void setInvulnerable(boolean value) {}
 
-    @LuaDoc(description = "Checks whether the entity is in water.", returnType = "boolean")
+    @LuaDoc(description = "Checks whether the entity is in water.", returnType = LuaDocFragments.Types.BOOLEAN)
     default boolean isInWater() { return false; }
 
-    @LuaDoc(description = "Checks whether the entity is in lava.", returnType = "boolean")
+    @LuaDoc(description = "Checks whether the entity is in lava.", returnType = LuaDocFragments.Types.BOOLEAN)
     default boolean isInLava() { return false; }
 
-    @LuaDoc(description = "Checks whether the entity is standing on the ground.", returnType = "boolean")
+    @LuaDoc(description = "Checks whether the entity is standing on the ground.", returnType = LuaDocFragments.Types.BOOLEAN)
     default boolean isOnGround() { return false; }
 
-    @LuaDoc(description = "Returns the entity's custom display name, or an empty string.", returnType = "string")
+    @LuaDoc(description = "Returns the entity's custom display name, or an empty string.", returnType = LuaDocFragments.Types.STRING)
     default String getCustomName() { return ""; }
 
     @LuaDoc(description = "Sets the entity's custom display name (empty clears it).", params = {"name: string"})
     default void setCustomName(String name) {}
 
-    @LuaDoc(description = "Checks whether the custom name is always rendered.", returnType = "boolean")
+    @LuaDoc(description = "Checks whether the custom name is always rendered.", returnType = LuaDocFragments.Types.BOOLEAN)
     default boolean isCustomNameVisible() { return false; }
 
     @LuaDoc(description = "Sets whether the custom name is always rendered.", params = {"visible: boolean"})
@@ -307,7 +307,7 @@ public interface IEntity {
     @LuaDoc(description = "Removes a scoreboard / entity tag.", params = {"tag: string"})
     default void removeTag(String tag) {}
 
-    @LuaDoc(description = "Checks if entity has tag.", params = {"tag: string"}, returnType = "boolean")
+    @LuaDoc(description = "Checks if entity has tag.", params = {"tag: string"}, returnType = LuaDocFragments.Types.BOOLEAN)
     default boolean hasTag(String tag) { return false; }
 
     @LuaDoc(description = "Swings the entity's main arm.")
@@ -319,13 +319,13 @@ public interface IEntity {
     )
     default void setPose(String pose) {}
 
-    @LuaDoc(description = "Returns the entity pose name (e.g. 'STANDING').", returnType = "string")
+    @LuaDoc(description = "Returns the entity pose name (e.g. 'STANDING').", returnType = LuaDocFragments.Types.STRING)
     default String getPose() { return "STANDING"; }
 
     @LuaDoc(
         description = "Whether this entity has an unobstructed line of sight to the target (mob senses).",
         params = {"target: table (entity)"},
-        returnType = "boolean"
+        returnType = LuaDocFragments.Types.BOOLEAN
     )
     default boolean canSee(IEntity target) { return false; }
 
@@ -345,11 +345,11 @@ public interface IEntity {
         description = "Server game ticks of the entity's level (monotonic tick clock). "
                     + "Use this for AI cooldowns and timeouts, NOT the wall-clock Task.GetTimeClock "
                     + "(wall time jumps on NTP corrections and pauses).",
-        returnType = "number"
+        returnType = LuaDocFragments.Types.NUMBER
     )
     default long getGameTime() { return 0; }
 
-    @LuaDoc(description = "Whether the entity is currently pathfinding toward a target.", returnType = "boolean")
+    @LuaDoc(description = "Whether the entity is currently pathfinding toward a target.", returnType = LuaDocFragments.Types.BOOLEAN)
     default boolean isNavigating() { return false; }
 
     @LuaDoc(description = "Sets the combat target entity for mob AI.", params = {"targetEntity: IEntity"})
@@ -359,7 +359,7 @@ public interface IEntity {
     default IEntity getTarget() { return null; }
 
     default double distanceTo(IEntity other) {
-        if (other == null) return Double.MAX_VALUE;
+        if (other == null) { return Double.MAX_VALUE; }
         double dx = getX() - other.getX();
         double dy = getY() - other.getY();
         double dz = getZ() - other.getZ();
@@ -371,6 +371,24 @@ public interface IEntity {
 
     @LuaDoc(description = "Removes / kills the entity.")
     void remove();
+
+    @LuaDoc(
+        description = "Triggers a GeckoLib skeletal animation on this entity.",
+        params = {LuaDocFragments.Content.ANIM_NAME, "[controllerName: string]"},
+        returnType = LuaDocFragments.Types.BOOLEAN
+    )
+    default boolean playAnimation(@NotNull String animName, @LuaDefault("controller") String controllerName) {
+        return com.luatweaker.api.pal.Platform.getInteraction().triggerGeoAnimation(this, controllerName, animName, 1.0, false);
+    }
+
+    @LuaDoc(
+        description = "Stops a triggered GeckoLib animation on this entity.",
+        params = {LuaDocFragments.Content.ANIM_NAME, "[controllerName: string]"},
+        returnType = LuaDocFragments.Types.BOOLEAN
+    )
+    default boolean stopAnimation(@NotNull String animName, @LuaDefault("controller") String controllerName) {
+        return com.luatweaker.api.pal.Platform.getInteraction().stopGeoAnimation(this, controllerName, animName);
+    }
 
     Object getRawEntity();
 }

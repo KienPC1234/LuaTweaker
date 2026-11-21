@@ -5,7 +5,7 @@ package com.luatweaker.api.pal;
  *
  * <p>Never resolved on a dedicated server: use {@link Platform#getClientOrNull()}.</p>
  */
-public interface IPlatformClient {
+public interface IPlatformClient extends IPlatformImGui {
     void spawnParticle(String particleId, double x, double y, double z, double vx, double vy, double vz);
 
     /**
@@ -81,7 +81,7 @@ public interface IPlatformClient {
      * EffectInstance sharing the chain's GL program. Length must be 2-4.
      * Default: no-op.
      */
-    default void setShaderFloatVec(String uniformName, float[] values) {}
+    default void setShaderFloatVec(String uniformName, float... values) {}
 
     default void handleClientSyncData(String dataJson) {}
 }

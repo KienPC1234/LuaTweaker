@@ -1,275 +1,114 @@
 package com.luatweaker.storage;
 
-import com.luatweaker.api.vm.ILuaEngine;
-import com.luatweaker.api.vm.ILuaTable;
-import com.luatweaker.api.vm.ILuaValue;
-import com.luatweaker.core.vm.LuaEngineFactory;
-
-import com.luatweaker.api.pal.IPlatformStorage;
-import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.storage.IRobloxStorageService;
-import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
 
-import static org.junit.jupiter.api.Assertions.*;
+/**
+ * World/player/session persistence and explicit flushing.
+ */
+class StorageServiceImplTest extends StorageTestSupport {
 
-public class StorageServiceImplTest {
+    private static final String KEY_PLAY_COUNT = "play_count";
+    private static final String KEY_COINS = "coins";
+    private static final String KEY_TEMP = "temp_key";
+    private static final String KEY_PERSISTED = "persisted";
+    private static final String WORLD_FILE = "world_storage.bson";
 
-    @TempDir
-    static File tempDir;
+    @Test
+    void worldStorageStoresAndReadsValues() {
+        try (StorageServiceImpl service = newService()) {
+            IRobloxStorageService.IDataStore world = service.GetWorldStorage();
 
-    @BeforeAll
-    static void setup() {
-        Platform.setStorage(new IPlatformStorage() {
-            @Override
-            public File getStorageDirectory() {
-                return tempDir;
+            world.SetAsync(KEY_PLAY_COUNT, 42);
+
+            Assertions.assertEquals(42.0, numberOf(world.GetAsync(KEY_PLAY_COUNT)), 1e-9,
+                    "world storage must return the value that was stored under the key");
+        }
+    }
+
+    @Test
+    void playerStoragesAreIsolatedPerUuid() {
+        try (StorageServiceImpl service = newService()) {
+            IRobloxStorageService.IDataStore player1 = service.GetPlayerStorage("uuid-1");
+            IRobloxStorageService.IDataStore player2 = service.GetPlayerStorage("uuid-2");
+            player1.SetAsync(KEY_COINS, 100);
+            player2.SetAsync(KEY_COINS, 500);
+
+            Assertions.assertAll("each player store must keep its own values",
+                () -> Assertions.assertEquals(100.0, numberOf(player1.GetAsync(KEY_COINS)), 1e-9,
+                    "player 1 must read back its own balance"),
+                () -> Assertions.assertEquals(500.0, numberOf(player2.GetAsync(KEY_COINS)), 1e-9,
+                    "player 2 must read back its own balance"));
+        }
+    }
+
+    @Test
+    void sessionStorageStoresValues() {
+        try (StorageServiceImpl service = newService()) {
+            IRobloxStorageService.IDataStore session = service.GetSessionStorage();
+
+            session.SetAsync(KEY_TEMP, "temp_val");
+
+            Assertions.assertEquals("temp_val", session.GetAsync(KEY_TEMP),
+                    "session storage must return the stored string");
+        }
+    }
+
+    @Test
+    void worldStorageRoundTripsAcrossServiceInstances() {
+        try (StorageServiceImpl first = newService()) {
+            first.GetWorldStorage().SetAsync(KEY_PERSISTED, "value");
+        }
+
+        try (StorageServiceImpl second = newService()) {
+            Assertions.assertEquals("value", second.GetWorldStorage().GetAsync(KEY_PERSISTED),
+                    "a new service instance must load the value written and flushed by the previous one");
+        }
+    }
+
+    @Test
+    void flushWritesTheWorldFileToDisk() {
+        try (StorageServiceImpl service = newService()) {
+            IRobloxStorageService.IDataStore world = service.GetWorldStorage();
+            world.SetAsync(KEY_PERSISTED, "flushed");
+
+            world.Flush();
+
+            File file = new File(tempDir, WORLD_FILE);
+            Assertions.assertTrue(file.isFile() && file.length() > 0,
+                    "Flush() must commit the world store to disk immediately");
+        }
+    }
+
+    @Test
+    void flushedValueSurvivesReload() {
+        try (StorageServiceImpl first = newService()) {
+            first.GetWorldStorage().SetAsync("flush_test", "flushed_value");
+            first.GetWorldStorage().Flush();
+        }
+
+        try (StorageServiceImpl second = newService()) {
+            Assertions.assertEquals("flushed_value", second.GetWorldStorage().GetAsync("flush_test"),
+                    "a flushed value must be readable by a freshly created service");
+        }
+    }
+
+    @Test
+    void rapidWritesAreCoalescedWithoutLosingKeys() {
+        try (StorageServiceImpl service = newService()) {
+            IRobloxStorageService.IDataStore world = service.GetWorldStorage();
+            for (int i = 0; i < 50; i++) {
+                world.SetAsync("rapid_key_" + i, i);
             }
-        });
-    }
+            service.Flush();
 
-    @Test
-    void testWorldStorageOperations() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        StorageServiceImpl storageService = new StorageServiceImpl(engine);
-
-        IRobloxStorageService.IDataStore worldStore = storageService.GetWorldStorage();
-        worldStore.SetAsync("play_count", 42);
-
-        Object val = worldStore.GetAsync("play_count");
-        assertNotNull(val);
-        assertEquals(42.0, ((Number) val).doubleValue());
-    }
-
-    @Test
-    void testPlayerStorageIsolation() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        StorageServiceImpl storageService = new StorageServiceImpl(engine);
-
-        IRobloxStorageService.IDataStore player1 = storageService.GetPlayerStorage("uuid-1");
-        IRobloxStorageService.IDataStore player2 = storageService.GetPlayerStorage("uuid-2");
-
-        player1.SetAsync("coins", 100);
-        player2.SetAsync("coins", 500);
-
-        assertEquals(100.0, ((Number) player1.GetAsync("coins")).doubleValue());
-        assertEquals(500.0, ((Number) player2.GetAsync("coins")).doubleValue());
-    }
-
-    @Test
-    void testSessionStorage() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        StorageServiceImpl storageService = new StorageServiceImpl(engine);
-        IRobloxStorageService.IDataStore session = storageService.GetSessionStorage();
-        session.SetAsync("temp_key", "temp_val");
-
-        assertEquals("temp_val", session.GetAsync("temp_key"));
-    }
-
-    @Test
-    void luaStringValueRoundTripsAsString() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        StorageServiceImpl storageService = new StorageServiceImpl(engine);
-        try {
-            StorageLuaBinding.registerBindings(engine, storageService);
-            engine.executeStringOrThrow(
-                    "local Storage = require('LuaTweaker.Storage')\n" +
-                    "local session = Storage:GetSessionStorage()\n" +
-                    "session:SetAsync('luatweaker_test.roundtrip', '42')\n" +
-                    "local value = session:GetAsync('luatweaker_test.roundtrip')\n" +
-                    "assert(type(value) == 'string', 'expected a string, got ' .. type(value)\n" +
-                    "    .. ' (' .. tostring(value) .. ')')\n" +
-                    "assert(value == '42', 'expected 42, got ' .. tostring(value))\n",
-                    "storage_lua_string_roundtrip");
-        } finally {
-            engine.shutdown();
-        }
-    }
-
-    @Test
-    void unsupportedValueIsRejectedWithoutDestroyingExistingData() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        StorageServiceImpl storageService = new StorageServiceImpl(engine);
-        IRobloxStorageService.IDataStore world = storageService.GetWorldStorage();
-
-        world.SetAsync("keep", 7);
-        // A userdata (function/entity/arbitrary Java object) is not BSON-encodable.
-        assertThrows(IllegalArgumentException.class,
-                () -> world.SetAsync("bad", engine.wrapUserdata(new Object())),
-                "unsupported values must be rejected before the file is touched");
-
-        assertEquals(7.0, ((Number) world.GetAsync("keep")).doubleValue(),
-                "a rejected write must not erase previously saved values");
-        File file = new File(tempDir, "world_storage.bson");
-        assertTrue(file.isFile() && file.length() > 0, "the previous save must remain on disk");
-    }
-
-    @Test
-    void worldStorageRoundTripsAcrossInstances() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        StorageServiceImpl first = new StorageServiceImpl(engine);
-        first.GetWorldStorage().SetAsync("persisted", "value");
-
-        StorageServiceImpl second = new StorageServiceImpl(engine);
-        assertEquals("value", second.GetWorldStorage().GetAsync("persisted"),
-                "a new instance must load the atomically written file");
-    }
-
-    @Test
-    void removeAsyncDeletesAndPersistsTheRemoval() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        StorageServiceImpl first = new StorageServiceImpl(engine);
-        IRobloxStorageService.IDataStore world = first.GetWorldStorage();
-        world.SetAsync("keep", 1);
-        world.SetAsync("drop", 2);
-
-        assertTrue(world.RemoveAsync("drop"), "removing an existing key must report true");
-        assertFalse(world.RemoveAsync("drop"), "removing a missing key must report false");
-        assertNull(world.GetAsync("drop"));
-
-        StorageServiceImpl second = new StorageServiceImpl(engine);
-        assertNull(second.GetWorldStorage().GetAsync("drop"), "the removal must be written to disk");
-        assertEquals(1.0, ((Number) second.GetWorldStorage().GetAsync("keep")).doubleValue());
-    }
-
-    @Test
-    void getKeysReturnsStoredKeysSorted() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        StorageServiceImpl storageService = new StorageServiceImpl(engine);
-        IRobloxStorageService.IDataStore world = storageService.GetWorldStorage();
-        world.SetAsync("zeta", 1);
-        world.SetAsync("alpha", 2);
-        world.SetAsync("mid", 3);
-
-        java.util.List<String> keys = world.GetKeys();
-        assertTrue(keys.containsAll(java.util.List.of("alpha", "mid", "zeta")), "keys=" + keys);
-        java.util.List<String> sorted = new java.util.ArrayList<>(keys);
-        java.util.Collections.sort(sorted);
-        assertEquals(sorted, keys, "GetKeys must be sorted");
-
-        IRobloxStorageService.IDataStore player = storageService.GetPlayerStorage("uuid-keys");
-        assertTrue(player.GetKeys().isEmpty(), "an untouched player store must have no keys");
-        player.SetAsync("coins", 5);
-        assertEquals(java.util.List.of("coins"), player.GetKeys());
-    }
-
-    @Test
-    void incrementAsyncAddsAndCreatesTheKey() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        StorageServiceImpl storageService = new StorageServiceImpl(engine);
-        IRobloxStorageService.IDataStore world = storageService.GetWorldStorage();
-
-        assertEquals(1.0, world.IncrementAsync("counter", 1.0), 1e-9, "missing keys start at 0");
-        assertEquals(3.5, world.IncrementAsync("counter", 2.5), 1e-9);
-        assertEquals(3.5, ((Number) world.GetAsync("counter")).doubleValue(), 1e-9);
-
-        IRobloxStorageService.IDataStore session = storageService.GetSessionStorage();
-        assertEquals(-2.0, session.IncrementAsync("balance", -2.0), 1e-9);
-    }
-
-    @Test
-    void incrementAsyncRejectsNonNumericValues() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        StorageServiceImpl storageService = new StorageServiceImpl(engine);
-        IRobloxStorageService.IDataStore world = storageService.GetWorldStorage();
-        world.SetAsync("label", "not a number");
-
-        assertThrows(IllegalStateException.class, () -> world.IncrementAsync("label", 1.0),
-                "incrementing a string must fail loudly instead of overwriting it");
-        assertEquals("not a number", world.GetAsync("label"), "the stored value must be untouched");
-    }
-
-    @Test
-    void luaBindingExposesRemoveKeysAndIncrement() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        StorageServiceImpl storageService = new StorageServiceImpl(engine);
-        StorageLuaBinding.registerBindings(engine, storageService);
-
-        engine.executeStringOrThrow(
-                "local s = Storage:GetSessionStorage()\n" +
-                "s:SetAsync('a', 1)\n" +
-                "s:SetAsync('b', 'x')\n" +
-                "assert(s:IncrementAsync('a', 2) == 3, 'IncrementAsync must return the new value')\n" +
-                "local keys = s:GetKeys()\n" +
-                "assert(type(keys) == 'table' and #keys == 2, 'GetKeys must return a Lua array')\n" +
-                "assert(s:RemoveAsync('b') == true, 'RemoveAsync must report the removal')\n" +
-                "assert(s:GetAsync('b') == nil, 'the removed key must be gone')\n" +
-                "assert(s:RemoveAsync('b') == false, 'removing twice must report false')",
-                "storage_binding");
-    }
-
-    @Test
-    void tableAndArrayValuesRoundTrip() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        StorageServiceImpl storageService = new StorageServiceImpl(engine);
-        IRobloxStorageService.IDataStore world = storageService.GetWorldStorage();
-
-        ILuaTable table = engine.createTable();
-        table.rawset("name", engine.wrapString("crystal"));
-        ILuaTable list = engine.createTable();
-        list.rawset(1, engine.wrapNumber(1));
-        list.rawset(2, engine.wrapNumber(2));
-        list.rawset(3, engine.wrapNumber(3));
-        table.rawset("levels", list);
-
-        world.SetAsync("profile", table);
-        Object readBack = world.GetAsync("profile");
-        assertTrue(readBack instanceof ILuaTable, "tables must come back as tables");
-        ILuaTable profile = (ILuaTable) readBack;
-        assertEquals("crystal", profile.rawget("name").asString());
-        ILuaValue levels = profile.rawget("levels");
-        assertTrue(levels.isTable());
-        assertEquals(3, levels.asTable().length());
-        assertEquals(2.0, levels.asTable().rawget(2).asDouble());
-    }
-
-    @Test
-    void testFlushPersistsImmediately() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        StorageServiceImpl storageService = new StorageServiceImpl(engine);
-        IRobloxStorageService.IDataStore world = storageService.GetWorldStorage();
-
-        world.SetAsync("flush_test", "flushed_value");
-        world.Flush();
-
-        File file = new File(tempDir, "world_storage.bson");
-        assertTrue(file.exists() && file.length() > 0, "Flush() must immediately commit data to disk");
-
-        StorageServiceImpl another = new StorageServiceImpl(engine);
-        assertEquals("flushed_value", another.GetWorldStorage().GetAsync("flush_test"));
-    }
-
-    @Test
-    void testLuaFlushBinding() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        StorageServiceImpl storageService = new StorageServiceImpl(engine);
-        StorageLuaBinding.registerBindings(engine, storageService);
-
-        engine.executeStringOrThrow(
-                "local ws = Storage:GetWorldStorage()\n" +
-                "ws:SetAsync('lua_key', 999)\n" +
-                "ws:Flush()\n" +
-                "Storage:Flush()\n" +
-                "assert(ws:GetAsync('lua_key') == 999, 'Key should match after flush')",
-                "test_lua_flush");
-    }
-
-    @Test
-    void testConcurrentRapidWritesCoalesced() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        StorageServiceImpl storageService = new StorageServiceImpl(engine);
-        IRobloxStorageService.IDataStore world = storageService.GetWorldStorage();
-
-        for (int i = 0; i < 50; i++) {
-            world.SetAsync("rapid_key_" + i, i);
-        }
-        storageService.Flush();
-
-        for (int i = 0; i < 50; i++) {
-            assertEquals((double) i, ((Number) world.GetAsync("rapid_key_" + i)).doubleValue(), 1e-9);
+            for (int i = 0; i < 50; i++) {
+                Assertions.assertEquals((double) i, numberOf(world.GetAsync("rapid_key_" + i)), 1e-9,
+                        "rapid write " + i + " must survive the debounced flush");
+            }
         }
     }
 }

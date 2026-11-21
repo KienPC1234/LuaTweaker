@@ -19,6 +19,7 @@ import com.luatweaker.api.vm.ILuaValue;
  * When the response body is valid JSON it is also exposed parsed as {@code Json}.</p>
  */
 @LuaDoc(description = "Web Service - HTTP GET access gated behind the 'net.http' manifest permission.")
+@FunctionalInterface
 public interface IWebService {
 
     @LuaDoc(

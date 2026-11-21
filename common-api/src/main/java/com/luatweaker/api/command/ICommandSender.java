@@ -3,7 +3,6 @@ package com.luatweaker.api.command;
 import com.luatweaker.api.entity.IPlayer;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.List;
 
 /**
  * Platform-agnostic representation of a command sender (player or console).

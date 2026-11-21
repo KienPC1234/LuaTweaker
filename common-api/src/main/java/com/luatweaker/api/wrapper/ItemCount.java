@@ -3,9 +3,9 @@ package com.luatweaker.api.wrapper;
 import com.luatweaker.api.annotation.LuaDoc;
 
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @LuaDoc(description = "Represents an item stack definition with count, damage, custom name, lore, enchantments, and NBT.")
 public record ItemCount(
@@ -24,8 +24,8 @@ public record ItemCount(
         if (count < 0) {
             throw new IllegalArgumentException("count cannot be negative");
         }
-        if (lore == null) lore = Collections.emptyList();
-        if (enchantments == null) enchantments = Collections.emptyMap();
+        if (lore == null) { lore = Collections.emptyList(); }
+        if (enchantments == null) { enchantments = Collections.emptyMap(); }
     }
 
     public ItemCount(String itemId, int count) {
@@ -49,7 +49,7 @@ public record ItemCount(
     }
 
     public ItemCount withEnchantment(String enchantmentId, int level) {
-        Map<String, Integer> newEnch = new HashMap<>(enchantments);
+        Map<String, Integer> newEnch = new ConcurrentHashMap<>(enchantments);
         newEnch.put(enchantmentId, level);
         return new ItemCount(itemId, count, damage, customName, lore, newEnch, nbtJson);
     }

@@ -10,6 +10,9 @@ public final class InterceptionLuaBinding {
     private static final int DEFAULT_ANVIL_EXP_COST = 1;
     private static final int DEFAULT_TRADE_MAX_USES = 16;
     private static final int DEFAULT_TRADE_XP = 2;
+    private static final int MIN_ANVIL_ARGS = 4;
+    private static final int MIN_BREWING_ARGS = 4;
+    private static final int MIN_TRADE_ARGS = 4;
 
     private InterceptionLuaBinding() {}
 
@@ -19,7 +22,7 @@ public final class InterceptionLuaBinding {
 
         table.rawset("AddAnvilRecipe", args -> {
             int off = LuaBinder.getOffset(args);
-            if (args.length - off < 4) {
+            if (args.length - off < MIN_ANVIL_ARGS) {
                 throw new IllegalArgumentException(
                     "AddAnvilRecipe requires recipeId, leftInput, rightInput, outputItem");
             }
@@ -35,7 +38,7 @@ public final class InterceptionLuaBinding {
 
         table.rawset("AddBrewingRecipe", args -> {
             int off = LuaBinder.getOffset(args);
-            if (args.length - off < 4) {
+            if (args.length - off < MIN_BREWING_ARGS) {
                 throw new IllegalArgumentException(
                     "AddBrewingRecipe requires recipeId, inputPotion, catalystItem, outputPotion");
             }
@@ -50,7 +53,7 @@ public final class InterceptionLuaBinding {
 
         table.rawset("AddVillagerTrade", args -> {
             int off = LuaBinder.getOffset(args);
-            if (args.length - off < 4) {
+            if (args.length - off < MIN_TRADE_ARGS) {
                 throw new IllegalArgumentException(
                     "AddVillagerTrade requires profession, level, buyItem, sellItem");
             }

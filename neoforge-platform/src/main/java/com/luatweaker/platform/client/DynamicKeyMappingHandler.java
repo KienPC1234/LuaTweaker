@@ -14,11 +14,27 @@ import org.lwjgl.glfw.GLFW;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class DynamicKeyMappingHandler {
+public final class DynamicKeyMappingHandler {
+    private static final String KEYBIND_SERVICE_NAME = "KeyBindService";
+    private static final String MODIFIER_SHIFT = "shift";
+    private static final String MODIFIER_CONTROL = "ctrl";
+    private static final String MODIFIER_ALT = "alt";
+
+
+    private DynamicKeyMappingHandler() {
+    }
     private static final Map<String, KeyMappingRecord> REGISTERED_MAPPINGS = new ConcurrentHashMap<>();
     private static final Map<String, Boolean> LAST_DOWN_STATE = new ConcurrentHashMap<>();
 
     private record KeyMappingRecord(KeyMapping mapping, String payload) {}
+
+    /**
+     * Built-in shortcut for the in-game LuaMod manager. Unbound by default so
+     * it never steals a key; users bind it in Controls. Polled in
+     * {@link #onClientTick} when no screen is open (pause/title menus already
+     * carry the LT shortcut button).
+     */
+    private static KeyMapping managerKey;
 
     /**
      * GLFW modifier codes (verified in LWJGL 3.3.3): left/right variants are
@@ -34,7 +50,10 @@ public class DynamicKeyMappingHandler {
     private static final int GLFW_PRESS = 1;
 
     public static void onRegisterKeyMappings(RegisterKeyMappingsEvent event) {
-        Object service = LuaServiceRegistry.get("KeyBindService");
+        managerKey = new KeyMapping("key.luatweaker.manager", KeyConflictContext.UNIVERSAL,
+                KeyModifier.NONE, InputConstants.UNKNOWN, "key.categories.luatweaker");
+        event.register(managerKey);
+        Object service = LuaServiceRegistry.get(KEYBIND_SERVICE_NAME);
         if (service instanceof IKeyBindService keyBindService) {
             for (IKeyBindService.KeyBindEntry entry : keyBindService.getRegisteredKeyBinds()) {
                 KeyMappingRecord record = createRecord(entry);
@@ -87,13 +106,13 @@ public class DynamicKeyMappingHandler {
      * normalizes unknown values at registration, so this is a total function.
      */
     private static KeyModifier toKeyModifier(String modifier) {
-        if ("shift".equals(modifier)) {
+        if (MODIFIER_SHIFT.equals(modifier)) {
             return KeyModifier.SHIFT;
         }
-        if ("ctrl".equals(modifier)) {
+        if (MODIFIER_CONTROL.equals(modifier)) {
             return KeyModifier.CONTROL;
         }
-        if ("alt".equals(modifier)) {
+        if (MODIFIER_ALT.equals(modifier)) {
             return KeyModifier.ALT;
         }
         return KeyModifier.NONE;
@@ -112,7 +131,7 @@ public class DynamicKeyMappingHandler {
      * contains-check per entry per tick.
      */
     static void syncLateKeyBinds() {
-        Object service = LuaServiceRegistry.get("KeyBindService");
+        Object service = LuaServiceRegistry.get(KEYBIND_SERVICE_NAME);
         if (!(service instanceof IKeyBindService keyBindService)) {
             return;
         }
@@ -145,54 +164,87 @@ public class DynamicKeyMappingHandler {
 
     public static void onClientTick(ClientTickEvent.Post event) {
         syncLateKeyBinds();
-        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-        long window = mc.getWindow().getWindow();
+        pollManagerKey();
+        long window = windowHandle();
         // Vanilla parity: physical keys never reach mappings while any screen is
         // open (KeyboardHandler/MouseHandler skip set+click unless screen == null).
-        boolean hasScreen = mc.screen != null;
+        boolean hasScreen = net.minecraft.client.Minecraft.getInstance().screen != null;
         for (Map.Entry<String, KeyMappingRecord> mapEntry : REGISTERED_MAPPINGS.entrySet()) {
-            String keyBindId = mapEntry.getKey();
-            KeyMappingRecord record = mapEntry.getValue();
-            // Edge-trigger on the PHYSICAL state (not consumeClick(), which would
-            // replay every queued press while a key is HELD via OS auto-repeat,
-            // flooding the server with duplicate packets).
-            boolean physDown = isPhysicallyDown(window, record.mapping());
-            boolean wasDown = Boolean.TRUE.equals(LAST_DOWN_STATE.getOrDefault(keyBindId, false));
-            LAST_DOWN_STATE.put(keyBindId, physDown);
-            if (!physDown) {
-                if (wasDown) {
-                    // Release is physical truth and fires even with a GUI open:
-                    // the key genuinely came up.
-                    Object service = LuaServiceRegistry.get("KeyBindService");
-                    if (service instanceof IKeyBindService keyBindService) {
-                        keyBindService.triggerKeyBindRelease(keyBindId, record.payload());
-                    }
-                }
-                continue;
-            }
-            // Combos only count when the modifier is already held as the main
-            // key goes down (same as most games; holding X then Shift will not
-            // retro-fire). Missing modifiers are a service-validated per-mapping
-            // field, read live so Controls-GUI rebinding the modifier just works.
-            if (wasDown || hasScreen || !modifierHeld(window, record.mapping()) || !Platform.isInitialized()) {
-                continue;
-            }
+            handleMapping(window, hasScreen, mapEntry.getKey(), mapEntry.getValue());
+        }
+    }
 
-            com.luatweaker.api.log.LuaTweakerLog.get().info(
-                    com.luatweaker.api.log.LogStage.SYSTEM,
-                    "[KeyMapping] KeyMapping Triggered: '" + keyBindId + "' (Payload: " + record.payload() + ")"
-            );
+    private static long windowHandle() {
+        return net.minecraft.client.Minecraft.getInstance().getWindow().getWindow();
+    }
 
-            // 1. Trigger Client-side Lua Signal by KeyMapping ID
-            Object service = LuaServiceRegistry.get("KeyBindService");
-            if (service instanceof IKeyBindService keyBindService) {
-                keyBindService.triggerKeyBind(keyBindId, record.payload());
+    /**
+     * Edge-triggers one key bind from its PHYSICAL state. Physical state (not
+     * {@code consumeClick()}) is used because consumeClick would replay every queued
+     * press while a key is HELD via OS auto-repeat, flooding the server with
+     * duplicate packets.
+     */
+    private static void handleMapping(long window, boolean hasScreen, @org.jetbrains.annotations.NotNull String keyBindId,
+                                      @org.jetbrains.annotations.NotNull KeyMappingRecord record) {
+        boolean physDown = isPhysicallyDown(window, record.mapping());
+        boolean wasDown = Boolean.TRUE.equals(LAST_DOWN_STATE.getOrDefault(keyBindId, false));
+        LAST_DOWN_STATE.put(keyBindId, physDown);
+        if (!physDown) {
+            // Release is physical truth and fires even with a GUI open: the key genuinely came up.
+            if (wasDown) {
+                triggerRelease(keyBindId, record);
             }
+            return;
+        }
+        // Combos only count when the modifier is already held as the main key goes down (same as
+        // most games; holding X then Shift will not retro-fire). Missing modifiers are a
+        // service-validated per-mapping field, read live so Controls-GUI rebinding just works.
+        if (wasDown || hasScreen || !modifierHeld(window, record.mapping()) || !Platform.isInitialized()) {
+            return;
+        }
+        triggerPress(keyBindId, record);
+    }
 
-            // 2. If payload is present, also send payload packet to server
-            if (record.payload() != null && !record.payload().isEmpty()) {
-                Platform.getNetwork().sendPayloadPacketToServer(record.payload(), "[]");
-            }
+    private static void triggerRelease(@org.jetbrains.annotations.NotNull String keyBindId,
+                                       @org.jetbrains.annotations.NotNull KeyMappingRecord record) {
+        Object service = LuaServiceRegistry.get(KEYBIND_SERVICE_NAME);
+        if (service instanceof IKeyBindService keyBindService) {
+            keyBindService.triggerKeyBindRelease(keyBindId, record.payload());
+        }
+    }
+
+    private static void triggerPress(@org.jetbrains.annotations.NotNull String keyBindId,
+                                     @org.jetbrains.annotations.NotNull KeyMappingRecord record) {
+        com.luatweaker.api.log.LuaTweakerLog.get().info(
+                com.luatweaker.api.log.LogStage.SYSTEM,
+                "[KeyMapping] KeyMapping Triggered: '" + keyBindId + "' (Payload: " + record.payload() + ")"
+        );
+        // 1. Trigger Client-side Lua Signal by KeyMapping ID
+        Object service = LuaServiceRegistry.get(KEYBIND_SERVICE_NAME);
+        if (service instanceof IKeyBindService keyBindService) {
+            keyBindService.triggerKeyBind(keyBindId, record.payload());
+        }
+        // 2. If payload is present, also send payload packet to server
+        if (record.payload() != null && !record.payload().isEmpty()) {
+            Platform.getNetwork().sendPayloadPacketToServer(record.payload(), "[]");
+        }
+    }
+
+    /**
+     * Drains the manager shortcut every tick and opens the manager only when
+     * no screen is open. Draining unconditionally (instead of only when
+     * screenless) drops presses typed into chat/config boxes so they never
+     * replay when the screen closes.
+     */
+    private static void pollManagerKey() {
+        if (managerKey == null) { return; }
+        boolean clicked = false;
+        while (managerKey.consumeClick()) {
+            clicked = true;
+        }
+        if (clicked && net.minecraft.client.Minecraft.getInstance().screen == null) {
+            net.minecraft.client.Minecraft.getInstance()
+                    .setScreen(new com.luatweaker.platform.client.luamods.LuamodListScreen(null));
         }
     }
 

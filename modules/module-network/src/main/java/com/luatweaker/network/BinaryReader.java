@@ -3,6 +3,7 @@ package com.luatweaker.network;
 import org.jetbrains.annotations.NotNull;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
 /**
  * Bounds-checked reader for {@link BinaryWriter} output.
@@ -13,6 +14,9 @@ import java.nio.charset.StandardCharsets;
  */
 final class BinaryReader {
 
+    /** Largest shift of a 32-bit LEB128 varint (5 bytes of 7 payload bits). */
+    private static final int MAX_VARINT_SHIFT = 28;
+
     private final byte[] buffer;
     private final int end;
     private int position;
@@ -21,9 +25,9 @@ final class BinaryReader {
         if (offset < 0 || length < 0 || offset > buffer.length - length) {
             throw new IllegalArgumentException("BinaryReader window is outside the buffer");
         }
-        this.buffer = buffer;
-        this.position = offset;
-        this.end = offset + length;
+        this.buffer = Arrays.copyOfRange(buffer, offset, offset + length);
+        this.position = 0;
+        this.end = length;
     }
 
     int remaining() {
@@ -39,7 +43,7 @@ final class BinaryReader {
         int result = 0;
         int shift = 0;
         while (true) {
-            if (shift > 28) {
+            if (shift > MAX_VARINT_SHIFT) {
                 throw new IllegalArgumentException("Malformed varint: more than 5 bytes");
             }
             int current = readByte();

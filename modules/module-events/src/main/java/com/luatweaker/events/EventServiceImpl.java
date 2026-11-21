@@ -1,12 +1,20 @@
 package com.luatweaker.events;
 
 import com.luatweaker.api.event.IEventService;
+import com.luatweaker.api.log.LogStage;
+import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 import org.jetbrains.annotations.NotNull;
+import org.luava.runtime.LuaException;
+
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Event bus shared across ALL Lua engines (startup, reloads, client).
@@ -22,7 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class EventServiceImpl implements IEventService {
     public record ListenerEntry(ILuaEngine engine, ILuaValue function) {}
 
-    private static final Map<String, java.util.List<ListenerEntry>> LISTENERS = new ConcurrentHashMap<>();
+    private static final Map<String, List<ListenerEntry>> LISTENERS = new ConcurrentHashMap<>();
 
     private final ILuaEngine engine;
 
@@ -39,8 +47,8 @@ public class EventServiceImpl implements IEventService {
     @Override
     public void listen(@NotNull String eventName, @NotNull Object callback) {
         if (callback instanceof ILuaValue lv && lv.isFunction()) {
-            java.util.List<ListenerEntry> entries = LISTENERS.computeIfAbsent(
-                    eventName, k -> new java.util.concurrent.CopyOnWriteArrayList<>());
+            List<ListenerEntry> entries = LISTENERS.computeIfAbsent(
+                    eventName, k -> new CopyOnWriteArrayList<>());
             // Older-engine listeners are stale (their closures belong to a previous
             // load cycle); drop them so the newest engine wins. Same-engine listeners
             // are kept: multiple modules may listen to one event.
@@ -48,8 +56,8 @@ public class EventServiceImpl implements IEventService {
             entries.add(new ListenerEntry(this.engine, lv));
             return;
         }
-        com.luatweaker.api.log.LuaTweakerLog.get().warn(
-                com.luatweaker.api.log.LogStage.SYSTEM,
+        LuaTweakerLog.get().warn(
+                LogStage.SYSTEM,
                 "Events:Listen('" + eventName + "') ignored a "
                         + (callback == null ? "null" : callback.getClass().getSimpleName())
                         + " callback; a Lua function is required");
@@ -66,87 +74,65 @@ public class EventServiceImpl implements IEventService {
      * matches what {@link #fireRawEvent} would return for zero listeners.
      */
     public boolean hasListeners(@NotNull String eventName) {
-        java.util.List<ListenerEntry> entries = LISTENERS.get(eventName);
+        List<ListenerEntry> entries = LISTENERS.get(eventName);
         return entries != null && !entries.isEmpty();
     }
 
     @Override
     public void fireEvent(@NotNull String eventName, @NotNull ILuaTable payload) {
-        java.util.List<ListenerEntry> entries = LISTENERS.get(eventName);
-        if (entries == null) return;
+        List<ListenerEntry> entries = LISTENERS.get(eventName);
+        if (entries == null) {
+            return;
+        }
         for (ListenerEntry entry : entries) {
-            if (entry.function() == null || !entry.function().isFunction()) continue;
-            try {
-                entry.engine().callFunction(entry.function(), payload);
-            } catch (Exception e) {
-                java.io.StringWriter sw = new java.io.StringWriter();
-                e.printStackTrace(new java.io.PrintWriter(sw));
-                com.luatweaker.api.log.LuaTweakerLog.get().error(
-                    com.luatweaker.api.log.LogStage.RUNTIME_ERROR,
-                    "Error invoking event listener for " + eventName + ": " + e.getMessage() + "\n" + sw.toString()
-                );
+            if (!isCallable(entry)) {
+                continue;
             }
+            invokeListener(eventName, entry, payload);
         }
     }
 
     @Override
     public boolean fireCancellable(@NotNull String eventName, @NotNull ILuaTable payload) {
-        java.util.List<ListenerEntry> entries = LISTENERS.get(eventName);
-        if (entries == null) return true;
+        List<ListenerEntry> entries = LISTENERS.get(eventName);
+        if (entries == null) {
+            return true;
+        }
         boolean cancelled = false;
         for (ListenerEntry entry : entries) {
-            if (entry.function() == null || !entry.function().isFunction()) continue;
-            try {
-                ILuaValue result = entry.engine().callFunction(entry.function(), payload);
-                // A listener returning Lua `false` cancels the event.
-                if (result != null && result.toJavaObject() instanceof Boolean bool && !bool) {
-                    cancelled = true;
-                }
-            } catch (Exception e) {
-                java.io.StringWriter sw = new java.io.StringWriter();
-                e.printStackTrace(new java.io.PrintWriter(sw));
-                com.luatweaker.api.log.LuaTweakerLog.get().error(
-                    com.luatweaker.api.log.LogStage.RUNTIME_ERROR,
-                    "Error invoking event listener for " + eventName + ": " + e.getMessage() + "\n" + sw.toString()
-                );
+            if (!isCallable(entry)) {
+                continue;
             }
+            cancelled = invokeListener(eventName, entry, payload) || cancelled;
         }
         return !cancelled;
     }
 
     public boolean fireRawEvent(@NotNull String eventName, @NotNull ILuaValue payload) {
-        java.util.List<ListenerEntry> entries = LISTENERS.get(eventName);
-        if (entries == null) return true;
+        List<ListenerEntry> entries = LISTENERS.get(eventName);
+        if (entries == null) {
+            return true;
+        }
         boolean cancelled = false;
         for (ListenerEntry entry : entries) {
-            if (entry.function() == null || !entry.function().isFunction()) continue;
-            try {
-                ILuaValue result = entry.engine().callFunction(entry.function(), payload);
-                if (result != null && result.toJavaObject() instanceof Boolean bool && !bool) {
-                    cancelled = true;
-                }
-            } catch (Exception e) {
-                java.io.StringWriter sw = new java.io.StringWriter();
-                e.printStackTrace(new java.io.PrintWriter(sw));
-                com.luatweaker.api.log.LuaTweakerLog.get().error(
-                    com.luatweaker.api.log.LogStage.RUNTIME_ERROR,
-                    "Error invoking event listener for " + eventName + ": " + e.getMessage() + "\n" + sw.toString()
-                );
+            if (!isCallable(entry)) {
+                continue;
             }
+            cancelled = invokeListener(eventName, entry, payload) || cancelled;
         }
         return !cancelled;
     }
 
     public static void fireTeardownHooks() {
-        java.util.List<ListenerEntry> entries = LISTENERS.get(com.luatweaker.api.event.EventNames.ON_SCRIPT_UNLOAD);
+        List<ListenerEntry> entries = LISTENERS.get(com.luatweaker.api.event.EventNames.ON_SCRIPT_UNLOAD);
         if (entries != null) {
             for (ListenerEntry entry : entries) {
                 if (entry.function() != null && entry.function().isFunction()) {
                     try {
                         entry.engine().callFunction(entry.function());
-                    } catch (Exception e) {
-                        com.luatweaker.api.log.LuaTweakerLog.get().error(
-                            com.luatweaker.api.log.LogStage.RUNTIME_ERROR,
+                    } catch (LuaException e) {
+                        LuaTweakerLog.get().error(
+                            LogStage.RUNTIME_ERROR,
                             "Error in OnScriptUnload hook: " + e.getMessage()
                         );
                     }
@@ -154,5 +140,36 @@ public class EventServiceImpl implements IEventService {
             }
         }
         LISTENERS.clear();
+    }
+
+    /**
+     * Invokes one listener, logging (not propagating) Lua failures so one broken
+     * listener cannot abort the remaining listeners or the game tick.
+     *
+     * @return true when the listener returned Lua {@code false} (cancels the event)
+     */
+    private static boolean invokeListener(@NotNull String eventName, @NotNull ListenerEntry entry,
+                                          @NotNull ILuaValue payload) {
+        try {
+            ILuaValue result = entry.engine().callFunction(entry.function(), payload);
+            // A listener returning Lua `false` cancels the event.
+            return result != null && Boolean.FALSE.equals(result.toJavaObject());
+        } catch (LuaException e) {
+            logListenerError(eventName, e);
+            return false;
+        }
+    }
+
+    private static boolean isCallable(@NotNull ListenerEntry entry) {
+        return entry.function() != null && entry.function().isFunction();
+    }
+
+    private static void logListenerError(@NotNull String eventName, @NotNull LuaException e) {
+        StringWriter sw = new StringWriter();
+        e.printStackTrace(new PrintWriter(sw));
+        LuaTweakerLog.get().error(
+            LogStage.RUNTIME_ERROR,
+            "Error invoking event listener for " + eventName + ": " + e.getMessage() + "\n" + sw.toString()
+        );
     }
 }

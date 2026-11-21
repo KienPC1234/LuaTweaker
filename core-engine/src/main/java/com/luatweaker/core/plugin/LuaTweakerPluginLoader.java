@@ -8,13 +8,15 @@ import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.core.stub.StubCatalog;
 import com.luatweaker.core.vm.NativeModuleResolver;
 import org.jetbrains.annotations.NotNull;
+import org.luava.runtime.LuaException;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Discovers and registers out-of-tree Java plugins into a fresh engine.
@@ -26,7 +28,11 @@ import java.util.ServiceLoader;
  *   <li>{@link ServiceLoader} - a plain jar declares
  *       {@code META-INF/services/com.luatweaker.api.plugin.ILuaTweakerPlugin}.</li>
  * </ol>
- * A failing plugin is logged with context and skipped; it never aborts the reload.
+ * A failing plugin is logged with context and skipped: Lua/binding failures,
+ * illegal plugin state/arguments and linkage problems (missing optional
+ * dependencies) are isolated per plugin so one broken plugin never aborts
+ * the reload. Truly unexpected plugin bugs still propagate loudly instead
+ * of being disguised as load failures.
  */
 public final class LuaTweakerPluginLoader {
     private LuaTweakerPluginLoader() {}
@@ -47,16 +53,17 @@ public final class LuaTweakerPluginLoader {
                 LuaTweakerLog.get().info(LogStage.SYSTEM,
                     "[PluginLoader] Loaded Java plugin '" + plugin.pluginId()
                         + "' v" + plugin.pluginVersion());
-            } catch (Exception e) {
+            } catch (LuaException | IllegalStateException | IllegalArgumentException
+                    | UnsupportedOperationException | ServiceConfigurationError | LinkageError e) {
                 LuaTweakerLog.get().error(LogStage.SYSTEM,
-                    "[PluginLoader] Plugin '" + plugin.pluginId() + "' failed: " + e.getMessage());
+                    "[PluginLoader] Plugin '" + describePlugin(plugin) + "' failed: " + e.getMessage());
             }
         }
     }
 
     /** Merged, deduplicated, deterministically ordered plugin list. */
     public static @NotNull List<ILuaTweakerPlugin> discoverPlugins() {
-        Map<String, ILuaTweakerPlugin> merged = new LinkedHashMap<>();
+        Map<String, ILuaTweakerPlugin> merged = new ConcurrentHashMap<>();
         for (ILuaTweakerPlugin plugin : discoverServiceLoaderPlugins()) {
             if (plugin != null && plugin.pluginId() != null) {
                 merged.putIfAbsent(plugin.pluginId(), plugin);
@@ -80,10 +87,23 @@ public final class LuaTweakerPluginLoader {
             for (ILuaTweakerPlugin plugin : ServiceLoader.load(ILuaTweakerPlugin.class)) {
                 result.add(plugin);
             }
-        } catch (Exception e) {
+        } catch (ServiceConfigurationError e) {
             LuaTweakerLog.get().error(LogStage.SYSTEM,
                 "[PluginLoader] ServiceLoader scan failed: " + e.getMessage());
         }
         return result;
+    }
+
+    /**
+     * Best-effort plugin id for failure logs: {@code pluginId()} itself is
+     * third-party code and must not throw while reporting another failure.
+     */
+    private static String describePlugin(@NotNull ILuaTweakerPlugin plugin) {
+        try {
+            return plugin.pluginId();
+        } catch (LuaException | IllegalStateException | IllegalArgumentException
+                | UnsupportedOperationException | ServiceConfigurationError | LinkageError e) {
+            return plugin.getClass().getName();
+        }
     }
 }

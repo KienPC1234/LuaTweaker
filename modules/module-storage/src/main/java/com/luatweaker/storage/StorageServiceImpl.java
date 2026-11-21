@@ -5,93 +5,45 @@ import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.storage.IRobloxStorageService;
 import com.luatweaker.api.vm.ILuaEngine;
-import com.luatweaker.api.vm.ILuaTable;
-import com.luatweaker.api.vm.ILuaValue;
-import org.bson.BsonBinaryReader;
-import org.bson.BsonBinaryWriter;
-import org.bson.Document;
-import org.bson.codecs.DecoderContext;
-import org.bson.codecs.DocumentCodec;
-import org.bson.codecs.EncoderContext;
-import org.bson.io.BasicOutputBuffer;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * High-performance BSON-backed world/player/session storage.
+ * BSON-backed world/player/session storage.
  *
- * <p>Key optimizations:
- * <ul>
- *   <li><b>Memory-first concurrent store</b>: $O(1)$ reads and writes via {@link ConcurrentHashMap},
- *       guaranteeing zero thread-blocking during gameplay or tick routines.</li>
- *   <li><b>Asynchronous write coalescing and debouncing</b>: rapid successive writes within
- *       the debounce window (default 100ms) are coalesced into a single atomic disk flush on a
- *       dedicated I/O thread, eliminating disk thrashing and server tick lag.</li>
- *   <li><b>Per-player subdocument caching</b>: only dirty player records are re-encoded to BSON,
- *       avoiding $O(N)$ re-serialization overhead when one player's data changes.</li>
- *   <li><b>Zero-allocation singleton DataStore instances</b>: {@link IDataStore} wrappers are
- *       instantiated once and cached, eliminating GC churn on repeated lookups.</li>
- *   <li><b>Windows atomic move resilience with backoff retries</b>: handles Win32 file-locking
- *       quirks gracefully with automatic retry and stream copy fallback.</li>
- * </ul>
+ * <p>Memory-first concurrent maps serve gameplay reads and writes; a debounced daemon
+ * flush ({@link StorageFlushScheduler}) persists them atomically. Disk layout and BSON
+ * encoding live in {@link StorageDiskIO} and {@link StorageBsonCodec}; value validation
+ * in {@link StorageValueCodec}.</p>
  */
 public class StorageServiceImpl implements IRobloxStorageService, AutoCloseable {
-    private static final String WORLD_FILE = "world_storage.bson";
-    private static final String PLAYER_FILE = "player_storage.bson";
-    private static final String TMP_SUFFIX = ".tmp";
     private static final long DEFAULT_DEBOUNCE_MS = 100L;
-    private static final int MAX_SAVE_RETRIES = 3;
-
-    private static final DocumentCodec DOCUMENT_CODEC = new DocumentCodec();
-    private static final EncoderContext ENCODER_CONTEXT = EncoderContext.builder().build();
-    private static final DecoderContext DECODER_CONTEXT = DecoderContext.builder().build();
 
     private static final Set<StorageServiceImpl> ACTIVE_INSTANCES = ConcurrentHashMap.newKeySet();
 
-    private static final ScheduledExecutorService IO_EXECUTOR = Executors.newSingleThreadScheduledExecutor(r -> {
-        Thread thread = new Thread(r, "LuaTweaker-Storage-IO");
-        thread.setDaemon(true);
-        return thread;
-    });
-
     private final ILuaEngine engine;
-    private final long debounceMs;
-    private final Object initLock = new Object();
-    private final Object flushLock = new Object();
+    private final ReentrantLock initLock = new ReentrantLock();
+    private final AtomicBoolean initialized = new AtomicBoolean(false);
 
     private final Map<String, Object> sessionStore = new ConcurrentHashMap<>();
     private final Map<String, Object> worldStore = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> playerStore = new ConcurrentHashMap<>();
-    private final Map<String, Document> playerDocCache = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, Object>> playerDocCache = new ConcurrentHashMap<>();
 
     private final AtomicBoolean worldDirty = new AtomicBoolean(false);
     private final AtomicBoolean playerDirty = new AtomicBoolean(false);
-    private ScheduledFuture<?> pendingFlushTask;
+
+    private final StorageDiskIO diskIO;
+    private final StorageFlushScheduler scheduler;
 
     private final IDataStore worldDataStore;
     private final IDataStore sessionDataStore;
-    private final ConcurrentHashMap<String, IDataStore> playerDataStores = new ConcurrentHashMap<>();
-
-    private volatile File storageDir;
-    private volatile boolean initialized;
+    private final Map<String, IDataStore> playerDataStores = new ConcurrentHashMap<>();
 
     public StorageServiceImpl(ILuaEngine engine) {
         this(engine, DEFAULT_DEBOUNCE_MS);
@@ -99,10 +51,13 @@ public class StorageServiceImpl implements IRobloxStorageService, AutoCloseable 
 
     public StorageServiceImpl(ILuaEngine engine, long debounceMs) {
         this.engine = engine;
-        this.debounceMs = Math.max(0, debounceMs);
 
-        this.worldDataStore = createWorldDataStore();
-        this.sessionDataStore = createSessionDataStore();
+        this.diskIO = new StorageDiskIO(worldStore, playerStore, playerDocCache, worldDirty, playerDirty);
+        this.scheduler = new StorageFlushScheduler(diskIO, Math.max(0, debounceMs), worldDirty, playerDirty);
+
+        this.worldDataStore = new WorldDataStore(engine, worldStore, worldDirty,
+                scheduler::scheduleFlush, scheduler::flushNow);
+        this.sessionDataStore = new SessionDataStore(engine, sessionStore);
 
         ACTIVE_INSTANCES.add(this);
     }
@@ -112,19 +67,11 @@ public class StorageServiceImpl implements IRobloxStorageService, AutoCloseable 
      * Called before any storage instance reads from disk to guarantee data consistency.
      */
     public static void flushAllActive() {
-        for (StorageServiceImpl instance : ACTIVE_INSTANCES) {
-            try {
-                instance.Flush();
-            } catch (Exception e) {
-                LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                        "Error flushing active storage instance: " + e.getMessage());
-            }
-        }
+        ACTIVE_INSTANCES.forEach(StorageServiceImpl::flushNow);
     }
 
-    private File storageDir() {
-        ensureInitialized();
-        return storageDir;
+    private void flushNow() {
+        scheduler.flushNow();
     }
 
     /**
@@ -133,187 +80,34 @@ public class StorageServiceImpl implements IRobloxStorageService, AutoCloseable 
      * real storage access use the per-world directory.
      */
     private void ensureInitialized() {
-        if (initialized) {
+        if (initialized.get()) {
             return;
         }
-        synchronized (initLock) {
-            if (initialized) {
+        // Persist every active instance before reading from disk. Deliberately outside initLock:
+        // flushNow() takes the scheduler's flushLock, and holding initLock while acquiring another
+        // instance's flushLock deadlocks when two instances initialize in parallel
+        // (initLock(A) -> flushLock(B) vs initLock(B) -> flushLock(A)).
+        flushAllActive();
+        initLock.lock();
+        try {
+            if (initialized.get()) {
                 return;
             }
-            flushAllActive();
             File dir = Platform.getStorage().getStorageDirectory();
             if (dir != null && !dir.exists() && !dir.mkdirs()) {
                 LuaTweakerLog.get().error(LogStage.SYSTEM,
                         "Cannot create Lua storage directory: " + dir.getAbsolutePath());
             }
-            storageDir = dir;
+            // Publish the directory only after loading: a scheduled flush that saw it early could
+            // otherwise overwrite the existing file with the still-empty in-memory store.
             if (dir != null) {
-                loadWorldStorage(dir);
-                loadPlayerStorage(dir);
+                diskIO.loadWorldStorage(dir);
+                diskIO.loadPlayerStorage(dir);
             }
-            initialized = true;
-        }
-    }
-
-    private void loadWorldStorage(File dir) {
-        Map<String, Object> loaded = loadDocument(dir, WORLD_FILE);
-        if (loaded != null) {
-            worldStore.putAll(loaded);
-        }
-    }
-
-    private void loadPlayerStorage(File dir) {
-        Map<String, Object> loaded = loadDocument(dir, PLAYER_FILE);
-        if (loaded == null) {
-            return;
-        }
-        for (Map.Entry<String, Object> entry : loaded.entrySet()) {
-            if (entry.getValue() instanceof Map<?, ?> raw) {
-                Map<String, Object> player = new ConcurrentHashMap<>();
-                for (Map.Entry<?, ?> value : raw.entrySet()) {
-                    player.put(String.valueOf(value.getKey()), value.getValue());
-                }
-                playerStore.put(entry.getKey(), player);
-            } else {
-                LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                        "Ignoring malformed player entry '" + entry.getKey() + "' in " + PLAYER_FILE);
-            }
-        }
-    }
-
-    private Map<String, Object> loadDocument(File dir, String fileName) {
-        File file = new File(dir, fileName);
-        if (!file.isFile()) {
-            return null;
-        }
-        try (FileInputStream in = new FileInputStream(file)) {
-            byte[] bytes = in.readAllBytes();
-            if (bytes.length == 0) {
-                return null;
-            }
-            Document doc = DOCUMENT_CODEC.decode(
-                    new BsonBinaryReader(ByteBuffer.wrap(bytes)), DECODER_CONTEXT);
-            return doc != null ? new LinkedHashMap<>(doc) : null;
-        } catch (Exception e) {
-            quarantine(file, e);
-            return null;
-        }
-    }
-
-    private void quarantine(File file, Exception cause) {
-        LuaTweakerLog.get().error(LogStage.SYSTEM,
-                "Failed to read " + file.getName() + " (" + cause.getClass().getSimpleName()
-                        + ": " + cause.getMessage() + "); moving it aside so it can be recovered");
-        File quarantined = new File(file.getParentFile(),
-                file.getName() + ".corrupt-" + System.currentTimeMillis());
-        try {
-            Files.move(file.toPath(), quarantined.toPath(), StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException moveFailure) {
-            LuaTweakerLog.get().error(LogStage.SYSTEM,
-                    "Could not move corrupt storage file aside: " + moveFailure.getMessage());
-        }
-    }
-
-    private void scheduleFlush() {
-        if (debounceMs <= 0) {
-            Flush();
-            return;
-        }
-        synchronized (flushLock) {
-            if (pendingFlushTask == null || pendingFlushTask.isDone()) {
-                pendingFlushTask = IO_EXECUTOR.schedule(this::flushDirtyStores, debounceMs, TimeUnit.MILLISECONDS);
-            }
-        }
-    }
-
-    private void flushDirtyStores() {
-        if (worldDirty.compareAndSet(true, false)) {
-            saveWorldStorage();
-        }
-        if (playerDirty.compareAndSet(true, false)) {
-            savePlayerStorage();
-        }
-    }
-
-    @Override
-    public void Flush() {
-        synchronized (flushLock) {
-            if (pendingFlushTask != null && !pendingFlushTask.isDone()) {
-                pendingFlushTask.cancel(false);
-            }
-        }
-        flushDirtyStores();
-    }
-
-    private synchronized void saveWorldStorage() {
-        saveDocument(WORLD_FILE, toDocument(worldStore));
-    }
-
-    private synchronized void savePlayerStorage() {
-        Document players = new Document();
-        for (Map.Entry<String, Map<String, Object>> entry : playerStore.entrySet()) {
-            String uuid = entry.getKey();
-            Document pDoc = playerDocCache.computeIfAbsent(uuid, k -> toDocument(entry.getValue()));
-            players.put(uuid, pDoc);
-        }
-        saveDocument(PLAYER_FILE, players);
-    }
-
-    /** Encodes fully to memory before touching the target file, then swaps atomically with retry. */
-    private void saveDocument(String fileName, Document document) {
-        File dir = storageDir();
-        if (dir == null) return;
-        File target = new File(dir, fileName);
-        File tmp = new File(dir, fileName + TMP_SUFFIX);
-        try {
-            BasicOutputBuffer buffer = new BasicOutputBuffer();
-            try (BsonBinaryWriter writer = new BsonBinaryWriter(buffer)) {
-                DOCUMENT_CODEC.encode(writer, document, ENCODER_CONTEXT);
-            }
-            byte[] bytes = buffer.toByteArray();
-            Files.write(tmp.toPath(), bytes);
-
-            boolean moved = false;
-            for (int attempt = 1; attempt <= MAX_SAVE_RETRIES; attempt++) {
-                try {
-                    Files.move(tmp.toPath(), target.toPath(),
-                            StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-                    moved = true;
-                    break;
-                } catch (AtomicMoveNotSupportedException | java.nio.file.AccessDeniedException e) {
-                    try {
-                        Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                        moved = true;
-                        break;
-                    } catch (java.nio.file.AccessDeniedException ade) {
-                        if (attempt < MAX_SAVE_RETRIES) {
-                            try {
-                                Thread.sleep(10L * attempt);
-                            } catch (InterruptedException ie) {
-                                Thread.currentThread().interrupt();
-                                break;
-                            }
-                            continue;
-                        }
-                        Files.copy(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                        Files.deleteIfExists(tmp.toPath());
-                        moved = true;
-                    }
-                }
-            }
-            if (!moved && Files.exists(tmp.toPath())) {
-                Files.deleteIfExists(tmp.toPath());
-            }
-        } catch (Exception e) {
-            LuaTweakerLog.get().error(LogStage.SYSTEM,
-                    "Failed to save " + fileName + " (" + e.getClass().getSimpleName()
-                            + ": " + e.getMessage() + "); previous file left untouched");
-            try {
-                Files.deleteIfExists(tmp.toPath());
-            } catch (IOException cleanupFailure) {
-                LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                        "Could not delete temporary storage file: " + cleanupFailure.getMessage());
-            }
+            scheduler.setDirectory(dir);
+            initialized.set(true);
+        } finally {
+            initLock.unlock();
         }
     }
 
@@ -323,137 +117,11 @@ public class StorageServiceImpl implements IRobloxStorageService, AutoCloseable 
         return worldDataStore;
     }
 
-    private IDataStore createWorldDataStore() {
-        return new IDataStore() {
-            @Override
-            public Object GetAsync(String key) {
-                return convertToJavaObject(worldStore.get(key));
-            }
-
-            @Override
-            public void SetAsync(String key, Object value) {
-                if (value == null) {
-                    worldStore.remove(key);
-                } else {
-                    worldStore.put(key, toStorable(key, value));
-                }
-                worldDirty.set(true);
-                scheduleFlush();
-            }
-
-            @Override
-            public boolean RemoveAsync(String key) {
-                boolean existed = worldStore.remove(key) != null;
-                if (existed) {
-                    worldDirty.set(true);
-                    scheduleFlush();
-                }
-                return existed;
-            }
-
-            @Override
-            public List<String> GetKeys() {
-                return sortedKeys(worldStore.keySet());
-            }
-
-            @Override
-            public double IncrementAsync(String key, double delta) {
-                double[] updated = new double[1];
-                worldStore.compute(key, (k, existing) -> {
-                    updated[0] = requireNumber(k, existing) + delta;
-                    return updated[0];
-                });
-                worldDirty.set(true);
-                scheduleFlush();
-                return updated[0];
-            }
-
-            @Override
-            public void Flush() {
-                StorageServiceImpl.this.Flush();
-            }
-        };
-    }
-
     @Override
     public IDataStore GetPlayerStorage(String playerUuid) {
         ensureInitialized();
-        return playerDataStores.computeIfAbsent(playerUuid, this::createPlayerDataStore);
-    }
-
-    private IDataStore createPlayerDataStore(String playerUuid) {
-        return new IDataStore() {
-            @Override
-            public Object GetAsync(String key) {
-                Map<String, Object> player = playerStore.get(playerUuid);
-                return player == null ? null : convertToJavaObject(player.get(key));
-            }
-
-            @Override
-            public void SetAsync(String key, Object value) {
-                Object stored = value == null ? null : toStorable(key, value);
-                playerStore.compute(playerUuid, (uuid, existing) -> {
-                    Map<String, Object> next = existing == null
-                            ? new ConcurrentHashMap<>() : new ConcurrentHashMap<>(existing);
-                    if (stored == null) {
-                        next.remove(key);
-                    } else {
-                        next.put(key, stored);
-                    }
-                    return next;
-                });
-                playerDocCache.remove(playerUuid);
-                playerDirty.set(true);
-                scheduleFlush();
-            }
-
-            @Override
-            public boolean RemoveAsync(String key) {
-                boolean[] existed = new boolean[1];
-                playerStore.compute(playerUuid, (uuid, existing) -> {
-                    if (existing == null || !existing.containsKey(key)) {
-                        return existing;
-                    }
-                    existed[0] = true;
-                    Map<String, Object> next = new ConcurrentHashMap<>(existing);
-                    next.remove(key);
-                    return next;
-                });
-                if (existed[0]) {
-                    playerDocCache.remove(playerUuid);
-                    playerDirty.set(true);
-                    scheduleFlush();
-                }
-                return existed[0];
-            }
-
-            @Override
-            public List<String> GetKeys() {
-                Map<String, Object> player = playerStore.get(playerUuid);
-                return sortedKeys(player == null ? Collections.emptySet() : player.keySet());
-            }
-
-            @Override
-            public double IncrementAsync(String key, double delta) {
-                double[] updated = new double[1];
-                playerStore.compute(playerUuid, (uuid, existing) -> {
-                    Map<String, Object> next = existing == null
-                            ? new ConcurrentHashMap<>() : new ConcurrentHashMap<>(existing);
-                    updated[0] = requireNumber(key, next.get(key)) + delta;
-                    next.put(key, updated[0]);
-                    return next;
-                });
-                playerDocCache.remove(playerUuid);
-                playerDirty.set(true);
-                scheduleFlush();
-                return updated[0];
-            }
-
-            @Override
-            public void Flush() {
-                StorageServiceImpl.this.Flush();
-            }
-        };
+        return playerDataStores.computeIfAbsent(playerUuid, uuid -> new PlayerDataStore(engine, uuid,
+                playerStore, playerDocCache, playerDirty, scheduler::scheduleFlush, scheduler::flushNow));
     }
 
     @Override
@@ -462,216 +130,9 @@ public class StorageServiceImpl implements IRobloxStorageService, AutoCloseable 
         return sessionDataStore;
     }
 
-    private IDataStore createSessionDataStore() {
-        return new IDataStore() {
-            @Override
-            public Object GetAsync(String key) {
-                return convertToJavaObject(sessionStore.get(key));
-            }
-
-            @Override
-            public void SetAsync(String key, Object value) {
-                if (value == null) {
-                    sessionStore.remove(key);
-                } else {
-                    sessionStore.put(key, toStorable(key, value));
-                }
-            }
-
-            @Override
-            public boolean RemoveAsync(String key) {
-                return sessionStore.remove(key) != null;
-            }
-
-            @Override
-            public List<String> GetKeys() {
-                return sortedKeys(sessionStore.keySet());
-            }
-
-            @Override
-            public double IncrementAsync(String key, double delta) {
-                double[] updated = new double[1];
-                sessionStore.compute(key, (k, existing) -> {
-                    updated[0] = requireNumber(k, existing) + delta;
-                    return updated[0];
-                });
-                return updated[0];
-            }
-
-            @Override
-            public void Flush() {
-                // In-memory only; no disk I/O required.
-            }
-        };
-    }
-
-    private static List<String> sortedKeys(Set<String> keys) {
-        List<String> sorted = new ArrayList<>(keys);
-        Collections.sort(sorted);
-        return sorted;
-    }
-
-    private static double requireNumber(String key, Object existing) {
-        if (existing == null) {
-            return 0.0;
-        }
-        if (existing instanceof Number number) {
-            return number.doubleValue();
-        }
-        throw new IllegalStateException("Storage key '" + key + "' holds a "
-                + existing.getClass().getSimpleName()
-                + ", not a number; IncrementAsync would corrupt the stored value");
-    }
-
-    private Object toStorable(String key, Object val) {
-        return toStorableValue(key, val);
-    }
-
-    private Object toStorableValue(String key, Object val) {
-        if (val == null) {
-            return null;
-        }
-        if (val instanceof String || val instanceof Number || val instanceof Boolean) {
-            return val;
-        }
-        if (val instanceof ILuaValue lv) {
-            if (lv.isNil()) {
-                return null;
-            }
-            if (lv.isBoolean()) {
-                return lv.asBoolean();
-            }
-            if (lv.isString()) {
-                return lv.asString();
-            }
-            if (lv.isNumber()) {
-                return lv.asDouble();
-            }
-            if (lv.isTable()) {
-                return tableToStorable(key, lv.asTable());
-            }
-            return requireScalar(key, lv.toJavaObject());
-        }
-        if (val instanceof Map<?, ?> map) {
-            Map<String, Object> out = new LinkedHashMap<>();
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                Object child = toStorableValue(key, entry.getValue());
-                if (child != null) {
-                    out.put(String.valueOf(entry.getKey()), child);
-                }
-            }
-            return Collections.unmodifiableMap(out);
-        }
-        if (val instanceof List<?> list) {
-            List<Object> out = new ArrayList<>(list.size());
-            for (Object item : list) {
-                out.add(toStorableValue(key, item));
-            }
-            return Collections.unmodifiableList(out);
-        }
-        return requireScalar(key, val);
-    }
-
-    private Object tableToStorable(String key, ILuaTable table) {
-        int length = table.length();
-        Map<ILuaValue, ILuaValue> entries = table.asMap();
-        boolean isArray = length > 0 && entries.size() == length;
-        if (isArray) {
-            for (ILuaValue entryKey : entries.keySet()) {
-                if (!entryKey.isNumber()) {
-                    isArray = false;
-                    break;
-                }
-                int index = entryKey.asInt();
-                if (index < 1 || index > length) {
-                    isArray = false;
-                    break;
-                }
-            }
-        }
-        if (isArray) {
-            List<Object> out = new ArrayList<>(length);
-            for (int i = 1; i <= length; i++) {
-                out.add(toStorableValue(key, table.rawget(i)));
-            }
-            return Collections.unmodifiableList(out);
-        }
-        Map<String, Object> out = new LinkedHashMap<>();
-        for (Map.Entry<ILuaValue, ILuaValue> entry : entries.entrySet()) {
-            Object child = toStorableValue(key, entry.getValue());
-            if (child != null) {
-                out.put(entry.getKey().asString(), child);
-            }
-        }
-        return Collections.unmodifiableMap(out);
-    }
-
-    private Object requireScalar(String key, Object value) {
-        if (value instanceof String || value instanceof Number || value instanceof Boolean) {
-            return value;
-        }
-        throw new IllegalArgumentException(
-                "Storage key '" + key + "' only accepts booleans, numbers, strings and tables of "
-                        + "those values; got " + (value == null ? "null" : value.getClass().getName()));
-    }
-
-    private Document toDocument(Map<String, Object> values) {
-        Document document = new Document();
-        for (Map.Entry<String, Object> entry : values.entrySet()) {
-            document.put(entry.getKey(), toBson(entry.getValue()));
-        }
-        return document;
-    }
-
-    private Object toBson(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            Document document = new Document();
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                document.put(String.valueOf(entry.getKey()), toBson(entry.getValue()));
-            }
-            return document;
-        }
-        if (value instanceof List<?> list) {
-            List<Object> out = new ArrayList<>(list.size());
-            for (Object item : list) {
-                out.add(toBson(item));
-            }
-            return out;
-        }
-        return value;
-    }
-
-    private Object convertToJavaObject(Object raw) {
-        if (raw == null || raw instanceof String || raw instanceof Number || raw instanceof Boolean) {
-            return raw;
-        }
-        if (raw instanceof Map<?, ?> map) {
-            ILuaTable table = engine.createTable();
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                Object convertedValue = convertToJavaObject(entry.getValue());
-                ILuaValue val = wrapObject(convertedValue);
-                table.rawset(String.valueOf(entry.getKey()), val);
-            }
-            return table;
-        }
-        if (raw instanceof List<?> list) {
-            ILuaTable table = engine.createTable();
-            int index = 1;
-            for (Object item : list) {
-                table.rawset(index++, wrapObject(convertToJavaObject(item)));
-            }
-            return table;
-        }
-        return raw;
-    }
-
-    private ILuaValue wrapObject(Object obj) {
-        if (obj == null) return engine.nilValue();
-        if (obj instanceof ILuaValue lv) return lv;
-        if (obj instanceof String s) return engine.wrapString(s);
-        if (obj instanceof Number n) return engine.wrapNumber(n.doubleValue());
-        if (obj instanceof Boolean b) return engine.wrapBoolean(b);
-        return engine.wrapUserdata(obj);
+    @Override
+    public void Flush() {
+        scheduler.flushNow();
     }
 
     @Override

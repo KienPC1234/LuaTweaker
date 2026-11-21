@@ -62,11 +62,11 @@ public class NeoForgeBlockRenderer implements IBlockRenderer {
 
     @Override
     public void renderItem(String itemId, int count, int light) {
-        if (itemId == null || itemId.isBlank()) return;
+        if (itemId == null || itemId.isBlank()) { return; }
         ResourceLocation rl = ResourceLocation.tryParse(itemId);
-        if (rl == null) return;
+        if (rl == null) { return; }
         var item = BuiltInRegistries.ITEM.get(rl);
-        if (item == null || item == net.minecraft.world.item.Items.AIR) return;
+        if (item == null || item == net.minecraft.world.item.Items.AIR) { return; }
         ItemStack stack = new ItemStack(item, Math.max(1, count));
         int l = light > 0 ? light : packedLight;
         context.getItemRenderer().renderStatic(stack, ItemDisplayContext.FIXED, l, packedOverlay,
@@ -75,9 +75,9 @@ public class NeoForgeBlockRenderer implements IBlockRenderer {
 
     @Override
     public void renderItemFromSlot(int slotIndex, int light) {
-        if (slotIndex < 0 || slotIndex >= blockEntity.getContainerSize()) return;
+        if (slotIndex < 0 || slotIndex >= blockEntity.getContainerSize()) { return; }
         ItemStack stack = blockEntity.getItem(slotIndex);
-        if (stack.isEmpty()) return;
+        if (stack.isEmpty()) { return; }
         int l = light > 0 ? light : packedLight;
         context.getItemRenderer().renderStatic(stack, ItemDisplayContext.FIXED, l, packedOverlay,
                 poseStack, bufferSource, blockEntity.getLevel(), 0);
@@ -85,11 +85,11 @@ public class NeoForgeBlockRenderer implements IBlockRenderer {
 
     @Override
     public void renderBlock(String blockId, int light) {
-        if (blockId == null || blockId.isBlank()) return;
+        if (blockId == null || blockId.isBlank()) { return; }
         ResourceLocation rl = ResourceLocation.tryParse(blockId);
-        if (rl == null) return;
+        if (rl == null) { return; }
         Block block = BuiltInRegistries.BLOCK.get(rl);
-        if (block == null || block == Blocks.AIR) return;
+        if (block == null || block == Blocks.AIR) { return; }
         int l = light > 0 ? light : packedLight;
         context.getBlockRenderDispatcher().renderSingleBlock(block.defaultBlockState(),
                 poseStack, bufferSource, l, packedOverlay);
@@ -103,8 +103,9 @@ public class NeoForgeBlockRenderer implements IBlockRenderer {
     @Override
     public double getTime() {
         if (blockEntity.getLevel() != null) {
-            return (double) blockEntity.getLevel().getGameTime() + (double) partialTick;
+            double gameTime = blockEntity.getLevel().getGameTime();
+            return gameTime + partialTick;
         }
-        return (double) System.currentTimeMillis() / 50.0;
+        return System.currentTimeMillis() / 50.0;
     }
 }

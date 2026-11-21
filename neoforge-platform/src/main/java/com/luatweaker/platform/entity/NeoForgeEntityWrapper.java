@@ -63,14 +63,16 @@ public class NeoForgeEntityWrapper implements IEntity {
 
     @Override
     public void setMaxHealth(float maxHealth) {
-        if (entity instanceof LivingEntity living) {
-            var attr = living.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH);
-            if (attr != null) {
-                attr.setBaseValue(maxHealth);
-                if (living.getHealth() > maxHealth) {
-                    living.setHealth(maxHealth);
-                }
-            }
+        if (!(entity instanceof LivingEntity living)) {
+            return;
+        }
+        var attr = living.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH);
+        if (attr == null) {
+            return;
+        }
+        attr.setBaseValue(maxHealth);
+        if (living.getHealth() > maxHealth) {
+            living.setHealth(maxHealth);
         }
     }
 
@@ -83,30 +85,43 @@ public class NeoForgeEntityWrapper implements IEntity {
 
     @Override
     public void applyDamage(float amount, String damageTypeId, @Nullable IEntity attacker) {
-        if (entity instanceof LivingEntity living) {
-            Entity attackerEntity = (attacker != null && attacker.getRawEntity() instanceof Entity mcAttacker) ? mcAttacker : null;
-            if (damageTypeId != null && !damageTypeId.isBlank()) {
-                ResourceLocation rl = damageTypeId.contains(":")
-                        ? ResourceLocation.tryParse(damageTypeId)
-                        : ResourceLocation.fromNamespaceAndPath("minecraft", damageTypeId);
-                var registry = rl == null ? java.util.Optional.<net.minecraft.core.Registry<net.minecraft.world.damagesource.DamageType>>empty()
-                        : living.level().registryAccess().registry(net.minecraft.core.registries.Registries.DAMAGE_TYPE);
-                var holder = registry.flatMap(reg -> reg.getHolder(
-                        ResourceKey.create(net.minecraft.core.registries.Registries.DAMAGE_TYPE, rl)));
-                if (holder.isPresent()) {
-                    living.hurt(new net.minecraft.world.damagesource.DamageSource(holder.get(), attackerEntity, attackerEntity), amount);
-                    return;
-                }
-                com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
-                        "ApplyDamage: unknown damage type '" + damageTypeId
-                                + "'; falling back to a generic " + (attackerEntity != null ? "mob attack" : "hit"));
-            }
-            if (attackerEntity != null) {
-                living.hurt(living.damageSources().mobAttack(attackerEntity instanceof LivingEntity la ? la : null), amount);
-            } else {
-                living.hurt(living.damageSources().generic(), amount);
-            }
+        if (!(entity instanceof LivingEntity living)) {
+            return;
         }
+        Entity attackerEntity = resolveAttacker(attacker);
+        if (damageTypeId != null && !damageTypeId.isBlank()
+                && hurtWithNamedType(living, damageTypeId, attackerEntity, amount)) {
+            return;
+        }
+        if (attackerEntity != null) {
+            living.hurt(living.damageSources().mobAttack(attackerEntity instanceof LivingEntity la ? la : null), amount);
+        } else {
+            living.hurt(living.damageSources().generic(), amount);
+        }
+    }
+
+    private static @Nullable Entity resolveAttacker(@Nullable IEntity attacker) {
+        return (attacker != null && attacker.getRawEntity() instanceof Entity mcAttacker) ? mcAttacker : null;
+    }
+
+    /** Applies a registry-backed damage type; false means "unknown, use the generic fallback". */
+    private static boolean hurtWithNamedType(LivingEntity living, String damageTypeId,
+                                             @Nullable Entity attackerEntity, float amount) {
+        ResourceLocation rl = damageTypeId.contains(":")
+                ? ResourceLocation.tryParse(damageTypeId)
+                : ResourceLocation.fromNamespaceAndPath(ResourceLocation.DEFAULT_NAMESPACE, damageTypeId);
+        var registry = rl == null ? java.util.Optional.<net.minecraft.core.Registry<net.minecraft.world.damagesource.DamageType>>empty()
+                : living.level().registryAccess().registry(net.minecraft.core.registries.Registries.DAMAGE_TYPE);
+        var holder = registry.flatMap(reg -> reg.getHolder(
+                ResourceKey.create(net.minecraft.core.registries.Registries.DAMAGE_TYPE, rl)));
+        if (holder.isPresent()) {
+            living.hurt(new net.minecraft.world.damagesource.DamageSource(holder.get(), attackerEntity, attackerEntity), amount);
+            return true;
+        }
+        com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+                "ApplyDamage: unknown damage type '" + damageTypeId
+                        + "'; falling back to a generic " + (attackerEntity != null ? "mob attack" : "hit"));
+        return false;
     }
 
     @Override
@@ -132,13 +147,13 @@ public class NeoForgeEntityWrapper implements IEntity {
                             + "' (expected mainhand/offhand/head/chest/legs/feet)");
             return;
         }
-        if (itemId == null || itemId.isBlank() || itemId.equalsIgnoreCase("minecraft:air")) {
+        if (itemId == null || itemId.isBlank() || "minecraft:air".equalsIgnoreCase(itemId)) {
             living.setItemSlot(eqSlot, net.minecraft.world.item.ItemStack.EMPTY);
             return;
         }
         ResourceLocation rl = itemId.contains(":")
                 ? ResourceLocation.tryParse(itemId)
-                : ResourceLocation.fromNamespaceAndPath("minecraft", itemId);
+                : ResourceLocation.fromNamespaceAndPath(ResourceLocation.DEFAULT_NAMESPACE, itemId);
         var itemOpt = rl == null ? java.util.Optional.<net.minecraft.world.item.Item>empty()
                 : BuiltInRegistries.ITEM.getOptional(rl);
         if (itemOpt.isEmpty()) {
@@ -192,7 +207,7 @@ public class NeoForgeEntityWrapper implements IEntity {
     }
 
     private static net.minecraft.world.entity.EquipmentSlot parseEquipmentSlot(String slot) {
-        return switch (slot.toLowerCase().trim()) {
+        return switch (slot.toLowerCase(java.util.Locale.ROOT).trim()) {
             case "mainhand", "main_hand", "hand" -> net.minecraft.world.entity.EquipmentSlot.MAINHAND;
             case "offhand", "off_hand" -> net.minecraft.world.entity.EquipmentSlot.OFFHAND;
             case "head", "helmet" -> net.minecraft.world.entity.EquipmentSlot.HEAD;
@@ -232,7 +247,7 @@ public class NeoForgeEntityWrapper implements IEntity {
     @Override
     public void addEffect(String effectId, int durationTicks, int amplifier) {
         if (entity instanceof LivingEntity living && effectId != null && !effectId.isBlank()) {
-            ResourceLocation rl = effectId.contains(":") ? ResourceLocation.parse(effectId) : ResourceLocation.fromNamespaceAndPath("minecraft", effectId);
+            ResourceLocation rl = effectId.contains(":") ? ResourceLocation.parse(effectId) : ResourceLocation.fromNamespaceAndPath(ResourceLocation.DEFAULT_NAMESPACE, effectId);
             Holder<MobEffect> effectHolder = BuiltInRegistries.MOB_EFFECT.getHolder(rl).orElse(null);
             if (effectHolder != null) {
                 living.addEffect(new MobEffectInstance(effectHolder, durationTicks, amplifier));
@@ -243,7 +258,7 @@ public class NeoForgeEntityWrapper implements IEntity {
     @Override
     public void removeEffect(String effectId) {
         if (entity instanceof LivingEntity living && effectId != null && !effectId.isBlank()) {
-            ResourceLocation rl = effectId.contains(":") ? ResourceLocation.parse(effectId) : ResourceLocation.fromNamespaceAndPath("minecraft", effectId);
+            ResourceLocation rl = effectId.contains(":") ? ResourceLocation.parse(effectId) : ResourceLocation.fromNamespaceAndPath(ResourceLocation.DEFAULT_NAMESPACE, effectId);
             BuiltInRegistries.MOB_EFFECT.getHolder(rl).ifPresent(living::removeEffect);
         }
     }
@@ -258,7 +273,7 @@ public class NeoForgeEntityWrapper implements IEntity {
     @Override
     public boolean hasEffect(String effectId) {
         if (entity instanceof LivingEntity living && effectId != null && !effectId.isBlank()) {
-            ResourceLocation rl = effectId.contains(":") ? ResourceLocation.parse(effectId) : ResourceLocation.fromNamespaceAndPath("minecraft", effectId);
+            ResourceLocation rl = effectId.contains(":") ? ResourceLocation.parse(effectId) : ResourceLocation.fromNamespaceAndPath(ResourceLocation.DEFAULT_NAMESPACE, effectId);
             return BuiltInRegistries.MOB_EFFECT.getHolder(rl).map(living::hasEffect).orElse(false);
         }
         return false;
@@ -307,7 +322,7 @@ public class NeoForgeEntityWrapper implements IEntity {
     @Override
     public void spawnParticle(String particleId, int count, double speed) {
         if (entity != null && entity.level() instanceof ServerLevel serverLevel && particleId != null) {
-            ResourceLocation rl = particleId.contains(":") ? ResourceLocation.parse(particleId) : ResourceLocation.fromNamespaceAndPath("minecraft", particleId);
+            ResourceLocation rl = particleId.contains(":") ? ResourceLocation.parse(particleId) : ResourceLocation.fromNamespaceAndPath(ResourceLocation.DEFAULT_NAMESPACE, particleId);
             ParticleType<?> pType = BuiltInRegistries.PARTICLE_TYPE.get(rl);
             if (pType instanceof net.minecraft.core.particles.SimpleParticleType simple) {
                 serverLevel.sendParticles(simple, entity.getX(), entity.getY() + 1.0, entity.getZ(), Math.max(1, count), 0.2, 0.2, 0.2, speed);
@@ -349,10 +364,7 @@ public class NeoForgeEntityWrapper implements IEntity {
 
     @Override
     public boolean moveTo(double x, double y, double z, double speed) {
-        if (entity instanceof net.minecraft.world.entity.PathfinderMob mob) {
-            return mob.getNavigation().moveTo(x, y, z, speed);
-        }
-        return false;
+        return entity instanceof net.minecraft.world.entity.PathfinderMob mob && mob.getNavigation().moveTo(x, y, z, speed);
     }
 
     @Override
@@ -371,37 +383,37 @@ public class NeoForgeEntityWrapper implements IEntity {
 
     @Override
     public void setYaw(float yaw) {
-        if (entity != null) entity.setYRot(yaw);
+        if (entity != null) { entity.setYRot(yaw); }
     }
 
     @Override
     public void setPitch(float pitch) {
-        if (entity != null) entity.setXRot(pitch);
+        if (entity != null) { entity.setXRot(pitch); }
     }
 
     @Override public boolean isSneaking() { return entity != null && entity.isShiftKeyDown(); }
-    @Override public void setSneaking(boolean value) { if (entity != null) entity.setShiftKeyDown(value); }
+    @Override public void setSneaking(boolean value) { if (entity != null) { entity.setShiftKeyDown(value); } }
     @Override public boolean isSprinting() { return entity != null && entity.isSprinting(); }
-    @Override public void setSprinting(boolean value) { if (entity != null) entity.setSprinting(value); }
+    @Override public void setSprinting(boolean value) { if (entity != null) { entity.setSprinting(value); } }
     @Override public boolean isGlowing() { return entity != null && entity.isCurrentlyGlowing(); }
-    @Override public void setGlowing(boolean value) { if (entity != null) entity.setGlowingTag(value); }
+    @Override public void setGlowing(boolean value) { if (entity != null) { entity.setGlowingTag(value); } }
     @Override public boolean isInvulnerable() { return entity != null && entity.isInvulnerable(); }
-    @Override public void setInvulnerable(boolean value) { if (entity != null) entity.setInvulnerable(value); }
+    @Override public void setInvulnerable(boolean value) { if (entity != null) { entity.setInvulnerable(value); } }
     @Override public boolean isInWater() { return entity != null && entity.isInWater(); }
     @Override public boolean isInLava() { return entity != null && entity.isInLava(); }
     @Override public boolean isOnGround() { return entity != null && entity.onGround(); }
 
     @Override public String getCustomName() { return (entity != null && entity.hasCustomName()) ? entity.getCustomName().getString() : ""; }
-    @Override public void setCustomName(String name) { if (entity != null && name != null) entity.setCustomName(Component.literal(name)); }
+    @Override public void setCustomName(String name) { if (entity != null && name != null) { entity.setCustomName(Component.literal(name)); } }
     @Override public boolean isCustomNameVisible() { return entity != null && entity.isCustomNameVisible(); }
-    @Override public void setCustomNameVisible(boolean visible) { if (entity != null) entity.setCustomNameVisible(visible); }
+    @Override public void setCustomNameVisible(boolean visible) { if (entity != null) { entity.setCustomNameVisible(visible); } }
 
-    @Override public void addTag(String tag) { if (entity != null && tag != null) entity.addTag(tag); }
-    @Override public void removeTag(String tag) { if (entity != null && tag != null) entity.removeTag(tag); }
+    @Override public void addTag(String tag) { if (entity != null && tag != null) { entity.addTag(tag); } }
+    @Override public void removeTag(String tag) { if (entity != null && tag != null) { entity.removeTag(tag); } }
     @Override public boolean hasTag(String tag) { return entity != null && tag != null && entity.getTags().contains(tag); }
 
     @Override public void swingArm() {
-        if (entity instanceof LivingEntity living) living.swing(InteractionHand.MAIN_HAND);
+        if (entity instanceof LivingEntity living) { living.swing(InteractionHand.MAIN_HAND); }
     }
 
     @Override
@@ -409,7 +421,7 @@ public class NeoForgeEntityWrapper implements IEntity {
         if (entity == null || pose == null || pose.isBlank()) {
             return;
         }
-        String clean = pose.strip().toUpperCase();
+        String clean = pose.strip().toUpperCase(java.util.Locale.ROOT);
         try {
             entity.setPose(net.minecraft.world.entity.Pose.valueOf(clean));
         } catch (IllegalArgumentException e) {
@@ -420,7 +432,7 @@ public class NeoForgeEntityWrapper implements IEntity {
                 }
                 known.append(p.name());
             }
-            throw new IllegalArgumentException("unknown pose '" + pose + "' (use one of: " + known + ")");
+            throw new IllegalArgumentException("unknown pose '" + pose + "' (use one of: " + known + ")", e);
         }
     }
 
@@ -481,12 +493,9 @@ public class NeoForgeEntityWrapper implements IEntity {
     @Override
     public void jump() {
         if (entity instanceof Mob mob) {
-            try {
+            com.luatweaker.platform.util.CallbackFirewall.run(() -> {
                 mob.getJumpControl().jump();
-            } catch (Exception e) {
-                com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
-                        "jump failed: " + e.getMessage());
-            }
+            }, com.luatweaker.api.log.LogStage.SYSTEM, () -> "jump failed: ");
         }
     }
 
@@ -619,7 +628,7 @@ public class NeoForgeEntityWrapper implements IEntity {
         }
         ResourceLocation rl = attributeId.contains(":")
                 ? ResourceLocation.tryParse(attributeId)
-                : ResourceLocation.fromNamespaceAndPath("minecraft", attributeId);
+                : ResourceLocation.fromNamespaceAndPath(ResourceLocation.DEFAULT_NAMESPACE, attributeId);
         if (rl == null) {
             return null;
         }
@@ -697,22 +706,42 @@ public class NeoForgeEntityWrapper implements IEntity {
             return;
         }
         if (value instanceof com.luatweaker.api.vm.ILuaValue lv) {
-            if (lv.isNil()) {
-                tag.remove(key);
-            } else if (lv.isBoolean()) {
-                tag.putBoolean(key, lv.asBoolean());
-            } else if (lv.isNumber()) {
-                tag.putDouble(key, lv.asDouble());
-            } else if (lv.isString()) {
-                tag.putString(key, lv.asString());
-            } else {
-                // Storing "table: 0x..." silently loses the value; make the script see the error.
-                throw new IllegalArgumentException("SetCustomData('" + key
-                        + "') only supports strings, numbers and booleans; got a Lua "
-                        + (lv.isTable() ? "table" : lv.isFunction() ? "function" : "value"));
-            }
+            storeLuaValue(tag, key, lv);
             return;
         }
+        storeJavaValue(tag, key, value);
+    }
+
+    private static void storeLuaValue(net.minecraft.nbt.CompoundTag tag, String key,
+                                      com.luatweaker.api.vm.ILuaValue lv) {
+        if (lv.isNil()) {
+            tag.remove(key);
+            return;
+        }
+        if (storeLuaScalar(tag, key, lv)) {
+            return;
+        }
+        // Storing "table: 0x..." silently loses the value; make the script see the error.
+        throw new IllegalArgumentException("SetCustomData('" + key
+                + "') only supports strings, numbers and booleans; got a Lua "
+                + (lv.isTable() ? "table" : lv.isFunction() ? "function" : "value"));
+    }
+
+    private static boolean storeLuaScalar(net.minecraft.nbt.CompoundTag tag, String key,
+                                          com.luatweaker.api.vm.ILuaValue lv) {
+        if (lv.isBoolean()) {
+            tag.putBoolean(key, lv.asBoolean());
+        } else if (lv.isNumber()) {
+            tag.putDouble(key, lv.asDouble());
+        } else if (lv.isString()) {
+            tag.putString(key, lv.asString());
+        } else {
+            return false;
+        }
+        return true;
+    }
+
+    private static void storeJavaValue(net.minecraft.nbt.CompoundTag tag, String key, Object value) {
         if (value instanceof Boolean flag) {
             tag.putBoolean(key, flag);
         } else if (value instanceof Number num) {

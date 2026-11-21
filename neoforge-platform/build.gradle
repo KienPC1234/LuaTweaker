@@ -5,31 +5,36 @@ plugins {
     id 'idea'
 }
 
-evaluationDependsOn ':modules:module-loot'
-evaluationDependsOn ':modules:module-worldgen'
-evaluationDependsOn ':modules:module-noise'
-evaluationDependsOn ':modules:module-dimensions'
-evaluationDependsOn ':modules:module-spawnrules'
-evaluationDependsOn ':modules:module-structures'
-evaluationDependsOn ':modules:module-update'
+// Single source of truth for in-repo modules shipped inside the mod jar.
+// MC upgrade = bump gradle.properties only; this list rarely changes.
+def ltModuleProjects = [
+        ':common-api',
+        ':core-engine',
+        ':modules:module-recipes',
+        ':modules:module-content',
+        ':modules:module-entities',
+        ':modules:module-interaction',
+        ':modules:module-events',
+        ':modules:module-math',
+        ':modules:module-storage',
+        ':modules:module-network',
+        ':modules:module-client',
+        ':modules:module-interception',
+        ':modules:module-command',
+        ':modules:module-tasks',
+        ':modules:module-loot',
+        ':modules:module-worldgen',
+        ':modules:module-noise',
+        ':modules:module-dimensions',
+        ':modules:module-spawnrules',
+        ':modules:module-structures',
+        ':modules:module-update',
+        ':modules:module-integration-api'
+]
+ltModuleProjects.each { evaluationDependsOn(it) }
 
 version = mod_version
 group = mod_group_id
-
-evaluationDependsOn(':common-api')
-evaluationDependsOn(':core-engine')
-evaluationDependsOn(':modules:module-recipes')
-evaluationDependsOn(':modules:module-content')
-evaluationDependsOn(':modules:module-entities')
-evaluationDependsOn(':modules:module-interaction')
-evaluationDependsOn(':modules:module-events')
-evaluationDependsOn(':modules:module-math')
-evaluationDependsOn(':modules:module-storage')
-evaluationDependsOn(':modules:module-network')
-evaluationDependsOn(':modules:module-client')
-evaluationDependsOn(':modules:module-interception')
-evaluationDependsOn(':modules:module-command')
-evaluationDependsOn(':modules:module-tasks')
 
 sourceSets.main.resources {
     srcDir('src/generated/resources')
@@ -71,27 +76,7 @@ neoForge {
     mods {
         "${mod_id}" {
             sourceSet(sourceSets.main)
-            sourceSet(project(':common-api').sourceSets.main)
-            sourceSet(project(':core-engine').sourceSets.main)
-            sourceSet(project(':modules:module-recipes').sourceSets.main)
-            sourceSet(project(':modules:module-content').sourceSets.main)
-            sourceSet(project(':modules:module-entities').sourceSets.main)
-            sourceSet(project(':modules:module-interaction').sourceSets.main)
-            sourceSet(project(':modules:module-events').sourceSets.main)
-            sourceSet(project(':modules:module-math').sourceSets.main)
-            sourceSet(project(':modules:module-storage').sourceSets.main)
-            sourceSet(project(':modules:module-network').sourceSets.main)
-            sourceSet(project(':modules:module-client').sourceSets.main)
-            sourceSet(project(':modules:module-interception').sourceSets.main)
-            sourceSet(project(':modules:module-tasks').sourceSets.main)
- sourceSet(project(':modules:module-command').sourceSets.main)
- sourceSet(project(':modules:module-loot').sourceSets.main)
- sourceSet(project(':modules:module-worldgen').sourceSets.main)
- sourceSet(project(':modules:module-noise').sourceSets.main)
- sourceSet(project(':modules:module-dimensions').sourceSets.main)
- sourceSet(project(':modules:module-spawnrules').sourceSets.main)
- sourceSet(project(':modules:module-structures').sourceSets.main)
-  sourceSet(project(':modules:module-update').sourceSets.main)
+            ltModuleProjects.each { dep -> sourceSet(project(dep).sourceSets.main) }
         }
     }
 
@@ -107,86 +92,68 @@ configurations {
     developmentMods
 }
 
-dependencies {
-    compileOnly "mezz.jei:jei-1.21.1-neoforge:19.32.0.359"
-    developmentMods "mezz.jei:jei-1.21.1-neoforge:19.32.0.359"
+def jeiCoord = "mezz.jei:jei-${project.minecraft_version}-neoforge:${project.jei_version}"
+def geckolibCoord = "software.bernie.geckolib:geckolib-neoforge-${project.minecraft_version}:${project.geckolib_version}"
+def imguiVersion = project.imgui_version
+def lwjglVersion = project.lwjgl_version
 
-    implementation "software.bernie.geckolib:geckolib-neoforge-1.21.1:4.7.4"
-    developmentMods "software.bernie.geckolib:geckolib-neoforge-1.21.1:4.7.4"
+dependencies {
+    compileOnly jeiCoord
+    developmentMods jeiCoord
+
+    implementation geckolibCoord
+    developmentMods geckolibCoord
 
     // Embed all submodules into the single output jar via NeoForge Jar-in-Jar
-    jarJar "software.bernie.geckolib:geckolib-neoforge-1.21.1:4.7.4"
-    jarJar(project(':common-api'))
-    jarJar(project(':core-engine'))
-    jarJar(project(':modules:module-recipes'))
-    jarJar(project(':modules:module-content'))
-    jarJar(project(':modules:module-entities'))
-    jarJar(project(':modules:module-interaction'))
-    jarJar(project(':modules:module-events'))
-    jarJar(project(':modules:module-math'))
-    jarJar(project(':modules:module-storage'))
-    jarJar(project(':modules:module-network'))
-    jarJar(project(':modules:module-client'))
-    jarJar(project(':modules:module-interception'))
-    jarJar(project(':modules:module-tasks'))
- jarJar(project(':modules:module-command'))
- jarJar(project(':modules:module-loot'))
- jarJar(project(':modules:module-worldgen'))
- jarJar(project(':modules:module-noise'))
- jarJar(project(':modules:module-dimensions'))
- jarJar(project(':modules:module-spawnrules'))
- jarJar(project(':modules:module-structures'))
- jarJar(project(':modules:module-update'))
-
+    jarJar geckolibCoord
     // Also needed at compile time
-    implementation project(':common-api')
-    implementation project(':core-engine')
-    implementation project(':modules:module-recipes')
-    implementation project(':modules:module-content')
-    implementation project(':modules:module-entities')
-    implementation project(':modules:module-interaction')
-    implementation project(':modules:module-events')
-    implementation project(':modules:module-math')
-    implementation project(':modules:module-storage')
-    implementation project(':modules:module-network')
-    implementation project(':modules:module-client')
-    implementation project(':modules:module-interception')
-    implementation project(':modules:module-tasks')
- implementation project(':modules:module-command')
- implementation project(':modules:module-loot')
- implementation project(':modules:module-worldgen')
- implementation project(':modules:module-noise')
- implementation project(':modules:module-dimensions')
- implementation project(':modules:module-spawnrules')
- implementation project(':modules:module-structures')
- implementation project(':modules:module-update')
+    ltModuleProjects.each { dep ->
+        jarJar(project(dep))
+        implementation project(dep)
+    }
 
     // SPIRV-Cross for user-authored SPIR-V translation (Shaders:registerSpirvPass).
     // The Java part ships inside the mod jar; natives ride the dev classpath.
     // Production native bundling is a follow-up — without natives that path
     // fails loudly and GLSL stays fully working.
-    jarJar "org.lwjgl:lwjgl-spvc:3.3.3"
-    implementation "org.lwjgl:lwjgl-spvc:3.3.3"
-    runtimeOnly "org.lwjgl:lwjgl-spvc:3.3.3:natives-windows"
-    runtimeOnly "org.lwjgl:lwjgl-spvc:3.3.3:natives-linux"
-    runtimeOnly "org.lwjgl:lwjgl-spvc:3.3.3:natives-macos"
-    runtimeOnly "org.lwjgl:lwjgl:3.3.3:natives-windows"
-    runtimeOnly "org.lwjgl:lwjgl:3.3.3:natives-linux"
-    runtimeOnly "org.lwjgl:lwjgl:3.3.3:natives-macos"
+    jarJar "org.lwjgl:lwjgl-spvc:${lwjglVersion}"
+    implementation "org.lwjgl:lwjgl-spvc:${lwjglVersion}"
+    runtimeOnly "org.lwjgl:lwjgl-spvc:${lwjglVersion}:natives-windows"
+
+    // Dear ImGui for in-game GUI Editor
+    implementation "io.github.spair:imgui-java-binding:${imguiVersion}"
+    implementation("io.github.spair:imgui-java-lwjgl3:${imguiVersion}") {
+        exclude group: 'org.lwjgl'
+    }
+    runtimeOnly "io.github.spair:imgui-java-natives-windows:${imguiVersion}"
+    runtimeOnly "io.github.spair:imgui-java-natives-linux:${imguiVersion}"
+    runtimeOnly "io.github.spair:imgui-java-natives-macos:${imguiVersion}"
+    jarJar "io.github.spair:imgui-java-binding:${imguiVersion}"
+    jarJar("io.github.spair:imgui-java-lwjgl3:${imguiVersion}") {
+        exclude group: 'org.lwjgl'
+    }
+    jarJar "io.github.spair:imgui-java-natives-windows:${imguiVersion}"
+    jarJar "io.github.spair:imgui-java-natives-linux:${imguiVersion}"
+    jarJar "io.github.spair:imgui-java-natives-macos:${imguiVersion}"
+    runtimeOnly "org.lwjgl:lwjgl-spvc:${lwjglVersion}:natives-linux"
+    runtimeOnly "org.lwjgl:lwjgl-spvc:${lwjglVersion}:natives-macos"
+    runtimeOnly "org.lwjgl:lwjgl:${lwjglVersion}:natives-windows"
+    runtimeOnly "org.lwjgl:lwjgl:${lwjglVersion}:natives-linux"
+    runtimeOnly "org.lwjgl:lwjgl:${lwjglVersion}:natives-macos"
 
     // JEI integration for checking recipes in-game easily
-    implementation "mezz.jei:jei-1.21.1-neoforge:19.32.0.359"
+    implementation jeiCoord
 
     // FML runtime classpath overrides for dev environment
     additionalRuntimeClasspath "io.github.kienpc1234:luava:${luava_version}"
-    additionalRuntimeClasspath "org.mongodb:bson:5.1.0"
+    additionalRuntimeClasspath "org.mongodb:bson:${project.bson_version}"
 
     testImplementation "io.github.kienpc1234:luava:${luava_version}"
-    testImplementation "org.mongodb:bson:5.1.0"
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.2'
+    testImplementation "org.mongodb:bson:${project.bson_version}"
+    testImplementation "org.junit.jupiter:junit-jupiter-api:${project.junit_version}"
+    testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:${project.junit_version}"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    testImplementation 'com.google.code.gson:gson:2.10.1'
+    testImplementation "com.google.code.gson:gson:${project.gson_version}"
 }
 
 test {
@@ -249,5 +216,3 @@ neoForge.ideSyncTask generateModMetadata
 neoForge.ideSyncTask copyDevelopmentMods
 neoForge.ideSyncTask syncLuaMods
 neoForge.ideSyncTask syncLuaConfig
-
-

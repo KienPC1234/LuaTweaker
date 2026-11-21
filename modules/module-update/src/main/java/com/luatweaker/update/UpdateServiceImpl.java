@@ -17,14 +17,18 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * Declarative update checker: reads the {@code update_url} from every loaded
- * mod's manifest.json, downloads the feed asynchronously on a daemon thread
- * (never on a game thread and never inside the Lua VM) and caches the result.
+ * mod's manifest.json, downloads the feed asynchronously (never on a game
+ * thread and never inside the Lua VM) and caches the result.
+ *
+ * <p>Background work runs on the common ForkJoinPool via
+ * {@link CompletableFuture#runAsync(Runnable)}: its worker threads are
+ * daemons, so pending checks never block JVM exit, and checks are rare (one
+ * per mod version per session), so no dedicated pool is needed.</p>
  *
  * <p>{@link #checkAll()} is invoked by the platform after every mod load
  * cycle. Lua code only ever reads the cached result through
@@ -33,13 +37,10 @@ import java.util.concurrent.Executors;
  */
 public class UpdateServiceImpl implements IUpdateService {
 
+    private static final String LOG_PREFIX = "[Update][";
+
     private static final Map<String, UpdateStatus> STATUS = new ConcurrentHashMap<>();
     private static final Set<String> SCHEDULED = ConcurrentHashMap.newKeySet();
-    private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(2, r -> {
-        Thread t = new Thread(r, "luatweaker-update-checker");
-        t.setDaemon(true);
-        return t;
-    });
 
     private final ILuaEngine engine;
 
@@ -55,32 +56,40 @@ public class UpdateServiceImpl implements IUpdateService {
      */
     public static void checkAll() {
         for (LuaMod mod : LuaModManager.getLoadedMods().values()) {
-            LuaModManifest manifest = mod.getManifest();
-            String updateUrl = manifest.updateUrl();
-            if (updateUrl == null || updateUrl.isBlank()) continue;
+            scheduleCheckFor(mod);
+        }
+    }
 
-            String modId = manifest.id();
-            UpdateStatus stored = STATUS.get(modId);
-            boolean needsCheck = stored == null || stored.checking()
-                    || !stored.currentVersion().equals(manifest.version());
-            if (needsCheck && SCHEDULED.add(modId)) {
-                STATUS.put(modId, new UpdateStatus(modId, manifest.version(), updateUrl,
-                        null, null, null, null, true, null));
-                EXECUTOR.submit(() -> {
-                    try {
-                        UpdateStatus result = UpdateChecker.check(modId, manifest.version(), updateUrl);
-                        recordResult(result);
-                    } catch (Exception e) {
-                        // UpdateChecker never throws; defensive catch stays loud.
-                        String msg = "update check crashed: " + e.getMessage();
-                        LuaTweakerLog.get().error(LogStage.SYSTEM, "[Update][" + modId + "] " + msg);
-                        recordResult(new UpdateStatus(modId, manifest.version(), updateUrl,
-                                null, null, null, null, false, msg));
-                    } finally {
-                        SCHEDULED.remove(modId);
-                    }
-                });
-            }
+    /**
+     * Schedules one mod's feed fetch when its installed version is unchecked or
+     * changed. {@link UpdateChecker#check} upholds a never-throws contract (all
+     * transport and parse failures become terminal statuses), so the task body
+     * needs no catch: the finally still releases the in-flight marker.
+     */
+    private static void scheduleCheckFor(LuaMod mod) {
+        LuaModManifest manifest = mod.getManifest();
+        String updateUrl = manifest.updateUrl();
+        if (updateUrl == null || updateUrl.isBlank()) {
+            return;
+        }
+
+        String modId = manifest.id();
+        UpdateStatus stored = STATUS.get(modId);
+        boolean needsCheck = stored == null || stored.checking()
+                || !stored.currentVersion().equals(manifest.version());
+        if (!needsCheck || !SCHEDULED.add(modId)) {
+            return;
+        }
+        STATUS.put(modId, new UpdateStatus(modId, manifest.version(), updateUrl,
+                null, null, null, null, true, null));
+        CompletableFuture.runAsync(() -> runCheck(modId, manifest.version(), updateUrl));
+    }
+
+    private static void runCheck(String modId, String version, String updateUrl) {
+        try {
+            recordResult(UpdateChecker.check(modId, version, updateUrl));
+        } finally {
+            SCHEDULED.remove(modId);
         }
     }
 
@@ -112,16 +121,16 @@ public class UpdateServiceImpl implements IUpdateService {
     private static void logResult(@NotNull UpdateStatus status) {
         if (status.error() != null) {
             LuaTweakerLog.get().error(LogStage.SYSTEM,
-                    "[Update][" + status.modId() + "] check failed: " + status.error());
+                    LOG_PREFIX + status.modId() + "] check failed: " + status.error());
         } else if (status.hasUpdate()) {
             LuaTweakerLog.get().info(LogStage.SYSTEM,
-                    "[Update][" + status.modId() + "] Update available: v" + status.currentVersion()
+                    LOG_PREFIX + status.modId() + "] Update available: v" + status.currentVersion()
                             + " -> v" + status.latestVersion()
                             + (status.updateName() == null || status.updateName().isEmpty()
                                     ? "" : " (" + status.updateName() + ")"));
         } else {
             LuaTweakerLog.get().info(LogStage.SYSTEM,
-                    "[Update][" + status.modId() + "] Up to date (v" + status.currentVersion() + ")");
+                    LOG_PREFIX + status.modId() + "] Up to date (v" + status.currentVersion() + ")");
         }
     }
 
@@ -145,12 +154,24 @@ public class UpdateServiceImpl implements IUpdateService {
         table.rawset("HasUpdate", status.hasUpdate());
         table.rawset("Checking", status.checking());
         table.rawset("CurrentVersion", status.currentVersion());
-        if (status.updateUrl() != null) table.rawset("UpdateUrl", status.updateUrl());
-        if (status.latestVersion() != null) table.rawset("LatestVersion", status.latestVersion());
-        if (status.updateName() != null) table.rawset("Name", status.updateName());
-        if (status.downloadUrl() != null) table.rawset("DownloadUrl", status.downloadUrl());
-        if (status.changelog() != null) table.rawset("Changelog", status.changelog());
-        if (status.error() != null) table.rawset("Error", status.error());
+        if (status.updateUrl() != null) {
+            table.rawset("UpdateUrl", status.updateUrl());
+        }
+        if (status.latestVersion() != null) {
+            table.rawset("LatestVersion", status.latestVersion());
+        }
+        if (status.updateName() != null) {
+            table.rawset("Name", status.updateName());
+        }
+        if (status.downloadUrl() != null) {
+            table.rawset("DownloadUrl", status.downloadUrl());
+        }
+        if (status.changelog() != null) {
+            table.rawset("Changelog", status.changelog());
+        }
+        if (status.error() != null) {
+            table.rawset("Error", status.error());
+        }
         return table;
     }
 }

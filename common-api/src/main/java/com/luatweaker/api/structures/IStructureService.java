@@ -31,8 +31,7 @@ public interface IStructureService {
     @LuaDoc(
         description = "Register a single-template structure. Template NBT must exist under the mod data roots.",
         params = {"structureId: string - structure ID (e.g. 'mymod:ancient_temple')",
-                  "config: table - {template, spawnBiomes[], spacing, separation, spawnChance, lootTables}"},
-        returnType = "void"
+                  "config: table - {template, spawnBiomes[], spacing, separation, spawnChance, lootTables}"}
     )
     void register(@NotNull String structureId, @NotNull ILuaTable config);
 
@@ -50,7 +49,7 @@ public interface IStructureService {
     @NotNull
     Map<String, Object> getRegistrations();
 
-    @LuaDoc(description = "Remove every structure registration.", returnType = "void")
+    @LuaDoc(description = "Remove every structure registration.")
     void clearAll();
 
     @LuaDoc(

@@ -14,22 +14,22 @@ import java.util.Arrays;
 final class BinaryWriter {
 
     private byte[] buffer = new byte[256];
-    private int size;
+    private int count;
 
     void writeByte(int value) {
         ensure(1);
-        buffer[size++] = (byte) value;
+        buffer[count++] = (byte) value;
     }
 
     void writeVarInt(int value) {
         long remaining = value & 0xFFFF_FFFFL;
         while (remaining >= 0x80L) {
             ensure(1);
-            buffer[size++] = (byte) ((remaining & 0x7FL) | 0x80L);
+            buffer[count++] = (byte) ((remaining & 0x7FL) | 0x80L);
             remaining >>>= 7;
         }
         ensure(1);
-        buffer[size++] = (byte) remaining;
+        buffer[count++] = (byte) remaining;
     }
 
     void writeZigZagInt(int value) {
@@ -40,14 +40,14 @@ final class BinaryWriter {
         long bits = Double.doubleToLongBits(value);
         ensure(8);
         for (int shift = 56; shift >= 0; shift -= 8) {
-            buffer[size++] = (byte) (bits >>> shift);
+            buffer[count++] = (byte) (bits >>> shift);
         }
     }
 
     void writeBytes(byte @NotNull [] data) {
         ensure(data.length);
-        System.arraycopy(data, 0, buffer, size, data.length);
-        size += data.length;
+        System.arraycopy(data, 0, buffer, count, data.length);
+        count += data.length;
     }
 
     void writeUtf8(@NotNull String value) {
@@ -70,15 +70,15 @@ final class BinaryWriter {
     }
 
     int size() {
-        return size;
+        return count;
     }
 
     byte @NotNull [] toByteArray() {
-        return Arrays.copyOf(buffer, size);
+        return Arrays.copyOf(buffer, count);
     }
 
     private void ensure(int extra) {
-        int required = size + extra;
+        int required = count + extra;
         if (required <= buffer.length) {
             return;
         }

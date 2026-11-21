@@ -45,7 +45,7 @@ public interface ILuaTweakerCommand {
      * @param args    Remaining arguments after the sub-command literal.
      * @return        Brigadier result code (1 = success, 0 = failure).
      */
-    int execute(ICommandSender sender, String[] args);
+    int execute(ICommandSender sender, String... args);
 
     /**
      * Execute the command with the raw argument tail as typed by the user.

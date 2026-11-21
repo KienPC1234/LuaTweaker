@@ -3,6 +3,7 @@ package com.luatweaker.math;
 public record Color3(double r, double g, double b) {
     public static final Color3 BLACK = new Color3(0, 0, 0);
     public static final Color3 WHITE = new Color3(1, 1, 1);
+    private static final int HEX_DIGITS = 6;
 
     public static Color3 fromRGB(double r, double g, double b) {
         return new Color3(r / 255.0, g / 255.0, b / 255.0);
@@ -10,7 +11,7 @@ public record Color3(double r, double g, double b) {
 
     public static Color3 fromHex(String hex) {
         String cleanHex = hex.replace("#", "");
-        if (cleanHex.length() == 6) {
+        if (cleanHex.length() == HEX_DIGITS) {
             int rInt = Integer.parseInt(cleanHex.substring(0, 2), 16);
             int gInt = Integer.parseInt(cleanHex.substring(2, 4), 16);
             int bInt = Integer.parseInt(cleanHex.substring(4, 6), 16);

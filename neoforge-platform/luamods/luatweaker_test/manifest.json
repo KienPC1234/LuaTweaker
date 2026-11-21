@@ -5,6 +5,9 @@
   "version": "1.0.0",
   "main": "main.lua",
   "dependencies": [],
+  "integrations": {
+    "integration_demo_host": {"entry": "integrations/integration_demo.lua"}
+  },
   "permissions": [
     "commands.execute"
   ],

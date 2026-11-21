@@ -37,13 +37,21 @@ public final class NbtStructureLoader {
         String relative = parts[0] + File.separator + "structure" + File.separator
                 + parts[1].replace("/", File.separator) + ".nbt";
         for (File root : dataRoots) {
-            if (root == null) {
-                continue;
+            Optional<File> found = findUnderRoot(root, relative);
+            if (found.isPresent()) {
+                return found;
             }
-            File candidate = new File(root, relative);
-            if (candidate.isFile() && candidate.length() > 0) {
-                return Optional.of(candidate);
-            }
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<File> findUnderRoot(File root, @NotNull String relative) {
+        if (root == null) {
+            return Optional.empty();
+        }
+        File candidate = new File(root, relative);
+        if (candidate.isFile() && candidate.length() > 0) {
+            return Optional.of(candidate);
         }
         return Optional.empty();
     }
@@ -63,13 +71,7 @@ public final class NbtStructureLoader {
     /** Splits and validates {@code "namespace:path"} (optional trailing {@code .nbt}). */
     @NotNull
     static String[] splitTemplateId(@NotNull String templateId) {
-        if (templateId == null || templateId.isBlank()) {
-            throw new IllegalArgumentException("template must not be blank (e.g. 'mymod:structures/temple')");
-        }
-        String normalized = templateId.strip();
-        if (normalized.endsWith(".nbt")) {
-            normalized = normalized.substring(0, normalized.length() - ".nbt".length());
-        }
+        String normalized = stripNbtSuffix(requireNonBlank(templateId));
         int colon = normalized.indexOf(':');
         if (colon <= 0 || colon == normalized.length() - 1) {
             throw new IllegalArgumentException("template must be 'namespace:path' (e.g. 'mymod:structures/temple'),"
@@ -77,9 +79,31 @@ public final class NbtStructureLoader {
         }
         String namespace = normalized.substring(0, colon);
         String path = normalized.substring(colon + 1);
+        rejectTraversal(templateId, namespace, path);
+        return new String[]{namespace, path};
+    }
+
+    @NotNull
+    private static String requireNonBlank(@NotNull String templateId) {
+        if (templateId == null || templateId.isBlank()) {
+            throw new IllegalArgumentException("template must not be blank (e.g. 'mymod:structures/temple')");
+        }
+        return templateId;
+    }
+
+    @NotNull
+    private static String stripNbtSuffix(@NotNull String templateId) {
+        String normalized = templateId.strip();
+        if (normalized.endsWith(".nbt")) {
+            return normalized.substring(0, normalized.length() - ".nbt".length());
+        }
+        return normalized;
+    }
+
+    private static void rejectTraversal(@NotNull String templateId, @NotNull String namespace,
+                                        @NotNull String path) {
         if (path.contains("..") || path.contains("\\") || path.startsWith("/") || namespace.contains("/")) {
             throw new IllegalArgumentException("template must not contain path traversal, got: " + templateId);
         }
-        return new String[]{namespace, path};
     }
 }

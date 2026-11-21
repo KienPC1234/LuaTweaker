@@ -15,6 +15,7 @@ LuaTweaker provides health diagnostics and hot-reloading for modpack creators, p
 | `/lt debug [on\|off]` | owner (4) | Toggles debug mode (no arg prints state). |
 | `/lt doctor` | op (2) | Health diagnostics: engine, loaded mods, per-mod load errors, update checks, services, Lua tasks, Lua-registered commands. |
 | `/lt dimension <list\|info <id>\|tp <id>\|bench <id> [radius]>` | op (2) | Lists Lua-registered dimensions, prints config, teleports the player (`tp` is players only), and measures the Lua terrain pipeline (`bench`, radius 0-8). |
+| `/lt spawn <list <id>\|clear [id]\|test [id]\|spawn <entity> [count]>` | op (2) | Inspects a dimension's declarative spawn rules, evaluates them at your position, clears them, or force-spawns a validated entity at your feet. `test`/`spawn` are players only. |
 | `/lt help` | all (0) | Lists core commands plus every live Lua-registered command (`/<name>`, mod, op level). |
 | `/<mod-command> [args]` | per definition | Top-level commands from `Commands:Register("name", {...})`; slash-separated names nest (`shop/buy`). Hidden from tab-complete and rejected at parse time without the required op level. |
 

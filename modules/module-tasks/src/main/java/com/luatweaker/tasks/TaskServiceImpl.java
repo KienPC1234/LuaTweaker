@@ -8,10 +8,12 @@ import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.luava.runtime.LuaException;
 
 import java.util.Comparator;
 import java.util.Objects;
 import java.util.Queue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -40,14 +42,14 @@ public class TaskServiceImpl implements ITaskService {
     private final AtomicLong slowTasks = new AtomicLong();
     private final AtomicLong executedTasks = new AtomicLong();
     private final Queue<PendingTask> deferredTasks = new ConcurrentLinkedQueue<>();
-    private final PriorityBlockingQueue<PendingTask> delayedTasks =
+    private final BlockingQueue<PendingTask> delayedTasks =
             new PriorityBlockingQueue<>(11, Comparator.comparingLong(PendingTask::triggerAtNanos));
     /**
      * Maintained by hand because {@link ConcurrentLinkedQueue#size()} walks the whole queue;
      * calling it on every enqueue made a full queue quadratic.
      */
     private final AtomicInteger queuedTasks = new AtomicInteger();
-    private volatile int lastTickExecuted;
+    private final AtomicInteger lastTickExecuted = new AtomicInteger();
 
     private record PendingTask(long triggerAtNanos, ILuaValue task, ILuaValue[] args) {
     }
@@ -74,7 +76,7 @@ public class TaskServiceImpl implements ITaskService {
         if (task.isFunction()) {
             long delayNanos = 0L;
             if (Double.isFinite(seconds) && seconds > 0.0) {
-                delayNanos = (long) Math.min(seconds * NANOS_PER_SECOND, (double) Long.MAX_VALUE / 4.0);
+                delayNanos = (long) Math.min(seconds * NANOS_PER_SECOND, Long.MAX_VALUE / 4.0);
             }
             enqueue(delayedTasks, new PendingTask(nanoClock.getAsLong() + delayNanos, task, args));
         }
@@ -99,7 +101,11 @@ public class TaskServiceImpl implements ITaskService {
     public void tick(@NotNull ILuaEngine engine) {
         int executed = 0;
         PendingTask pending;
-        while (executed < MAX_TASKS_PER_TICK && (pending = deferredTasks.poll()) != null) {
+        while (executed < MAX_TASKS_PER_TICK) {
+            pending = deferredTasks.poll();
+            if (pending == null) {
+                break;
+            }
             queuedTasks.decrementAndGet();
             execute(engine, pending, "deferred");
             executed++;
@@ -123,7 +129,7 @@ public class TaskServiceImpl implements ITaskService {
             execute(engine, due, "delayed");
             executed++;
         }
-        lastTickExecuted = executed;
+        lastTickExecuted.set(executed);
     }
 
     public int getQueuedTaskCount() {
@@ -143,7 +149,7 @@ public class TaskServiceImpl implements ITaskService {
     }
 
     public int getLastTickExecuted() {
-        return lastTickExecuted;
+        return lastTickExecuted.get();
     }
 
     private void enqueue(Queue<PendingTask> queue, PendingTask task) {
@@ -176,7 +182,7 @@ public class TaskServiceImpl implements ITaskService {
         try {
             runAsCoroutine(engine, pending);
             executedTasks.incrementAndGet();
-        } catch (RuntimeException e) {
+        } catch (LuaException e) {
             LuaTweakerLog.get().error(LogStage.RUNTIME_ERROR,
                     "Lua " + kind + " task failed: "
                             + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));

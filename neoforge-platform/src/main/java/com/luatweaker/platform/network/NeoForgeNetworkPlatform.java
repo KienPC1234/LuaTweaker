@@ -14,6 +14,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.stream.IntStream;
 
 /**
  * NeoForge transport: turns one logical message into one or more {@link LuaTweakerPayload}
@@ -24,6 +25,7 @@ import java.util.function.Consumer;
  * connection down.</p>
  */
 public class NeoForgeNetworkPlatform implements IPlatformNetwork {
+    private static final int CHUNKED_FRAME_THRESHOLD = 1;
 
     @Override
     public void sendPayloadBytes(String playerUuid, String channelName, byte[] data) {
@@ -66,19 +68,26 @@ public class NeoForgeNetworkPlatform implements IPlatformNetwork {
             return;
         }
         int total = chunks.size();
-        if (total > 1) {
+        if (total > CHUNKED_FRAME_THRESHOLD) {
             LuaTweakerLog.get().debug(LogStage.SYSTEM,
                     "[Network] Split '" + channelName + "' into " + total + " frames ("
                             + data.length + " bytes)");
         }
-        for (int index = 0; index < total; index++) {
-            sender.accept(new LuaTweakerPayload(channelName, index, total, chunks.get(index)));
-        }
+        // Every frame carries its own sequence index and slice, so each one is a distinct
+        // message; nothing can be shared between iterations.
+        IntStream.range(0, total)
+                .mapToObj(index -> new LuaTweakerPayload(channelName, index, total, chunks.get(index)))
+                .forEach(sender);
     }
 
     private static @Nullable ServerPlayer resolvePlayer(@NotNull String playerUuid,
                                                         @NotNull String channelName) {
-        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        return resolvePlayerOn(ServerLifecycleHooks.getCurrentServer(), playerUuid, channelName);
+    }
+
+    private static @Nullable ServerPlayer resolvePlayerOn(@Nullable MinecraftServer server,
+                                                          @NotNull String playerUuid,
+                                                          @NotNull String channelName) {
         if (server == null) {
             LuaTweakerLog.get().warn(LogStage.SYSTEM,
                     "[Network] Dropped server packet '" + channelName + "': no server running");

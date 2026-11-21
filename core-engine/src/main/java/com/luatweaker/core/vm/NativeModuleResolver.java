@@ -1,11 +1,18 @@
 package com.luatweaker.core.vm;
 
+import com.luatweaker.api.log.LogStage;
+import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
+import org.luava.binding.LuaDataConverter;
+import org.luava.runtime.LuaNil;
+import org.luava.runtime.LuaValue;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -15,6 +22,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * (first non-nil wins). Extracted from the engine so it stays focused on VM lifecycle.
  */
 public final class NativeModuleResolver {
+
+    /** Prefix for fully-qualified module aliases. */
+    private static final String LUA_TWEAKER_PREFIX = "LuaTweaker.";
 
     private static final Map<String, String[]> MODULE_GLOBALS = buildModuleGlobals();
     private static final Map<String, String[]> DYNAMIC_ALIASES = new ConcurrentHashMap<>();
@@ -26,11 +36,46 @@ public final class NativeModuleResolver {
      * Plugin aliases never override built-in keys; when the name already exists
      * the built-in mapping wins so core behaviour stays stable.
      */
-    public static void registerAlias(String modName, String[] globalKeys) {
+    public static void registerAlias(String modName, String... globalKeys) {
         if (modName == null || modName.isBlank() || globalKeys == null || globalKeys.length == 0) {
             return;
         }
         DYNAMIC_ALIASES.putIfAbsent(modName, globalKeys.clone());
+    }
+
+    /**
+     * Standardized registration for built-in or plugin services.
+     * Maps primaryName, "LuaTweaker." + primaryName, and all aliases to the global lookup keys.
+     */
+    public static void registerModule(String primaryName, String... aliases) {
+        if (primaryName == null || primaryName.isBlank()) {
+            return;
+        }
+        String[] keyArray = dedupeKeys(primaryName, aliases);
+        registerAlias(primaryName, keyArray);
+        registerAlias(LUA_TWEAKER_PREFIX + primaryName, keyArray);
+        if (aliases == null) {
+            return;
+        }
+        for (String alias : aliases) {
+            if (alias != null && !alias.isBlank()) {
+                registerAlias(alias, keyArray);
+                registerAlias(LUA_TWEAKER_PREFIX + alias, keyArray);
+            }
+        }
+    }
+
+    private static String[] dedupeKeys(String primaryName, String... aliases) {
+        List<String> keys = new ArrayList<>();
+        keys.add(primaryName);
+        if (aliases != null) {
+            for (String alias : aliases) {
+                if (alias != null && !alias.isBlank() && !keys.contains(alias)) {
+                    keys.add(alias);
+                }
+            }
+        }
+        return keys.toArray(new String[0]);
     }
 
     /** Test-only hook to isolate unit tests sharing this static map. */
@@ -38,109 +83,69 @@ public final class NativeModuleResolver {
         DYNAMIC_ALIASES.clear();
     }
 
+    /** {aliases..., keys...} rows: every alias resolves through the same global keys. */
+    private static void service(Map<String, String[]> target, String[] aliases, String... keys) {
+        for (String alias : aliases) {
+            target.put(alias, keys);
+        }
+    }
+
     private static Map<String, String[]> buildModuleGlobals() {
-        Map<String, String[]> m = new HashMap<>();
-        m.put("LuaTweaker.Content", new String[]{"Content", "startup"});
-        m.put("Content", new String[]{"Content", "startup"});
-        m.put("startup", new String[]{"Content", "startup"});
+        Map<String, String[]> globals =
+                Collections.synchronizedMap(new LinkedHashMap<>());
+        service(globals, new String[]{"Content", "LuaTweaker.Content", "startup"},
+                "Content", "startup");
         // The content builder is also registered as the "Startup" service, so scripts may
         // require it under that name. Keep require() in sync with the service registry.
-        m.put("LuaTweaker.Startup", new String[]{"Content", "startup"});
-        m.put("Startup", new String[]{"Content", "startup"});
-        m.put("LuaTweaker.Recipe", new String[]{"Recipe", "recipes"});
-        m.put("Recipe", new String[]{"Recipe", "recipes"});
-        m.put("Recipes", new String[]{"Recipe", "recipes"});
-        m.put("recipes", new String[]{"Recipe", "recipes"});
-        m.put("LuaTweaker.Events", new String[]{"Events", "events"});
-        m.put("Events", new String[]{"Events", "events"});
-        m.put("events", new String[]{"Events", "events"});
-        m.put("LuaTweaker.World", new String[]{"World", "Workspace"});
-        m.put("World", new String[]{"World", "Workspace"});
-        m.put("Workspace", new String[]{"World", "Workspace"});
-        m.put("workspace", new String[]{"World", "Workspace"});
-        m.put("LuaTweaker.Task", new String[]{"Task", "task"});
-        m.put("Task", new String[]{"Task", "task"});
-        m.put("task", new String[]{"Task", "task"});
-        m.put("LuaTweaker.Entities", new String[]{"Entities", "EntityService"});
-        m.put("Entities", new String[]{"Entities", "EntityService"});
-        m.put("EntityService", new String[]{"Entities", "EntityService"});
-        m.put("LuaTweaker.Players", new String[]{"Players"});
-        m.put("Players", new String[]{"Players"});
-        m.put("LuaTweaker.AIGoals", new String[]{"AIGoals"});
-        m.put("AIGoals", new String[]{"AIGoals"});
-        m.put("LuaTweaker.Loot", new String[]{"Loot"});
-        m.put("Loot", new String[]{"Loot"});
-        m.put("LuaTweaker.Worldgen", new String[]{"Worldgen"});
-        m.put("Worldgen", new String[]{"Worldgen"});
-        m.put("LuaTweaker.Noise", new String[]{"Noise"});
-        m.put("Noise", new String[]{"Noise"});
-        m.put("LuaTweaker.Dimensions", new String[]{"Dimensions"});
-        m.put("Dimensions", new String[]{"Dimensions"});
-        m.put("LuaTweaker.SpawnRules", new String[]{"SpawnRules"});
-        m.put("SpawnRules", new String[]{"SpawnRules"});
-        m.put("LuaTweaker.Structures", new String[]{"Structures"});
-        m.put("Structures", new String[]{"Structures"});
-        m.put("LuaTweaker.Biomes", new String[]{"Biomes"});
-        m.put("Biomes", new String[]{"Biomes"});
-        m.put("LuaTweaker.Storage", new String[]{"Storage", "storage"});
-        m.put("Storage", new String[]{"Storage", "storage"});
-        m.put("storage", new String[]{"Storage", "storage"});
-        m.put("LuaTweaker.WorldStorage", new String[]{"WorldStorage"});
-        m.put("WorldStorage", new String[]{"WorldStorage"});
-        m.put("LuaTweaker.PlayerStorage", new String[]{"PlayerStorage"});
-        m.put("PlayerStorage", new String[]{"PlayerStorage"});
-        m.put("LuaTweaker.SessionStorage", new String[]{"SessionStorage"});
-        m.put("SessionStorage", new String[]{"SessionStorage"});
-        m.put("LuaTweaker.Datapack", new String[]{"Datapack"});
-        m.put("Datapack", new String[]{"Datapack"});
-        m.put("datapack", new String[]{"Datapack"});
-        m.put("LuaTweaker.Network", new String[]{"NetworkService"});
-        m.put("Network", new String[]{"NetworkService"});
-        m.put("NetworkService", new String[]{"NetworkService"});
-        m.put("LuaTweaker.Interception", new String[]{"Interception", "InterceptionService"});
-        m.put("Interception", new String[]{"Interception", "InterceptionService"});
-        m.put("InterceptionService", new String[]{"Interception", "InterceptionService"});
-        m.put("LuaTweaker.Commands", new String[]{"Commands"});
-        m.put("Commands", new String[]{"Commands"});
-        m.put("LuaTweaker.Update", new String[]{"Update"});
-        m.put("Update", new String[]{"Update"});
-        m.put("LuaTweaker.Net", new String[]{"Net"});
-        m.put("Net", new String[]{"Net"});
-        m.put("LuaTweaker.WebService", new String[]{"Net"});
-        m.put("WebService", new String[]{"Net"});
-        m.put("LuaTweaker.Camera", new String[]{"Camera"});
-        m.put("Camera", new String[]{"Camera"});
-        m.put("LuaTweaker.Client", new String[]{"Client", "ClientService"});
-        m.put("LuaTweaker.ClientService", new String[]{"Client", "ClientService"});
-        m.put("Client", new String[]{"Client", "ClientService"});
-        m.put("ClientService", new String[]{"Client", "ClientService"});
-        m.put("LuaTweaker.ClientEffects", new String[]{"ClientEffects"});
-        m.put("ClientEffects", new String[]{"ClientEffects"});
-        m.put("LuaTweaker.GuiService", new String[]{"GuiService"});
-        m.put("GuiService", new String[]{"GuiService"});
-        m.put("LuaTweaker.RenderService", new String[]{"RenderService"});
-        m.put("RenderService", new String[]{"RenderService"});
-        m.put("LuaTweaker.RunService", new String[]{"RunService"});
-        m.put("RunService", new String[]{"RunService"});
-        m.put("LuaTweaker.KeyBindService", new String[]{"KeyBindService"});
-        m.put("KeyBindService", new String[]{"KeyBindService"});
-        m.put("LuaTweaker.Shaders", new String[]{"Shaders"});
-        m.put("Shaders", new String[]{"Shaders"});
-        m.put("LuaTweaker.Signal", new String[]{"Signal"});
-        m.put("Signal", new String[]{"Signal"});
-        m.put("LuaTweaker.Brain", new String[]{"Brain"});
-        m.put("Brain", new String[]{"Brain"});
-        m.put("LuaTweaker.Utils", new String[]{"Utils"});
-        m.put("Utils", new String[]{"Utils"});
-        m.put("LuaTweaker.TweenService", new String[]{"TweenService"});
-        m.put("TweenService", new String[]{"TweenService"});
-        m.put("LuaTweaker.Math.Vector3", new String[]{"Vector3"});
-        m.put("Vector3", new String[]{"Vector3"});
-        m.put("LuaTweaker.Math.Vector2", new String[]{"Vector2"});
-        m.put("Vector2", new String[]{"Vector2"});
-        m.put("LuaTweaker.Math.Color3", new String[]{"Color3"});
-        m.put("Color3", new String[]{"Color3"});
-        return Collections.unmodifiableMap(m);
+        service(globals, new String[]{"LuaTweaker.Startup", "Startup"}, "Content", "startup");
+        service(globals, new String[]{"Recipe", "LuaTweaker.Recipe", "Recipes", "recipes"},
+                "Recipe", "recipes");
+        service(globals, new String[]{"Events", "LuaTweaker.Events", "events"}, "Events", "events");
+        service(globals, new String[]{"World", "LuaTweaker.World", "Workspace", "workspace"},
+                "World", "Workspace");
+        service(globals, new String[]{"Task", "LuaTweaker.Task", "task"}, "Task", "task");
+        service(globals, new String[]{"Entities", "LuaTweaker.Entities", "EntityService"},
+                "Entities", "EntityService");
+        service(globals, new String[]{"Players", "LuaTweaker.Players"}, "Players");
+        service(globals, new String[]{"AIGoals", "LuaTweaker.AIGoals"}, "AIGoals");
+        service(globals, new String[]{"Loot", "LuaTweaker.Loot"}, "Loot");
+        service(globals, new String[]{"Worldgen", "LuaTweaker.Worldgen"}, "Worldgen");
+        service(globals, new String[]{"Noise", "LuaTweaker.Noise"}, "Noise");
+        service(globals, new String[]{"Dimensions", "LuaTweaker.Dimensions"}, "Dimensions");
+        service(globals, new String[]{"SpawnRules", "LuaTweaker.SpawnRules"}, "SpawnRules");
+        service(globals, new String[]{"Structures", "LuaTweaker.Structures"}, "Structures");
+        service(globals, new String[]{"Biomes", "LuaTweaker.Biomes"}, "Biomes");
+        service(globals, new String[]{"Storage", "LuaTweaker.Storage", "storage"}, "Storage", "storage");
+        service(globals, new String[]{"WorldStorage", "LuaTweaker.WorldStorage"}, "WorldStorage");
+        service(globals, new String[]{"PlayerStorage", "LuaTweaker.PlayerStorage"}, "PlayerStorage");
+        service(globals, new String[]{"SessionStorage", "LuaTweaker.SessionStorage"}, "SessionStorage");
+        service(globals, new String[]{"Datapack", "LuaTweaker.Datapack", "datapack"}, "Datapack");
+        service(globals, new String[]{"Network", "LuaTweaker.Network", "NetworkService"}, "NetworkService");
+        service(globals, new String[]{"Interception", "LuaTweaker.Interception", "InterceptionService"},
+                "Interception", "InterceptionService");
+        service(globals, new String[]{"Commands", "LuaTweaker.Commands"}, "Commands");
+        service(globals, new String[]{"Json", "LuaTweaker.Json", "json"}, "Json", "json");
+        service(globals, new String[]{"Update", "LuaTweaker.Update"}, "Update");
+        service(globals, new String[]{"Net", "LuaTweaker.Net"}, "Net");
+        service(globals, new String[]{"WebService", "LuaTweaker.WebService"}, "Net");
+        service(globals, new String[]{"Camera", "LuaTweaker.Camera"}, "Camera");
+        service(globals, new String[]{"Client", "LuaTweaker.Client", "ClientService",
+                "LuaTweaker.ClientService"}, "Client", "ClientService");
+        service(globals, new String[]{"ClientEffects", "LuaTweaker.ClientEffects"}, "ClientEffects");
+        service(globals, new String[]{"GuiService", "LuaTweaker.GuiService"}, "GuiService");
+        service(globals, new String[]{"RenderService", "LuaTweaker.RenderService"}, "RenderService");
+        service(globals, new String[]{"RunService", "LuaTweaker.RunService"}, "RunService");
+        service(globals, new String[]{"KeyBindService", "LuaTweaker.KeyBindService"}, "KeyBindService");
+        service(globals, new String[]{"Shaders", "LuaTweaker.Shaders"}, "Shaders");
+        service(globals, new String[]{"ImGui", "LuaTweaker.ImGui"}, "ImGui");
+        service(globals, new String[]{"Signal", "LuaTweaker.Signal"}, "Signal");
+        service(globals, new String[]{"Brain", "LuaTweaker.Brain"}, "Brain");
+        service(globals, new String[]{"Utils", "LuaTweaker.Utils"}, "Utils");
+        service(globals, new String[]{"TweenService", "LuaTweaker.TweenService"}, "TweenService");
+        service(globals, new String[]{"Vector3", "LuaTweaker.Math.Vector3"}, "Vector3");
+        service(globals, new String[]{"Vector2", "LuaTweaker.Math.Vector2"}, "Vector2");
+        service(globals, new String[]{"Color3", "LuaTweaker.Math.Color3"}, "Color3");
+        return Collections.unmodifiableMap(globals);
     }
 
     /**
@@ -150,19 +155,40 @@ public final class NativeModuleResolver {
      * @param modName requested module name
      * @return the resolved global, or {@code LuaNil.NIL} when the alias is unknown or unset
      */
-    public static org.luava.runtime.LuaValue resolveLuava(ILuaTable globals, String modName) {
+    public static LuaValue resolveLuava(ILuaTable globals, String modName) {
+        if (globals == null || modName == null || modName.isBlank()) {
+            return LuaNil.NIL;
+        }
+        for (String key : lookupKeys(modName)) {
+            ILuaValue val = globals.rawget(key);
+            if (val == null || val.isNil()) {
+                continue;
+            }
+            LuaValue converted = toLuavaValue(val);
+            if (converted != null && !converted.isNil()) {
+                return converted;
+            }
+        }
+        return LuaNil.NIL;
+    }
+
+    private static String[] lookupKeys(String modName) {
         String[] keys = MODULE_GLOBALS.get(modName);
         if (keys == null) {
             keys = DYNAMIC_ALIASES.get(modName);
         }
-        if (keys == null || globals == null) return org.luava.runtime.LuaNil.NIL;
-        for (String key : keys) {
-            ILuaValue val = globals.rawget(key);
-            if (val == null || val.isNil()) continue;
-            org.luava.runtime.LuaValue converted = toLuavaValue(val);
-            if (converted != null && !converted.isNil()) return converted;
+        if (keys != null) {
+            return keys;
         }
-        return org.luava.runtime.LuaNil.NIL;
+        if (modName.startsWith(LUA_TWEAKER_PREFIX)) {
+            String shortName = modName.substring(LUA_TWEAKER_PREFIX.length());
+            keys = MODULE_GLOBALS.get(shortName);
+            if (keys == null) {
+                keys = DYNAMIC_ALIASES.get(shortName);
+            }
+            return keys != null ? keys : new String[]{shortName};
+        }
+        return new String[]{modName};
     }
 
     /**
@@ -170,26 +196,27 @@ public final class NativeModuleResolver {
      * a zero-argument accessor whose return type is a luava LuaValue; discovery by return type
      * keeps this resolver independent of the wrapper class name.
      */
-    private static org.luava.runtime.LuaValue toLuavaValue(ILuaValue value) {
+    private static LuaValue toLuavaValue(ILuaValue value) {
         for (Method method : value.getClass().getMethods()) {
             if (method.getParameterCount() != 0
-                    || !org.luava.runtime.LuaValue.class.isAssignableFrom(method.getReturnType())) {
+                    || !LuaValue.class.isAssignableFrom(method.getReturnType())) {
                 continue;
             }
             try {
                 Object raw = method.invoke(value);
-                if (raw instanceof org.luava.runtime.LuaValue luavaValue) return luavaValue;
+                if (raw instanceof LuaValue luavaValue) {
+                    return luavaValue;
+                }
             } catch (ReflectiveOperationException e) {
-                com.luatweaker.api.log.LuaTweakerLog.get().warn(
-                        com.luatweaker.api.log.LogStage.SYSTEM,
+                LuaTweakerLog.get().warn(LogStage.SYSTEM,
                         "NativeModuleResolver: failed to unwrap Lua value via " + method.getName()
                                 + ": " + e.getMessage());
             }
         }
         Object javaObject = value.toJavaObject();
-        if (javaObject instanceof org.luava.runtime.LuaValue luavaValue) return luavaValue;
-        return javaObject == null
-                ? org.luava.runtime.LuaNil.NIL
-                : org.luava.binding.LuaDataConverter.toLua(javaObject);
+        if (javaObject instanceof LuaValue luavaValue) {
+            return luavaValue;
+        }
+        return javaObject == null ? LuaNil.NIL : LuaDataConverter.toLua(javaObject);
     }
 }

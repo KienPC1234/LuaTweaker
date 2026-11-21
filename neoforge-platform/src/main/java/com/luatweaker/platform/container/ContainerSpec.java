@@ -39,7 +39,7 @@ public record ContainerSpec(
         String facing,
         List<BoxSpec> boxes,
         BiConsumer<Object, Object> renderHandler,
-        com.luatweaker.api.content.GeoModelSpec geoModel) {
+        com.luatweaker.integration.geo.GeoModelSpec geoModel) {
 
     /** Defaults for blocks that have a block entity but no container grid (pipes, simple machines). */
     private static final int DEFAULT_ROWS = 1;

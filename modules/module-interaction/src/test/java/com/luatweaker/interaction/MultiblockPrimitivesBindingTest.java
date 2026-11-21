@@ -4,142 +4,188 @@ import com.luatweaker.api.pal.IPlatformInteraction;
 import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.core.vm.LuaEngineFactory;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Array;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-public class MultiblockPrimitivesBindingTest {
+/**
+ * Pins the multiblock primitives: redstone reads, pattern checks, cross-block transfers, cuboid
+ * validation and batched block-state updates, including the exact argument order they use.
+ */
+class MultiblockPrimitivesBindingTest {
 
-    private static final class MockInteraction extends BaseMockPlatformInteraction {
-        final List<String> calls = new ArrayList<>();
-
-        @Override
-        public int getRedstoneSignal(@NotNull String dimension, int x, int y, int z, @Nullable String direction) {
-            calls.add("getRedstoneSignal " + x + "," + y + "," + z + " dir=" + direction);
-            return 15;
-        }
-
-        @Override
-        public boolean checkPattern(@NotNull String dimension, int originX, int originY, int originZ,
-                                    @NotNull List<Map<String, Object>> pattern) {
-            calls.add("checkPattern origin=" + originX + "," + originY + "," + originZ + " size=" + pattern.size());
-            return true;
-        }
-
-        @Override
-        public int transferEnergy(@NotNull String dimension, int fromX, int fromY, int fromZ,
-                                  int toX, int toY, int toZ, int maxAmount, boolean simulate) {
-            calls.add("transferEnergy from=" + fromX + "," + fromY + "," + fromZ + " to=" + toX + "," + toY + "," + toZ + " max=" + maxAmount + " sim=" + simulate);
-            return 500;
-        }
-
-        @Override
-        public int transferFluid(@NotNull String dimension, int fromX, int fromY, int fromZ,
-                                 int toX, int toY, int toZ, int maxAmount, boolean simulate) {
-            calls.add("transferFluid from=" + fromX + "," + fromY + "," + fromZ + " to=" + toX + "," + toY + "," + toZ + " max=" + maxAmount + " sim=" + simulate);
-            return 1000;
-        }
-
-        @Override
-        public int transferItem(@NotNull String dimension, int fromX, int fromY, int fromZ, int fromSlot,
-                                int toX, int toY, int toZ, int toSlot, int maxCount, boolean simulate) {
-            calls.add("transferItem from=" + fromX + "," + fromY + "," + fromZ + "[" + fromSlot + "] to=" + toX + "," + toY + "," + toZ + "[" + toSlot + "] max=" + maxCount + " sim=" + simulate);
-            return 16;
-        }
-
-        @Override
-        public @NotNull Map<String, Object> validateCuboid(@NotNull String dimension, int x1, int y1, int z1, int x2, int y2, int z2, @NotNull Map<String, Object> spec) {
-            calls.add("validateCuboid " + x1 + "," + y1 + "," + z1 + " to " + x2 + "," + y2 + "," + z2);
-            return Map.of("valid", true, "width", 3, "height", 3, "depth", 3);
-        }
-
-        @Override
-        public int setBlockStatesInBox(@NotNull String dimension, int x1, int y1, int z1, int x2, int y2, int z2, @Nullable String filterBlockId, @NotNull Map<String, Object> properties) {
-            calls.add("setBlockStatesInBox " + x1 + "," + y1 + "," + z1 + " to " + x2 + "," + y2 + "," + z2 + " filter=" + filterBlockId);
-            return 26;
-        }
-    }
-
-    private MockInteraction interaction;
-    private IPlatformInteraction previousInteraction;
+    private final List<String> calls = new ArrayList<>();
+    private ILuaEngine engine;
 
     @BeforeEach
-    public void setup() {
-        interaction = new MockInteraction();
-        previousInteraction = Platform.isInitialized() ? Platform.getInteraction() : null;
-        Platform.setInteraction(interaction);
+    void setUp() {
+        engine = LuaEngineFactory.create(false);
+        InteractionLuaBinding.registerBindings(engine);
+        Platform.setInteraction(recordingInteraction(calls));
     }
 
     @AfterEach
-    public void teardown() {
-        if (previousInteraction != null) {
-            Platform.setInteraction(previousInteraction);
+    void tearDown() {
+        engine.shutdown();
+        Platform.setInteraction(null);
+    }
+
+    private static IPlatformInteraction recordingInteraction(List<String> calls) {
+        return (IPlatformInteraction) Proxy.newProxyInstance(
+                Thread.currentThread().getContextClassLoader(),
+                new Class<?>[] { IPlatformInteraction.class },
+                new RecordingInteraction(calls));
+    }
+
+    @Test
+    void worldMultiblockPrimitivesForwardTheirArguments() {
+        engine.executeStringOrThrow("""
+                local signal = World:GetRedstoneSignal(10, 64, 20, "UP")
+                assert(signal == 15, "signal must be 15")
+
+                local pattern = {
+                    { dx = 0, dy = -1, dz = 0, block = "minecraft:blast_furnace" },
+                    { dx = 1, dy = 0, dz = 0, tag = "c:storage_blocks/iron" }
+                }
+                local matched = World:CheckPattern(10, 64, 20, pattern)
+                assert(matched == true, "pattern must match")
+
+                local feMoved = World:TransferEnergy({X=10, Y=64, Z=20}, {X=11, Y=64, Z=20}, 500)
+                assert(feMoved == 500, "feMoved must be 500")
+
+                local fluidMoved = World:TransferFluid({X=10, Y=64, Z=20}, {X=10, Y=65, Z=20}, 1000)
+                assert(fluidMoved == 1000, "fluidMoved must be 1000")
+
+                local itemMoved = World:TransferItem({X=10, Y=64, Z=20}, 0, {X=10, Y=63, Z=20}, 1, 16)
+                assert(itemMoved == 16, "itemMoved must be 16")
+                """, "multiblock_test");
+
+        assertEquals(List.of(
+                        "getRedstoneSignal 10,64,20 dir=UP",
+                        "checkPattern origin=10,64,20 size=2",
+                        "transferEnergy from=10,64,20 to=11,64,20 max=500 sim=false",
+                        "transferFluid from=10,64,20 to=10,65,20 max=1000 sim=false",
+                        "transferItem from=10,64,20[0] to=10,63,20[1] max=16 sim=false"),
+                calls,
+                "redstone/pattern/energy/fluid/item multiblock primitives must forward coordinates in order");
+    }
+
+    @Test
+    void worldCuboidValidationAndBatchUpdateForwardTheirArguments() {
+        engine.executeStringOrThrow("""
+                local spec = {
+                    frame = "mymod:casing",
+                    walls = "mymod:casing",
+                    interior = "minecraft:air"
+                }
+                local res = World:ValidateCuboid({X=0, Y=64, Z=0}, {X=2, Y=66, Z=2}, spec)
+                assert(res.valid == true, "validation must succeed")
+                assert(res.width == 3, "width must be 3")
+
+                local updated = World:SetBlockStatesInBox({X=0, Y=64, Z=0}, {X=2, Y=66, Z=2},
+                        "mymod:casing", { formed = true })
+                assert(updated == 26, "updated count must be 26")
+                """, "cuboid_test");
+
+        assertEquals(List.of(
+                        "validateCuboid 0,64,0 to 2,66,2",
+                        "setBlockStatesInBox 0,64,0 to 2,66,2 filter=mymod:casing"),
+                calls,
+                "cuboid validation and batch updates must forward both corners and the filter block");
+    }
+
+    /**
+     * Records the multiblock calls as {@code name x,y,z ...} strings. A dynamic proxy is used
+     * instead of a MockPlatformInteraction subclass because {@code transferItem} declares 11
+     * parameters: a concrete test double would have to repeat that signature, which is a
+     * parameter-list smell in its own right.
+     */
+    private static final class RecordingInteraction implements InvocationHandler {
+        private static final int FROM_X = 1;
+        private static final int TO_X = 4;
+        private static final int ITEM_TO_X = 5;
+        private static final int TRANSFER_MAX = 7;
+        private static final int TRANSFER_SIMULATE = 8;
+
+        private final List<String> calls;
+
+        private RecordingInteraction(List<String> calls) {
+            this.calls = calls;
         }
-    }
 
-    @Test
-    public void testWorldMultiblockAndTransferMethods() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        InteractionLuaBinding.registerBindings(engine);
+        @Override
+        public Object invoke(Object proxy, Method method, Object[] args) {
+            return switch (method.getName()) {
+                case "getRedstoneSignal" -> getRedstoneSignal(args);
+                case "checkPattern" -> checkPattern(args);
+                case "transferEnergy" -> transferEnergy(args);
+                case "transferFluid" -> transferFluid(args);
+                case "transferItem" -> transferItem(args);
+                case "validateCuboid" -> validateCuboid(args);
+                case "setBlockStatesInBox" -> recordBlockStatesInBox(args);
+                default -> defaultValue(method.getReturnType());
+            };
+        }
 
-        engine.executeStringOrThrow("""
-            local signal = World:GetRedstoneSignal(10, 64, 20, "UP")
-            assert(signal == 15, "signal must be 15")
+        private Object getRedstoneSignal(Object... args) {
+            calls.add("getRedstoneSignal " + coordinates(args, FROM_X) + " dir=" + args[4]);
+            return 15;
+        }
 
-            local pattern = {
-                { dx = 0, dy = -1, dz = 0, block = "minecraft:blast_furnace" },
-                { dx = 1, dy = 0, dz = 0, tag = "c:storage_blocks/iron" }
-            }
-            local matched = World:CheckPattern(10, 64, 20, pattern)
-            assert(matched == true, "pattern must match")
+        private Object checkPattern(Object... args) {
+            List<?> pattern = (List<?>) args[4];
+            calls.add("checkPattern origin=" + coordinates(args, FROM_X) + " size=" + pattern.size());
+            return true;
+        }
 
-            local feMoved = World:TransferEnergy({X=10, Y=64, Z=20}, {X=11, Y=64, Z=20}, 500)
-            assert(feMoved == 500, "feMoved must be 500")
+        private Object transferEnergy(Object... args) {
+            calls.add("transferEnergy from=" + coordinates(args, FROM_X)
+                    + " to=" + coordinates(args, TO_X)
+                    + " max=" + args[TRANSFER_MAX] + " sim=" + args[TRANSFER_SIMULATE]);
+            return 500;
+        }
 
-            local fluidMoved = World:TransferFluid({X=10, Y=64, Z=20}, {X=10, Y=65, Z=20}, 1000)
-            assert(fluidMoved == 1000, "fluidMoved must be 1000")
+        private Object transferFluid(Object... args) {
+            calls.add("transferFluid from=" + coordinates(args, FROM_X)
+                    + " to=" + coordinates(args, TO_X)
+                    + " max=" + args[TRANSFER_MAX] + " sim=" + args[TRANSFER_SIMULATE]);
+            return 1000;
+        }
 
-            local itemMoved = World:TransferItem({X=10, Y=64, Z=20}, 0, {X=10, Y=63, Z=20}, 1, 16)
-            assert(itemMoved == 16, "itemMoved must be 16")
-        """, "multiblock_test");
+        private Object transferItem(Object... args) {
+            calls.add("transferItem from=" + coordinates(args, FROM_X) + "[" + args[4] + "]"
+                    + " to=" + coordinates(args, ITEM_TO_X) + "[" + args[8] + "]"
+                    + " max=" + args[9] + " sim=" + args[10]);
+            return 16;
+        }
 
-        assertEquals(5, interaction.calls.size());
-        assertEquals("getRedstoneSignal 10,64,20 dir=UP", interaction.calls.get(0));
-        assertEquals("checkPattern origin=10,64,20 size=2", interaction.calls.get(1));
-        assertEquals("transferEnergy from=10,64,20 to=11,64,20 max=500 sim=false", interaction.calls.get(2));
-        assertEquals("transferFluid from=10,64,20 to=10,65,20 max=1000 sim=false", interaction.calls.get(3));
-        assertEquals("transferItem from=10,64,20[0] to=10,63,20[1] max=16 sim=false", interaction.calls.get(4));
-    }
+        private Object validateCuboid(Object... args) {
+            calls.add("validateCuboid " + coordinates(args, FROM_X) + " to " + coordinates(args, TO_X));
+            return Map.of("valid", true, "width", 3, "height", 3, "depth", 3);
+        }
 
-    @Test
-    public void testValidateCuboidAndSetBlockStatesInBox() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        InteractionLuaBinding.registerBindings(engine);
+        private Object recordBlockStatesInBox(Object... args) {
+            calls.add("setBlockStatesInBox " + coordinates(args, FROM_X) + " to "
+                    + coordinates(args, TO_X) + " filter=" + args[7]);
+            return 26;
+        }
 
-        engine.executeStringOrThrow("""
-            local spec = {
-                frame = "mymod:casing",
-                walls = "mymod:casing",
-                interior = "minecraft:air"
-            }
-            local res = World:ValidateCuboid({X=0, Y=64, Z=0}, {X=2, Y=66, Z=2}, spec)
-            assert(res.valid == true, "validation must succeed")
-            assert(res.width == 3, "width must be 3")
+        private static String coordinates(Object[] args, int first) {
+            return args[first] + "," + args[first + 1] + "," + args[first + 2];
+        }
 
-            local updated = World:SetBlockStatesInBox({X=0, Y=64, Z=0}, {X=2, Y=66, Z=2}, "mymod:casing", { formed = true })
-            assert(updated == 26, "updated count must be 26")
-        """, "cuboid_test");
-
-        assertEquals(2, interaction.calls.size());
-        assertEquals("validateCuboid 0,64,0 to 2,66,2", interaction.calls.get(0));
-        assertEquals("setBlockStatesInBox 0,64,0 to 2,66,2 filter=mymod:casing", interaction.calls.get(1));
+        private static Object defaultValue(Class<?> type) {
+            return type.isPrimitive() ? Array.get(Array.newInstance(type, 1), 0) : null;
+        }
     }
 }

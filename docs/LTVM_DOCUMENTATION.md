@@ -35,7 +35,7 @@ Contains only pure Java 21 interfaces and records. It has **zero dependencies** 
 - **Annotations**: `@LuaDoc` metadata annotations.
 
 ### 1.2 `core-engine` (LTVM Luava Wrapper)
-Implements the abstract VM interfaces using luava 0.2.5. It manages the Lua execution lifecycle, asynchronous logging, custom compile/runtime error tracebacks, and LSP stubs. It also executes a pure Lua bootstrap script on startup to define Roblox core classes (`task`, `Signal`, `RemoteEvent`, `Players`).
+Implements the abstract VM interfaces using luava 0.2.7. It manages the Lua execution lifecycle, asynchronous logging, custom compile/runtime error tracebacks, and LSP stubs. It also executes a pure Lua bootstrap script on startup to define Roblox core classes (`task`, `Signal`, `RemoteEvent`, `Players`).
 
 ### 1.3 Feature Modules (`modules/*`)
 Business logic features (Recipes, Entities, Interaction, Events, Math, Storage, Network). By compiling only against `common-api` and `core-engine`, these modules are **completely engine-agnostic and platform-agnostic**. They register Lua bindings by interacting with `ILuaTable` and `ILuaFunction` callback interfaces rather than importing Cobalt or Minecraft classes.

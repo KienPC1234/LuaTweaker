@@ -12,23 +12,36 @@ class NeoForgeDimensionPlatformTest {
 
     @Test
     void acceptsGroundWithTwoBlocksOfHeadroom() {
-        assertTrue(NeoForgeDimensionPlatform.isSafeSpawnColumn(181, MIN_Y, true, true, true));
+        assertTrue(NeoForgeDimensionPlatform.isSafeSpawnColumn(181, MIN_Y, true, true, true),
+                "solid ground with free feet and head space must be accepted");
     }
 
     @Test
-    void rejectsTheVoidAndBottomLayerArtifacts() {
+    void rejectsUngeneratedVoidColumn() {
         assertFalse(NeoForgeDimensionPlatform.isSafeSpawnColumn(MIN_Y, MIN_Y, true, true, true),
                 "an ungenerated/empty column reports the build floor");
+    }
+
+    @Test
+    void rejectsBottomLayerArtifacts() {
         assertFalse(NeoForgeDimensionPlatform.isSafeSpawnColumn(MIN_Y + 2, MIN_Y, true, true, true),
                 "a leftover bottom-layer block must not count as ground");
     }
 
     @Test
-    void rejectsFluidOrBlockedColumns() {
+    void rejectsFluidColumns() {
         assertFalse(NeoForgeDimensionPlatform.isSafeSpawnColumn(100, MIN_Y, false, true, true),
                 "water/lava is not ground");
+    }
+
+    @Test
+    void rejectsOccupiedFeetSpace() {
         assertFalse(NeoForgeDimensionPlatform.isSafeSpawnColumn(100, MIN_Y, true, false, true),
                 "feet space is occupied");
+    }
+
+    @Test
+    void rejectsOccupiedHeadSpace() {
         assertFalse(NeoForgeDimensionPlatform.isSafeSpawnColumn(100, MIN_Y, true, true, false),
                 "head space is occupied");
     }

@@ -6,6 +6,7 @@ import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaValue;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.luava.runtime.LuaException;
 
 /**
  * Helper for resolving the owning LuaMod of the currently executing Lua code.
@@ -71,7 +72,7 @@ public final class LuaModContext {
                     return idVal.asString();
                 }
             }
-        } catch (Exception e) {
+        } catch (LuaException | IllegalStateException e) {
             LuaTweakerLog.get().error(LogStage.SYSTEM,
                     "LuaModContext: failed while resolving owning mod id: " + e.getMessage());
         }

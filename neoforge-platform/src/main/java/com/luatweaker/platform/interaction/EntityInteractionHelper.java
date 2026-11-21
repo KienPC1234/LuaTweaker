@@ -4,6 +4,7 @@ import com.luatweaker.api.entity.IEntity;
 import com.luatweaker.api.interaction.IInteractableEntity;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.jetbrains.annotations.NotNull;
@@ -11,6 +12,8 @@ import org.jetbrains.annotations.Nullable;
 import java.util.UUID;
 
 public final class EntityInteractionHelper {
+    private static final String PROJECTILE_FIRE_ERROR_PREFIX = "[Projectile] Cannot fire '";
+
     private EntityInteractionHelper() {}
 
     public static void lookAt(@NotNull IEntity actor, double x, double y, double z) {
@@ -43,186 +46,92 @@ public final class EntityInteractionHelper {
 
     @Nullable
     public static IInteractableEntity getInteractableEntity(@NotNull String uuid) {
-        var server = ServerLifecycleHooks.getCurrentServer();
-        if (server != null) {
-            UUID id = UUID.fromString(uuid);
-            for (ServerLevel level : server.getAllLevels()) {
-                Entity entity = level.getEntity(id);
-                if (entity != null) {
-                    return new NeoForgeInteractableEntity(entity);
-                }
-            }
-        }
-        return null;
+        return EntitySpawner.findInteractable(ServerLifecycleHooks.getCurrentServer(), UUID.fromString(uuid));
     }
 
-    public static void shootProjectile(@NotNull IEntity shooter, @NotNull String projectileType, double speed, double inaccuracy) {
-        if (shooter.getRawEntity() instanceof net.minecraft.world.entity.LivingEntity living) {
-            living.swing(net.minecraft.world.InteractionHand.MAIN_HAND, true);
-            net.minecraft.world.level.Level level = living.level();
-            if (level instanceof ServerLevel serverLevel) {
-                net.minecraft.world.phys.Vec3 look = living.getLookAngle();
-                net.minecraft.world.phys.Vec3 spawnPos = living.getEyePosition().add(look.scale(1.2));
-                net.minecraft.world.entity.projectile.Projectile projectile = createProjectile(serverLevel, living, projectileType);
-                if (projectile != null) {
-                    projectile.setOwner(living);
-                    projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
-                    projectile.shootFromRotation(living, living.getXRot(), living.getYRot(), 0.0F, (float) speed, (float) inaccuracy);
-                    serverLevel.addFreshEntity(projectile);
-                    com.luatweaker.api.log.LuaTweakerLog.get().info(
-                        com.luatweaker.api.log.LogStage.SYSTEM,
-                        "[Projectile] Fired projectile '" + projectileType + "' at pos (" + String.format("%.2f, %.2f, %.2f", spawnPos.x, spawnPos.y, spawnPos.z) + ") with speed " + speed
-                    );
-                } else {
-                    com.luatweaker.api.log.LuaTweakerLog.get().warn(
-                        com.luatweaker.api.log.LogStage.SYSTEM,
-                        "[Projectile] createProjectile returned null for type '" + projectileType + "'"
-                    );
-                }
-            } else {
-                com.luatweaker.api.log.LuaTweakerLog.get().warn(
-                    com.luatweaker.api.log.LogStage.SYSTEM,
-                    "[Projectile] Cannot fire '" + projectileType + "': shooter's level is not a ServerLevel (" + (level != null ? level.getClass().getSimpleName() : "null") + ")"
-                );
-            }
-        } else {
-            com.luatweaker.api.log.LuaTweakerLog.get().warn(
+    public static void shootProjectile(@NotNull IEntity shooter, @NotNull String projectileType, double speed,
+                                       double inaccuracy) {
+        if (!(shooter.getRawEntity() instanceof LivingEntity living)) {
+            warn(PROJECTILE_FIRE_ERROR_PREFIX + projectileType + "': shooter raw entity is not a LivingEntity");
+            return;
+        }
+        living.swing(net.minecraft.world.InteractionHand.MAIN_HAND, true);
+        boolean serverSide = ServerLevels.onServer(living.level(),
+                level -> fireFromRotation(level, living, projectileType, speed, inaccuracy));
+        if (!serverSide) {
+            warn(PROJECTILE_FIRE_ERROR_PREFIX + projectileType + "': shooter's level is not a ServerLevel");
+        }
+    }
+
+    private static void fireFromRotation(ServerLevel level, LivingEntity living, String projectileType,
+                                         double speed, double inaccuracy) {
+        net.minecraft.world.phys.Vec3 spawnPos = living.getEyePosition().add(living.getLookAngle().scale(1.2));
+        net.minecraft.world.entity.projectile.Projectile projectile =
+                ProjectileFactory.create(level, living, projectileType);
+        projectile.setOwner(living);
+        projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
+        projectile.shootFromRotation(living, living.getXRot(), living.getYRot(), 0.0F,
+                (float) speed, (float) inaccuracy);
+        level.addFreshEntity(projectile);
+        com.luatweaker.api.log.LuaTweakerLog.get().info(
                 com.luatweaker.api.log.LogStage.SYSTEM,
-                "[Projectile] Cannot fire '" + projectileType + "': shooter raw entity is not a LivingEntity (" + (shooter.getRawEntity() != null ? shooter.getRawEntity().getClass().getSimpleName() : "null") + ")"
-            );
-        }
+                "[Projectile] Fired projectile '" + projectileType + "' at pos ("
+                        + String.format("%.2f, %.2f, %.2f", spawnPos.x, spawnPos.y, spawnPos.z)
+                        + ") with speed " + speed);
     }
 
-    public static com.luatweaker.api.entity.IEntity shootProjectileAt(@NotNull IEntity shooter, @NotNull String projectileType, @NotNull IEntity target, double speed) {
-        if (shooter.getRawEntity() instanceof net.minecraft.world.entity.LivingEntity living && target.getRawEntity() instanceof net.minecraft.world.entity.LivingEntity targetLiving) {
-            living.swing(net.minecraft.world.InteractionHand.MAIN_HAND, true);
-            net.minecraft.world.level.Level level = living.level();
-            if (level instanceof ServerLevel serverLevel) {
-                net.minecraft.world.phys.Vec3 look = living.getLookAngle();
-                net.minecraft.world.phys.Vec3 spawnPos = living.getEyePosition().add(look.scale(1.2));
-                net.minecraft.world.entity.projectile.Projectile projectile = createProjectile(serverLevel, living, projectileType);
-                if (projectile != null) {
-                    projectile.setOwner(living);
-                    projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
-                    double dx = targetLiving.getX() - spawnPos.x;
-                    double dy = targetLiving.getY(0.5) - spawnPos.y;
-                    double dz = targetLiving.getZ() - spawnPos.z;
-                    projectile.shoot(dx, dy, dz, (float) speed, 1.0F);
-                    serverLevel.addFreshEntity(projectile);
-                    com.luatweaker.api.log.LuaTweakerLog.get().info(
-                        com.luatweaker.api.log.LogStage.SYSTEM,
-                        "[Projectile] Fired projectile '" + projectileType + "' at target '" + targetLiving.getDisplayName().getString() + "' with speed " + speed
-                    );
-                    return new com.luatweaker.platform.interaction.NeoForgeInteractableEntity(projectile);
-                } else {
-                    com.luatweaker.api.log.LuaTweakerLog.get().warn(
-                        com.luatweaker.api.log.LogStage.SYSTEM,
-                        "[Projectile] createProjectile returned null for type '" + projectileType + "'"
-                    );
-                }
-            } else {
-                com.luatweaker.api.log.LuaTweakerLog.get().warn(
-                    com.luatweaker.api.log.LogStage.SYSTEM,
-                    "[Projectile] Cannot fire '" + projectileType + "': shooter's level is not a ServerLevel"
-                );
-            }
-        } else {
-            com.luatweaker.api.log.LuaTweakerLog.get().warn(
+    @Nullable
+    public static IEntity shootProjectileAt(@NotNull IEntity shooter, @NotNull String projectileType,
+                                            @NotNull IEntity target, double speed) {
+        if (!(shooter.getRawEntity() instanceof LivingEntity living)
+                || !(target.getRawEntity() instanceof LivingEntity targetLiving)) {
+            warn(PROJECTILE_FIRE_ERROR_PREFIX + projectileType + "': shooter or target is not a LivingEntity");
+            return null;
+        }
+        living.swing(net.minecraft.world.InteractionHand.MAIN_HAND, true);
+        if (!(living.level() instanceof ServerLevel)) {
+            warn(PROJECTILE_FIRE_ERROR_PREFIX + projectileType + "': shooter's level is not a ServerLevel");
+            return null;
+        }
+        return ServerLevels.map(ServerLevels.asServer(living.level()), null,
+                level -> fireAtTarget(level, living, projectileType, targetLiving, speed));
+    }
+
+    @NotNull
+    private static IEntity fireAtTarget(ServerLevel level, LivingEntity living, String projectileType,
+                                        LivingEntity targetLiving, double speed) {
+        net.minecraft.world.phys.Vec3 spawnPos = living.getEyePosition().add(living.getLookAngle().scale(1.2));
+        net.minecraft.world.entity.projectile.Projectile projectile =
+                ProjectileFactory.create(level, living, projectileType);
+        projectile.setOwner(living);
+        projectile.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
+        projectile.shoot(targetLiving.getX() - spawnPos.x,
+                targetLiving.getY(0.5) - spawnPos.y,
+                targetLiving.getZ() - spawnPos.z, (float) speed, 1.0F);
+        level.addFreshEntity(projectile);
+        com.luatweaker.api.log.LuaTweakerLog.get().info(
                 com.luatweaker.api.log.LogStage.SYSTEM,
-                "[Projectile] Cannot fire '" + projectileType + "': shooter or target is not a LivingEntity"
-            );
-        }
-        return null;
+                "[Projectile] Fired projectile '" + projectileType + "' at target '"
+                        + targetLiving.getDisplayName().getString() + "' with speed " + speed);
+        return new NeoForgeInteractableEntity(projectile);
     }
 
-    private static net.minecraft.world.entity.projectile.Projectile createProjectile(ServerLevel level, net.minecraft.world.entity.LivingEntity shooter, String type) {
-        net.minecraft.world.phys.Vec3 look = shooter.getLookAngle().scale(0.5);
-
-        // Custom projectile definitions registered via Content.registerProjectile
-        // take priority: explosionPower > 1 becomes a LargeFireball, otherwise a
-        // SmallFireball; damage/trailParticle are recorded for the definition.
-        com.luatweaker.api.content.ProjectileDefinition definition = com.luatweaker.content.ProjectileRegistry.get(type);
-        if (definition != null) {
-            if (definition.explosionPower() > 1.0) {
-                return new net.minecraft.world.entity.projectile.LargeFireball(level, shooter, look, (int) Math.round(definition.explosionPower()));
-            }
-            return new net.minecraft.world.entity.projectile.SmallFireball(level, shooter, look);
-        }
-
-        if (type.contains("dragon_fireball")) {
-            return new net.minecraft.world.entity.projectile.DragonFireball(level, shooter, look);
-        } else if (type.contains("wither_skull")) {
-            return new net.minecraft.world.entity.projectile.WitherSkull(level, shooter, look);
-        } else if (type.contains("small_fireball") || type.contains("ruby_orb")) {
-            return new net.minecraft.world.entity.projectile.SmallFireball(level, shooter, look);
-        } else if (type.contains("snowball")) {
-            return new net.minecraft.world.entity.projectile.Snowball(level, shooter);
-        } else {
-            return new net.minecraft.world.entity.projectile.LargeFireball(level, shooter, look, 2);
-        }
-    }
-
-    public static void playAnimation(@NotNull IEntity entity, @NotNull String animName, double speed, double transition) {
-        com.luatweaker.api.pal.Platform.getInteraction().triggerGeoAnimation(entity, null, animName, speed, false);
-
-        if (entity.getRawEntity() instanceof net.minecraft.world.entity.LivingEntity living) {
-            if ("swing".equalsIgnoreCase(animName)) {
-                living.swing(net.minecraft.world.InteractionHand.MAIN_HAND, true);
-            } else if ("offhand_swing".equalsIgnoreCase(animName)) {
-                living.swing(net.minecraft.world.InteractionHand.OFF_HAND, true);
-            } else {
-                int duration = (int) Math.round(transition > 1.0 ? transition : 20.0);
-                if (living.level() instanceof net.minecraft.server.level.ServerLevel) {
-                    var payload = new com.luatweaker.platform.network.ItemAnimationPayload(
-                            living.getId(), animName, duration, (float) (speed > 0 ? speed : 1.0));
-                    net.neoforged.neoforge.network.PacketDistributor.sendToPlayersTrackingEntity(living, payload);
-                    if (living instanceof net.minecraft.server.level.ServerPlayer player) {
-                        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player, payload);
-                    }
-                }
-            }
-        }
+    public static void playAnimation(@NotNull IEntity entity, @NotNull String animName, double speed,
+                                     double transition) {
+        EntityAnimationHelper.playAnimation(entity, animName, speed, transition);
     }
 
     public static java.util.Optional<net.minecraft.world.entity.EntityType<?>> resolveEntityType(String entityId) {
-        if (entityId == null || entityId.isBlank()) {
-            return java.util.Optional.empty();
-        }
-        if (entityId.contains(":")) {
-            net.minecraft.resources.ResourceLocation rl = net.minecraft.resources.ResourceLocation.tryParse(entityId);
-            return rl != null ? net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getOptional(rl) : java.util.Optional.empty();
-        }
-        net.minecraft.resources.ResourceLocation mcRl = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("minecraft", entityId);
-        if (net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.containsKey(mcRl)) {
-            return net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getOptional(mcRl);
-        }
-        net.minecraft.resources.ResourceLocation ltRl = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("luatweaker", entityId);
-        if (net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.containsKey(ltRl)) {
-            return net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getOptional(ltRl);
-        }
-        return java.util.Optional.empty();
+        return EntitySpawner.resolveEntityType(entityId);
     }
 
     public static Object spawnEntity(@NotNull String entityId, double x, double y, double z) {
-        var server = ServerLifecycleHooks.getCurrentServer();
-        if (server != null) {
-            java.util.Optional<net.minecraft.world.entity.EntityType<?>> optType = resolveEntityType(entityId);
-            if (optType.isPresent()) {
-                ServerLevel level = server.overworld();
-                for (ServerLevel sl : server.getAllLevels()) {
-                    if (!sl.getPlayers(p -> p.distanceToSqr(x, y, z) < 4096).isEmpty()) {
-                        level = sl;
-                        break;
-                    }
-                }
-                Entity entity = optType.get().create(level);
-                if (entity != null) {
-                    entity.moveTo(x, y, z, 0.0f, 0.0f);
-                    level.addFreshEntity(entity);
-                    return entity;
-                }
-            }
-        }
-        return null;
+        return EntitySpawner.spawnEntity(entityId, x, y, z);
+    }
+
+    private static void warn(@NotNull String message) {
+        com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, message);
     }
 }
+
+

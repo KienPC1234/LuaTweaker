@@ -38,26 +38,8 @@ public final class ItemUserdataFactory {
                 createItemUserdataLuava(state, itemFrom(args).withDamage((int) requireArg(args, 1).toLong())));
         LuaFunction withName = LuaFunction.of(args ->
                 createItemUserdataLuava(state, itemFrom(args).withName(requireArg(args, 1).toLuaString())));
-        LuaFunction withLore = LuaFunction.of(args -> {
-            ItemCount current = itemFrom(args);
-            LuaValue loreArg = requireArg(args, 1);
-            List<String> loreList = new ArrayList<>();
-            if (loreArg instanceof LuaTable table) {
-                for (int index = 1; index <= table.rawlen(); index++) {
-                    loreList.add(table.rawgetInt(index).toLuaString());
-                }
-            } else {
-                loreList.add(loreArg.toLuaString());
-            }
-            return createItemUserdataLuava(state, current.withLore(loreList));
-        });
-        LuaFunction withEnchantment = LuaFunction.of(args -> {
-            ItemCount current = itemFrom(args);
-            String enchantment = requireArg(args, 1).toLuaString();
-            int level = 1;
-            if (args.length > 2 && args[2] != null && !args[2].isNil()) level = (int) args[2].toLong();
-            return createItemUserdataLuava(state, current.withEnchantment(enchantment, level));
-        });
+        LuaFunction withLore = withLoreFn(state);
+        LuaFunction withEnchantment = withEnchantmentFn(state);
         LuaFunction withNbt = LuaFunction.of(args ->
                 createItemUserdataLuava(state, itemFrom(args).withNbt(requireArg(args, 1).toLuaString())));
 
@@ -73,16 +55,53 @@ public final class ItemUserdataFactory {
         indexTable.rawset(LuaValue.valueOf("count"), LuaValue.valueOf(ic.count()));
         indexTable.rawset(LuaValue.valueOf("damage"), LuaValue.valueOf(ic.damage()));
 
-        meta.rawset(LuaValue.Meta.INDEX, LuaFunction.of(args -> {
-            LuaValue key = args.length > 1 ? args[1] : LuaNil.NIL;
-            if (key == null || key.isNil()) return LuaNil.NIL;
-            LuaValue method = meta.rawget(key);
-            return method.isNil() ? indexTable.rawget(key) : method;
-        }));
+        meta.rawset(LuaValue.Meta.INDEX, indexHandler(meta, indexTable));
 
         LuaUserdata userdata = new LuaUserdata(ic);
         userdata.setMetatable(meta);
         return userdata;
+    }
+
+    /** lore accepts one line or a table of lines. */
+    private static LuaFunction withLoreFn(LuaState state) {
+        return LuaFunction.of(args -> {
+            ItemCount current = itemFrom(args);
+            LuaValue loreArg = requireArg(args, 1);
+            List<String> loreList = new ArrayList<>();
+            if (loreArg instanceof LuaTable table) {
+                for (int index = 1; index <= table.rawlen(); index++) {
+                    loreList.add(table.rawgetInt(index).toLuaString());
+                }
+            } else {
+                loreList.add(loreArg.toLuaString());
+            }
+            return createItemUserdataLuava(state, current.withLore(loreList));
+        });
+    }
+
+    /** enchant level defaults to 1 when the third argument is absent or nil. */
+    private static LuaFunction withEnchantmentFn(LuaState state) {
+        return LuaFunction.of(args -> {
+            ItemCount current = itemFrom(args);
+            String enchantment = requireArg(args, 1).toLuaString();
+            int level = 1;
+            if (args.length > 2 && args[2] != null && !args[2].isNil()) {
+                level = (int) args[2].toLong();
+            }
+            return createItemUserdataLuava(state, current.withEnchantment(enchantment, level));
+        });
+    }
+
+    /** Property reads ({@code stack.id}) fall through to the snapshot table. */
+    private static LuaFunction indexHandler(LuaTable meta, LuaTable indexTable) {
+        return LuaFunction.of(args -> {
+            LuaValue key = args.length > 1 ? args[1] : LuaNil.NIL;
+            if (key == null || key.isNil()) {
+                return LuaNil.NIL;
+            }
+            LuaValue method = meta.rawget(key);
+            return method.isNil() ? indexTable.rawget(key) : method;
+        });
     }
 
     /**
@@ -102,9 +121,9 @@ public final class ItemUserdataFactory {
             LuaValue other = requireArg(args, 1);
             if (other instanceof LuaUserdata otherUserdata
                     && otherUserdata.getJavaInstance() instanceof IngredientWrapper otherIngredient) {
-                return createIngredientUserdataLuava(state, current.or(otherIngredient));
+                return createIngredientUserdataLuava(state, current.orIngredient(otherIngredient));
             }
-            return createIngredientUserdataLuava(state, current.or(other.toLuaString()));
+            return createIngredientUserdataLuava(state, current.orIngredient(other.toLuaString()));
         });
 
         setMethod(meta, "orIngredient", orFunction);
@@ -118,7 +137,7 @@ public final class ItemUserdataFactory {
         return userdata;
     }
 
-    private static ItemCount itemFrom(LuaValue[] args) {
+    private static ItemCount itemFrom(LuaValue... args) {
         if (args.length == 0 || !(args[0] instanceof LuaUserdata userdata)
                 || !(userdata.getJavaInstance() instanceof ItemCount itemCount)) {
             throw new LuaException("item userdata expected as first argument");
@@ -126,7 +145,7 @@ public final class ItemUserdataFactory {
         return itemCount;
     }
 
-    private static IngredientWrapper ingredientFrom(LuaValue[] args) {
+    private static IngredientWrapper ingredientFrom(LuaValue... args) {
         if (args.length == 0 || !(args[0] instanceof LuaUserdata userdata)
                 || !(userdata.getJavaInstance() instanceof IngredientWrapper ingredient)) {
             throw new LuaException("ingredient userdata expected as first argument");

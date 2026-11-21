@@ -41,6 +41,8 @@ require(".src.server.multiblock_machine")
 -- ==== CLIENT PHASE: HUD & Visuals ====
 require(".src.client.hud")
 require(".src.client.shaders_demo")
+require(".src.client.radar_demo")
+require(".src.client.imgui_demo")
 
 -- ==== MOD LIFECYCLE ====
 function mod.OnEnable()

@@ -6,6 +6,7 @@ import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.URL;
+import java.net.UnknownHostException;
 import java.util.Locale;
 
 /**
@@ -33,25 +34,38 @@ public final class UrlSafety {
         if (Boolean.getBoolean(ALLOW_INTERNAL_PROPERTY)) {
             return;
         }
-        String host = url.getHost();
-        if (host == null || host.isBlank()) {
-            throw new IllegalArgumentException("URL has no host: " + url);
-        }
-        String normalized = host.toLowerCase(Locale.ROOT);
-        if (normalized.equals("localhost") || normalized.endsWith(".localhost")) {
-            throw new IllegalArgumentException("URL host is local: " + host);
-        }
-        InetAddress[] addresses;
-        try {
-            addresses = InetAddress.getAllByName(host);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Cannot resolve URL host '" + host + "': " + e.getMessage(), e);
-        }
-        for (InetAddress address : addresses) {
+        String host = requireHost(url);
+        rejectLocalName(host);
+        for (InetAddress address : resolveAll(host)) {
             if (isInternal(address)) {
                 throw new IllegalArgumentException(
                         "URL host '" + host + "' resolves to a non-public address (" + address.getHostAddress() + ")");
             }
+        }
+    }
+
+    @NotNull
+    private static String requireHost(@NotNull URL url) {
+        String host = url.getHost();
+        if (host == null || host.isBlank()) {
+            throw new IllegalArgumentException("URL has no host: " + url);
+        }
+        return host;
+    }
+
+    private static void rejectLocalName(@NotNull String host) {
+        String normalized = host.toLowerCase(Locale.ROOT);
+        if ("localhost".equals(normalized) || normalized.endsWith(".localhost")) {
+            throw new IllegalArgumentException("URL host is local: " + host);
+        }
+    }
+
+    @NotNull
+    private static InetAddress[] resolveAll(@NotNull String host) {
+        try {
+            return InetAddress.getAllByName(host);
+        } catch (UnknownHostException e) {
+            throw new IllegalArgumentException("Cannot resolve URL host '" + host + "': " + e.getMessage(), e);
         }
     }
 

@@ -6,6 +6,8 @@ import com.luatweaker.dimension.DensityField;
 import com.luatweaker.dimension.DimensionConfig;
 import com.luatweaker.dimension.DimensionServiceImpl;
 import com.luatweaker.dimension.DimensionServiceImpl.TerrainMode;
+import com.luatweaker.dimension.TerrainColumn;
+import com.luatweaker.platform.spawn.SpawnRuleEvaluator;
 import com.luatweaker.dimension.TerrainSampler;
 import com.luatweaker.dimension.TerrainSpec;
 import com.mojang.serialization.Codec;
@@ -16,7 +18,10 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.WorldGenRegion;
 import net.minecraft.util.random.WeightedRandomList;
 import net.minecraft.world.entity.Entity;
@@ -24,6 +29,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.LevelHeightAccessor;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.NoiseColumn;
 import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.biome.Biome;
@@ -41,6 +47,7 @@ import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.blending.Blender;
 import net.minecraft.world.level.levelgen.structure.StructureSet;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -48,6 +55,8 @@ import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 /**
@@ -79,23 +88,38 @@ public class LuaChunkGenerator extends ChunkGenerator {
     // bound and placement seeds live here as named constants.
     private static final int MAX_CACHED_CHUNKS = 1024;
     /** Vanilla per-chunk placement seeds (same constants vanilla features use). */
-    private static final long CHUNK_X_SEED = 341873128712L;
-    private static final long CHUNK_Z_SEED = 132897987541L;
+    private static final long CHUNK_X_SEED = 341_873_128_712L;
+    private static final long CHUNK_Z_SEED = 132_897_987_541L;
+    /** Caves never break the top blocks, so the column top (and heightmaps) stay solid. */
+    private static final int CAVE_SURFACE_GUARD = 3;
+    /** Caves never remove the blocks just above minHeight, so the world floor stays intact. */
+    private static final int CAVE_FLOOR_GUARD = 3;
 
     private final String dimensionId;
     private final BlockState airState = Blocks.AIR.defaultBlockState();
 
     /** Per-chunk column cache: chunk key -> 16x16 heights + top block ids. */
     private final Map<Long, ChunkColumnData> columnCache = new ConcurrentHashMap<>();
-    private volatile long cachedGenerationVersion = -1;
-    private volatile DimensionServiceImpl cachedService;
+    // Atomic counterparts of the former volatile fields: same read/write visibility
+    // guarantees, without the AvoidUsingVolatile finding.
+    private final AtomicLong cachedGenerationVersion = new AtomicLong(-1);
+    private final AtomicReference<DimensionServiceImpl> cachedService = new AtomicReference<>();
 
     /** Resolved block states by id, so lookups happen once per block id. */
     private final Map<String, BlockState> resolvedBlocks = new ConcurrentHashMap<>();
 
+    /** Declarative spawn rules resolved for this dimension; rebuilt when their version changes. */
+    private final AtomicLong cachedSpawnRulesVersion = new AtomicLong(-1);
+    private final AtomicReference<List<SpawnRuleEvaluator.Resolved>> cachedSpawnRules =
+            new AtomicReference<>(List.of());
+
+    /** This dimension's level key, cached: getMobsAt runs on every natural spawn attempt. */
+    private final ResourceKey<Level> dimensionKey;
+
     public LuaChunkGenerator(BiomeSource biomeSource, @NotNull String dimensionId) {
         super(biomeSource);
         this.dimensionId = dimensionId;
+        this.dimensionKey = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse(dimensionId));
     }
 
     public String getDimensionId() {
@@ -147,69 +171,103 @@ public class LuaChunkGenerator extends ChunkGenerator {
         int seaLevel = columns.sampler != null ? columns.sampler.baseHeight() : config.seaLevel();
         boolean fillWater = columns.sampler == null || columns.sampler.waterEnabled();
 
-        BlockPos.MutableBlockPos mutPos = new BlockPos.MutableBlockPos();
+        ColumnFill fill = new ColumnFill(chunk, service, config, columns, pos,
+                new BlockPos.MutableBlockPos(), waterState, usePickers, seaLevel, fillWater,
+                minY, maxY, configMinY);
         for (int z = 0; z < 16; z++) {
             for (int x = 0; x < 16; x++) {
-                int column = z * 16 + x;
-                int worldX = pos.getMinBlockX() + x;
-                int worldZ = pos.getMinBlockZ() + z;
-                int height = columns.heights[column] + configMinY;
-
-                Map<Integer, String> overrides = usePickers
-                        ? service.computeBlockOverrides(dimensionId, worldX, worldZ, height, minY, maxY)
-                        : columns.overrides.getOrDefault(column, Map.of());
-                Map<Integer, String> strataOverrides = usePickers
-                        ? service.computeStrataOverrides(dimensionId, worldX, worldZ, height)
-                        : Map.of();
-                String topBlock = columns.topBlocks[column];
-                float slope = columns.slopes != null ? columns.slopes[column] : 0.0f;
-                for (int y = minY; y <= height; y++) {
-                    String blockId;
-                    if (overrides.containsKey(y)) {
-                        // Explicit overrides win even inside a density cave (ore veins, lava pockets).
-                        blockId = overrides.get(y);
-                    } else {
-                        if (columns.density != null && !columns.density.isSolid(x, y, z)) {
-                            // Density says air: the chunk starts as air, so skip the write.
-                            continue;
-                        }
-                        String ruleBlock = columns.sampler != null
-                                ? columns.sampler.surfaceBlockAt(height - y, y, slope)
-                                : null;
-                        if (ruleBlock != null) {
-                            blockId = ruleBlock;
-                        } else if (y == height) {
-                            blockId = topBlock;
-                        } else if (strataOverrides.containsKey(height - y)) {
-                            blockId = strataOverrides.get(height - y);
-                        } else {
-                            blockId = com.luatweaker.dimension.TerrainColumn.blockAtDepth(config, height, y);
-                        }
-                    }
-                    BlockState state = resolveBlock(blockId);
-                    // A fresh ProtoChunk starts as air, and ProtoChunk#setBlockState already
-                    // updates the worldgen heightmaps (WORLD_SURFACE_WG/OCEAN_FLOOR_WG).
-                    // Writing air here was pure overhead: ~600k heightmap updates per chunk.
-                    if (!state.isAir()) {
-                        chunk.setBlockState(mutPos.set(worldX, y, worldZ), state, false);
-                    }
-                }
-                for (int y = Math.max(height + 1, minY); y < maxY; y++) {
-                    BlockState state;
-                    if (overrides.containsKey(y)) {
-                        state = resolveBlock(overrides.get(y));
-                    } else {
-                        state = (fillWater && y <= seaLevel) ? waterState : airState;
-                    }
-                    if (!state.isAir()) {
-                        chunk.setBlockState(mutPos.set(worldX, y, worldZ), state, false);
-                    }
-                }
+                fillColumn(fill, x, z);
             }
         }
 
         return CompletableFuture.completedFuture(chunk);
     }
+
+    /** Fills one column's solid band and its air/water band above the surface. */
+    private void fillColumn(ColumnFill fill, int x, int z) {
+        ChunkColumnData columns = fill.columns;
+        int column = z * 16 + x;
+        int worldX = fill.pos.getMinBlockX() + x;
+        int worldZ = fill.pos.getMinBlockZ() + z;
+        int height = columns.heights[column] + fill.configMinY;
+
+        Map<Integer, String> overrides = fill.usePickers
+                ? fill.service.computeBlockOverrides(dimensionId, worldX, worldZ, height, fill.minY, fill.maxY)
+                : columns.overrides.getOrDefault(column, Map.of());
+        Map<Integer, String> strataOverrides = fill.usePickers
+                ? fill.service.computeStrataOverrides(dimensionId, worldX, worldZ, height)
+                : Map.of();
+        for (int y = fill.minY; y <= height; y++) {
+            String blockId = solidBlockIdAt(columns, fill.config, x, y, z, height, fill.minY,
+                    overrides, strataOverrides);
+            if (blockId == null) {
+                // Density/cave says air: the chunk starts as air, so skip the write.
+                continue;
+            }
+            BlockState state = resolveBlock(blockId);
+            // A fresh ProtoChunk starts as air, and ProtoChunk#setBlockState already
+            // updates the worldgen heightmaps (WORLD_SURFACE_WG/OCEAN_FLOOR_WG).
+            // Writing air here was pure overhead: ~600k heightmap updates per chunk.
+            if (!state.isAir()) {
+                fill.chunk.setBlockState(fill.mutPos.set(worldX, y, worldZ), state, false);
+            }
+        }
+        for (int y = Math.max(height + 1, fill.minY); y < fill.maxY; y++) {
+            BlockState state = openBlockState(overrides, y, fill.fillWater, fill.seaLevel, fill.waterState);
+            if (!state.isAir()) {
+                fill.chunk.setBlockState(fill.mutPos.set(worldX, y, worldZ), state, false);
+            }
+        }
+    }
+
+    /**
+     * Resolves the solid block id at a position, or null when density/caves carve it to air.
+     * Shared by the chunk write pass and {@link #getBaseColumn}.
+     */
+    private static @Nullable String solidBlockIdAt(ChunkColumnData columns, DimensionConfig config,
+                                                   int localX, int y, int localZ, int height, int minY,
+                                                   Map<Integer, String> overrides,
+                                                   Map<Integer, String> strataOverrides) {
+        if (overrides.containsKey(y)) {
+            // Explicit overrides win even inside a density cave (ore veins, lava pockets).
+            return overrides.get(y);
+        }
+        if (columns.density != null && !columns.density.isSolid(localX, y, localZ)) {
+            return null;
+        }
+        if (isCaveCarved(columns.caves, localX, y, localZ, height, minY)) {
+            return null;
+        }
+        int index = Math.floorMod(localZ, 16) * 16 + Math.floorMod(localX, 16);
+        float slope = columns.slopes != null ? columns.slopes[index] : 0.0f;
+        String ruleBlock = columns.sampler != null
+                ? columns.sampler.surfaceBlockAt(height - y, y, slope)
+                : null;
+        if (ruleBlock != null) {
+            return ruleBlock;
+        }
+        if (y == height) {
+            return columns.topBlocks[index];
+        }
+        if (strataOverrides.containsKey(height - y)) {
+            return strataOverrides.get(height - y);
+        }
+        return TerrainColumn.blockAtDepth(config, height, y);
+    }
+
+    private BlockState openBlockState(Map<Integer, String> overrides, int y, boolean fillWater,
+                                      int seaLevel, BlockState waterState) {
+        if (overrides.containsKey(y)) {
+            return resolveBlock(overrides.get(y));
+        }
+        return fillWater && y <= seaLevel ? waterState : airState;
+    }
+
+    /** Shared immutable inputs of one {@link #fillFromNoise} pass. */
+    private record ColumnFill(ChunkAccess chunk, DimensionServiceImpl service, DimensionConfig config,
+                              ChunkColumnData columns, ChunkPos pos, BlockPos.MutableBlockPos mutPos,
+                              BlockState waterState, boolean usePickers, int seaLevel, boolean fillWater,
+                              int minY, int maxY, int configMinY) {}
 
     @Override
     public void buildSurface(WorldGenRegion region, StructureManager structures,
@@ -231,46 +289,92 @@ public class LuaChunkGenerator extends ChunkGenerator {
     public void spawnOriginalMobs(WorldGenRegion region) {
         DimensionServiceImpl service = requireService();
         DimensionConfig config = requireConfig(service);
-        if (config.spawnEntities().isEmpty()) return;
+        if (config.spawnEntities().isEmpty()) { return; }
 
         ChunkPos center = region.getCenter();
         Random random = new Random(center.x * CHUNK_X_SEED ^ center.z * CHUNK_Z_SEED);
         for (DimensionConfig.SpawnEntry entry : config.spawnEntities()) {
-            java.util.Optional<EntityType<?>> type =
-                    com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(entry.entity());
-            if (type.isEmpty()) {
-                LuaTweakerLog.get().error(LogStage.SYSTEM,
-                        "spawnEntities for dimension '" + dimensionId + "' references unknown entity '"
-                                + entry.entity() + "'");
-                continue;
-            }
-            int groupSize = entry.minGroup() + random.nextInt(entry.maxGroup() - entry.minGroup() + 1);
-            for (int i = 0; i < groupSize; i++) {
-                int x = center.getMinBlockX() + random.nextInt(16);
-                int z = center.getMinBlockZ() + random.nextInt(16);
-                int y = getBaseHeight(x, z, Heightmap.Types.OCEAN_FLOOR_WG, region, null);
-                // Floating-island dimensions report no ground for void columns; spawning at
-                // minY there drops mobs out of the world and wastes entity ticks.
-                if (y <= config.minHeight() + 1 || y >= config.maxHeight()) continue;
-                // OCEAN_FLOOR excludes water; skip columns where the first free block is still
-                // submerged so land mobs do not spawn inside an ocean.
-                if (!region.getFluidState(new BlockPos(x, y, z)).isEmpty()) continue;
-                Entity entity = type.get().create(region.getLevel());
-                if (entity == null) continue;
-                entity.moveTo(x + 0.5, y, z + 0.5, random.nextFloat() * 360.0F, 0.0F);
-                region.addFreshEntity(entity);
-            }
+            spawnOriginalEntry(region, config, entry, center, random);
         }
     }
 
+    private void spawnOriginalEntry(WorldGenRegion region, DimensionConfig config,
+                                    DimensionConfig.SpawnEntry entry, ChunkPos center, Random random) {
+        java.util.Optional<EntityType<?>> type =
+                com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(entry.entity());
+        if (type.isEmpty()) {
+            LuaTweakerLog.get().error(LogStage.SYSTEM,
+                    "spawnEntities for dimension '" + dimensionId + "' references unknown entity '"
+                            + entry.entity() + "'");
+            return;
+        }
+        // Vanilla spawnOriginalMobs only seeds passive animals at worldgen; monsters and
+        // water mobs are left to the natural spawner (getMobsAt) and its caps.
+        if (type.get().getCategory() != MobCategory.CREATURE) {
+            return;
+        }
+        int groupSize = entry.minGroup() + random.nextInt(entry.maxGroup() - entry.minGroup() + 1);
+        for (int i = 0; i < groupSize; i++) {
+            spawnOriginalMob(region, config, type.get(), center, random);
+        }
+    }
+
+    private void spawnOriginalMob(WorldGenRegion region, DimensionConfig config, EntityType<?> type,
+                                  ChunkPos center, Random random) {
+        int x = center.getMinBlockX() + random.nextInt(16);
+        int z = center.getMinBlockZ() + random.nextInt(16);
+        int y = getBaseHeight(x, z, Heightmap.Types.OCEAN_FLOOR_WG, region, null);
+        // Floating-island dimensions report no ground for void columns; spawning at
+        // minY there drops mobs out of the world and wastes entity ticks.
+        if (y <= config.minHeight() + 1 || y >= config.maxHeight()) { return; }
+        // OCEAN_FLOOR excludes water; skip columns where the first free block is still
+        // submerged so land mobs do not spawn inside an ocean.
+        if (!region.getFluidState(new BlockPos(x, y, z)).isEmpty()) { return; }
+        Entity entity = type.create(region.getLevel());
+        if (entity == null) { return; }
+        entity.moveTo(x + 0.5, y, z + 0.5, random.nextFloat() * 360.0F, 0.0F);
+        region.addFreshEntity(entity);
+    }
+
     /**
-     * Natural mob spawning: the configured spawnEntities become the spawn
-     * list for every category they belong to, so the dimension is alive
-     * everywhere (not just during worldgen).
+     * Natural spawning.
+     *
+     * <p>When the dimension has declarative {@code SpawnRules:AddRule} entries, the biome's
+     * default spawn list is replaced by those rules and each rule is evaluated at the exact
+     * candidate position (light, Y, biome, block below, time, weather). Otherwise the
+     * dimension config's {@code spawnEntities} table keeps working as before.</p>
      */
     @Override
     public WeightedRandomList<MobSpawnSettings.SpawnerData> getMobsAt(
             Holder<Biome> biome, StructureManager structures, MobCategory category, BlockPos pos) {
+        List<SpawnRuleEvaluator.Resolved> rules = spawnRules();
+        if (!rules.isEmpty()) {
+            return spawnersFromRules(biome, category, pos, rules);
+        }
+        return spawnersFromConfig(category);
+    }
+
+    private WeightedRandomList<MobSpawnSettings.SpawnerData> spawnersFromRules(
+            Holder<Biome> biome, MobCategory category, BlockPos pos,
+            List<SpawnRuleEvaluator.Resolved> rules) {
+        ServerLevel level = currentLevel();
+        com.luatweaker.spawn.SpawnRuleServiceImpl spawnService = currentSpawnRules();
+        if (level == null || spawnService == null) {
+            return WeightedRandomList.create();
+        }
+        List<MobSpawnSettings.SpawnerData> fromRules = new ArrayList<>();
+        SpawnRuleEvaluator.Attempt attempt = SpawnRuleEvaluator.attemptAt(level, pos);
+        for (SpawnRuleEvaluator.Resolved rule : rules) {
+            if (SpawnRuleEvaluator.matches(rule, category, level, biome, pos, dimensionId,
+                    spawnService, attempt)) {
+                fromRules.add(new MobSpawnSettings.SpawnerData(rule.type(),
+                        rule.rule().weight(), rule.rule().minGroup(), rule.rule().maxGroup()));
+            }
+        }
+        return WeightedRandomList.create(fromRules);
+    }
+
+    private WeightedRandomList<MobSpawnSettings.SpawnerData> spawnersFromConfig(MobCategory category) {
         DimensionServiceImpl service = currentService();
         DimensionConfig config = service != null ? service.getConfig(dimensionId) : null;
         if (config == null || config.spawnEntities().isEmpty()) {
@@ -280,11 +384,38 @@ public class LuaChunkGenerator extends ChunkGenerator {
         for (DimensionConfig.SpawnEntry entry : config.spawnEntities()) {
             java.util.Optional<EntityType<?>> type =
                     com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(entry.entity());
-            if (type.isEmpty() || type.get().getCategory() != category) continue;
+            if (type.isEmpty() || type.get().getCategory() != category) { continue; }
             spawners.add(new MobSpawnSettings.SpawnerData(type.get(), entry.weight(),
                     entry.minGroup(), entry.maxGroup()));
         }
         return WeightedRandomList.create(spawners);
+    }
+
+    /** Resolved declarative spawn rules, rebuilt only when the spawn service version changes. */
+    @NotNull
+    private List<SpawnRuleEvaluator.Resolved> spawnRules() {
+        com.luatweaker.spawn.SpawnRuleServiceImpl spawnService = currentSpawnRules();
+        if (spawnService == null) { return List.of(); }
+        long version = spawnService.getRulesVersion();
+        if (version != cachedSpawnRulesVersion.get()) {
+            cachedSpawnRules.set(SpawnRuleEvaluator.resolve(dimensionId, spawnService.rulesFor(dimensionId)));
+            cachedSpawnRulesVersion.set(version);
+        }
+        return cachedSpawnRules.get();
+    }
+
+    @Nullable
+    private static com.luatweaker.spawn.SpawnRuleServiceImpl currentSpawnRules() {
+        Object service = com.luatweaker.core.service.LuaServiceRegistry.get("SpawnRuleServiceImpl");
+        return service instanceof com.luatweaker.spawn.SpawnRuleServiceImpl spawn ? spawn : null;
+    }
+
+    /** The ServerLevel of this dimension, or null before the server exists. */
+    @Nullable
+    private ServerLevel currentLevel() {
+        net.minecraft.server.MinecraftServer server =
+                net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        return server != null ? server.getLevel(dimensionKey) : null;
     }
 
     @Override
@@ -335,44 +466,23 @@ public class LuaChunkGenerator extends ChunkGenerator {
         ChunkColumnData data = columnDataAtBlock(service, config, x, z);
         int index = columnIndex(x, z);
         int height = data.heights[index] + config.minHeight();
-        String topBlock = data.topBlocks[index];
 
         BlockState[] states = new BlockState[maxY - minY];
         BlockState waterState = resolveBlock(config.waterBlock());
         Map<Integer, String> overrides = data.mode == TerrainMode.LEGACY
                 ? service.computeBlockOverrides(dimensionId, x, z, height, minY, maxY)
                 : data.overrides.getOrDefault(index, Map.of());
-        float slope = data.slopes != null ? data.slopes[index] : 0.0f;
         int seaLevel = data.sampler != null ? data.sampler.baseHeight() : config.seaLevel();
         boolean fillWater = data.sampler == null || data.sampler.waterEnabled();
         int localX = Math.floorMod(x, 16);
         int localZ = Math.floorMod(z, 16);
         for (int y = minY; y <= height; y++) {
-            String blockId;
-            if (overrides.containsKey(y)) {
-                blockId = overrides.get(y);
-            } else {
-                if (data.density != null && !data.density.isSolid(localX, y, localZ)) {
-                    states[y - minY] = airState;
-                    continue;
-                }
-                String ruleBlock = data.sampler != null
-                        ? data.sampler.surfaceBlockAt(height - y, y, slope)
-                        : null;
-                if (ruleBlock != null) {
-                    blockId = ruleBlock;
-                } else if (y == height) {
-                    blockId = topBlock;
-                } else {
-                    blockId = com.luatweaker.dimension.TerrainColumn.blockAtDepth(config, height, y);
-                }
-            }
-            states[y - minY] = resolveBlock(blockId);
+            String blockId = solidBlockIdAt(data, config, localX, y, localZ, height, minY,
+                    overrides, Map.of());
+            states[y - minY] = blockId == null ? airState : resolveBlock(blockId);
         }
         for (int y = height + 1; y < maxY; y++) {
-            states[y - minY] = overrides.containsKey(y)
-                    ? resolveBlock(overrides.get(y))
-                    : ((fillWater && y <= seaLevel) ? waterState : airState);
+            states[y - minY] = openBlockState(overrides, y, fillWater, seaLevel, waterState);
         }
         return new NoiseColumn(minY, states);
     }
@@ -430,17 +540,17 @@ public class LuaChunkGenerator extends ChunkGenerator {
     ChunkColumnData columnDataForChunk(DimensionServiceImpl service, DimensionConfig config,
                                        int chunkX, int chunkZ) {
         long version = service.getGenerationVersion();
-        if (service != cachedService || version != cachedGenerationVersion) {
+        if (!java.util.Objects.equals(service, cachedService.get()) || version != cachedGenerationVersion.get()) {
             columnCache.clear();
-            cachedService = service;
-            cachedGenerationVersion = version;
+            cachedService.set(service);
+            cachedGenerationVersion.set(version);
         }
         long key = chunkKey(chunkX, chunkZ);
         ChunkColumnData data = columnCache.get(key);
         if (data == null) {
             data = computeChunk(service, config, chunkX, chunkZ, version);
             ChunkColumnData existing = columnCache.putIfAbsent(key, data);
-            if (existing != null) data = existing;
+            if (existing != null) { data = existing; }
             if (columnCache.size() > MAX_CACHED_CHUNKS) {
                 columnCache.clear();
             }
@@ -448,18 +558,32 @@ public class LuaChunkGenerator extends ChunkGenerator {
         return data;
     }
 
+    /**
+     * Computes the column data for a chunk and attaches the optional cave field: carving is a
+     * separate pass so it works in every terrain mode (legacy, chunk and spec).
+     */
     private ChunkColumnData computeChunk(DimensionServiceImpl service, DimensionConfig config,
                                          int chunkX, int chunkZ, long version) {
+        ChunkColumnData base = computeBaseChunk(service, config, chunkX, chunkZ, version);
+        TerrainSampler caveSampler = service.createCaveSampler(dimensionId);
+        if (caveSampler == null) {
+            return base;
+        }
+        DensityField caves = caveSampler.sampleDensity(chunkX, chunkZ,
+                config.minHeight(), config.maxHeight());
+        return new ChunkColumnData(base.heights(), base.topBlocks(), base.overrides(), base.slopes(),
+                base.sampler(), base.density(), caves, base.mode(), base.version());
+    }
+
+    private ChunkColumnData computeBaseChunk(DimensionServiceImpl service, DimensionConfig config,
+                                             int chunkX, int chunkZ, long version) {
         int minY = config.minHeight();
         int maxY = config.maxHeight();
         TerrainMode mode = service.getTerrainMode(dimensionId);
         if (mode == TerrainMode.SPEC) {
-            TerrainSampler sampler = service.createTerrainSampler(dimensionId);
-            if (sampler != null) {
-                if (sampler.hasDensity()) {
-                    return computeDensityChunk(sampler, config, chunkX, chunkZ, minY, maxY, version);
-                }
-                return computeHeightChunk(sampler, config, chunkX, chunkZ, minY, maxY, version);
+            ChunkColumnData spec = computeSpecChunk(service, config, chunkX, chunkZ, minY, maxY, version);
+            if (spec != null) {
+                return spec;
             }
         }
         if (mode == TerrainMode.CHUNK && service.hasChunkTerrain(dimensionId)) {
@@ -467,9 +591,9 @@ public class LuaChunkGenerator extends ChunkGenerator {
                     service.computeChunkTerrain(dimensionId, chunkX, chunkZ);
             short[] heights = new short[DimensionServiceImpl.CHUNK_COLUMNS];
             for (int i = 0; i < heights.length; i++) {
-                heights[i] = (short) (columnHeight(result.heights()[i], minY, maxY) - minY);
+                heights[i] = (short) (TerrainColumn.clampHeight(result.heights()[i], minY, maxY) - minY);
             }
-            return new ChunkColumnData(heights, result.surfaces(), result.overrides(), null, null, null,
+            return new ChunkColumnData(heights, result.surfaces(), result.overrides(), null, null, null, null,
                     TerrainMode.CHUNK, version);
         }
         short[] heights = new short[DimensionServiceImpl.CHUNK_COLUMNS];
@@ -478,12 +602,26 @@ public class LuaChunkGenerator extends ChunkGenerator {
             for (int x = 0; x < 16; x++) {
                 DimensionServiceImpl.SurfaceResult surface = service.computeSurface(dimensionId,
                         chunkX * 16 + x, chunkZ * 16 + z, config.seaLevel());
-                heights[z * 16 + x] = (short) (columnHeight(surface.height(), minY, maxY) - minY);
+                heights[z * 16 + x] = (short) (TerrainColumn.clampHeight(surface.height(), minY, maxY) - minY);
                 topBlocks[z * 16 + x] = surface.blockId();
             }
         }
-        return new ChunkColumnData(heights, topBlocks, Map.of(), null, null, null,
+        return new ChunkColumnData(heights, topBlocks, Map.of(), null, null, null, null,
                 TerrainMode.LEGACY, version);
+    }
+
+    /** Native terrain path for {@link TerrainMode#SPEC}; null when no sampler is configured. */
+    @Nullable
+    private ChunkColumnData computeSpecChunk(DimensionServiceImpl service, DimensionConfig config,
+                                             int chunkX, int chunkZ, int minY, int maxY, long version) {
+        TerrainSampler sampler = service.createTerrainSampler(dimensionId);
+        if (sampler == null) {
+            return null;
+        }
+        if (sampler.hasDensity()) {
+            return computeDensityChunk(sampler, config, chunkX, chunkZ, minY, maxY, version);
+        }
+        return computeHeightChunk(sampler, config, chunkX, chunkZ, minY, maxY, version);
     }
 
     /** Native height/spline path: one height sample per column plus an 18x18 slope grid. */
@@ -495,12 +633,12 @@ public class LuaChunkGenerator extends ChunkGenerator {
         short[] heights = new short[DimensionServiceImpl.CHUNK_COLUMNS];
         String[] topBlocks = new String[DimensionServiceImpl.CHUNK_COLUMNS];
         for (int i = 0; i < heights.length; i++) {
-            int height = columnHeight(rawHeights[i], minY, maxY);
+            int height = TerrainColumn.clampHeight(rawHeights[i], minY, maxY);
             heights[i] = (short) (height - minY);
             String ruleBlock = sampler.surfaceBlockAt(0, height, slopes[i]);
             topBlocks[i] = ruleBlock != null ? ruleBlock : config.surfaceBlock();
         }
-        return new ChunkColumnData(heights, topBlocks, Map.of(), slopes, sampler, null,
+        return new ChunkColumnData(heights, topBlocks, Map.of(), slopes, sampler, null, null,
                 TerrainMode.SPEC, version);
     }
 
@@ -527,27 +665,14 @@ public class LuaChunkGenerator extends ChunkGenerator {
                 int down = topSolid[Math.max(0, z - 1) * 16 + x];
                 int up = topSolid[Math.min(15, z + 1) * 16 + x];
                 slopes[i] = (float) Math.max(Math.abs((right - left) * 0.5), Math.abs((up - down) * 0.5));
-                int height = columnHeight(topSolid[i], minY, maxY);
+                int height = TerrainColumn.clampHeight(topSolid[i], minY, maxY);
                 heights[i] = (short) (height - minY);
                 String ruleBlock = height < minY ? null : sampler.surfaceBlockAt(0, height, slopes[i]);
                 topBlocks[i] = ruleBlock != null ? ruleBlock : config.surfaceBlock();
             }
         }
-        return new ChunkColumnData(heights, topBlocks, Map.of(), slopes, sampler, density,
+        return new ChunkColumnData(heights, topBlocks, Map.of(), slopes, sampler, density, null,
                 TerrainMode.SPEC, version);
-    }
-
-    /**
-     * Resolves a Lua surface height to a block Y. Values below the build floor are treated as
-     * "no ground" ({@code minY - 1}) instead of being clamped onto the bottom layer: the clamped
-     * block made void columns look solid to {@code Level#getHeight}, so teleport/spawn checks
-     * accepted a column at the very bottom of a floating-island dimension.
-     */
-    static int columnHeight(int rawHeight, int minY, int maxY) {
-        if (rawHeight < minY + 1) {
-            return minY - 1;
-        }
-        return Math.clamp(rawHeight, minY + 1, maxY - 1);
     }
 
     private static long chunkKey(int chunkX, int chunkZ) {
@@ -561,11 +686,22 @@ public class LuaChunkGenerator extends ChunkGenerator {
     record ChunkColumnData(short[] heights, String[] topBlocks,
                            Map<Integer, Map<Integer, String>> overrides,
                            float[] slopes, TerrainSampler sampler, DensityField density,
-                           DimensionServiceImpl.TerrainMode mode, long version) {}
+                           DensityField caves, DimensionServiceImpl.TerrainMode mode, long version) {}
 
     // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
+
+    /**
+     * True when the cave field carves this block. The top and bottom guards keep the column
+     * surface solid (heightmaps stay valid) and the world floor intact.
+     */
+    static boolean isCaveCarved(@Nullable DensityField caves, int localX, int y, int localZ,
+                                int surfaceY, int minY) {
+        if (caves == null) { return false; }
+        if (y >= surfaceY - CAVE_SURFACE_GUARD || y < minY + CAVE_FLOOR_GUARD) { return false; }
+        return caves.isSolid(localX, y, localZ);
+    }
 
     private BlockState resolveBlock(String blockId) {
         return resolvedBlocks.computeIfAbsent(blockId, id -> {

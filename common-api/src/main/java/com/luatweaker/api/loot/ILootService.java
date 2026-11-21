@@ -12,8 +12,7 @@ public interface ILootService {
         description = "Add or modify a mob drop.",
         params = {"entityId: string - entity type ID (e.g. 'minecraft:zombie')",
                   "itemId: string - item to drop (e.g. 'minecraft:diamond')",
-                  "options: table - {chance, minCount, maxCount, lootingBonus}"},
-        returnType = "void"
+                  "options: table - {chance, minCount, maxCount, lootingBonus}"}
     )
     void addMobDrop(
             @NotNull String entityId,
@@ -36,8 +35,7 @@ public interface ILootService {
         params = {"tableId: string - loot table path (e.g. 'minecraft:chests/simple_dungeon')",
                   "itemId: string - item to add",
                   "chance: number - drop chance (0.0-1.0)",
-                  "minCount: number", "maxCount: number"},
-        returnType = "void"
+                  "minCount: number", "maxCount: number"}
     )
     void addChestLoot(
             @NotNull String tableId,
@@ -59,8 +57,7 @@ public interface ILootService {
         params = {"blockId: string - block ID",
                   "itemId: string - item to drop",
                   "fortuneBonus: number - extra per Fortune level",
-                  "silkTouchDrop: string - alternative drop with Silk Touch (nil for same)"},
-        returnType = "void"
+                  "silkTouchDrop: string - alternative drop with Silk Touch (nil for same)"}
     )
     void setBlockDrop(
             @NotNull String blockId,
@@ -71,8 +68,7 @@ public interface ILootService {
 
     @LuaDoc(
         description = "Add an item to the fishing loot table.",
-        params = {"itemId: string", "chance: number", "category: string - 'FISH', 'JUNK', or 'TREASURE'"},
-        returnType = "void"
+        params = {"itemId: string", "chance: number", "category: string - 'FISH', 'JUNK', or 'TREASURE'"}
     )
     void addFishingLoot(
             @NotNull String itemId,
@@ -88,8 +84,7 @@ public interface ILootService {
     java.util.Map<String, Object> getModifications();
 
     @LuaDoc(
-        description = "Clear all pending loot modifications.",
-        returnType = "void"
+        description = "Clear all pending loot modifications."
     )
     void clearAll();
 }

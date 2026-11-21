@@ -3,7 +3,6 @@ package com.luatweaker.platform.interaction;
 import com.luatweaker.api.interaction.IInteractableEntity;
 import com.luatweaker.platform.entity.NeoForgeEntityWrapper;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import org.jetbrains.annotations.NotNull;
 
@@ -117,7 +116,7 @@ public class NeoForgeInteractableEntity extends NeoForgeEntityWrapper implements
         try {
             net.minecraft.nbt.CompoundTag tag = net.minecraft.nbt.TagParser.parseTag(nbtJson);
             entity.getPersistentData().merge(tag);
-        } catch (Exception e) {
+        } catch (com.mojang.brigadier.exceptions.CommandSyntaxException e) {
             com.luatweaker.api.log.LuaTweakerLog.get().error(
                 com.luatweaker.api.log.LogStage.SYSTEM,
                 "Failed to parse NBT JSON for entity " + entity.getUUID() + ": " + e.getMessage()

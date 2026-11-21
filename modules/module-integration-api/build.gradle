@@ -1,0 +1,22 @@
+plugins {
+    id 'java-library'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+dependencies {
+    // Pure Java integration contracts: data specs + service interfaces only.
+    // Zero runtime dependencies; MC/NeoForge/third-party APIs are forbidden
+    // here (same law as common-api) so every layer can depend on it.
+    api 'org.jetbrains:annotations:24.1.0'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+}

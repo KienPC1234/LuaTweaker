@@ -1,93 +1,121 @@
 package com.luatweaker.spawn;
 
-import com.luatweaker.core.vm.LuaEngineFactory;
-
-import com.luatweaker.core.logger.AsyncFileLogger;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaValue;
+import com.luatweaker.core.logger.AsyncFileLogger;
+import com.luatweaker.core.vm.LuaEngineFactory;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import java.util.List;
 
-public class SpawnRuleServiceImplTest {
+/**
+ * Registration and clearing semantics of the dimension handler table, with a real Lua VM.
+ */
+class SpawnRuleServiceImplTest {
 
-    @AfterAll
-    public static void shutdownLogger() {
-        AsyncFileLogger.get().shutdown();
-    }
+    private static final String TEST_DIMENSION = "minecraft:test";
+    private static final String OTHER_DIMENSION = "minecraft:other";
+    private static final String HANDLER_GLOBAL = "handler";
+    private static final String HANDLER_SCRIPT =
+            "handler = function(dimensionId, players) return {} end";
+    private static final String SECOND_HANDLER_SCRIPT =
+            "handlerB = function(dimensionId, players) return {} end";
 
     private ILuaEngine engine;
     private SpawnRuleServiceImpl service;
 
+    @AfterAll
+    static void shutdownLogger() {
+        AsyncFileLogger.get().shutdown();
+    }
+
     @BeforeEach
-    void setup() {
+    void setUp() {
         engine = LuaEngineFactory.create(false);
         service = new SpawnRuleServiceImpl(engine);
     }
 
     @Test
-    void registerHandler_StoresFunction() {
-        engine.executeString("handler = function(dimensionId, players) return {} end", "test_handler");
-        service.registerHandler("minecraft:test", engine.getGlobalEnvironment().rawget("handler"));
-        assertNotNull(service.getHandler("minecraft:test"));
+    void storesFunctionRegisteredFromLua() {
+        engine.executeString(HANDLER_SCRIPT, "test_handler");
+
+        service.registerHandler(TEST_DIMENSION, handler(HANDLER_GLOBAL));
+
+        Assertions.assertNotNull(service.getHandler(TEST_DIMENSION),
+                "a Lua function must be stored for the dimension it was registered under");
     }
 
     @Test
-    void registerHandler_RejectsInvalidInput() {
-        assertThrows(IllegalArgumentException.class,
-                () -> service.registerHandler("bad id!", engine.wrapNumber(1)));
-        assertThrows(IllegalArgumentException.class,
-                () -> service.registerHandler("minecraft:test", engine.wrapNumber(5)));
-        assertThrows(IllegalArgumentException.class,
-                () -> service.registerHandler("minecraft:test", "not a function"));
-        assertThrows(IllegalArgumentException.class,
-                () -> service.registerHandler("minecraft:test", null));
+    void rejectsMalformedRegistrations() {
+        Assertions.assertAll("malformed handler registrations must all be rejected",
+            () -> Assertions.assertThrows(IllegalArgumentException.class,
+                () -> service.registerHandler("bad id!", engine.wrapNumber(1)),
+                "a dimension id with spaces/exclamation must be rejected"),
+            () -> Assertions.assertThrows(IllegalArgumentException.class,
+                () -> service.registerHandler(TEST_DIMENSION, engine.wrapNumber(5)),
+                "a Lua number must be rejected as a handler"),
+            () -> Assertions.assertThrows(IllegalArgumentException.class,
+                () -> service.registerHandler(TEST_DIMENSION, "not a function"),
+                "a Java string must be rejected as a handler"),
+            () -> Assertions.assertThrows(IllegalArgumentException.class,
+                () -> service.registerHandler(TEST_DIMENSION, null),
+                "a null handler must be rejected"));
     }
 
     @Test
-    void registerHandler_OverwritesPreviousHandler() {
-        engine.executeString("handlerA = function(dimensionId, players) return {} end", "test_ha");
-        engine.executeString("handlerB = function(dimensionId, players) return {} end", "test_hb");
-        ILuaValue handlerB = engine.getGlobalEnvironment().rawget("handlerB");
-        service.registerHandler("minecraft:test", engine.getGlobalEnvironment().rawget("handlerA"));
-        service.registerHandler("minecraft:test", handlerB);
-        assertSame(handlerB, service.getHandler("minecraft:test"));
+    void overwritesPreviousHandlerForTheSameDimension() {
+        engine.executeString(HANDLER_SCRIPT, "test_ha");
+        engine.executeString(SECOND_HANDLER_SCRIPT, "test_hb");
+        service.registerHandler(TEST_DIMENSION, handler(HANDLER_GLOBAL));
+        ILuaValue replacement = handler("handlerB");
+
+        service.registerHandler(TEST_DIMENSION, replacement);
+
+        Assertions.assertSame(replacement, service.getHandler(TEST_DIMENSION),
+                "re-registering a dimension must replace the previous handler");
     }
 
     @Test
-    void clearHandler_RemovesOnlyThatDimension() {
-        engine.executeString("handler = function(dimensionId, players) return {} end", "test_clear_handler");
-        service.registerHandler("minecraft:test", engine.getGlobalEnvironment().rawget("handler"));
-        service.registerHandler("minecraft:other", engine.getGlobalEnvironment().rawget("handler"));
-        service.clearHandler("minecraft:test");
-        assertNull(service.getHandler("minecraft:test"));
-        assertNotNull(service.getHandler("minecraft:other"));
+    void clearHandlerRemovesOnlyThatDimension() {
+        registerBothDimensions();
+
+        service.clearHandler(TEST_DIMENSION);
+
+        Assertions.assertAll("clearing one dimension must not touch the other",
+            () -> Assertions.assertNull(service.getHandler(TEST_DIMENSION),
+                "clearing a dimension must remove its handler"),
+            () -> Assertions.assertNotNull(service.getHandler(OTHER_DIMENSION),
+                "clearing one dimension must keep another dimension's handler"));
     }
 
     @Test
-    void clearHandler_RejectsInvalidDimensionId() {
-        assertThrows(IllegalArgumentException.class, () -> service.clearHandler("Bad Id!"));
+    void clearHandlerRejectsInvalidDimensionId() {
+        Assertions.assertThrows(IllegalArgumentException.class, () -> service.clearHandler("Bad Id!"),
+                "clearing an invalid dimension id must be rejected");
     }
 
     @Test
-    void clearAll_RemovesEverything() {
-        engine.executeString("handler = function(dimensionId, players) return {} end", "test_clear_all");
-        service.registerHandler("minecraft:test", engine.getGlobalEnvironment().rawget("handler"));
-        service.registerHandler("minecraft:other", engine.getGlobalEnvironment().rawget("handler"));
+    void clearAllRemovesEveryRegisteredDimension() {
+        registerBothDimensions();
+
         service.clearAll();
-        assertNull(service.getHandler("minecraft:test"));
-        assertNull(service.getHandler("minecraft:other"));
+
+        for (String dimension : List.of(TEST_DIMENSION, OTHER_DIMENSION)) {
+            Assertions.assertNull(service.getHandler(dimension),
+                    "clearAll must remove the handler for " + dimension);
+        }
     }
 
-    @Test
-    void getHandler_ReturnsNullWhenUnset() {
-        assertNull(service.getHandler("minecraft:test"));
+    private void registerBothDimensions() {
+        engine.executeString(HANDLER_SCRIPT, "test_clear_handler");
+        service.registerHandler(TEST_DIMENSION, handler(HANDLER_GLOBAL));
+        service.registerHandler(OTHER_DIMENSION, handler(HANDLER_GLOBAL));
     }
 
-    @Test
-    void getEngine_ReturnsOwnedEngine() {
-        assertSame(engine, service.getEngine());
+    private ILuaValue handler(String globalName) {
+        return engine.getGlobalEnvironment().rawget(globalName);
     }
 }

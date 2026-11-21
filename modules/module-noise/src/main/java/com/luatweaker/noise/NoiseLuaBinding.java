@@ -6,7 +6,9 @@ import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.core.bind.LuaBinder;
 import org.jetbrains.annotations.NotNull;
 
-public class NoiseLuaBinding {
+public final class NoiseLuaBinding {
+
+    private NoiseLuaBinding() {}
 
     static {
         // double[] returns (e.g. domainWarp) become 1-indexed Lua tables.

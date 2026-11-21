@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LuaTweaker PMD ruleset — dirty-code scan aligned with AGENTS.md Section 0-3.
+
+  Strategy: pull whole PMD categories (thorough scan), with a few exclusions
+  for rules that are known false-positives against this codebase's idioms:
+    - OnlyOneReturn: guard clauses are idiomatic here.
+    - AtLeastOneConstructor: noise on utility/interface-heavy code.
+    - LawOfDemeter: conflicts with the chainable Builder DSL
+      (Content.NewItem(...):...:Register(), Recipe.Shaped(...):...).
+    - DataClass: records/DTOs are data holders by design (Java 21).
+
+  Documentation category is intentionally NOT pulled whole: ClassCommentRequired
+  et al. would drown real findings (AGENTS.md only demands accuracy where docs
+  exist + @LuaDoc on interfaces, not javadoc-everywhere). CommentContent is
+  kept so TODO/FIXME/HACK/WIP/XXX markers (banned by AGENTS.md 0.2) are flagged.
+-->
+<ruleset name="LuaTweaker dirty-code scan"
+         xmlns="http://pmd.sourceforge.net/ruleset_2_0_0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset_2_0_0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+  <description>
+    Dirty-code detection for LuaTweaker: dead code, empty blocks, bad
+    exceptions handling, duplicates, over-coupling, concurrency and
+    performance smells.
+  </description>
+
+  <!-- Dead code, unused stuff, missing @Override, System.out, loose coupling -->
+  <!-- The custom AsyncFileLogger queues records; isDebugEnabled-style guards
+       add nothing, so GuardLogStatement is a false positive on this codebase. -->
+  <rule ref="category/java/bestpractices.xml">
+    <exclude name="GuardLogStatement"/>
+  </rule>
+
+  <!-- Naming, braces, imports, short vars (AGENTS bans 1-char vars), duplicates -->
+  <rule ref="category/java/codestyle.xml">
+    <exclude name="OnlyOneReturn"/>
+    <exclude name="AtLeastOneConstructor"/>
+    <!-- Style-only noise: this codebase does not use final-locals/params idiom. -->
+    <exclude name="LocalVariableCouldBeFinal"/>
+    <exclude name="MethodArgumentCouldBeFinal"/>
+    <!-- False positives on this codebase: x/y/z coords + loop vars are idiomatic,
+         long descriptive names are encouraged, `var` is Java 21 idiom,
+         package-private visibility is intentional between modules. -->
+    <exclude name="ShortVariable"/>
+    <exclude name="LongVariable"/>
+    <exclude name="UseExplicitTypes"/>
+    <exclude name="CommentDefaultAccessModifier"/>
+    <exclude name="FieldDeclarationsShouldBeAtStartOfClass"/>
+  </rule>
+
+  <!-- GodClass, coupling, complexity, vizualizing SOLID violations -->
+  <rule ref="category/java/design.xml">
+    <exclude name="LawOfDemeter"/>
+    <exclude name="DataClass"/>
+  </rule>
+
+  <!-- Empty catch/finally/if/try, NPE risks, bad exception handling (AGENTS 0.12/3) -->
+  <rule ref="category/java/errorprone.xml"/>
+  <!-- Narrow, documented carve-out (approved): ReturnEmptyCollectionRatherThanNull
+       is wrong for methods whose contract is explicitly @Nullable.
+       E.g. IPlatformInteraction.getBlockState/getBlockEntityData ("null if
+       dimension/pos invalid", pinned by NbtConversionTest's Lua nil contract):
+       returning Map.of() would turn Lua nil into {} and diverge fakes from
+       production (a fake signal per AGENTS 0.2). Non-annotated `return null`
+       sites are still flagged (verified: ImGuiFontLoader:55 still fires).
+       Scope: any @Nullable inside the enclosing method exempts it — keep
+       method contracts annotation-accurate so this stays narrow. -->
+  <rule ref="category/java/errorprone.xml/ReturnEmptyCollectionRatherThanNull">
+    <properties>
+      <!-- PMD 7 stores annotation names as Type nodes: match @SimpleName. -->
+      <property name="violationSuppressXPath"
+                value="./ancestor-or-self::MethodDeclaration[.//Annotation//*[@SimpleName = 'Nullable']]"/>
+    </properties>
+  </rule>
+
+  <!-- synchronized/volatile/thread issues (AGENTS 5.5 gate discipline) -->
+  <rule ref="category/java/multithreading.xml"/>
+
+  <!-- String concat in loops, inefficient constructors, lists (Lua-heavy bridge code) -->
+  <rule ref="category/java/performance.xml"/>
+
+  <!-- Hardcoded crypto/IV, insecure patterns -->
+  <rule ref="category/java/security.xml"/>
+
+  <!-- TODO/FIXME/HACK/WIP/XXX comment markers (banned by AGENTS.md 0.2) -->
+  <rule ref="category/java/documentation.xml/CommentContent"/>
+</ruleset>

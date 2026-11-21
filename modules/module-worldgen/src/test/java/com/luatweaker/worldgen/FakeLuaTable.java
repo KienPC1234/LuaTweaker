@@ -1,76 +1,28 @@
 package com.luatweaker.worldgen;
 
-import com.luatweaker.api.vm.ILuaFunction;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
 /**
- * Hashmap-backed ILuaTable for unit tests. Values are wrapped on put so
- * tests can pass plain strings, numbers, booleans and nested tables.
+ * Hashmap-backed ILuaTable for unit tests: string and array entries, plus a fluent
+ * {@code put} helper that accepts plain Java values (wrapped on write).
  */
-public class FakeLuaTable implements ILuaTable {
+public class FakeLuaTable extends FakeLuaStringKeyTable {
 
-    private final Map<String, ILuaValue> entries = new HashMap<>();
-    private final Map<Integer, ILuaValue> indexed = new HashMap<>();
+    private final Map<Integer, ILuaValue> indexed = new ConcurrentHashMap<>();
 
     public FakeLuaTable put(String key, Object value) {
-        entries.put(key, wrap(value));
+        entries.put(key, FakeLuaTables.wrap(value));
         return this;
     }
 
     public FakeLuaTable put(int index, Object value) {
-        indexed.put(index, wrap(value));
+        indexed.put(index, FakeLuaTables.wrap(value));
         return this;
-    }
-
-    /** Builds an array-style table from 1-based positional values. */
-    public static FakeLuaTable listOf(Object... values) {
-        FakeLuaTable table = new FakeLuaTable();
-        for (int i = 0; i < values.length; i++) {
-            table.put(i + 1, values[i]);
-        }
-        return table;
-    }
-
-    private static ILuaValue wrap(Object value) {
-        if (value instanceof ILuaValue v) {
-            return v;
-        }
-        return new FakeLuaValue(value);
-    }
-
-    @Override
-    public void rawset(String key, ILuaValue value) {
-        entries.put(key, value);
-    }
-
-    @Override
-    public void rawset(String key, String value) {
-        entries.put(key, new FakeLuaValue(value));
-    }
-
-    @Override
-    public void rawset(String key, double value) {
-        entries.put(key, new FakeLuaValue(value));
-    }
-
-    @Override
-    public void rawset(String key, boolean value) {
-        entries.put(key, new FakeLuaValue(value));
-    }
-
-    @Override
-    public void rawset(String key, ILuaFunction function) {
-        entries.put(key, new FakeLuaValue(function));
-    }
-
-    @Override
-    public void rawset(String key, Object userdata) {
-        entries.put(key, new FakeLuaValue(userdata));
     }
 
     @Override
@@ -94,11 +46,6 @@ public class FakeLuaTable implements ILuaTable {
     }
 
     @Override
-    public ILuaValue rawget(String key) {
-        return entries.get(key);
-    }
-
-    @Override
     public ILuaValue rawget(int index) {
         return indexed.get(index);
     }
@@ -110,81 +57,17 @@ public class FakeLuaTable implements ILuaTable {
 
     @Override
     public void forEach(BiConsumer<ILuaValue, ILuaValue> action) {
-        for (Map.Entry<String, ILuaValue> e : entries.entrySet()) {
-            action.accept(new FakeLuaValue(e.getKey()), e.getValue());
-        }
+        entries.forEach((key, value) -> action.accept(new FakeLuaValue(key), value));
     }
 
     @Override
-    public void setMetatable(ILuaTable meta) {
+    public void setMetatable(ILuaTable metatable) {
     }
 
     @Override
     public Map<ILuaValue, ILuaValue> asMap() {
-        Map<ILuaValue, ILuaValue> map = new HashMap<>();
-        for (Map.Entry<String, ILuaValue> e : entries.entrySet()) {
-            map.put(new FakeLuaValue(e.getKey()), e.getValue());
-        }
+        Map<ILuaValue, ILuaValue> map = new ConcurrentHashMap<>();
+        entries.forEach((key, value) -> map.put(new FakeLuaValue(key), value));
         return map;
-    }
-
-    @Override
-    public String asString() {
-        return "{table}";
-    }
-
-    @Override
-    public int asInt() {
-        return 0;
-    }
-
-    @Override
-    public double asDouble() {
-        return 0;
-    }
-
-    @Override
-    public boolean asBoolean() {
-        return false;
-    }
-
-    @Override
-    public boolean isNil() {
-        return false;
-    }
-
-    @Override
-    public boolean isTable() {
-        return true;
-    }
-
-    @Override
-    public boolean isFunction() {
-        return false;
-    }
-
-    @Override
-    public boolean isNumber() {
-        return false;
-    }
-
-    @Override
-    public boolean isString() {
-        return false;
-    }
-
-    @Override
-    public boolean isBoolean() {
-        return false;
-    }
-
-    @Override
-    public ILuaTable asTable() {
-        return this;
-    }
-
-    @Override
-    public Object toJavaObject() {
-        return this;
     }
 }

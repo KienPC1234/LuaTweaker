@@ -1,6 +1,5 @@
 package com.luatweaker.platform.client;
 
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.BackupConfirmScreen;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
@@ -10,85 +9,77 @@ import net.minecraft.network.chat.Component;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /** Guards the button labels Minecraft actually uses for its experimental-features screens. */
 class ExperimentalWarningHandlerTest {
 
-    private static final class TestScreen extends Screen {
-        TestScreen() {
-            super(Component.literal("test"));
-        }
-
-        void attach(Button button) {
-            addRenderableWidget(button);
-        }
-    }
-
-    private static Screen screenWith(Button button) {
-        TestScreen screen = new TestScreen();
-        screen.attach(button);
-        return screen;
-    }
+    private static final String MESSAGE_TEXT = "message";
 
     @Test
-    void mapsEveryExperimentalConfirmationToItsRealConfirmButton() {
+    void mapsExperimentalFeaturesScreenToProceed() {
         assertEquals(CommonComponents.GUI_PROCEED,
                 ExperimentalWarningHandler.confirmLabelFor(
-                        new ConfirmExperimentalFeaturesScreen(List.of(), accepted -> { })));
+                        new ConfirmExperimentalFeaturesScreen(List.of(), accepted -> {
+                        })),
+                "the experimental-features gate must map to its Proceed button");
+    }
 
+    @Test
+    void mapsWarningConfirmScreenToYes() {
         assertEquals(CommonComponents.GUI_YES,
                 ExperimentalWarningHandler.confirmLabelFor(new ConfirmScreen(
-                        accepted -> { },
+                        accepted -> {
+                        },
                         Component.translatable("selectWorld.warning.experimental.title"),
-                        Component.literal("message"))));
+                        Component.literal(MESSAGE_TEXT))),
+                "the generic warning confirm screen must map to its Yes button");
+    }
 
+    @Test
+    void mapsBackupConfirmScreenToBackupButton() {
         assertEquals(Component.translatable("selectWorld.backupJoinConfirmButton"),
                 ExperimentalWarningHandler.confirmLabelFor(new BackupConfirmScreen(
-                        () -> { },
-                        (backup, eraseCache) -> { },
+                        () -> {
+                        },
+                        (backup, eraseCache) -> {
+                        },
                         Component.translatable("selectWorld.backupQuestion.experimental"),
-                        Component.literal("message"),
-                        false)));
+                        Component.literal(MESSAGE_TEXT),
+                        false)),
+                "the backup confirm screen must map to its backup-join button");
     }
 
     @Test
-    void leavesUnrelatedWarningsAlone() {
+    void leavesDeprecatedWarningAlone() {
         assertNull(ExperimentalWarningHandler.confirmLabelFor(new ConfirmScreen(
-                accepted -> { },
-                Component.translatable("selectWorld.warning.deprecated.title"),
-                Component.literal("message"))));
+                        accepted -> {
+                        },
+                        Component.translatable("selectWorld.warning.deprecated.title"),
+                        Component.literal(MESSAGE_TEXT))),
+                "a deprecated-warning screen is not an experimental gate and must pass through");
+    }
 
+    @Test
+    void leavesCustomizedBackupQuestionAlone() {
         assertNull(ExperimentalWarningHandler.confirmLabelFor(new BackupConfirmScreen(
-                () -> { },
-                (backup, eraseCache) -> { },
-                Component.translatable("selectWorld.backupQuestion.customized"),
-                Component.literal("message"),
-                false)));
-
-        assertNull(ExperimentalWarningHandler.confirmLabelFor(new Screen(Component.literal("plain")) { }));
+                        () -> {
+                        },
+                        (backup, eraseCache) -> {
+                        },
+                        Component.translatable("selectWorld.backupQuestion.customized"),
+                        Component.literal(MESSAGE_TEXT),
+                        false)),
+                "a customized-backup question is not an experimental gate and must pass through");
     }
 
     @Test
-    void pressesOnlyTheMatchingButton() {
-        AtomicBoolean proceedPressed = new AtomicBoolean();
-        AtomicBoolean yesPressed = new AtomicBoolean();
-        TestScreen screen = new TestScreen();
-        screen.attach(Button.builder(CommonComponents.GUI_PROCEED, button -> proceedPressed.set(true)).build());
-        screen.attach(Button.builder(CommonComponents.GUI_YES, button -> yesPressed.set(true)).build());
-
-        assertTrue(ExperimentalWarningHandler.pressButton(screen, CommonComponents.GUI_PROCEED));
-        assertTrue(proceedPressed.get());
-        assertFalse(yesPressed.get(), "a different label must not be pressed");
-    }
-
-    @Test
-    void reportsWhenNoButtonMatches() {
-        Screen screen = screenWith(
-                Button.builder(CommonComponents.GUI_CANCEL, button -> { }).build());
-
-        assertFalse(ExperimentalWarningHandler.pressButton(screen, CommonComponents.GUI_PROCEED));
+    void leavesPlainScreensAlone() {
+        assertNull(ExperimentalWarningHandler.confirmLabelFor(
+                        new Screen(Component.literal("plain")) {
+                        }),
+                "screens without any warning must pass through untouched");
     }
 }

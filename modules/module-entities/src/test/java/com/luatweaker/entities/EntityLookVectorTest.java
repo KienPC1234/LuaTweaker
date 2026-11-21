@@ -3,6 +3,7 @@ package com.luatweaker.entities;
 import com.luatweaker.api.entity.IEntity;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
@@ -12,8 +13,42 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 class EntityLookVectorTest {
 
-    private static IEntity entityAt(float yaw, float pitch) {
-        return new IEntity() {
+    private static final double EPSILON = 1e-6;
+
+    @Test
+    void yawZeroFacesPositiveZ() {
+        assertArrayEquals(new double[] {0.0, 0.0, 1.0}, lookVector(0f, 0f), EPSILON,
+                "yaw 0 must look towards positive Z");
+    }
+
+    @Test
+    void yawNinetyFacesNegativeX() {
+        assertArrayEquals(new double[] {-1.0, 0.0, 0.0}, lookVector(90f, 0f), EPSILON,
+                "yaw 90 must look towards negative X");
+    }
+
+    @Test
+    void positivePitchLooksDown() {
+        assertArrayEquals(new double[] {0.0, -1.0, 0.0}, lookVector(0f, 90f), EPSILON,
+                "pitch 90 must look straight down");
+    }
+
+    @Test
+    void negativePitchLooksUp() {
+        assertArrayEquals(new double[] {0.0, 1.0, 0.0}, lookVector(0f, -90f), EPSILON,
+                "pitch -90 must look straight up");
+    }
+
+    @Test
+    void diagonalLookStaysUnitLength() {
+        double[] vector = lookVector(45f, 30f);
+        double length = Math.sqrt(vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2]);
+
+        assertEquals(1.0, length, EPSILON, "a look vector must stay normalized");
+    }
+
+    private static double[] lookVector(float yaw, float pitch) {
+        IEntity entity = new IEntity() {
             @Override public String getType() { return "minecraft:pig"; }
             @Override public String getName() { return "Pig"; }
             @Override public float getHealth() { return 10; }
@@ -25,36 +60,10 @@ class EntityLookVectorTest {
             @Override public float getYaw() { return yaw; }
             @Override public float getPitch() { return pitch; }
         };
-    }
-
-    private static void assertVector(IEntity entity, double x, double y, double z) {
-        assertEquals(x, entity.getLookVectorX(), 1e-6, "look X");
-        assertEquals(y, entity.getLookVectorY(), 1e-6, "look Y");
-        assertEquals(z, entity.getLookVectorZ(), 1e-6, "look Z");
-    }
-
-    @Test
-    void yawZeroFacesPositiveZ() {
-        assertVector(entityAt(0f, 0f), 0.0, 0.0, 1.0);
-    }
-
-    @Test
-    void yawNinetyFacesNegativeX() {
-        assertVector(entityAt(90f, 0f), -1.0, 0.0, 0.0);
-    }
-
-    @Test
-    void positivePitchLooksDownAndNegativeLooksUp() {
-        assertVector(entityAt(0f, 90f), 0.0, -1.0, 0.0);
-        assertVector(entityAt(0f, -90f), 0.0, 1.0, 0.0);
-    }
-
-    @Test
-    void diagonalLookStaysUnitLength() {
-        IEntity entity = entityAt(45f, 30f);
-        double length = Math.sqrt(entity.getLookVectorX() * entity.getLookVectorX()
-                + entity.getLookVectorY() * entity.getLookVectorY()
-                + entity.getLookVectorZ() * entity.getLookVectorZ());
-        assertEquals(1.0, length, 1e-6, "a look vector must stay normalized");
+        return new double[] {
+            entity.getLookVectorX(),
+            entity.getLookVectorY(),
+            entity.getLookVectorZ(),
+        };
     }
 }

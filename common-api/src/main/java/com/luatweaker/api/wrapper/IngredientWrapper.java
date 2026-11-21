@@ -12,41 +12,39 @@ public record IngredientWrapper(String descriptor, List<IngredientWrapper> alter
         if (descriptor == null) {
             throw new IllegalArgumentException("descriptor cannot be null");
         }
-        if (alternatives == null) alternatives = List.of();
+        if (alternatives == null) { alternatives = List.of(); }
     }
 
     public IngredientWrapper(String descriptor) {
         this(normalizeDescriptor(descriptor), List.of());
     }
 
-    public IngredientWrapper or(IngredientWrapper other) {
+    /**
+     * Adds one alternative accepted by this ingredient slot.
+     *
+     * @param other alternative ingredient
+     * @return a new ingredient listing every alternative, this one first
+     */
+    public IngredientWrapper orIngredient(IngredientWrapper other) {
         List<IngredientWrapper> list = new ArrayList<>(this.alternatives);
         list.add(other);
         return new IngredientWrapper(this.descriptor, list);
     }
 
-    public IngredientWrapper or(String otherDescriptor) {
-        return or(new IngredientWrapper(otherDescriptor));
-    }
-
-    public IngredientWrapper orIngredient(IngredientWrapper other) {
-        return or(other);
-    }
-
     public IngredientWrapper orIngredient(String otherDescriptor) {
-        return or(otherDescriptor);
+        return orIngredient(new IngredientWrapper(otherDescriptor));
     }
 
     public IngredientWrapper alt(IngredientWrapper other) {
-        return or(other);
+        return orIngredient(other);
     }
 
     public IngredientWrapper alt(String otherDescriptor) {
-        return or(otherDescriptor);
+        return orIngredient(otherDescriptor);
     }
 
     public static String normalizeDescriptor(String desc) {
-        if (desc == null) return "";
+        if (desc == null) { return ""; }
         String s = desc.trim();
         if (s.startsWith("oredict:")) {
             String tagPath = s.substring("oredict:".length());

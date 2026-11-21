@@ -43,7 +43,7 @@ public final class KeyBindPayloadValidator {
         Set<String> remoteEvents = networkService.getRegisteredRemoteEventNames();
         for (IKeyBindService.KeyBindEntry entry : keyBindService.getRegisteredKeyBinds()) {
             String payload = entry.onPressPayload();
-            if (payload == null || payload.isBlank()) continue;
+            if (payload == null || payload.isBlank()) { continue; }
             if (!remoteEvents.contains(payload)) {
                 warnings.add("[KeyMapping] Keybind '" + entry.id() + "' sends payload '" + payload
                         + "' but no server RemoteEvent with that name is registered. The key press "

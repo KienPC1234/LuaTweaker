@@ -2,7 +2,6 @@ package com.luatweaker.platform.container;
 
 import com.luatweaker.api.event.IEventService;
 import com.luatweaker.api.log.LogStage;
-import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.core.service.LuaServiceRegistry;
@@ -17,12 +16,10 @@ final class ContainerEvents {
     static void post(String eventName, Function<ILuaEngine, ILuaTable> payloadBuilder) {
         Object service = LuaServiceRegistry.get("Events");
         if (service instanceof IEventService events) {
-            try {
-                events.post(eventName, payloadBuilder.apply(events.getEngine()));
-            } catch (Exception e) {
-                LuaTweakerLog.get().error(LogStage.SYSTEM,
-                        "Failed to fire container event '" + eventName + "': " + e.getMessage());
-            }
+            com.luatweaker.platform.util.CallbackFirewall.run(
+                    () -> events.post(eventName, payloadBuilder.apply(events.getEngine())),
+                    LogStage.SYSTEM,
+                    () -> "Failed to fire container event '" + eventName + "'");
         }
     }
 
@@ -35,3 +32,4 @@ final class ContainerEvents {
         return payload;
     }
 }
+

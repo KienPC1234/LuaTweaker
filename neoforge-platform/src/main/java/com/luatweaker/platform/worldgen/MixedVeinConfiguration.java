@@ -45,7 +45,7 @@ public record MixedVeinConfiguration(List<WeightedTarget> targets, int size,
                                 .forGetter(WeightedTarget::target),
                         BlockState.CODEC.fieldOf("state")
                                 .forGetter(WeightedTarget::state),
-                        Codec.intRange(1, 1000000).fieldOf("weight")
+                        Codec.intRange(1, 1_000_000).fieldOf("weight")
                                 .forGetter(WeightedTarget::weight)
                 ).apply(instance, WeightedTarget::new));
     }

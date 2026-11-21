@@ -14,10 +14,14 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class TweenFailureLoggingTest {
+/**
+ * Pins the failure path of {@link TweenImpl}: unknown easing enums must be reported through the
+ * engine log and fall back to LINEAR/OUT instead of silently doing nothing.
+ */
+class TweenFailureLoggingTest {
 
     /** Test double that records WARNING entries only; all other levels are intentionally ignored. */
     private static final class CapturingLog implements ILuaTweakerLog {
@@ -55,27 +59,29 @@ public class TweenFailureLoggingTest {
 
     private ILuaTweakerLog previousLog;
     private CapturingLog capture;
+    private ILuaEngine engine;
+    private ILuaTable instance;
 
     @BeforeEach
-    public void installCapturingLog() {
+    void installCapturingLog() {
         previousLog = LuaTweakerLog.get();
         capture = new CapturingLog();
         LuaTweakerLog.set(capture);
+        engine = LuaEngineFactory.create(false);
+        instance = engine.createTable();
+        instance.rawset("Value", engine.wrapNumber(0.0));
     }
 
     @AfterEach
-    public void restoreLog() {
+    void restoreLog() {
+        engine.shutdown();
         if (previousLog != null) {
             LuaTweakerLog.set(previousLog);
         }
     }
 
-    @Test
-    public void invalidEasingEnumsAreLoggedAndFallBackToDefaults() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        ILuaTable instance = engine.createTable();
-        instance.rawset("Value", engine.wrapNumber(0.0));
-
+    /** Plays one half-second tick of a 1s LINEAR tween created with invalid enum names. */
+    private void runTweenWithInvalidEnums() {
         ILuaTable tweenInfo = engine.createTable();
         tweenInfo.rawset("Duration", engine.wrapNumber(1.0));
         tweenInfo.rawset("EasingStyle", engine.wrapString("NO_SUCH_STYLE"));
@@ -87,14 +93,29 @@ public class TweenFailureLoggingTest {
         TweenImpl tween = new TweenImpl(engine, instance, tweenInfo, properties);
         tween.play();
         tween.tick(0.5);
+    }
 
-        assertTrue(capture.warnings.stream().anyMatch(w -> w.contains("EasingStyle")
-                        && w.contains("NO_SUCH_STYLE")),
-                "invalid EasingStyle must be logged, got: " + capture.warnings);
-        assertTrue(capture.warnings.stream().anyMatch(w -> w.contains("EasingDirection")
-                        && w.contains("NO_SUCH_DIRECTION")),
-                "invalid EasingDirection must be logged, got: " + capture.warnings);
+    @Test
+    void invalidEasingStyleIsLogged() {
+        runTweenWithInvalidEnums();
+        assertTrue(capture.warnings.stream().anyMatch(warning -> warning.contains("EasingStyle")
+                        && warning.contains("NO_SUCH_STYLE")),
+                "an invalid EasingStyle must be logged with the offending value: " + capture.warnings);
+    }
+
+    @Test
+    void invalidEasingDirectionIsLogged() {
+        runTweenWithInvalidEnums();
+        assertTrue(capture.warnings.stream().anyMatch(warning -> warning.contains("EasingDirection")
+                        && warning.contains("NO_SUCH_DIRECTION")),
+                "an invalid EasingDirection must be logged with the offending value: "
+                        + capture.warnings);
+    }
+
+    @Test
+    void invalidEnumsFallBackToLinearOut() {
+        runTweenWithInvalidEnums();
         assertEquals(5.0, instance.rawget("Value").asDouble(), 1e-9,
-                "invalid enums must fall back to LINEAR/OUT interpolation");
+                "invalid enums must fall back to LINEAR/OUT interpolation (halfway after 0.5s)");
     }
 }

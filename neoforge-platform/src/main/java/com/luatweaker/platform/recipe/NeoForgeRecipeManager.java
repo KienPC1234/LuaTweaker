@@ -3,13 +3,14 @@ package com.luatweaker.platform.recipe;
 import com.luatweaker.api.recipe.IRecipeManagerService;
 import com.luatweaker.api.wrapper.IngredientWrapper;
 import com.luatweaker.api.wrapper.ItemCount;
+import com.luatweaker.integration.jei.IJeiRecipeService;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-public class NeoForgeRecipeManager implements IRecipeManagerService {
+public class NeoForgeRecipeManager implements IRecipeManagerService, IJeiRecipeService {
     public enum ModificationType {
         REMOVE_BY_OUTPUT,
         REMOVE_BY_INPUT,
@@ -29,7 +30,8 @@ public class NeoForgeRecipeManager implements IRecipeManagerService {
         ADD_SMITHING,
         ADD_ANVIL,
         ADD_BREWING,
-        ADD_TRADE
+        ADD_TRADE,
+        ADD_CUSTOM
     }
 
     public record RecipeModification(ModificationType type, Object data) {}
@@ -42,8 +44,18 @@ public class NeoForgeRecipeManager implements IRecipeManagerService {
     public record BrewingData(String recipeId, String outputPotion, String inputPotion, IngredientWrapper ingredient) {}
     public record TradeData(String profession, int level, ItemCount buy1, ItemCount buy2, ItemCount sell, int maxUses, int xp) {}
     public record ReplacementData(String target, String replacement) {}
+    public record CustomRecipeData(String recipeType, String recipeId, String jsonContent) {}
 
+    private final com.luatweaker.api.content.IDatapackService datapackService;
     private final List<RecipeModification> modifications = Collections.synchronizedList(new ArrayList<>());
+
+    public NeoForgeRecipeManager() {
+        this(null);
+    }
+
+    public NeoForgeRecipeManager(com.luatweaker.api.content.IDatapackService datapackService) {
+        this.datapackService = datapackService;
+    }
 
     public List<RecipeModification> getModifications() {
         return Collections.unmodifiableList(modifications);
@@ -142,5 +154,31 @@ public class NeoForgeRecipeManager implements IRecipeManagerService {
     @Override
     public void addTrade(String profession, int level, ItemCount buy1, ItemCount buy2, ItemCount sell, int maxUses, int xp) {
         modifications.add(new RecipeModification(ModificationType.ADD_TRADE, new TradeData(profession, level, buy1, buy2, sell, maxUses, xp)));
+    }
+
+    @Override
+    public void addJeiCategory(Map<String, Object> spec) {
+        com.luatweaker.platform.integration.jei.CustomJeiRegistry.registerCategoryFromSpec(spec);
+    }
+
+    @Override
+    public void addJeiRecipe(String categoryId, Map<String, Object> recipe) {
+        com.luatweaker.platform.integration.jei.CustomJeiRegistry.registerRecipeFromSpec(categoryId, recipe);
+    }
+
+    @Override
+    public void registerCustom(String recipeType, String recipeId, String recipeDataJson) {
+        modifications.add(new RecipeModification(ModificationType.ADD_CUSTOM,
+                new CustomRecipeData(recipeType, recipeId, recipeDataJson)));
+        com.luatweaker.api.content.IDatapackService ds = datapackService;
+        if (ds == null) {
+            Object obj = com.luatweaker.core.service.LuaServiceRegistry.get("DatapackServiceImpl");
+            if (obj instanceof com.luatweaker.api.content.IDatapackService registered) {
+                ds = registered;
+            }
+        }
+        if (ds != null) {
+            ds.addJsonRecipe(recipeId, recipeDataJson);
+        }
     }
 }

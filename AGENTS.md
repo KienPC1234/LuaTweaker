@@ -93,7 +93,7 @@ Never commit or embed API keys, tokens, passwords, database URLs — even "place
 
 - Read the surrounding code, dependencies, imports, and existing implementations before editing.
 - Respect existing patterns: module/builder architecture, Roblox-style Lua conventions, LuaBinder auto-binding (Section 5).
-- Check environment parity: Java 21, NeoForge 21.1.242, luava 0.2.5 (Lua 5.4), Luau-style Lua.
+- Check environment parity: Java 21, NeoForge 21.1.242, luava 0.2.7 (Lua 5.4), Luau-style Lua.
 
 ## 0.10 — NO Silent Errors — Loud, Honest Failure Reporting
 
@@ -115,10 +115,11 @@ The SPIRIT of each rule is as binding as its LETTER. No technical bypasses, no p
 
 1. Did I compile? What was the exact output?
 2. Did I run the tests? How many passed / failed / skipped?
-3. Did I loudly report every error, warning, and UNVERIFIED step?
-4. Did I follow the letter **and** the spirit of every rule?
-5. Did I name every file changed and every behavior added?
-6. Am I claiming anything I cannot prove? If yes → label it UNVERIFIED.
+3. Did PMD report ZERO violations (`pmdMain` + `pmdTest`)? What were the exact counts?
+4. Did I loudly report every error, warning, and UNVERIFIED step?
+5. Did I follow the letter **and** the spirit of every rule?
+6. Did I name every file changed and every behavior added?
+7. Am I claiming anything I cannot prove? If yes → label it UNVERIFIED.
 
 ## 0.14 — NO Hardcoding — Absolute Ban
 
@@ -132,8 +133,28 @@ The SPIRIT of each rule is as binding as its LETTER. No technical bypasses, no p
 1. **Plan → Code → Test → Verify → Report.**
 2. **Compile**: `./gradlew build` — MUST pass.
 3. **Test**: `./gradlew test` — all relevant tests MUST be green.
-4. Self-review your diff: no hidden files, no stubs, no dead code, no fabricated symbols, no secrets.
-5. Report honestly: what works, what is untested, known limitations.
+4. **PMD**: `./gradlew pmdMain pmdTest` — MUST report ZERO violations (see 0.16).
+5. Self-review your diff: no hidden files, no stubs, no dead code, no fabricated symbols, no secrets.
+6. Report honestly: what works, what is untested, known limitations.
+
+## 0.16 — PMD Quality Gate — NO Hiding Violations (Strictest — Zero Tolerance)
+
+PMD is the machine enforcer of Sections 0.1–0.3. It is wired into the build, not optional advice.
+
+- **Integration (single source of truth):** root `build.gradle` applies the `pmd` plugin to every subproject; ruleset = `config/pmd/ruleset.xml`; tool version = `pmd_version` in `gradle.properties`. `pmdMain`/`pmdTest` run as part of `check`. Reports: `<module>/build/reports/pmd/`.
+- **Commands:** `./gradlew pmdMain pmdTest` (full scan) or `./gradlew :<module>:pmdMain` (touched module only — MANDATORY after every Java change).
+- **Zero-tolerance:** no change is "done" while PMD reports violations in touched code. New code MUST NOT introduce new violations.
+- **Hiding a violation = instant rejection** (same severity as a silent stub, Section 0.4). ABSOLUTELY BANNED:
+  - `@SuppressWarnings("PMD...")`, `// NOPMD`, or any suppression comment;
+  - adding `<exclude>` to the ruleset to dodge a finding;
+  - deleting, neutering, or splitting code/tests just to silence a rule;
+  - fake assertion messages in tests (`"check"`, `"ok"`, `"test"` — messages must describe WHAT is verified);
+  - shrinking rule scope (e.g. excluding a file) without explicit user approval.
+- **Fix ladder (in order, stop at the first that applies):**
+  1. Fix the code properly (braces, constants, specific catches, try-with-resources, real asserts).
+  2. If the finding reflects INTENTIONAL design (e.g. a broad `catch` as a Lua-callback firewall), centralize it into ONE documented helper with a comment stating WHY broad — do not scatter.
+  3. If genuinely unfixable without behavior damage, report exact `file:line` + reason to the user and WAIT. Never hide.
+- **Ruleset changes** require explicit user approval AND an inline XML comment explaining why the rule is a false positive on this codebase. The bar is "rule is wrong for us", never "code is too dirty to fix".
 
 ---
 
@@ -355,7 +376,8 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 
 | Module | Role | Depends On |
 |---|---|---|
-| `common-api/` | Pure Java 21: PAL, VM interfaces, `@LuaDoc`/`@LuaDefault`, object wrappers | *(none)* |
+| `common-api/` | Pure Java 21: PAL, VM interfaces, `@LuaDoc`/`@LuaDefault`, object wrappers | `modules/module-integration-api` (pure types only) |
+| `modules/module-integration-api/` | Integration contracts (Geo/JEI specs + service interfaces). Zero deps; every layer may depend on it | *(none)* |
 | `core-engine/` | Luava VM wrapper, **LuaBinder**, **DynamicJavaProxy**, async logger (ASCII), linter, stub generator, LuaModManager | `common-api` |
 | `modules/module-content/` | Content builders (items/blocks/fluids/entities/tabs/keybinds), ProjectileRegistry | `common-api`, `core-engine` |
 | `modules/module-recipes/` | Recipe manipulation + builder DSL | `common-api`, `core-engine` |
@@ -444,7 +466,7 @@ Dev workspace: `neoforge-platform/luamods/` → synced to `run/luamods/` by `syn
 - **LuaBinder** — auto-binding từ interface; interface là single source of truth (binding + stubs + docs).
 - **Event bus** — shared map, replace semantics, cross-engine dispatch.
 - **Item/Block handlers** — server-side only dispatch.
-- **`LuavaEngine`** — luava 0.2.5 (Lua 5.4) implementation của `ILuaEngine`; synchronized VM entry points; `getAndClearLastExecutionError()` cho per-mod load error tracking; `task._run_deferred` tạo `LuaCoroutine` trên virtual thread và chờ bounded (2s) để không treo tick.
+- **`LuavaEngine`** — luava 0.2.7 (Lua 5.4) implementation của `ILuaEngine`; synchronized VM entry points; `getAndClearLastExecutionError()` cho per-mod load error tracking; `task._run_deferred` tạo `LuaCoroutine` trên virtual thread và chờ bounded (2s) để không treo tick.
 - **`Signal:FireSync`** — đồng bộ, dùng cho render; `Signal:Fire` — async qua task.
 - **Clientbound network** — dispatch qua network service của active engine.
 - **ProjectileRegistry** — custom projectile definitions thật (damage/explosionPower được áp dụng).

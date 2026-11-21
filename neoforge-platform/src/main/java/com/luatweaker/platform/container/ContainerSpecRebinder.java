@@ -37,7 +37,7 @@ public final class ContainerSpecRebinder {
         if (contentService == null || idParser == null) {
             return 0;
         }
-        Map<ResourceLocation, IBlockBuilder> builders = new HashMap<>();
+        var builders = new HashMap<ResourceLocation, IBlockBuilder>();
         for (IBlockBuilder builder : contentService.getRegisteredBlocks()) {
             builders.put(idParser.apply(builder.getId()), builder);
         }
@@ -89,3 +89,4 @@ public final class ContainerSpecRebinder {
         }
     }
 }
+

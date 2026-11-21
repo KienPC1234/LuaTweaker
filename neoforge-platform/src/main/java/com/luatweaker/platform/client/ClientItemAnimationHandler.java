@@ -13,23 +13,28 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @EventBusSubscriber(modid = LuaTweakerMod.MODID, value = Dist.CLIENT)
-public class ClientItemAnimationHandler {
+public final class ClientItemAnimationHandler {
+    private static final int FINAL_TICK = 1;
+
+
+    private ClientItemAnimationHandler() {
+    }
 
     public record ActiveAnim(String name, int totalTicks, int ticksRemaining, float speed) {}
 
     private static final Map<Integer, ActiveAnim> ACTIVE_ANIMS = new ConcurrentHashMap<>();
 
     public static void trigger(int entityId, String name, int durationTicks, float speed) {
-        if (durationTicks <= 0) durationTicks = 20;
-        ACTIVE_ANIMS.put(entityId, new ActiveAnim(name.toLowerCase(), durationTicks, durationTicks, speed <= 0 ? 1.0f : speed));
+        int ticks = durationTicks <= 0 ? 20 : durationTicks;
+        ACTIVE_ANIMS.put(entityId, new ActiveAnim(name.toLowerCase(java.util.Locale.ROOT), ticks, ticks, speed <= 0 ? 1.0f : speed));
     }
 
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Pre event) {
-        if (ACTIVE_ANIMS.isEmpty()) return;
+        if (ACTIVE_ANIMS.isEmpty()) { return; }
         ACTIVE_ANIMS.entrySet().removeIf(entry -> {
             ActiveAnim a = entry.getValue();
-            if (a.ticksRemaining() <= 1) return true;
+            if (a.ticksRemaining() <= FINAL_TICK) { return true; }
             entry.setValue(new ActiveAnim(a.name(), a.totalTicks(), a.ticksRemaining() - 1, a.speed()));
             return false;
         });
@@ -38,12 +43,12 @@ public class ClientItemAnimationHandler {
     @SubscribeEvent
     public static void onRenderHand(RenderHandEvent event) {
         var mc = Minecraft.getInstance();
-        if (mc.player == null) return;
+        if (mc.player == null) { return; }
         ActiveAnim anim = ACTIVE_ANIMS.get(mc.player.getId());
-        if (anim == null) return;
+        if (anim == null) { return; }
 
         float partialTicks = event.getPartialTick();
-        float progress = 1.0f - ((float) anim.ticksRemaining() - partialTicks) / (float) anim.totalTicks();
+        float progress = 1.0f - (anim.ticksRemaining() - partialTicks) / anim.totalTicks();
         progress = Math.max(0.0f, Math.min(1.0f, progress));
 
         var poseStack = event.getPoseStack();

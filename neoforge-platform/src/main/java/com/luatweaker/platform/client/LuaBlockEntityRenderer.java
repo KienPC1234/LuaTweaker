@@ -16,8 +16,10 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.entity.BlockEntityType;
+import org.jetbrains.annotations.NotNull;
+import org.luava.runtime.LuaException;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.BiConsumer;
 
@@ -42,15 +44,30 @@ public class LuaBlockEntityRenderer implements BlockEntityRenderer<CustomContain
                        int packedLight, int packedOverlay) {
         CustomContainerBlock block = CustomContainerRegistry.BLOCK_BY_TYPE.get(type);
         BiConsumer<Object, Object> renderHandler = block == null ? null : block.getSpec().renderHandler();
-        if (renderHandler == null) return;
+        if (renderHandler == null) { return; }
         ILuaEngine engine = LuaTweakerMod.getActiveEngine();
-        if (engine == null) return;
+        if (engine == null) { return; }
 
         NeoForgeBlockRenderer renderer = new NeoForgeBlockRenderer(be, poseStack, bufferSource, packedLight, packedOverlay, context, partialTick);
         ILuaTable rendererTable = LuaBinder.bindTable(engine, renderer, IBlockRenderer.class);
 
+        try {
+            renderHandler.accept(rendererTable, renderData(be, partialTick));
+        } catch (LuaException | IllegalStateException e) {
+            LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing BlockEntityRenderer: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Builds the data table handed to the Lua render callback.
+     *
+     * <p>Insertion-ordered so a script that dumps the table sees the same key order every frame.
+     * The map is a per-call local, never shared, so it is deliberately not concurrent.</p>
+     */
+    private static @NotNull Map<String, Object> renderData(@NotNull CustomContainerBlockEntity be, float partialTick) {
+        Map<String, Object> data;
+        data = new LinkedHashMap<>();
         BlockPos pos = be.getBlockPos();
-        Map<String, Object> data = new HashMap<>();
         data.put("X", pos.getX());
         data.put("Y", pos.getY());
         data.put("Z", pos.getZ());
@@ -59,11 +76,6 @@ public class LuaBlockEntityRenderer implements BlockEntityRenderer<CustomContain
         data.put("FluidAmount", be.getFluidAmount());
         data.put("Progress", be.getProgress());
         data.put("PartialTicks", (double) partialTick);
-
-        try {
-            renderHandler.accept(rendererTable, data);
-        } catch (Exception e) {
-            LuaTweakerLog.get().error(LogStage.SYSTEM, "Error executing BlockEntityRenderer: " + e.getMessage());
-        }
+        return data;
     }
 }

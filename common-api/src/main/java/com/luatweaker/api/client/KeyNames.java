@@ -2,9 +2,9 @@ package com.luatweaker.api.client;
 
 import org.jetbrains.annotations.NotNull;
 
-import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Human-readable key names for keybind registration ({@code "G"},
@@ -24,7 +24,18 @@ import java.util.Map;
  */
 public final class KeyNames {
 
-    private static final Map<String, Integer> BY_NAME = new HashMap<>();
+    /** Prefix marking a mouse-button name (e.g. {@code MOUSE_LEFT}). */
+    private static final String MOUSE_PREFIX = "MOUSE_";
+    /** Prefix marking a numbered button name (e.g. {@code BUTTON_1}). */
+    private static final String BUTTON_PREFIX = "BUTTON_";
+    /** Prefix accepted from raw GLFW names (e.g. {@code KEY_SPACE}). */
+    private static final String GLFW_KEY_PREFIX = "KEY_";
+    /** Lowest numbered mouse button accepted ({@code BUTTON_1} is button 0). */
+    private static final int MIN_NUMBERED_BUTTON = 1;
+    /** Highest numbered mouse button accepted. */
+    private static final int MAX_NUMBERED_BUTTON = 8;
+
+    private static final Map<String, Integer> BY_NAME = new ConcurrentHashMap<>();
 
     static {
         // Letters A-Z: GLFW_KEY_A = 65, contiguous ASCII.
@@ -89,14 +100,14 @@ public final class KeyNames {
             throw new IllegalArgumentException("key name must not be null");
         }
         String key = name.strip().toUpperCase(Locale.ROOT);
-        if (key.startsWith("KEY_")) {
-            key = key.substring("KEY_".length());
+        if (key.startsWith(GLFW_KEY_PREFIX)) {
+            key = key.substring(GLFW_KEY_PREFIX.length());
         }
         Integer code = BY_NAME.get(key);
         if (code != null) {
             return code;
         }
-        if (key.startsWith("MOUSE_") || key.startsWith("BUTTON_")) {
+        if (key.startsWith(MOUSE_PREFIX) || key.startsWith(BUTTON_PREFIX)) {
             throw new IllegalArgumentException("'" + name + "' is a mouse button: "
                     + "this parser resolves keyboard keys only; "
                     + "use it where a button is expected (registerKeyBinding accepts "
@@ -144,10 +155,32 @@ public final class KeyNames {
         if (name == null) {
             throw new IllegalArgumentException("mouse button name must not be null");
         }
-        String key = name.strip().toUpperCase(Locale.ROOT);
-        if (key.startsWith("MOUSE_")) {
-            key = key.substring("MOUSE_".length());
+        String key = stripMousePrefix(name.strip().toUpperCase(Locale.ROOT));
+        Integer named = namedMouseButtonCode(key);
+        if (named != null) {
+            return named;
         }
+        Integer numbered = numberedMouseButtonCode(key);
+        if (numbered != null) {
+            return numbered;
+        }
+        throw new IllegalArgumentException("unknown mouse button '" + name
+                + "' (use MOUSE_LEFT, MOUSE_MIDDLE, MOUSE_RIGHT or MOUSE_BUTTON_1-8)");
+    }
+
+    /** Drops a leading {@code MOUSE_} so names and bare words resolve alike. */
+    private static String stripMousePrefix(String key) {
+        if (key.startsWith(MOUSE_PREFIX)) {
+            return key.substring(MOUSE_PREFIX.length());
+        }
+        return key;
+    }
+
+    /**
+     * @return GLFW code for a well-known button name, or {@code null} when the
+     *         name is not a fixed word (numbered {@code BUTTON_n} or unknown).
+     */
+    private static Integer namedMouseButtonCode(String key) {
         switch (key) {
             case "LEFT":
             case "BUTTON_1":
@@ -159,20 +192,28 @@ public final class KeyNames {
             case "BUTTON_3":
                 return 2;
             default:
-                break;
+                return null;
         }
-        if (key.startsWith("BUTTON_")) {
-            try {
-                int index = Integer.parseInt(key.substring("BUTTON_".length()));
-                if (index >= 1 && index <= 8) {
-                    return index - 1;
-                }
-            } catch (NumberFormatException ignored) {
-                // Falls through to the error below.
-            }
+    }
+
+    /**
+     * @return GLFW code for {@code BUTTON_n} (1-based to 0-based), or
+     *         {@code null} when the name is not a numbered button.
+     */
+    private static Integer numberedMouseButtonCode(String key) {
+        if (!key.startsWith(BUTTON_PREFIX)) {
+            return null;
         }
-        throw new IllegalArgumentException("unknown mouse button '" + name
-                + "' (use MOUSE_LEFT, MOUSE_MIDDLE, MOUSE_RIGHT or MOUSE_BUTTON_1-8)");
+        int index;
+        try {
+            index = Integer.parseInt(key.substring(BUTTON_PREFIX.length()));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+        if (index < MIN_NUMBERED_BUTTON || index > MAX_NUMBERED_BUTTON) {
+            return null;
+        }
+        return index - 1;
     }
 
     /** True when the name addresses a mouse button instead of a keyboard key. */
@@ -181,7 +222,7 @@ public final class KeyNames {
             return false;
         }
         String key = name.strip().toUpperCase(Locale.ROOT);
-        return key.startsWith("MOUSE_") || key.startsWith("BUTTON_");
+        return key.startsWith(MOUSE_PREFIX) || key.startsWith(BUTTON_PREFIX);
     }
 
     /**

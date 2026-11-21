@@ -13,7 +13,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 public class TweenServiceImpl implements ITweenService {
     
-    private static final List<TweenImpl> activeTweens = new CopyOnWriteArrayList<>();
+    private static final List<TweenImpl> ACTIVE_TWEENS = new CopyOnWriteArrayList<>();
     private final ILuaEngine engine;
 
     public TweenServiceImpl(ILuaEngine engine) {
@@ -52,7 +52,7 @@ public class TweenServiceImpl implements ITweenService {
                 try {
                     ILuaValue signalInstance = engine.callFunction(newSignalFn, signalClass);
                     tweenTable.rawset("Completed", signalInstance);
-                } catch (Exception e) {
+                } catch (IllegalStateException e) {
                     // Play/Pause/Cancel stay usable; only the completion signal is missing.
                     LuaTweakerLog.get().warn(LogStage.SYSTEM,
                             "Failed to create Tween.Completed signal: " + e.getMessage());
@@ -65,18 +65,18 @@ public class TweenServiceImpl implements ITweenService {
     }
     
     public static void registerActiveTween(TweenImpl tween) {
-        if (!activeTweens.contains(tween)) {
-            activeTweens.add(tween);
+        if (!ACTIVE_TWEENS.contains(tween)) {
+            ACTIVE_TWEENS.add(tween);
         }
     }
 
     /** Drops every tween. Called before an engine reload so old-VM tables are never touched. */
     public static void clearAll() {
-        activeTweens.clear();
+        ACTIVE_TWEENS.clear();
     }
     
     public static void tickAll(double deltaTime) {
-        Iterator<TweenImpl> iterator = activeTweens.iterator();
+        Iterator<TweenImpl> iterator = ACTIVE_TWEENS.iterator();
         while (iterator.hasNext()) {
             TweenImpl tween = iterator.next();
             if (tween.getState() == TweenImpl.TweenState.PLAYING) {
@@ -84,7 +84,7 @@ public class TweenServiceImpl implements ITweenService {
                 tween.tickGuarded(deltaTime);
             }
             if (tween.getState() == TweenImpl.TweenState.COMPLETED || tween.getState() == TweenImpl.TweenState.CANCELLED) {
-                activeTweens.remove(tween);
+                ACTIVE_TWEENS.remove(tween);
             }
         }
     }

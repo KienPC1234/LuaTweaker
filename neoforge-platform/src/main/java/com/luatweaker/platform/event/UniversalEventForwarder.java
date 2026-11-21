@@ -1,120 +1,219 @@
 package com.luatweaker.platform.event;
 
 import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.core.service.LuaServiceRegistry;
+import com.luatweaker.entities.EntitiesLuaBinding;
+import com.luatweaker.events.EventServiceImpl;
+import com.luatweaker.interaction.InteractionLuaBinding;
 import com.luatweaker.platform.LuaTweakerMod;
+import com.luatweaker.platform.entity.NeoForgeEntityWrapper;
+import com.luatweaker.platform.entity.NeoForgePlayerWrapper;
+import com.luatweaker.platform.interaction.NeoForgeInteractableBlock;
+import com.luatweaker.spawn.SpawnRuleServiceImpl;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
 import net.neoforged.bus.api.Event;
 import net.neoforged.bus.api.EventPriority;
+import net.neoforged.bus.api.ICancellableEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.common.util.TriState;
+import net.neoforged.neoforge.event.entity.EntityEvent;
+import net.neoforged.neoforge.event.entity.living.FinalizeSpawnEvent;
+import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
+import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.level.ExplosionEvent;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Map;
-import java.util.function.Consumer;
 
 /**
  * Replaces hardcoded @SubscribeEvent methods.
  * Dynamically hooks into the NeoForge event bus based on the EventAliasRegistry
  * and forwards each event as an engine-neutral dynamically wrapped Lua value.
  */
-public class UniversalEventForwarder {
+public final class UniversalEventForwarder {
+
+    private static final String SPAWN_RULE_SERVICE_KEY = "SpawnRuleServiceImpl";
+    private static final String EVENT_SERVICE_KEY = "Events";
+
+    private UniversalEventForwarder() {
+    }
 
     public static void registerAll() {
-        Map<String, Class<? extends Event>> aliases = EventAliasRegistry.getAllAliases();
-
-        for (Map.Entry<String, Class<? extends Event>> entry : aliases.entrySet()) {
-            String alias = entry.getKey();
-            Class<? extends Event> eventClass = entry.getValue();
-
+        for (Map.Entry<String, Class<? extends Event>> entry : EventAliasRegistry.getAllAliases().entrySet()) {
             // Register a dynamic listener on the NeoForge event bus
-            registerListener(eventClass, alias);
+            registerListener(entry.getValue(), entry.getKey());
         }
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static void registerListener(Class<? extends Event> eventClass, String alias) {
-        Class rawClass = eventClass;
-        NeoForge.EVENT_BUS.addListener(EventPriority.NORMAL, false, rawClass, (Consumer<Event>) event -> {
-            handleEvent(alias, event);
-        });
+    private static <T extends Event> void registerListener(@NotNull Class<T> eventClass, @NotNull String alias) {
+        NeoForge.EVENT_BUS.addListener(EventPriority.NORMAL, false, eventClass,
+                (T event) -> handleEvent(alias, event));
     }
 
-    private static void handleEvent(String alias, Event event) {
+    private static void handleEvent(@NotNull String alias, @NotNull Event event) {
         ILuaEngine engine = LuaTweakerMod.getActiveEngine();
-        if (engine == null) return;
-
+        if (engine == null) {
+            return;
+        }
         // Rule 5.4: Never forward client-side gameplay events to Lua!
         // Client-side execution of world/block/player gameplay logic causes deadlocks
         // and desyncs (e.g. calling ServerLevel methods from Render thread).
-        if (event instanceof net.neoforged.neoforge.event.entity.player.PlayerInteractEvent pie
-                && pie.getLevel().isClientSide()) {
+        if (isClientSideGameplayEvent(event)) {
             return;
         }
-        if (event instanceof net.neoforged.neoforge.event.level.BlockEvent be
-                && be.getLevel().isClientSide()) {
+        applySpawnRuleHook(engine, event);
+        dispatchToLuaListeners(engine, alias, event);
+    }
+
+    /**
+     * Whether the event happens on a client level and therefore must stay out of Lua.
+     *
+     * <p>The three families below cover every gameplay event the alias registry exposes:
+     * {@code PlayerInteractEvent}, {@code ItemEntityPickupEvent} and
+     * {@code ProjectileImpactEvent} are all {@link EntityEvent} subtypes, so the entity's
+     * level is the same level the more specific accessors return.</p>
+     */
+    private static boolean isClientSideGameplayEvent(@NotNull Event event) {
+        return switch (event) {
+            case BlockEvent blockEvent -> blockEvent.getLevel().isClientSide();
+            case ExplosionEvent explosionEvent -> explosionEvent.getLevel().isClientSide();
+            case EntityEvent entityEvent -> entityEvent.getEntity().level().isClientSide();
+            default -> false;
+        };
+    }
+
+    /** Global {@code SpawnRules:OnSpawnCheck} hook: returning {@code false} cancels the spawn. */
+    private static void applySpawnRuleHook(@NotNull ILuaEngine engine, @NotNull Event event) {
+        if (!(event instanceof FinalizeSpawnEvent finalizeSpawn)) {
             return;
         }
-        if (event instanceof net.neoforged.neoforge.event.entity.EntityEvent ee
-                && ee.getEntity().level().isClientSide()) {
+        if (!(LuaServiceRegistry.get(SPAWN_RULE_SERVICE_KEY) instanceof SpawnRuleServiceImpl spawnService)) {
             return;
         }
+        ILuaValue hook = spawnService.getSpawnCheck();
+        if (hook == null || !hook.isFunction()) {
+            return;
+        }
+        ILuaValue result = engine.callFunction(hook,
+                EntitiesLuaBinding.createEntityLuaTable(engine,
+                        new NeoForgeEntityWrapper(finalizeSpawn.getEntity())),
+                engine.wrapString(dimensionOf(finalizeSpawn.getEntity().level())),
+                engine.wrapNumber(finalizeSpawn.getX()),
+                engine.wrapNumber(finalizeSpawn.getY()),
+                engine.wrapNumber(finalizeSpawn.getZ()));
+        if (result != null && result.toJavaObject() instanceof Boolean allowed && !allowed) {
+            finalizeSpawn.setSpawnCancelled(true);
+        }
+    }
 
-        if (LuaServiceRegistry.get("Events") instanceof com.luatweaker.events.EventServiceImpl eventService) {
-            // Hot-path guard: skip DynamicJavaProxy wrapping + table building for
-            // high-frequency events nobody listens to (same "no listeners" result
-            // as the fire calls below, which return allowed=true when empty).
-            if (!eventService.hasListeners(alias)) {
-                return;
-            }
-            if (event instanceof net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock rc) {
-                com.luatweaker.api.vm.ILuaTable table = engine.createTable();
-                ILuaValue rawEvent = engine.wrapDynamicJavaObject(rc);
-                table.rawset("rawEvent", rawEvent);
-                if (rc.getEntity() != null) {
-                    var playerWrapper = new com.luatweaker.platform.entity.NeoForgePlayerWrapper(rc.getEntity());
-                    var pTable = com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(engine, playerWrapper);
-                    table.rawset("player", pTable);
-                    table.rawset("Player", pTable);
-                }
-                if (rc.getLevel() != null && rc.getPos() != null) {
-                    var pos = rc.getPos();
-                    String dim = rc.getLevel().dimension().location().toString();
-                    var blockWrapper = new com.luatweaker.platform.interaction.NeoForgeInteractableBlock(
-                            dim, pos.getX(), pos.getY(), pos.getZ());
-                    var bTable = com.luatweaker.interaction.InteractionLuaBinding.wrapBlock(engine, blockWrapper);
-                    table.rawset("block", bTable);
-                    table.rawset("Block", bTable);
+    private static void dispatchToLuaListeners(@NotNull ILuaEngine engine, @NotNull String alias,
+                                               @NotNull Event event) {
+        if (!(LuaServiceRegistry.get(EVENT_SERVICE_KEY) instanceof EventServiceImpl eventService)) {
+            return;
+        }
+        // Hot-path guard: skip DynamicJavaProxy wrapping + table building for
+        // high-frequency events nobody listens to (same "no listeners" result
+        // as the fire calls below, which return allowed=true when empty).
+        if (!eventService.hasListeners(alias)) {
+            return;
+        }
+        if (event instanceof PlayerInteractEvent.RightClickBlock rightClick) {
+            dispatchRightClickBlock(engine, alias, eventService, rightClick);
+            return;
+        }
+        ILuaValue wrapped = engine.wrapDynamicJavaObject(event);
+        if (!eventService.fireRawEvent(alias, wrapped)) {
+            cancelEvent(event);
+        }
+    }
 
-                    com.luatweaker.api.vm.ILuaTable posTable = engine.createTable();
-                    posTable.rawset("X", engine.wrapNumber(pos.getX()));
-                    posTable.rawset("Y", engine.wrapNumber(pos.getY()));
-                    posTable.rawset("Z", engine.wrapNumber(pos.getZ()));
-                    table.rawset("pos", posTable);
-                    table.rawset("Pos", posTable);
+    private static void dispatchRightClickBlock(@NotNull ILuaEngine engine, @NotNull String alias,
+                                                @NotNull EventServiceImpl eventService,
+                                                @NotNull PlayerInteractEvent.RightClickBlock rightClick) {
+        ILuaTable table = buildRightClickBlockTable(engine, rightClick);
+        if (!eventService.fireRawEvent(alias, table)) {
+            rightClick.setCanceled(true);
+        }
+    }
 
-                    table.rawset("level", engine.wrapString(dim));
-                    table.rawset("dimension", engine.wrapString(dim));
-                    table.rawset("Dimension", engine.wrapString(dim));
+    /**
+     * Builds the {@code RightClickBlock} payload: {@code rawEvent}, optional {@code player},
+     * optional {@code block}/{@code pos}/{@code level}/{@code face} and both the camelCase and
+     * PascalCase spellings of every field.
+     */
+    private static @NotNull ILuaTable buildRightClickBlockTable(@NotNull ILuaEngine engine,
+                                                                 @NotNull PlayerInteractEvent.RightClickBlock event) {
+        ILuaTable table = engine.createTable();
+        table.rawset("rawEvent", engine.wrapDynamicJavaObject(event));
+        addPlayerFields(engine, table, event);
+        if (event.getLevel() != null && event.getPos() != null) {
+            addBlockFields(engine, table, event);
+        }
+        return table;
+    }
 
-                    if (rc.getHitVec() != null && rc.getHitVec().getDirection() != null) {
-                        String sideName = rc.getHitVec().getDirection().getName();
-                        table.rawset("face", engine.wrapString(sideName));
-                        table.rawset("Face", engine.wrapString(sideName));
-                        table.rawset("side", engine.wrapString(sideName));
-                        table.rawset("Side", engine.wrapString(sideName));
-                    }
-                }
-                boolean allowed = eventService.fireRawEvent(alias, table);
-                if (!allowed) {
-                    rc.setCanceled(true);
-                }
-                return;
-            }
+    private static void addPlayerFields(@NotNull ILuaEngine engine, @NotNull ILuaTable table,
+                                        @NotNull PlayerInteractEvent.RightClickBlock event) {
+        if (event.getEntity() == null) {
+            return;
+        }
+        ILuaTable playerTable = EntitiesLuaBinding.createPlayerLuaTable(engine,
+                new NeoForgePlayerWrapper(event.getEntity()));
+        table.rawset("player", playerTable);
+        table.rawset("Player", playerTable);
+    }
 
-            ILuaValue wrapped = engine.wrapDynamicJavaObject(event);
-            boolean allowed = eventService.fireRawEvent(alias, wrapped);
-            if (!allowed && event instanceof net.neoforged.bus.api.ICancellableEvent cancellable) {
-                cancellable.setCanceled(true);
-            }
+    private static void addBlockFields(@NotNull ILuaEngine engine, @NotNull ILuaTable table,
+                                       @NotNull PlayerInteractEvent.RightClickBlock event) {
+        BlockPos pos = event.getPos();
+        String dimension = dimensionOf(event.getLevel());
+        ILuaTable blockTable = InteractionLuaBinding.wrapBlock(engine,
+                new NeoForgeInteractableBlock(dimension, pos.getX(), pos.getY(), pos.getZ()));
+        table.rawset("block", blockTable);
+        table.rawset("Block", blockTable);
+        table.rawset("pos", buildPosTable(engine, pos));
+        table.rawset("Pos", buildPosTable(engine, pos));
+        table.rawset("level", engine.wrapString(dimension));
+        table.rawset("dimension", engine.wrapString(dimension));
+        table.rawset("Dimension", engine.wrapString(dimension));
+        if (event.getHitVec() == null || event.getHitVec().getDirection() == null) {
+            return;
+        }
+        String sideName = event.getHitVec().getDirection().getName();
+        table.rawset("face", engine.wrapString(sideName));
+        table.rawset("Face", engine.wrapString(sideName));
+        table.rawset("side", engine.wrapString(sideName));
+        table.rawset("Side", engine.wrapString(sideName));
+    }
+
+    private static @NotNull ILuaTable buildPosTable(@NotNull ILuaEngine engine, @NotNull BlockPos pos) {
+        ILuaTable posTable = engine.createTable();
+        posTable.rawset("X", engine.wrapNumber(pos.getX()));
+        posTable.rawset("Y", engine.wrapNumber(pos.getY()));
+        posTable.rawset("Z", engine.wrapNumber(pos.getZ()));
+        return posTable;
+    }
+
+    private static @NotNull String dimensionOf(@NotNull Level level) {
+        return level.dimension().location().toString();
+    }
+
+    /** Applies the Lua {@code false} result to whichever cancel channel the event exposes. */
+    private static void cancelEvent(@NotNull Event event) {
+        if (event instanceof ICancellableEvent cancellable) {
+            cancellable.setCanceled(true);
+            return;
+        }
+        if (event instanceof FinalizeSpawnEvent finalizeSpawn) {
+            finalizeSpawn.setSpawnCancelled(true);
+            return;
+        }
+        if (event instanceof ItemEntityPickupEvent.Pre pickupPre) {
+            pickupPre.setCanPickup(TriState.FALSE);
         }
     }
 }

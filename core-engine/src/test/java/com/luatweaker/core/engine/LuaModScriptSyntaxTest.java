@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * code). The scripts are not executed here (they need the in-game engine
  * services), but a syntax error must fail the build, never reach players.
  */
-public class LuaModScriptSyntaxTest {
+class LuaModScriptSyntaxTest {
 
     private static Path findLuaModsDir() {
         // Test working dir is core-engine/ (IDE: modules/core-engine); walk up
@@ -27,22 +27,24 @@ public class LuaModScriptSyntaxTest {
         Path dir = Path.of(".").toAbsolutePath().normalize();
         for (int i = 0; i < 6; i++) {
             Path candidate = dir.resolve("neoforge-platform/luamods");
-            if (Files.isDirectory(candidate)) return candidate;
+            if (Files.isDirectory(candidate)) { return candidate; }
             Path modulesCandidate = dir.resolve("modules/core-engine").resolve("neoforge-platform/luamods");
-            if (Files.isDirectory(modulesCandidate)) return modulesCandidate;
+            if (Files.isDirectory(modulesCandidate)) { return modulesCandidate; }
             dir = dir.getParent();
-            if (dir == null) break;
+            if (dir == null) { break; }
         }
         throw new IllegalStateException("Could not locate neoforge-platform/luamods from working dir");
     }
 
-    @Test
-    public void allLuaModScriptsParseWithoutSyntaxErrors() throws IOException {
+    private record LuaFileScan(List<Path> files, List<String> failures) {
+    }
+
+    private static LuaFileScan scanLuaModScripts() throws IOException {
         Path luaMods = findLuaModsDir();
         List<String> failures = new ArrayList<>();
+        List<Path> files;
         try (Stream<Path> stream = Files.walk(luaMods)) {
-            List<Path> files = stream.filter(p -> p.toString().endsWith(".lua")).toList();
-            assertTrue(files.size() >= 15, "expected the shipped Lua mods, found " + files.size());
+            files = stream.filter(p -> p.toString().endsWith(".lua")).toList();
             for (Path file : files) {
                 String source = Files.readString(file, StandardCharsets.UTF_8);
                 String error = LuaEngineFactory.checkSyntax(luaMods.relativize(file).toString(), source);
@@ -51,6 +53,18 @@ public class LuaModScriptSyntaxTest {
                 }
             }
         }
-        assertEquals(List.of(), failures, "Lua syntax errors in shipped mod scripts");
+        return new LuaFileScan(files, failures);
+    }
+
+    @Test
+    void shippedLuaModScriptsArePresent() throws IOException {
+        assertTrue(scanLuaModScripts().files().size() >= 15,
+                "shippedLuaModScriptsArePresent: expected the shipped Lua mods");
+    }
+
+    @Test
+    void shippedLuaModScriptsParseWithoutSyntaxErrors() throws IOException {
+        assertEquals(List.of(), scanLuaModScripts().failures(),
+                "shippedLuaModScriptsParseWithoutSyntaxErrors: Lua syntax errors in shipped mod scripts");
     }
 }

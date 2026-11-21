@@ -1,6 +1,6 @@
 # Addon Developer Guide for LuaTweaker
 
-> **Target:** Minecraft 1.21.1 (NeoForge) | **Java:** 21 | **Runtime:** luava 0.2.5 (`org.luava.*`)
+> **Target:** Minecraft 1.21.1 (NeoForge) | **Java:** 21 | **Runtime:** luava 0.2.7 (`org.luava.*`)
 
 This guide is for Java mod developers who want to expose APIs, callbacks and events to Lua scripts.
 LuaTweaker keeps a thin SPI: addons bind against `ILuaEngine` and `LuaBinder`. Do not import
@@ -245,3 +245,6 @@ Rules:
 - Cross-mod helpers on the `mod` table: `mod:HasMod("other")`,
   `mod:GetModVersion("other")`, `mod:ExportAPI("ApiName", apiTable)`,
   `mod:ImportAPI("other_mod", "ApiName")`.
+- Per-mod file access: `mod:Files()` (read-only own folder/zip) and
+  `mod:Exports()` (writable `luatweaker/exports/<mod_id>/`). Paths are relative
+  and sandboxed; see `docs/LUA_MOD_SYSTEM.md` section 6.

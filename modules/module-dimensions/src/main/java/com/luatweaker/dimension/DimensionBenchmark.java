@@ -1,6 +1,7 @@
 package com.luatweaker.dimension;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Measures the Lua-side terrain and biome pipeline of one dimension without generating
@@ -58,33 +59,50 @@ public final class DimensionBenchmark {
             throw new IllegalArgumentException("Unknown dimension '" + dimensionId + "'");
         }
         DimensionServiceImpl.TerrainMode mode = service.getTerrainMode(dimensionId);
-        TerrainSampler specSampler = mode == DimensionServiceImpl.TerrainMode.SPEC
-                ? service.createTerrainSampler(dimensionId) : null;
-        if (mode == DimensionServiceImpl.TerrainMode.SPEC && specSampler == null) {
-            throw new IllegalStateException("Dimension '" + dimensionId
-                    + "' is in spec mode but has no terrain spec registered");
-        }
+        TerrainSampler specSampler = samplerForBenchmark(service, dimensionId, mode);
         int side = 2 * radius + 1;
         int chunks = side * side;
         long luaCalls = 0;
         long start = System.nanoTime();
         for (int chunkX = -radius; chunkX <= radius; chunkX++) {
             for (int chunkZ = -radius; chunkZ <= radius; chunkZ++) {
-                luaCalls += switch (mode) {
-                    case CHUNK -> {
-                        service.computeChunkTerrain(dimensionId, chunkX, chunkZ);
-                        yield 1 + sampleBiomesBatch(service, dimensionId, chunkX, chunkZ);
-                    }
-                    case SPEC -> {
-                        sampleSpecChunk(specSampler, config, chunkX, chunkZ);
-                        yield sampleBiomesBatch(service, dimensionId, chunkX, chunkZ);
-                    }
-                    case LEGACY -> sampleLegacyChunk(service, config, dimensionId, chunkX, chunkZ);
-                };
+                luaCalls += sampleChunkCalls(service, config, dimensionId, chunkX, chunkZ, mode, specSampler);
             }
         }
         long elapsed = System.nanoTime() - start;
         return new Report(dimensionId, mode, radius, chunks, elapsed, luaCalls);
+    }
+
+    @Nullable
+    private static TerrainSampler samplerForBenchmark(@NotNull DimensionServiceImpl service,
+            @NotNull String dimensionId, @NotNull DimensionServiceImpl.TerrainMode mode) {
+        if (mode != DimensionServiceImpl.TerrainMode.SPEC) {
+            return null;
+        }
+        TerrainSampler sampler = service.createTerrainSampler(dimensionId);
+        if (sampler == null) {
+            throw new IllegalStateException("Dimension '" + dimensionId
+                    + "' is in spec mode but has no terrain spec registered");
+        }
+        return sampler;
+    }
+
+    private static long sampleChunkCalls(@NotNull DimensionServiceImpl service, @NotNull DimensionConfig config,
+            @NotNull String dimensionId, int chunkX, int chunkZ,
+            @NotNull DimensionServiceImpl.TerrainMode mode, @Nullable TerrainSampler specSampler) {
+        switch (mode) {
+            case CHUNK -> {
+                service.computeChunkTerrain(dimensionId, chunkX, chunkZ);
+                return 1 + sampleBiomesBatch(service, dimensionId, chunkX, chunkZ);
+            }
+            case SPEC -> {
+                sampleSpecChunk(specSampler, config, chunkX, chunkZ);
+                return sampleBiomesBatch(service, dimensionId, chunkX, chunkZ);
+            }
+            default -> {
+                return sampleLegacyChunk(service, config, dimensionId, chunkX, chunkZ);
+            }
+        }
     }
 
     /** Replays the per-column pipeline (terrain generator + pickers) and counts real Lua calls. */
@@ -97,20 +115,8 @@ public final class DimensionBenchmark {
         long calls = 0;
         for (int z = 0; z < 16; z++) {
             for (int x = 0; x < 16; x++) {
-                int worldX = chunkX * 16 + x;
-                int worldZ = chunkZ * 16 + z;
-                DimensionServiceImpl.SurfaceResult surface =
-                        service.computeSurface(dimensionId, worldX, worldZ, config.seaLevel());
-                if (hasGenerator) calls++;
-                if (hasBlockPicker) {
-                    service.computeBlockOverrides(dimensionId, worldX, worldZ, surface.height(),
-                            config.minHeight(), config.maxHeight());
-                    calls++;
-                }
-                if (hasStrataPicker) {
-                    service.computeStrataOverrides(dimensionId, worldX, worldZ, surface.height());
-                    calls++;
-                }
+                calls += sampleLegacyColumn(service, dimensionId, hasGenerator, hasBlockPicker,
+                        hasStrataPicker, chunkX * 16 + x, chunkZ * 16 + z, config);
             }
         }
         if (hasBiomeProvider) {
@@ -121,6 +127,27 @@ public final class DimensionBenchmark {
                     calls++;
                 }
             }
+        }
+        return calls;
+    }
+
+    private static long sampleLegacyColumn(@NotNull DimensionServiceImpl service,
+            @NotNull String dimensionId, boolean hasGenerator, boolean hasBlockPicker,
+            boolean hasStrataPicker, int worldX, int worldZ, @NotNull DimensionConfig config) {
+        long calls = 0;
+        DimensionServiceImpl.SurfaceResult surface =
+                service.computeSurface(dimensionId, worldX, worldZ, config.seaLevel());
+        if (hasGenerator) {
+            calls++;
+        }
+        if (hasBlockPicker) {
+            service.computeBlockOverrides(dimensionId, worldX, worldZ, surface.height(),
+                    config.minHeight(), config.maxHeight());
+            calls++;
+        }
+        if (hasStrataPicker) {
+            service.computeStrataOverrides(dimensionId, worldX, worldZ, surface.height());
+            calls++;
         }
         return calls;
     }
@@ -150,7 +177,9 @@ public final class DimensionBenchmark {
     /** Runs the batch biome provider for this chunk and returns 1 when it exists, else 0. */
     private static long sampleBiomesBatch(DimensionServiceImpl service, String dimensionId,
                                           int chunkX, int chunkZ) {
-        if (!service.hasBiomeBatch(dimensionId)) return 0;
+        if (!service.hasBiomeBatch(dimensionId)) {
+            return 0;
+        }
         service.computeBiomeBatch(dimensionId, chunkX, chunkZ);
         return 1;
     }

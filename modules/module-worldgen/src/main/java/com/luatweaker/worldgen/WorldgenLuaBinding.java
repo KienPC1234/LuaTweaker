@@ -7,7 +7,9 @@ import com.luatweaker.core.bind.LuaBinder;
 import com.luatweaker.core.stub.StubCatalog;
 import org.jetbrains.annotations.NotNull;
 
-public class WorldgenLuaBinding {
+public final class WorldgenLuaBinding {
+
+    private WorldgenLuaBinding() {}
 
     public static void registerBindings(@NotNull ILuaEngine engine, @NotNull IWorldgenService service) {
         ILuaTable table = LuaBinder.bindTable(engine, service, IWorldgenService.class);

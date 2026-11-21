@@ -13,8 +13,7 @@ public interface IWorldgenService {
                   "dimension: string - dimension ID (e.g. 'minecraft:overworld')",
                   "minHeight: number", "maxHeight: number",
                   "clusterSize: number - blocks per cluster",
-                  "frequency: number - clusters per chunk"},
-        returnType = "void"
+                  "frequency: number - clusters per chunk"}
     )
     void addOre(
             @NotNull String blockId,
@@ -30,8 +29,7 @@ public interface IWorldgenService {
         params = {"blockId: string", "dimension: string",
                   "minHeight: number", "maxHeight: number",
                   "clusterSize: number", "frequency: number",
-                  "biomes: table - list of biome IDs"},
-        returnType = "void"
+                  "biomes: table - list of biome IDs"}
     )
     void addOreBiomeFiltered(
             @NotNull String blockId,
@@ -40,19 +38,18 @@ public interface IWorldgenService {
             int maxHeight,
             int clusterSize,
             int frequency,
-            @NotNull String[] biomes
+            @NotNull String... biomes
     );
 
     @LuaDoc(
         description = "Add vegetation (flowers, grass) to biomes.",
         params = {"blockId: string", "chance: number - per-chunk chance (0.0-1.0)",
-                  "biomes: table - list of biome IDs"},
-        returnType = "void"
+                  "biomes: table - list of biome IDs"}
     )
     void addVegetation(
             @NotNull String blockId,
             double chance,
-            @NotNull String[] biomes
+            @NotNull String... biomes
     );
 
     @LuaDoc(
@@ -72,16 +69,14 @@ public interface IWorldgenService {
     @LuaDoc(
         description = "Register a raw configured feature from verbatim JSON (any vanilla type: tree, geode, random_patch, ...). The JSON must parse and carry a string 'type'; the type is checked against the 1.21.1 vanilla list so typos fail fast. Reference it as 'luatweaker:<id>' from ModifyBiome add or a biome features list; pair it with AddRawPlacedFeature for a working pipeline.",
         params = {"featureId: string - id (e.g. 'mymod:crystal_tree')",
-                  "json: string - verbatim configured-feature JSON"},
-        returnType = "void"
+                  "json: string - verbatim configured-feature JSON"}
     )
     void addRawConfiguredFeature(@NotNull String featureId, @NotNull String json);
 
     @LuaDoc(
         description = "Register a raw placed feature from verbatim JSON. The JSON must parse and carry a string 'feature' reference. Pair with AddRawConfiguredFeature (or a vanilla configured feature) and reference it as 'luatweaker:<id>' from ModifyBiome add.",
         params = {"featureId: string - id for the placed file (e.g. 'mymod:crystal_tree_patch')",
-                  "json: string - verbatim placed-feature JSON"},
-        returnType = "void"
+                  "json: string - verbatim placed-feature JSON"}
     )
     void addRawPlacedFeature(@NotNull String featureId, @NotNull String json);
 
@@ -101,6 +96,6 @@ public interface IWorldgenService {
     @org.jetbrains.annotations.Nullable
     String getDimensionBiomeTag(@NotNull String dimension);
 
-    @LuaDoc(description = "Clear all pending modifications.", returnType = "void")
+    @LuaDoc(description = "Clear all pending modifications.")
     void clearAll();
 }

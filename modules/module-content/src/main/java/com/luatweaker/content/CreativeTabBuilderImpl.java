@@ -4,7 +4,7 @@ import com.luatweaker.api.content.ICreativeTabBuilder;
 
 public class CreativeTabBuilderImpl implements ICreativeTabBuilder {
     private final String id;
-    private String title;
+    private String tabTitle;
     private String iconItem;
 
     public CreativeTabBuilderImpl(String id) {
@@ -13,7 +13,7 @@ public class CreativeTabBuilderImpl implements ICreativeTabBuilder {
 
     @Override
     public ICreativeTabBuilder title(String title) {
-        this.title = title;
+        this.tabTitle = title;
         return this;
     }
 
@@ -30,7 +30,7 @@ public class CreativeTabBuilderImpl implements ICreativeTabBuilder {
 
     @Override
     public String getTitle() {
-        return title;
+        return tabTitle;
     }
 
     @Override

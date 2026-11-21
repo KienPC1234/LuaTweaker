@@ -10,7 +10,9 @@ public record Vector2(double x, double y) {
 
     public Vector2 getUnit() {
         double m = getMagnitude();
-        if (m == 0) return ZERO;
+        if (m == 0) {
+            return ZERO;
+        }
         return new Vector2(x / m, y / m);
     }
 
@@ -27,7 +29,9 @@ public record Vector2(double x, double y) {
     }
 
     public Vector2 div(double scale) {
-        if (scale == 0) return ZERO;
+        if (scale == 0) {
+            return ZERO;
+        }
         return new Vector2(x / scale, y / scale);
     }
 

@@ -19,6 +19,7 @@ import net.neoforged.neoforge.event.AddPackFindersEvent;
 
 import java.io.File;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -33,6 +34,26 @@ import java.util.Optional;
  * </ul>
  */
 public class LuaAssetsPackFinder {
+
+    private static final String ASSETS_PREFIX = "assets/";
+    private static final String MODELS_ITEM_DIR = "/models/item/";
+    private static final String JSON_EXTENSION = ".json";
+    private static final String JSON_TAIL = "\n  }\n}";
+    private static final String JSON_PARENT_HEAD = "{\n  \"parent\": \"";
+    private static final String JSON_QUOTE_TAIL = "\n}";
+    private static final String BLOCKSTATES_DIR = "/blockstates/";
+    private static final String BLOCK_MODEL_PREFIX = ":block/";
+    private static final String ITEM_MODEL_PREFIX = ":item/";
+    private static final String MODELS_BLOCK_DIR = "/models/block/";
+    private static final String BUCKET_SUFFIX = "_bucket";
+    private static final String JSON_TOP_ENTRY = ",\n    \"top\": \"";
+    private static final String JSON_SIDE_ENTRY = ",\n    \"side\": \"";
+    private static final String JSON_MODEL_KEY = "model";
+    private static final String LANG_ITEM_PREFIX = "item.";
+    private static final String SHAPE_STAIRS = "STAIRS";
+    private static final String SHAPE_SLAB = "SLAB";
+    private static final String SHAPE_WALL = "WALL";
+
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
@@ -49,7 +70,7 @@ public class LuaAssetsPackFinder {
     @SubscribeEvent
     public void onAddPackFinders(AddPackFindersEvent event) {
         File assetsDir = new File(luaDir, "assets");
-        if (!assetsDir.exists()) assetsDir.mkdirs();
+        if (!assetsDir.exists()) { assetsDir.mkdirs(); }
 
         if (event.getPackType() == PackType.CLIENT_RESOURCES) {
             // Generate all asset JSON files directly in RAM (Zero Write to Disk)
@@ -142,25 +163,48 @@ public class LuaAssetsPackFinder {
     // -----------------------------------------------------------------------
 
     private void injectBlockTagsToVirtualPack() {
-        if (contentService == null || datapackService == null) return;
+        if (contentService == null || datapackService == null) { return; }
 
-        for (java.util.Map.Entry<String, List<String>> entry
+        for (Map.Entry<String, List<String>> entry
                 : ContentTagMapper.computeBlockTags(contentService).entrySet()) {
-            String virtualKey = "data/minecraft/" + entry.getKey();
-            String existing = datapackService.getVirtualFiles().get(virtualKey);
-            JsonObject json = new JsonObject();
-            json.addProperty("replace", false);
-            JsonArray values = existing != null
-                    ? com.google.gson.JsonParser.parseString(existing).getAsJsonObject().getAsJsonArray("values")
-                    : new JsonArray();
-            for (String elem : entry.getValue()) {
-                boolean found = false;
-                for (var v : values) if (v.getAsString().equals(elem)) { found = true; break; }
-                if (!found) values.add(elem);
-            }
-            json.add("values", values);
-            datapackService.addData(virtualKey, GSON.toJson(json));
+            injectBlockTag(entry);
         }
+    }
+
+    private void injectBlockTag(Map.Entry<String, List<String>> entry) {
+        String virtualKey = "data/minecraft/" + entry.getKey();
+        JsonObject json = new JsonObject();
+        json.addProperty("replace", false);
+        json.add("values", mergeTagValues(virtualKey, entry.getValue()));
+        datapackService.addData(virtualKey, GSON.toJson(json));
+    }
+
+    /** Existing "values" of a tag already registered in memory, extended with the new entries. */
+    private JsonArray mergeTagValues(String virtualKey, List<String> elements) {
+        JsonArray values = existingTagValues(virtualKey);
+        for (String elem : elements) {
+            if (!tagValueContains(values, elem)) {
+                values.add(elem);
+            }
+        }
+        return values;
+    }
+
+    private JsonArray existingTagValues(String virtualKey) {
+        String existing = datapackService.getVirtualFiles().get(virtualKey);
+        if (existing == null) {
+            return new JsonArray();
+        }
+        return GSON.fromJson(existing, JsonObject.class).getAsJsonArray("values");
+    }
+
+    private static boolean tagValueContains(JsonArray values, String element) {
+        for (int i = 0; i < values.size(); i++) {
+            if (values.get(i).getAsString().equals(element)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // -----------------------------------------------------------------------
@@ -168,136 +212,203 @@ public class LuaAssetsPackFinder {
     // -----------------------------------------------------------------------
 
     private void injectVirtualAssetFiles() {
-        if (contentService == null || datapackService == null) return;
-
-        // 1. Item models
-        for (IItemBuilder b : contentService.getRegisteredItems()) {
-            String[] parts = parseId(b.getId());
-            String ns = parts[0], id = parts[1];
-            String virtualKey = "assets/" + ns + "/models/item/" + id + ".json";
-
-            if (b.getGeoModel() != null) {
-                String json = "{\n  \"parent\": \"builtin/entity\",\n  \"textures\": {\n    \"particle\": \""
-                        + (b.getTexture() != null ? b.getTexture() : (ns + ":item/" + id))
-                        + "\"\n  }\n}";
-                datapackService.addData(virtualKey, json);
-                continue;
-            }
-
-            // If user provided physical file on disk under lua/assets/ or luamods/<mod_id>/assets/, don't override it
-            if (isPhysicalAssetPresent(virtualKey)) {
-                continue;
-            }
-
-            String json;
-            if (b.getModel() != null && !b.getModel().isBlank()) {
-                String targetModel = b.getModel();
-                // Prevent circular reference if model points to itself (e.g. "luatweaker:item/magic_staff")
-                if (targetModel.equals(ns + ":item/" + id) || targetModel.equals(id) || targetModel.endsWith("/" + id)) {
-                    targetModel = isToolType(b.getType()) ? "minecraft:item/handheld" : "minecraft:item/generated";
-                }
-                json = "{\n  \"parent\": \"" + targetModel + "\"\n}";
-            } else {
-                String parent = isToolType(b.getType()) ? "minecraft:item/handheld" : "minecraft:item/generated";
-                String defaultTex = (id.contains("apple") ? "minecraft:item/apple" : (ns + ":item/" + id));
-                String tex = b.getTexture() != null ? b.getTexture() : defaultTex;
-                if (!isTextureAvailable(tex)) {
-                    LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                            "[LuaAssetsPackFinder] Item texture '" + tex + "' for item '" + b.getId() + "' not found on disk, using safe fallback");
-                    tex = fallbackItemTexture(b.getType());
-                }
-                json = "{\n  \"parent\": \"" + parent + "\",\n  \"textures\": {\n    \"layer0\": \"" + tex + "\"\n  }\n}";
-            }
-            datapackService.addData(virtualKey, json);
-        }
-
-        // 2. Entity Spawn Egg Item Models
-        for (IEntityBuilder e : contentService.getRegisteredEntities()) {
-            String[] parts = parseId(e.getId());
-            String ns = parts[0], id = parts[1];
-            if (e.hasSpawnEgg()) {
-                String virtualKey = "assets/" + ns + "/models/item/" + id + "_spawn_egg.json";
-                if (isPhysicalAssetPresent(virtualKey)) continue;
-                String eggJson;
-                if (e.getSpawnEggTexture() != null && !e.getSpawnEggTexture().isBlank()) {
-                    eggJson = "{\n  \"parent\": \"minecraft:item/generated\",\n  \"textures\": {\n    \"layer0\": \"" + e.getSpawnEggTexture() + "\"\n  }\n}";
-                } else {
-                    eggJson = "{\n  \"parent\": \"minecraft:item/template_spawn_egg\"\n}";
-                }
-                datapackService.addData(virtualKey, eggJson);
-            }
-        }
-
-        // 3. Block models and blockstates
-        for (IBlockBuilder b : contentService.getRegisteredBlocks()) {
-            String[] parts = parseId(b.getId());
-            String ns = parts[0], id = parts[1];
-
-            boolean hasFacing = b.getFacing() != null && !"NONE".equalsIgnoreCase(b.getFacing());
-            boolean stateful = b.getBooleanState() != null || b.isConnectionState() || hasFacing;
-            if (stateful) {
-                // Variant assets (running/off, pipe connections, facing rotations) are generated by
-                // MachineAssetGenerator - the generic blockstate below cannot express them.
-                // A physical user blockstate takes over completely (no auto files).
-                String bsKey = "assets/" + ns + "/blockstates/" + id + ".json";
-                if (!isPhysicalAssetPresent(bsKey)) {
-                    MachineAssetGenerator.generate(datapackService, ns, id, b.getBooleanState(),
-                            b.isConnectionState(), b.getFacing(), b.getTexture(), b.getModel());
-                }
-                continue;
-            }
-
-            String shape = b.getEffectiveShape();
-            if ("STAIRS".equals(shape)) {
-                injectStairsAssets(ns, id, b.getBaseBlockId());
-            } else if ("SLAB".equals(shape)) {
-                injectSlabAssets(ns, id, b.getBaseBlockId());
-            } else if ("WALL".equals(shape)) {
-                injectWallAssets(ns, id, b.getBaseBlockId());
-            } else {
-                // Regular block state
-                String bsKey = "assets/" + ns + "/blockstates/" + id + ".json";
-                if (!isPhysicalAssetPresent(bsKey)) {
-                    String targetModel = b.getModel() != null ? b.getModel() : (ns + ":block/" + id);
-                    String bsJson = "{\n  \"variants\": {\n    \"\": { \"model\": \"" + targetModel + "\" }\n  }\n}";
-                    datapackService.addData(bsKey, bsJson);
-                }
-
-                if (b.getModel() == null) {
-                    String bmKey = "assets/" + ns + "/models/block/" + id + ".json";
-                    if (!isPhysicalAssetPresent(bmKey)) {
-                        String tex = b.getTexture() != null ? b.getTexture() : (ns + ":block/" + id);
-                        if (!isTextureAvailable(tex)) {
-                            LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                                    "[LuaAssetsPackFinder] Block texture '" + tex + "' for block '" + b.getId() + "' not found on disk, using safe fallback");
-                            tex = "minecraft:block/stone";
-                        }
-                        String bmJson = "{\n  \"parent\": \"minecraft:block/cube_all\",\n  \"textures\": {\n    \"all\": \"" + tex + "\"\n  }\n}";
-                        datapackService.addData(bmKey, bmJson);
-                    }
-                }
-
-                String imKey = "assets/" + ns + "/models/item/" + id + ".json";
-                if (!isPhysicalAssetPresent(imKey)) {
-                    String targetModel = b.getModel() != null ? b.getModel() : (ns + ":block/" + id);
-                    String imJson = "{\n  \"parent\": \"" + targetModel + "\"\n}";
-                    datapackService.addData(imKey, imJson);
-                }
-            }
-        }
-
-        // 4. Fluids & Language
+        if (contentService == null || datapackService == null) { return; }
+        injectItemModelAssets();
+        injectSpawnEggAssets();
+        injectBlockAssets();
         injectFluidAssets();
         injectLanguageFiles();
+    }
+
+    // 1. Item models
+    private void injectItemModelAssets() {
+        for (IItemBuilder b : contentService.getRegisteredItems()) {
+            injectItemModel(b);
+        }
+    }
+
+    private void injectItemModel(IItemBuilder b) {
+        String[] parts = parseId(b.getId());
+        String ns = parts[0];
+        String id = parts[1];
+        String virtualKey = ASSETS_PREFIX + ns + MODELS_ITEM_DIR + id + JSON_EXTENSION;
+
+        if (b.getGeoModel() != null) {
+            datapackService.addData(virtualKey, geoItemModelJson(ns, id, b.getTexture()));
+            return;
+        }
+
+        // If user provided physical file on disk under lua/assets/ or luamods/<mod_id>/assets/, don't override it
+        if (isPhysicalAssetPresent(virtualKey)) {
+            return;
+        }
+
+        datapackService.addData(virtualKey, itemModelJson(ns, id, b));
+    }
+
+    private static String geoItemModelJson(String ns, String id, String texture) {
+        String tex = texture != null ? texture : ns + ITEM_MODEL_PREFIX + id;
+        return "{\n  \"parent\": \"builtin/entity\",\n  \"textures\": {\n    \"particle\": \"" + tex + JSON_TAIL;
+    }
+
+    private String itemModelJson(String ns, String id, IItemBuilder b) {
+        String model = b.getModel();
+        if (model != null && !model.isBlank()) {
+            return JSON_PARENT_HEAD + explicitItemModel(model, ns, id, b.getType()) + JSON_QUOTE_TAIL;
+        }
+
+        String parent = itemParentModel(b.getType());
+        String tex = b.getTexture() != null ? b.getTexture() : defaultItemTexture(ns, id);
+        if (!isTextureAvailable(tex)) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[LuaAssetsPackFinder] Item texture '" + tex + "' for item '" + b.getId() + "' not found on disk, using safe fallback");
+            tex = fallbackItemTexture(b.getType());
+        }
+        return JSON_PARENT_HEAD + parent + "\",\n  \"textures\": {\n    \"layer0\": \"" + tex + JSON_TAIL;
+    }
+
+    /** Explicit model, unless it points at the item itself (circular reference). */
+    private String explicitItemModel(String model, String ns, String id, String type) {
+        boolean pointsAtItself = model.equals(ns + ITEM_MODEL_PREFIX + id)
+                || model.equals(id)
+                || model.endsWith("/" + id);
+        return pointsAtItself ? itemParentModel(type) : model;
+    }
+
+    private String itemParentModel(String type) {
+        return isToolType(type) ? "minecraft:item/handheld" : "minecraft:item/generated";
+    }
+
+    private static String defaultItemTexture(String ns, String id) {
+        return id.contains("apple") ? "minecraft:item/apple" : ns + ITEM_MODEL_PREFIX + id;
+    }
+
+    // 2. Entity Spawn Egg Item Models
+    private void injectSpawnEggAssets() {
+        for (IEntityBuilder e : contentService.getRegisteredEntities()) {
+            injectSpawnEggModel(e);
+        }
+    }
+
+    private void injectSpawnEggModel(IEntityBuilder e) {
+        if (!e.hasSpawnEgg()) {
+            return;
+        }
+        String[] parts = parseId(e.getId());
+        String virtualKey = ASSETS_PREFIX + parts[0] + MODELS_ITEM_DIR + parts[1] + "_spawn_egg.json";
+        if (isPhysicalAssetPresent(virtualKey)) {
+            return;
+        }
+        datapackService.addData(virtualKey, spawnEggModelJson(e.getSpawnEggTexture()));
+    }
+
+    private static String spawnEggModelJson(String texture) {
+        if (texture != null && !texture.isBlank()) {
+            return "{\n  \"parent\": \"minecraft:item/generated\",\n  \"textures\": {\n    \"layer0\": \"" + texture + JSON_TAIL;
+        }
+        return "{\n  \"parent\": \"minecraft:item/template_spawn_egg\"\n}";
+    }
+
+    // 3. Block models and blockstates
+    private void injectBlockAssets() {
+        for (IBlockBuilder b : contentService.getRegisteredBlocks()) {
+            injectBlockAsset(b);
+        }
+    }
+
+    private void injectBlockAsset(IBlockBuilder b) {
+        String[] parts = parseId(b.getId());
+        String ns = parts[0];
+        String id = parts[1];
+
+        if (isStatefulBlock(b)) {
+            injectStatefulBlockAssets(b, ns, id);
+            return;
+        }
+
+        String shape = b.getEffectiveShape();
+        if (SHAPE_STAIRS.equals(shape)) {
+            injectStairsAssets(ns, id, b.getBaseBlockId());
+        } else if (SHAPE_SLAB.equals(shape)) {
+            injectSlabAssets(ns, id, b.getBaseBlockId());
+        } else if (SHAPE_WALL.equals(shape)) {
+            injectWallAssets(ns, id, b.getBaseBlockId());
+        } else {
+            injectRegularBlockAssets(b, ns, id);
+        }
+    }
+
+    private static boolean isStatefulBlock(IBlockBuilder b) {
+        boolean hasFacing = b.getFacing() != null && !"NONE".equalsIgnoreCase(b.getFacing());
+        return b.getBooleanState() != null || b.isConnectionState() || hasFacing;
+    }
+
+    private void injectStatefulBlockAssets(IBlockBuilder b, String ns, String id) {
+        // Variant assets (running/off, pipe connections, facing rotations) are generated by
+        // MachineAssetGenerator - the generic blockstate below cannot express them.
+        // A physical user blockstate takes over completely (no auto files).
+        String bsKey = ASSETS_PREFIX + ns + BLOCKSTATES_DIR + id + JSON_EXTENSION;
+        if (isPhysicalAssetPresent(bsKey)) {
+            return;
+        }
+        MachineAssetGenerator.generate(datapackService, ns, id, b.getBooleanState(),
+                b.isConnectionState(), b.getFacing(), b.getTexture(), b.getModel());
+    }
+
+    private void injectRegularBlockAssets(IBlockBuilder b, String ns, String id) {
+        injectBlockstateFile(b, ns, id);
+        injectBlockModelFile(b, ns, id);
+        injectBlockItemModel(b, ns, id);
+    }
+
+    private void injectBlockstateFile(IBlockBuilder b, String ns, String id) {
+        String bsKey = ASSETS_PREFIX + ns + BLOCKSTATES_DIR + id + JSON_EXTENSION;
+        if (isPhysicalAssetPresent(bsKey)) {
+            return;
+        }
+        String bsJson = "{\n  \"variants\": {\n    \"\": { \"model\": \"" + blockTargetModel(b, ns, id) + "\" }\n  }\n}";
+        datapackService.addData(bsKey, bsJson);
+    }
+
+    private void injectBlockModelFile(IBlockBuilder b, String ns, String id) {
+        if (b.getModel() != null) {
+            return;
+        }
+        String bmKey = ASSETS_PREFIX + ns + MODELS_BLOCK_DIR + id + JSON_EXTENSION;
+        if (isPhysicalAssetPresent(bmKey)) {
+            return;
+        }
+        String tex = b.getTexture() != null ? b.getTexture() : (ns + BLOCK_MODEL_PREFIX + id);
+        if (!isTextureAvailable(tex)) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[LuaAssetsPackFinder] Block texture '" + tex + "' for block '" + b.getId() + "' not found on disk, using safe fallback");
+            tex = "minecraft:block/stone";
+        }
+        String bmJson = "{\n  \"parent\": \"minecraft:block/cube_all\",\n  \"textures\": {\n    \"all\": \"" + tex + JSON_TAIL;
+        datapackService.addData(bmKey, bmJson);
+    }
+
+    private void injectBlockItemModel(IBlockBuilder b, String ns, String id) {
+        String imKey = ASSETS_PREFIX + ns + MODELS_ITEM_DIR + id + JSON_EXTENSION;
+        if (isPhysicalAssetPresent(imKey)) {
+            return;
+        }
+        String imJson = JSON_PARENT_HEAD + blockTargetModel(b, ns, id) + JSON_QUOTE_TAIL;
+        datapackService.addData(imKey, imJson);
+    }
+
+    private static String blockTargetModel(IBlockBuilder b, String ns, String id) {
+        return b.getModel() != null ? b.getModel() : (ns + BLOCK_MODEL_PREFIX + id);
     }
 
     private void injectFluidAssets() {
         for (IFluidBuilder b : contentService.getRegisteredFluids()) {
             String[] parts = parseId(b.getId());
-            String ns = parts[0], id = parts[1];
+            String ns = parts[0];
+            String id = parts[1];
             String blockId = id + "_block";
-            String bucketId = id + "_bucket";
-            String altBucketId = id.replace("_fluid", "") + "_bucket";
+            String bucketId = id + BUCKET_SUFFIX;
+            String altBucketId = id.replace("_fluid", "") + BUCKET_SUFFIX;
 
             String stillTex = b.getStillTexture() != null
                     ? b.getStillTexture()
@@ -308,23 +419,23 @@ public class LuaAssetsPackFinder {
             if (b.getStillTexture() != null) {
                 String[] sParts = parseId(b.getStillTexture());
                 String path = sParts[1].replace("block/", "");
-                datapackService.addData("assets/" + sParts[0] + "/textures/block/" + path + ".png.mcmeta", animMcmeta);
+                datapackService.addData(ASSETS_PREFIX + sParts[0] + "/textures/block/" + path + ".png.mcmeta", animMcmeta);
             }
             if (b.getFlowingTexture() != null) {
                 String[] fParts = parseId(b.getFlowingTexture());
                 String path = fParts[1].replace("block/", "");
-                datapackService.addData("assets/" + fParts[0] + "/textures/block/" + path + ".png.mcmeta", animMcmeta);
+                datapackService.addData(ASSETS_PREFIX + fParts[0] + "/textures/block/" + path + ".png.mcmeta", animMcmeta);
             }
 
             // Fluid Blockstates (both <id>.json and <id>_block.json for safety)
-            String bsJson = "{\n  \"variants\": {\n    \"\": { \"model\": \"" + ns + ":block/" + id + "\" }\n  }\n}";
-            datapackService.addData("assets/" + ns + "/blockstates/" + id + ".json", bsJson);
-            datapackService.addData("assets/" + ns + "/blockstates/" + blockId + ".json", bsJson);
+            String bsJson = "{\n  \"variants\": {\n    \"\": { \"model\": \"" + ns + BLOCK_MODEL_PREFIX + id + "\" }\n  }\n}";
+            datapackService.addData(ASSETS_PREFIX + ns + BLOCKSTATES_DIR + id + JSON_EXTENSION, bsJson);
+            datapackService.addData(ASSETS_PREFIX + ns + BLOCKSTATES_DIR + blockId + JSON_EXTENSION, bsJson);
 
             // Fluid Block Model
-            String bmJson = "{\n  \"textures\": {\n    \"particle\": \"" + stillTex + "\"\n  }\n}";
-            datapackService.addData("assets/" + ns + "/models/block/" + id + ".json", bmJson);
-            datapackService.addData("assets/" + ns + "/models/block/" + blockId + ".json", bmJson);
+            String bmJson = "{\n  \"textures\": {\n    \"particle\": \"" + stillTex + JSON_TAIL;
+            datapackService.addData(ASSETS_PREFIX + ns + MODELS_BLOCK_DIR + id + JSON_EXTENSION, bmJson);
+            datapackService.addData(ASSETS_PREFIX + ns + MODELS_BLOCK_DIR + blockId + JSON_EXTENSION, bmJson);
 
             // Fluid Bucket Item Models using official NeoForge fluid_container loader
             String bucketJson = "{\n"
@@ -332,8 +443,8 @@ public class LuaAssetsPackFinder {
                     + "  \"parent\": \"neoforge:item/bucket\",\n"
                     + "  \"fluid\": \"" + ns + ":" + id + "\"\n"
                     + "}";
-            datapackService.addData("assets/" + ns + "/models/item/" + bucketId + ".json", bucketJson);
-            datapackService.addData("assets/" + ns + "/models/item/" + altBucketId + ".json", bucketJson);
+            datapackService.addData(ASSETS_PREFIX + ns + MODELS_ITEM_DIR + bucketId + JSON_EXTENSION, bucketJson);
+            datapackService.addData(ASSETS_PREFIX + ns + MODELS_ITEM_DIR + altBucketId + JSON_EXTENSION, bucketJson);
         }
     }
 
@@ -345,9 +456,9 @@ public class LuaAssetsPackFinder {
     private String baseTexture(String ns, String id, String suffix, String baseBlockId) {
         if (baseBlockId != null && !baseBlockId.isBlank()) {
             String[] parts = parseId(baseBlockId);
-            return parts[0] + ":block/" + parts[1];
+            return parts[0] + BLOCK_MODEL_PREFIX + parts[1];
         }
-        return ns + ":block/" + id.replace(suffix, "_block");
+        return ns + BLOCK_MODEL_PREFIX + id.replace(suffix, "_block");
     }
 
     private void injectSlabAssets(String ns, String id, String baseBlockId) {
@@ -355,28 +466,28 @@ public class LuaAssetsPackFinder {
 
         String bsJson = "{\n" +
                 "  \"variants\": {\n" +
-                "    \"type=bottom\": { \"model\": \"" + ns + ":block/" + id + "\" },\n" +
+                "    \"type=bottom\": { \"model\": \"" + ns + BLOCK_MODEL_PREFIX + id + "\" },\n" +
                 "    \"type=double\": { \"model\": \"" + base + "\" },\n" +
-                "    \"type=top\": { \"model\": \"" + ns + ":block/" + id + "_top\" }\n" +
+                "    \"type=top\": { \"model\": \"" + ns + BLOCK_MODEL_PREFIX + id + "_top\" }\n" +
                 "  }\n" +
                 "}";
-        datapackService.addData("assets/" + ns + "/blockstates/" + id + ".json", bsJson);
+        datapackService.addData(ASSETS_PREFIX + ns + BLOCKSTATES_DIR + id + JSON_EXTENSION, bsJson);
 
-        String bJson = "{\n  \"parent\": \"minecraft:block/slab\",\n  \"textures\": {\n    \"bottom\": \"" + base + "\",\n    \"top\": \"" + base + "\",\n    \"side\": \"" + base + "\"\n  }\n}";
-        datapackService.addData("assets/" + ns + "/models/block/" + id + ".json", bJson);
+        String bJson = "{\n  \"parent\": \"minecraft:block/slab\",\n  \"textures\": {\n    \"bottom\": \"" + base + JSON_TOP_ENTRY + base + JSON_SIDE_ENTRY + base + JSON_TAIL;
+        datapackService.addData(ASSETS_PREFIX + ns + MODELS_BLOCK_DIR + id + JSON_EXTENSION, bJson);
 
-        String tJson = "{\n  \"parent\": \"minecraft:block/slab_top\",\n  \"textures\": {\n    \"bottom\": \"" + base + "\",\n    \"top\": \"" + base + "\",\n    \"side\": \"" + base + "\"\n  }\n}";
-        datapackService.addData("assets/" + ns + "/models/block/" + id + "_top.json", tJson);
+        String tJson = "{\n  \"parent\": \"minecraft:block/slab_top\",\n  \"textures\": {\n    \"bottom\": \"" + base + JSON_TOP_ENTRY + base + JSON_SIDE_ENTRY + base + JSON_TAIL;
+        datapackService.addData(ASSETS_PREFIX + ns + MODELS_BLOCK_DIR + id + "_top.json", tJson);
 
-        String iJson = "{\n  \"parent\": \"" + ns + ":block/" + id + "\"\n}";
-        datapackService.addData("assets/" + ns + "/models/item/" + id + ".json", iJson);
+        String iJson = JSON_PARENT_HEAD + ns + BLOCK_MODEL_PREFIX + id + JSON_QUOTE_TAIL;
+        datapackService.addData(ASSETS_PREFIX + ns + MODELS_ITEM_DIR + id + JSON_EXTENSION, iJson);
     }
 
     private void injectStairsAssets(String ns, String id, String baseBlockId) {
         String base = baseTexture(ns, id, "_stairs", baseBlockId);
-        String mStraight = ns + ":block/" + id;
-        String mInner = ns + ":block/" + id + "_inner";
-        String mOuter = ns + ":block/" + id + "_outer";
+        String mStraight = ns + BLOCK_MODEL_PREFIX + id;
+        String mInner = ns + BLOCK_MODEL_PREFIX + id + "_inner";
+        String mOuter = ns + BLOCK_MODEL_PREFIX + id + "_outer";
 
         JsonObject variants = new JsonObject();
 
@@ -434,30 +545,49 @@ public class LuaAssetsPackFinder {
 
         JsonObject bsObj = new JsonObject();
         bsObj.add("variants", variants);
-        datapackService.addData("assets/" + ns + "/blockstates/" + id + ".json", GSON.toJson(bsObj));
+        datapackService.addData(ASSETS_PREFIX + ns + BLOCKSTATES_DIR + id + JSON_EXTENSION, GSON.toJson(bsObj));
 
-        String straightJson = "{\n  \"parent\": \"minecraft:block/stairs\",\n  \"textures\": {\n    \"bottom\": \"" + base + "\",\n    \"top\": \"" + base + "\",\n    \"side\": \"" + base + "\"\n  }\n}";
-        datapackService.addData("assets/" + ns + "/models/block/" + id + ".json", straightJson);
+        String straightJson = "{\n  \"parent\": \"minecraft:block/stairs\",\n  \"textures\": {\n    \"bottom\": \"" + base + JSON_TOP_ENTRY + base + JSON_SIDE_ENTRY + base + JSON_TAIL;
+        datapackService.addData(ASSETS_PREFIX + ns + MODELS_BLOCK_DIR + id + JSON_EXTENSION, straightJson);
 
-        String innerJson = "{\n  \"parent\": \"minecraft:block/inner_stairs\",\n  \"textures\": {\n    \"bottom\": \"" + base + "\",\n    \"top\": \"" + base + "\",\n    \"side\": \"" + base + "\"\n  }\n}";
-        datapackService.addData("assets/" + ns + "/models/block/" + id + "_inner.json", innerJson);
+        String innerJson = "{\n  \"parent\": \"minecraft:block/inner_stairs\",\n  \"textures\": {\n    \"bottom\": \"" + base + JSON_TOP_ENTRY + base + JSON_SIDE_ENTRY + base + JSON_TAIL;
+        datapackService.addData(ASSETS_PREFIX + ns + MODELS_BLOCK_DIR + id + "_inner.json", innerJson);
 
-        String outerJson = "{\n  \"parent\": \"minecraft:block/outer_stairs\",\n  \"textures\": {\n    \"bottom\": \"" + base + "\",\n    \"top\": \"" + base + "\",\n    \"side\": \"" + base + "\"\n  }\n}";
-        datapackService.addData("assets/" + ns + "/models/block/" + id + "_outer.json", outerJson);
+        String outerJson = "{\n  \"parent\": \"minecraft:block/outer_stairs\",\n  \"textures\": {\n    \"bottom\": \"" + base + JSON_TOP_ENTRY + base + JSON_SIDE_ENTRY + base + JSON_TAIL;
+        datapackService.addData(ASSETS_PREFIX + ns + MODELS_BLOCK_DIR + id + "_outer.json", outerJson);
 
-        String itemJson = "{\n  \"parent\": \"" + ns + ":block/" + id + "\"\n}";
-        datapackService.addData("assets/" + ns + "/models/item/" + id + ".json", itemJson);
+        String itemJson = JSON_PARENT_HEAD + ns + BLOCK_MODEL_PREFIX + id + JSON_QUOTE_TAIL;
+        datapackService.addData(ASSETS_PREFIX + ns + MODELS_ITEM_DIR + id + JSON_EXTENSION, itemJson);
     }
 
     private void addStairVar(JsonObject variants, String key, String model, int x, int y) {
         JsonObject v = new JsonObject();
-        v.addProperty("model", model);
+        v.addProperty(JSON_MODEL_KEY, model);
         if (x > 0 || y > 0) {
             v.addProperty("uvlock", true);
         }
-        if (x > 0) v.addProperty("x", x);
-        if (y > 0) v.addProperty("y", y);
+        if (x > 0) { v.addProperty("x", x); }
+        if (y > 0) { v.addProperty("y", y); }
         variants.add(key, v);
+    }
+
+    /**
+     * One multipart case: {@code when { <side>: <state> }} applying the side model, rotated
+     * around Y when needed.
+     */
+    private static void addWallCase(JsonArray multipart, String side, String state, String model, int y) {
+        JsonObject when = new JsonObject();
+        when.addProperty(side, state);
+
+        JsonObject apply = new JsonObject();
+        apply.addProperty(JSON_MODEL_KEY, model);
+        if (y > 0) { apply.addProperty("y", y); }
+        apply.addProperty("uvlock", true);
+
+        JsonObject wallCase = new JsonObject();
+        wallCase.add("when", when);
+        wallCase.add("apply", apply);
+        multipart.add(wallCase);
     }
 
     private void injectWallAssets(String ns, String id, String baseBlockId) {
@@ -471,7 +601,7 @@ public class LuaAssetsPackFinder {
         postWhen.addProperty("up", true);
         postCase.add("when", postWhen);
         JsonObject postApply = new JsonObject();
-        postApply.addProperty("model", ns + ":block/" + id + "_post");
+        postApply.addProperty(JSON_MODEL_KEY, ns + BLOCK_MODEL_PREFIX + id + "_post");
         postCase.add("apply", postApply);
         multipart.add(postCase);
 
@@ -479,165 +609,164 @@ public class LuaAssetsPackFinder {
         int[] yRots = {0, 90, 180, 270};
 
         for (int i = 0; i < 4; i++) {
-            String side = sides[i];
-            int y = yRots[i];
-
-            // Low
-            JsonObject lowCase = new JsonObject();
-            JsonObject lowWhen = new JsonObject();
-            lowWhen.addProperty(side, "low");
-            lowCase.add("when", lowWhen);
-            JsonObject lowApply = new JsonObject();
-            lowApply.addProperty("model", ns + ":block/" + id + "_side");
-            if (y > 0) lowApply.addProperty("y", y);
-            lowApply.addProperty("uvlock", true);
-            lowCase.add("apply", lowApply);
-            multipart.add(lowCase);
-
-            // Tall
-            JsonObject tallCase = new JsonObject();
-            JsonObject tallWhen = new JsonObject();
-            tallWhen.addProperty(side, "tall");
-            tallCase.add("when", tallWhen);
-            JsonObject tallApply = new JsonObject();
-            tallApply.addProperty("model", ns + ":block/" + id + "_side_tall");
-            if (y > 0) tallApply.addProperty("y", y);
-            tallApply.addProperty("uvlock", true);
-            tallCase.add("apply", tallApply);
-            multipart.add(tallCase);
+            addWallCase(multipart, sides[i], "low", ns + BLOCK_MODEL_PREFIX + id + "_side", yRots[i]);
+            addWallCase(multipart, sides[i], "tall", ns + BLOCK_MODEL_PREFIX + id + "_side_tall", yRots[i]);
         }
 
         JsonObject bsObj = new JsonObject();
         bsObj.add("multipart", multipart);
-        datapackService.addData("assets/" + ns + "/blockstates/" + id + ".json", GSON.toJson(bsObj));
+        datapackService.addData(ASSETS_PREFIX + ns + BLOCKSTATES_DIR + id + JSON_EXTENSION, GSON.toJson(bsObj));
 
-        String postJson = "{\n  \"parent\": \"minecraft:block/template_wall_post\",\n  \"textures\": {\n    \"wall\": \"" + base + "\"\n  }\n}";
-        datapackService.addData("assets/" + ns + "/models/block/" + id + "_post.json", postJson);
+        String postJson = "{\n  \"parent\": \"minecraft:block/template_wall_post\",\n  \"textures\": {\n    \"wall\": \"" + base + JSON_TAIL;
+        datapackService.addData(ASSETS_PREFIX + ns + MODELS_BLOCK_DIR + id + "_post.json", postJson);
 
-        String sideJson = "{\n  \"parent\": \"minecraft:block/template_wall_side\",\n  \"textures\": {\n    \"wall\": \"" + base + "\"\n  }\n}";
-        datapackService.addData("assets/" + ns + "/models/block/" + id + "_side.json", sideJson);
+        String sideJson = "{\n  \"parent\": \"minecraft:block/template_wall_side\",\n  \"textures\": {\n    \"wall\": \"" + base + JSON_TAIL;
+        datapackService.addData(ASSETS_PREFIX + ns + MODELS_BLOCK_DIR + id + "_side.json", sideJson);
 
-        String tallJson = "{\n  \"parent\": \"minecraft:block/template_wall_side_tall\",\n  \"textures\": {\n    \"wall\": \"" + base + "\"\n  }\n}";
-        datapackService.addData("assets/" + ns + "/models/block/" + id + "_side_tall.json", tallJson);
+        String tallJson = "{\n  \"parent\": \"minecraft:block/template_wall_side_tall\",\n  \"textures\": {\n    \"wall\": \"" + base + JSON_TAIL;
+        datapackService.addData(ASSETS_PREFIX + ns + MODELS_BLOCK_DIR + id + "_side_tall.json", tallJson);
 
-        String itemJson = "{\n  \"parent\": \"minecraft:block/wall_inventory\",\n  \"textures\": {\n    \"wall\": \"" + base + "\"\n  }\n}";
-        datapackService.addData("assets/" + ns + "/models/item/" + id + ".json", itemJson);
+        String itemJson = "{\n  \"parent\": \"minecraft:block/wall_inventory\",\n  \"textures\": {\n    \"wall\": \"" + base + JSON_TAIL;
+        datapackService.addData(ASSETS_PREFIX + ns + MODELS_ITEM_DIR + id + JSON_EXTENSION, itemJson);
     }
 
     private void injectLanguageFiles() {
-        if (contentService == null || datapackService == null) return;
+        if (contentService == null || datapackService == null) { return; }
         JsonObject langJson = new JsonObject();
-
-        for (IItemBuilder b : contentService.getRegisteredItems()) {
-            String[] parts = parseId(b.getId());
-            String ns = parts[0], id = parts[1];
-            String name = b.getDisplayName() != null ? stripEmojis(b.getDisplayName()) : capitalize(id);
-            langJson.addProperty("item." + ns + "." + id, name);
-        }
-
-        for (IBlockBuilder b : contentService.getRegisteredBlocks()) {
-            String[] parts = parseId(b.getId());
-            String ns = parts[0], id = parts[1];
-            String name = capitalize(id);
-            langJson.addProperty("block." + ns + "." + id, name);
-            langJson.addProperty("item." + ns + "." + id, name);
-        }
-
-        for (ICreativeTabBuilder t : contentService.getRegisteredTabs()) {
-            String[] parts = parseId(t.getId());
-            String ns = parts[0], id = parts[1];
-            String name = t.getTitle() != null ? stripEmojis(t.getTitle()) : capitalize(id);
-            langJson.addProperty("itemGroup." + ns + "." + id, name);
-        }
-
-        for (IFluidBuilder b : contentService.getRegisteredFluids()) {
-            String[] parts = parseId(b.getId());
-            String ns = parts[0], id = parts[1];
-            String name = b.getDisplayName() != null ? stripEmojis(b.getDisplayName()) : capitalize(id.replace("_fluid", "")) + " Liquid";
-            String bucketName = name.toLowerCase().contains("bucket") ? name : name + " Bucket";
-            langJson.addProperty("fluid." + ns + "." + id, name);
-            langJson.addProperty("fluid_type." + ns + "." + id, name);
-            langJson.addProperty("item." + ns + "." + id + "_bucket", bucketName);
-            langJson.addProperty("item." + ns + "." + id.replace("_fluid", "") + "_bucket", bucketName);
-            langJson.addProperty("block." + ns + "." + id + "_block", name + " Block");
-        }
-
-        for (IEntityBuilder e : contentService.getRegisteredEntities()) {
-            String[] parts = parseId(e.getId());
-            String ns = parts[0], id = parts[1];
-            String name = capitalize(id);
-            langJson.addProperty("entity." + ns + "." + id, name);
-            if (e.hasSpawnEgg()) {
-                langJson.addProperty("item." + ns + "." + id + "_spawn_egg", name + " Spawn Egg");
-            }
-        }
-
+        addItemLangEntries(langJson);
+        addBlockLangEntries(langJson);
+        addTabLangEntries(langJson);
+        addFluidLangEntries(langJson);
+        addEntityLangEntries(langJson);
         datapackService.addData("assets/luatweaker/lang/en_us.json", GSON.toJson(langJson));
     }
 
+    private void addItemLangEntries(JsonObject langJson) {
+        for (IItemBuilder b : contentService.getRegisteredItems()) {
+            String[] parts = parseId(b.getId());
+            String ns = parts[0];
+            String id = parts[1];
+            String name = b.getDisplayName() != null ? stripEmojis(b.getDisplayName()) : capitalize(id);
+            langJson.addProperty(LANG_ITEM_PREFIX + ns + "." + id, name);
+        }
+    }
+
+    private void addBlockLangEntries(JsonObject langJson) {
+        for (IBlockBuilder b : contentService.getRegisteredBlocks()) {
+            String[] parts = parseId(b.getId());
+            String ns = parts[0];
+            String id = parts[1];
+            String name = capitalize(id);
+            langJson.addProperty("block." + ns + "." + id, name);
+            langJson.addProperty(LANG_ITEM_PREFIX + ns + "." + id, name);
+        }
+    }
+
+    private void addTabLangEntries(JsonObject langJson) {
+        for (ICreativeTabBuilder t : contentService.getRegisteredTabs()) {
+            String[] parts = parseId(t.getId());
+            String ns = parts[0];
+            String id = parts[1];
+            String name = t.getTitle() != null ? stripEmojis(t.getTitle()) : capitalize(id);
+            langJson.addProperty("itemGroup." + ns + "." + id, name);
+        }
+    }
+
+    private void addFluidLangEntries(JsonObject langJson) {
+        for (IFluidBuilder b : contentService.getRegisteredFluids()) {
+            String[] parts = parseId(b.getId());
+            String ns = parts[0];
+            String id = parts[1];
+            String name = b.getDisplayName() != null ? stripEmojis(b.getDisplayName()) : capitalize(id.replace("_fluid", "")) + " Liquid";
+            String bucketName = name.toLowerCase(java.util.Locale.ROOT).contains("bucket") ? name : name + " Bucket";
+            langJson.addProperty("fluid." + ns + "." + id, name);
+            langJson.addProperty("fluid_type." + ns + "." + id, name);
+            langJson.addProperty(LANG_ITEM_PREFIX + ns + "." + id + BUCKET_SUFFIX, bucketName);
+            langJson.addProperty(LANG_ITEM_PREFIX + ns + "." + id.replace("_fluid", "") + BUCKET_SUFFIX, bucketName);
+            langJson.addProperty("block." + ns + "." + id + "_block", name + " Block");
+        }
+    }
+
+    private void addEntityLangEntries(JsonObject langJson) {
+        for (IEntityBuilder e : contentService.getRegisteredEntities()) {
+            String[] parts = parseId(e.getId());
+            String ns = parts[0];
+            String id = parts[1];
+            String name = capitalize(id);
+            langJson.addProperty("entity." + ns + "." + id, name);
+            if (e.hasSpawnEgg()) {
+                langJson.addProperty(LANG_ITEM_PREFIX + ns + "." + id + "_spawn_egg", name + " Spawn Egg");
+            }
+        }
+    }
+
     private String stripEmojis(String text) {
-        if (text == null) return "";
+        if (text == null) { return ""; }
         return text.replaceAll("[\uD83C-\uDBFF\uDC00-\uDFFF\u2600-\u27BF]", "").trim();
     }
 
     private String capitalize(String str) {
-        if (str == null || str.isBlank()) return "";
+        if (str == null || str.isBlank()) { return ""; }
         String[] words = str.replace("_", " ").split(" ");
         StringBuilder sb = new StringBuilder();
         for (String w : words) {
             if (!w.isBlank()) {
-                sb.append(Character.toUpperCase(w.charAt(0))).append(w.substring(1)).append(" ");
+                sb.append(Character.toUpperCase(w.charAt(0))).append(w.substring(1)).append(' ');
             }
         }
         return sb.toString().trim();
     }
 
     private boolean isToolType(String type) {
-        if (type == null) return false;
-        return switch (type.toUpperCase()) {
+        if (type == null) { return false; }
+        return switch (type.toUpperCase(java.util.Locale.ROOT)) {
             case "SWORD", "PICKAXE", "AXE", "SHOVEL", "HOE" -> true;
             default -> false;
         };
     }
 
     private String[] parseId(String id) {
-        if (id != null && id.contains(":")) return id.split(":", 2);
+        if (id != null && id.contains(":")) { return id.split(":", 2); }
         return new String[]{"luatweaker", id != null ? id : "unknown"};
     }
 
     private boolean isPhysicalAssetPresent(String virtualKey) {
         File direct = new File(luaDir, virtualKey);
-        if (direct.exists()) return true;
+        if (direct.exists()) { return true; }
 
         File luamodsDir = "luamods".equalsIgnoreCase(luaDir.getName()) ? luaDir : new File(luaDir, "luamods");
         if (luamodsDir.exists() && luamodsDir.isDirectory()) {
             File[] mods = luamodsDir.listFiles(File::isDirectory);
             if (mods != null) {
                 for (File modFolder : mods) {
-                    File modAssetFile = new File(modFolder, virtualKey);
-                    if (modAssetFile.exists()) return true;
+                    if (modHasAsset(modFolder, virtualKey)) { return true; }
                 }
             }
         }
         return false;
     }
 
+    private static boolean modHasAsset(File modFolder, String virtualKey) {
+        File modAssetFile = new File(modFolder, virtualKey);
+        return modAssetFile.exists();
+    }
+
     private boolean isTextureAvailable(String tex) {
-        if (tex == null || tex.isBlank()) return false;
-        if (tex.startsWith("minecraft:")) return true;
+        if (tex == null || tex.isBlank()) { return false; }
+        if (tex.startsWith("minecraft:")) { return true; }
         String[] parts = parseId(tex);
         String ns = parts[0];
         String path = parts[1];
         if (path.startsWith("textures/")) {
             path = path.substring("textures/".length());
         }
-        String fileKey = "assets/" + ns + "/textures/" + path + ".png";
+        String fileKey = ASSETS_PREFIX + ns + "/textures/" + path + ".png";
         return isPhysicalAssetPresent(fileKey);
     }
 
     private String fallbackItemTexture(String type) {
-        if (type == null) return "minecraft:item/amethyst_shard";
-        return switch (type.toUpperCase()) {
+        if (type == null) { return "minecraft:item/amethyst_shard"; }
+        return switch (type.toUpperCase(java.util.Locale.ROOT)) {
             case "SWORD" -> "minecraft:item/iron_sword";
             case "PICKAXE" -> "minecraft:item/iron_pickaxe";
             case "AXE" -> "minecraft:item/iron_axe";

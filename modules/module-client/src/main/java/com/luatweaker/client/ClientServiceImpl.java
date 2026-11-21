@@ -1,9 +1,5 @@
 package com.luatweaker.client;
 
-import com.luatweaker.api.vm.ILuaEngine;
-import com.luatweaker.api.vm.ILuaTable;
-import com.luatweaker.api.vm.ILuaValue;
-
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 

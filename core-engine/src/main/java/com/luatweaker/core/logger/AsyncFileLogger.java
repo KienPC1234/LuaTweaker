@@ -2,56 +2,88 @@ package com.luatweaker.core.logger;
 
 import com.luatweaker.api.log.ILuaTweakerLog;
 import com.luatweaker.api.log.LogStage;
-import com.luatweaker.core.mod.LuaModPathSecurity;
 
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Asynchronous file-backed implementation of {@link ILuaTweakerLog}.
  *
- * <p>Writes are dispatched to a background thread so the game thread is
- * never blocked by I/O. Log entries are formatted cleanly in latest.log and
- * mirrored to standard output without clutter.</p>
+ * <p>Writes are dispatched to a background worker so the game thread is never
+ * blocked by I/O. The worker is a daemon {@link Timer} polling the queue (a
+ * dedicated thread pool would be heavier than this single periodic flush),
+ * and console mirroring goes through {@link Logger} so log levels survive.
+ * Log entries are formatted cleanly in latest.log.</p>
  */
-public class AsyncFileLogger implements ILuaTweakerLog {
+public final class AsyncFileLogger implements ILuaTweakerLog {
+
+    /** Console mirror; JUL (not {@code System.out}) so levels stay visible. */
+    private static final Logger CONSOLE = Logger.getLogger("LuaTweaker");
+
+    private static final String LEVEL_INFO = "INFO";
+    private static final String LEVEL_WARN = "WARN";
+    private static final String LEVEL_ERROR = "ERROR";
+    private static final String LEVEL_DEBUG = "DEBUG";
 
     // -- Singleton ---
-    private static AsyncFileLogger instance;
+    private static final ReentrantLock INSTANCE_LOCK = new ReentrantLock();
+    private static final AtomicReference<AsyncFileLogger> INSTANCE_HOLDER = new AtomicReference<>();
 
-    public static synchronized AsyncFileLogger get() {
-        if (instance == null || !instance.running) instance = new AsyncFileLogger();
-        return instance;
+    /**
+     * @return the shared logger, recreating it after {@link #shutdown()}
+     */
+    public static AsyncFileLogger get() {
+        AsyncFileLogger current = INSTANCE_HOLDER.get();
+        if (current != null && current.running.get()) {
+            return current;
+        }
+        INSTANCE_LOCK.lock();
+        try {
+            current = INSTANCE_HOLDER.get();
+            if (current == null || !current.running.get()) {
+                current = new AsyncFileLogger();
+                INSTANCE_HOLDER.set(current);
+            }
+            return current;
+        } finally {
+            INSTANCE_LOCK.unlock();
+        }
     }
 
     // -- Internals ---
     /** Bounded so a log flood cannot exhaust the heap; overflow is counted and reported. */
     private static final int MAX_QUEUE_SIZE = 20_000;
     private final BlockingQueue<String> queue = new LinkedBlockingQueue<>(MAX_QUEUE_SIZE);
-    private final java.util.concurrent.atomic.AtomicLong droppedLines =
-            new java.util.concurrent.atomic.AtomicLong();
-    private final Thread workerThread;
-    private volatile boolean running = true;
-    private volatile boolean debugEnabled = false;
+    private final AtomicLong droppedLines = new AtomicLong();
+    private final AtomicBoolean running = new AtomicBoolean(true);
+    private final AtomicBoolean debugEnabled = new AtomicBoolean();
+    private final Timer flushTimer;
 
-    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
+    /** Flush cadence for the background worker. */
+    private static final long FLUSH_PERIOD_MILLIS = 50;
+
     private static final DateTimeFormatter HEADER_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final String SEPARATOR = "=".repeat(72);
-    private static final int MAX_BATCH_SIZE = 100;
     private static final String LOG_DIR = "logs/luatweaker";
     private static final String LATEST_LOG = "latest.log";
-    private static final String MODS_LOG_DIR = "logs/luatweaker/mods";
 
     private final File logFile;
+    private final LogBatchWriter batchWriter;
 
     /**
      * Engine-neutral call-site data. Replaces the old Cobalt-only LuaState argument.
@@ -67,16 +99,25 @@ public class AsyncFileLogger implements ILuaTweakerLog {
 
     private AsyncFileLogger() {
         this.logFile = new File(LOG_DIR, LATEST_LOG);
+        this.batchWriter = new LogBatchWriter(queue, logFile);
         ensureParentDir();
-        try (PrintWriter writer = new PrintWriter(new FileWriter(logFile, false))) {
+        try (PrintWriter writer = new PrintWriter(
+                Files.newBufferedWriter(logFile.toPath(), StandardCharsets.UTF_8))) {
             writer.println(SEPARATOR);
             writer.println("  LuaTweaker Log - " + HEADER_DATE_FORMAT.format(LocalDateTime.now()));
             writer.println(SEPARATOR);
-        } catch (Exception e) { System.err.println("AsyncFileLogger error: " + e.getMessage()); e.printStackTrace(); }
+        } catch (IOException e) {
+            CONSOLE.log(Level.SEVERE, "AsyncFileLogger error: " + e.getMessage(), e);
+        }
 
-        this.workerThread = new Thread(this::processQueue, "LuaTweaker-AsyncLogger");
-        this.workerThread.setDaemon(true);
-        this.workerThread.start();
+        TimerTask flushTask = new TimerTask() {
+            @Override
+            public void run() {
+                batchWriter.drain();
+            }
+        };
+        this.flushTimer = new Timer("LuaTweaker-AsyncLogger", true);
+        this.flushTimer.scheduleAtFixedRate(flushTask, FLUSH_PERIOD_MILLIS, FLUSH_PERIOD_MILLIS);
     }
 
     private void ensureParentDir() {
@@ -86,87 +127,76 @@ public class AsyncFileLogger implements ILuaTweakerLog {
         }
     }
 
-    public void setDebugEnabled(boolean enabled) { this.debugEnabled = enabled; }
+    public void setDebugEnabled(boolean enabled) { this.debugEnabled.set(enabled); }
 
     public String getLogFile() { return this.logFile.getAbsolutePath(); }
 
     public void initModLog(String modId) {
-        if (modId == null || modId.isBlank()) return;
-        String safeModId = LuaModPathSecurity.validateModId(modId);
-        File modsLogDir = new File(MODS_LOG_DIR);
-        if (!modsLogDir.exists()) modsLogDir.mkdirs();
-        Path modLogPath = LuaModPathSecurity.resolveContained(modsLogDir.toPath(), safeModId + ".log");
-        File modLogFile = modLogPath.toFile();
-        try (PrintWriter writer = new PrintWriter(new FileWriter(modLogFile, false))) {
-            writer.println("========================================================================");
-            writer.println("  LuaMod Dedicated Log: " + safeModId + " - " + HEADER_DATE_FORMAT.format(LocalDateTime.now()));
-            writer.println("========================================================================");
-        } catch (Exception e) { System.err.println("AsyncFileLogger error: " + e.getMessage()); e.printStackTrace(); }
+        ModLogSink.init(modId);
     }
 
     public void logMod(String modId, String level, String message) {
-        if (modId == null || modId.isBlank()) return;
-        String safeModId = LuaModPathSecurity.validateModId(modId);
-        File modsLogDir = new File(MODS_LOG_DIR);
-        if (!modsLogDir.exists()) modsLogDir.mkdirs();
-        Path modLogPath = LuaModPathSecurity.resolveContained(modsLogDir.toPath(), safeModId + ".log");
-        File modLogFile = modLogPath.toFile();
-        try (PrintWriter writer = new PrintWriter(new FileWriter(modLogFile, true))) {
-            String ts = TIME_FORMAT.format(LocalDateTime.now());
-            writer.printf("%s [%s] %s%n", ts, level.trim(), message != null ? message : "");
-        } catch (Exception e) { System.err.println("AsyncFileLogger error: " + e.getMessage()); e.printStackTrace(); }
+        ModLogSink.append(modId, level, message);
     }
 
     // -- ILuaTweakerLog implementation ---
 
     @Override
     public void info(LogStage stage, String message) {
-        enqueue(stage, "INFO ", null, -1, message);
+        enqueue(stage, LEVEL_INFO, null, message);
     }
 
     @Override
     public void warn(LogStage stage, String message) {
-        enqueue(stage, "WARN ", null, -1, message);
+        enqueue(stage, LEVEL_WARN, null, message);
     }
 
     @Override
     public void error(LogStage stage, String message) {
-        enqueue(stage, "ERROR", null, -1, message);
+        enqueue(stage, LEVEL_ERROR, null, message);
     }
 
     @Override
     public void debug(LogStage stage, String message) {
-        if (!debugEnabled) return;
-        enqueue(stage, "DEBUG", null, -1, "[DEBUG] " + message);
+        if (!debugEnabled.get()) {
+            return;
+        }
+        enqueue(stage, LEVEL_DEBUG, null, "[DEBUG] " + message);
     }
 
     @Override
     public void script(LogStage stage, String message, String file, int line) {
         String loc = file + (line >= 0 ? ":" + line : "");
-        enqueue(stage, "INFO ", loc, line, message);
+        enqueue(stage, LEVEL_INFO, loc, message);
     }
 
     @Override
     public void recipe(LogStage stage, String recipeId, String outputItem, String details) {
-        StringBuilder sb = new StringBuilder();
-        if (recipeId != null)   sb.append("[").append(recipeId).append("] ");
-        if (outputItem != null) sb.append("-> ").append(outputItem).append(" ");
-        if (details != null)    sb.append("| ").append(details);
-        enqueue(stage, "INFO ", null, -1, sb.toString().trim());
+        StringBuilder sb = new StringBuilder(64);
+        if (recipeId != null) {
+            sb.append('[').append(recipeId).append("] ");
+        }
+        if (outputItem != null) {
+            sb.append("-> ").append(outputItem).append(' ');
+        }
+        if (details != null) {
+            sb.append("| ").append(details);
+        }
+        enqueue(stage, LEVEL_INFO, null, sb.toString().trim());
     }
 
     @Override
     public void section(String title) {
         String line = "=== " + title + " " + "=".repeat(Math.max(0, 56 - title.length()));
         queue.offer(line);
-        System.out.println("[LuaTweaker] " + line);
+        CONSOLE.info("[LuaTweaker] " + line);
     }
 
-    // -- Engine-neutral call sites --
+    // -- Engine-neutral call sites ---
 
     public void log(String context, String message, CallSiteProvider site) {
-        enqueueRaw(context, "INFO ", siteLocation(site), message);
-        logModIfPresent(site, "INFO", message);
+        enqueueRaw(context, LEVEL_INFO, LogLineFormatter.siteLocation(site), message);
+        logModIfPresent(site, LEVEL_INFO, message);
     }
 
     public void info(String context, String message, CallSiteProvider site) {
@@ -174,115 +204,60 @@ public class AsyncFileLogger implements ILuaTweakerLog {
     }
 
     public void warn(String context, String message, CallSiteProvider site) {
-        enqueueRaw(context, "WARN ", siteLocation(site), message);
-        logModIfPresent(site, "WARN", message);
+        enqueueRaw(context, LEVEL_WARN, LogLineFormatter.siteLocation(site), message);
+        logModIfPresent(site, LEVEL_WARN, message);
     }
 
     public void error(String context, String message, CallSiteProvider site) {
-        enqueueRaw(context, "ERROR", siteLocation(site), message);
-        logModIfPresent(site, "ERROR", message);
+        enqueueRaw(context, LEVEL_ERROR, LogLineFormatter.siteLocation(site), message);
+        logModIfPresent(site, LEVEL_ERROR, message);
     }
 
     // -- Internals ---
 
-    private void enqueue(LogStage stage, String level, String fileLine, int line, String message) {
+    private void enqueue(LogStage stage, String level, String fileLine, String message) {
         enqueueRaw(stage.name(), level, fileLine, message);
     }
 
     private void enqueueRaw(String stage, String level, String fileLine, String message) {
-        if (message == null) message = "";
+        String text = message == null ? "" : message;
         String location = (fileLine != null && !"system".equalsIgnoreCase(fileLine)) ? fileLine : null;
-        String formatted = formatLine(stage, level, location, message);
+        String formatted = LogLineFormatter.formatLine(stage, level, location, text);
         if (!queue.offer(formatted)) {
             long dropped = droppedLines.incrementAndGet();
             if (dropped == 1 || dropped % 1000 == 0) {
-                System.err.println("[LuaTweaker] Logger queue full; dropped " + dropped
+                CONSOLE.warning("[LuaTweaker] Logger queue is full; dropped " + dropped
                         + " line(s). Reduce log volume or raise MAX_QUEUE_SIZE.");
             }
         }
-
-        // Clean console output without ugly system padding
-        String lvl = level.trim();
-        String prefix = location != null ? String.format("[LuaTweaker/%s] (%s) ", stage, location)
-                                         : String.format("[LuaTweaker/%s] ", stage);
-
-        if (message.isBlank()) {
-            System.out.println();
-        } else if ("ERROR".equals(lvl)) {
-            System.err.println(prefix + message);
-        } else {
-            System.out.println(prefix + message);
-        }
-    }
-
-    private String formatLine(String stage, String level, String location, String message) {
-        String ts = TIME_FORMAT.format(LocalDateTime.now());
-        String stageCol = String.format("%-12s", stage);
-        String locStr   = location != null ? String.format("(%s) ", location) : "";
-        String lvlStr   = ("INFO ".equals(level) || "INFO".equals(level.trim())) ? "" : "[" + level.trim() + "] ";
-        return String.format("%s [%s] %s%s%s", ts, stageCol, locStr, lvlStr, message);
-    }
-
-    private static String siteLocation(CallSiteProvider site) {
-        if (site == null) return null;
-        String location = site.location();
-        return (location != null && !"system".equalsIgnoreCase(location)) ? location : null;
+        LogLineFormatter.mirrorToConsole(stage, level, location, text);
     }
 
     private void logModIfPresent(CallSiteProvider site, String level, String message) {
-        if (site == null) return;
+        if (site == null) {
+            return;
+        }
         String modId = site.modId();
-        if (modId == null || modId.isBlank()) return;
+        if (modId == null || modId.isBlank()) {
+            return;
+        }
         try {
             logMod(modId, level, message);
         } catch (IllegalArgumentException e) {
             // Keep the main log alive when a caller supplies a non-LuaMod id.
-            enqueueRaw("LOGGER", "WARN", null, "Invalid mod id for per-mod log: " + e.getMessage());
+            enqueueRaw("LOGGER", LEVEL_WARN, null, "Invalid mod id for per-mod log: " + e.getMessage());
         }
     }
 
     public void shutdown() {
-        running = false;
-        workerThread.interrupt();
-        synchronized (AsyncFileLogger.class) {
-            if (instance == this) {
-                instance = null;
-            }
-        }
-    }
-
-    private void processQueue() {
-        ensureParentDir();
-        while (running || !queue.isEmpty()) {
-            List<String> batch = new ArrayList<>();
-            try {
-                batch.add(running ? queue.take() : queue.poll());
-                if (batch.get(0) == null) {
-                    break;
-                }
-            } catch (InterruptedException e) {
-                if (!running) {
-                    continue;
-                }
-            }
-            queue.drainTo(batch, MAX_BATCH_SIZE - batch.size());
-            writeBatch(batch);
-        }
-    }
-
-    private void writeBatch(List<String> lines) {
-        if (lines.isEmpty()) {
-            return;
-        }
-        try (PrintWriter writer = new PrintWriter(new FileWriter(logFile, true), true)) {
-            for (String line : lines) {
-                writer.println(line);
-            }
-        } catch (IOException e) {
-            System.err.println("[LuaTweaker] Logger write error: " + e.getMessage());
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException ignored) {}
+        running.set(false);
+        flushTimer.cancel();
+        batchWriter.drain();
+        INSTANCE_LOCK.lock();
+        try {
+            INSTANCE_HOLDER.compareAndSet(this, null);
+        } finally {
+            INSTANCE_LOCK.unlock();
         }
     }
 }

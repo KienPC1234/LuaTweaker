@@ -31,7 +31,7 @@ import java.util.Optional;
  * datapack biomes work. Columns pick a biome deterministically from the
  * weighted list, or via the Lua biome provider callback when one is set.</p>
  */
-public class LuaBiomeSource extends BiomeSource {
+public final class LuaBiomeSource extends BiomeSource {
 
     public static final MapCodec<LuaBiomeSource> MAP_CODEC = new MapCodec<>() {
         @Override
@@ -57,13 +57,17 @@ public class LuaBiomeSource extends BiomeSource {
     private final List<BiomeHolderEntry> biomes;
     /** Per-chunk batch biome results, invalidated when the dimension's generation version changes. */
     private final java.util.Map<Long, String[]> chunkBiomeCache = new java.util.concurrent.ConcurrentHashMap<>();
-    private volatile long cachedGenerationVersion = -1;
-    private volatile DimensionServiceImpl cachedService;
+    /** Cache identity: which service instance produced the cached chunk batch, and its version. */
+    private record CacheKey(@NotNull DimensionServiceImpl service, long version) { }
+
+    private final java.util.concurrent.atomic.AtomicReference<CacheKey> cacheKey =
+            new java.util.concurrent.atomic.AtomicReference<>();
 
     private static final int MAX_CACHED_BIOME_CHUNKS = 4096;
     private static final String[] EMPTY_BIOME_CHUNK = new String[0];
 
     private LuaBiomeSource(@NotNull String dimensionId, @NotNull List<BiomeHolderEntry> biomes) {
+        super();
         this.dimensionId = dimensionId;
         this.biomes = List.copyOf(biomes);
     }
@@ -111,7 +115,7 @@ public class LuaBiomeSource extends BiomeSource {
         List<BiomeHolderEntry> out = new ArrayList<>();
         for (DimensionConfig.BiomeEntry entry : config.biomes()) {
             ResourceLocation id = ResourceLocation.tryParse(entry.id());
-            if (id == null) continue;
+            if (id == null) { continue; }
             Holder<Biome> holder = getter.getOrThrow(ResourceKey.create(Registries.BIOME, id));
             out.add(new BiomeHolderEntry(entry.id(), holder, entry.weight()));
         }
@@ -137,7 +141,7 @@ public class LuaBiomeSource extends BiomeSource {
         }
         if (biomeId != null) {
             for (BiomeHolderEntry entry : biomes) {
-                if (entry.id().equals(biomeId)) return entry.holder();
+                if (entry.id().equals(biomeId)) { return entry.holder(); }
             }
             LuaTweakerLog.get().warn(LogStage.SYSTEM,
                     "Biome decision '" + biomeId + "' for dimension '" + dimensionId
@@ -152,10 +156,12 @@ public class LuaBiomeSource extends BiomeSource {
      */
     private String batchBiomeAt(DimensionServiceImpl service, int quartX, int quartZ) {
         long version = service.getGenerationVersion();
-        if (service != cachedService || version != cachedGenerationVersion) {
+        CacheKey current = new CacheKey(service, version);
+        // Single atomic swap keeps the "service instance + version" pair consistent for
+        // worker threads that share this source.
+        if (!current.equals(cacheKey.get())) {
             chunkBiomeCache.clear();
-            cachedService = service;
-            cachedGenerationVersion = version;
+            cacheKey.set(current);
         }
         int chunkX = Math.floorDiv(quartX, 4);
         int chunkZ = Math.floorDiv(quartZ, 4);
@@ -163,9 +169,9 @@ public class LuaBiomeSource extends BiomeSource {
         String[] ids = chunkBiomeCache.get(key);
         if (ids == null) {
             ids = service.computeBiomeBatch(dimensionId, chunkX, chunkZ);
-            if (ids.length == 0) ids = EMPTY_BIOME_CHUNK;
+            if (ids.length == 0) { ids = EMPTY_BIOME_CHUNK; }
             String[] existing = chunkBiomeCache.putIfAbsent(key, ids);
-            if (existing != null) ids = existing;
+            if (existing != null) { ids = existing; }
             if (chunkBiomeCache.size() > MAX_CACHED_BIOME_CHUNKS) {
                 chunkBiomeCache.clear();
             }
@@ -190,11 +196,11 @@ public class LuaBiomeSource extends BiomeSource {
         long hash = (cellX * 0x9E3779B97F4A7C15L) ^ (cellZ * 0xBF58476D1CE4E5B9L);
         hash ^= hash >>> 32;
         int total = 0;
-        for (BiomeHolderEntry entry : biomes) total += entry.weight();
+        for (BiomeHolderEntry entry : biomes) { total += entry.weight(); }
         int roll = (int) ((hash & 0x7FFFFFFFFFFFFFFFL) % Math.max(1, total));
         for (BiomeHolderEntry entry : biomes) {
             roll -= entry.weight();
-            if (roll < 0) return entry.holder();
+            if (roll < 0) { return entry.holder(); }
         }
         return biomes.get(0).holder();
     }

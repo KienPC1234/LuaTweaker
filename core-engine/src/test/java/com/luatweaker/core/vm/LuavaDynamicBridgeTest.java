@@ -5,6 +5,7 @@ import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.core.logger.AsyncFileLogger;
 import com.luatweaker.core.remap.RuntimeRemapper;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
@@ -12,7 +13,28 @@ import java.lang.reflect.Method;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Verifies the luava dynamic bridge: getters, setters, overloads, aliases and the blacklist. */
-public class LuavaDynamicBridgeTest {
+class LuavaDynamicBridgeTest {
+
+    private static final String PROPERTY_SCRIPT = """
+            assert(type(_bridge.Entity) == 'string', 'Entity alias must be a value, not a function')
+            assert(_bridge.Entity == 'minecraft:player')
+            assert(_bridge:getEntity() == 'minecraft:player', 'method-call syntax must still work')
+            assert(_bridge.IsAlive == true, 'IsAlive alias must be boolean')
+            assert(_bridge.isAlive == true, 'isAlive getter must be boolean')
+            assert(_bridge.Amount == 0, 'Amount must read through its getter')
+            _bridge.Amount = 40
+            assert(_bridge.Amount == 40, 'setter must mutate the Java object')
+            assert(_bridge:getAmount() == 40, 'getter method call must see the mutation')
+            """;
+
+    private static final String REMAPPER_SCRIPT = """
+            assert(_remapProbe.Entity == 'minecraft:player', 'the bridge must use the remapped getter')
+            """;
+
+    private static final String PROBE_GLOBAL = "_bridge";
+    private static final String REMAP_GLOBAL = "_remapProbe";
+    private static final String OVERLOAD_GLOBAL = "_overloads";
+    private static final String BLACKLIST_GLOBAL = "_blacklistProbe";
 
     public static class BridgeProbe {
         private int amount;
@@ -31,84 +53,110 @@ public class LuavaDynamicBridgeTest {
     }
 
     @AfterAll
-    public static void shutdownLogger() {
+    static void shutdownLogger() {
         AsyncFileLogger.get().shutdown();
     }
 
-    @Test
-    void wrappedValueExposesTheOriginalJavaObject() {
-        ILuaEngine engine = new LuavaEngine(false);
-        BridgeProbe probe = new BridgeProbe();
-
-        ILuaValue wrapped = engine.wrapDynamicJavaObject(probe);
-        assertNotNull(wrapped);
-        assertSame(probe, wrapped.toJavaObject(),
-            "the dynamic bridge must keep the original Java instance reachable");
+    private LuavaEngine engineWithBridge(BridgeProbe probe, String globalName) {
+        LuavaEngine engine = new LuavaEngine(false);
+        engine.getGlobalEnvironment().rawset(globalName, engine.wrapDynamicJavaObject(probe));
+        return engine;
     }
 
-    @Test
-    void gettersSettersAndPropertyAliasesWorkThroughTheBridge() {
-        ILuaEngine engine = new LuavaEngine(false);
-        BridgeProbe probe = new BridgeProbe();
-        engine.getGlobalEnvironment().rawset("_bridge", engine.wrapDynamicJavaObject(probe));
+    @Nested
+    class WrappedValues {
 
-        engine.executeString(
-            "assert(type(_bridge.Entity) == 'string', 'Entity alias must be a value, not a function')\n" +
-            "assert(_bridge.Entity == 'minecraft:player')\n" +
-            "assert(_bridge:getEntity() == 'minecraft:player', 'method-call syntax must still work')\n" +
-            "assert(_bridge.IsAlive == true, 'IsAlive alias must be boolean')\n" +
-            "assert(_bridge.isAlive == true, 'isAlive getter must be boolean')\n" +
-            "assert(_bridge.Amount == 0, 'Amount must read through its getter')\n" +
-            "_bridge.Amount = 40\n" +
-            "assert(_bridge.Amount == 40, 'setter must mutate the Java object')\n" +
-            "assert(_bridge:getAmount() == 40, 'getter method call must see the mutation')",
-            "bridge_properties"
-        );
-        assertNull(engine.getAndClearLastExecutionError());
-        assertEquals(40, probe.getAmount(), "the Lua setter must reach the Java object");
+        @Test
+        void wrappedValueExposesTheOriginalJavaObjectCheck() {
+            ILuaEngine engine = new LuavaEngine(false);
+            ILuaValue wrapped = engine.wrapDynamicJavaObject(new BridgeProbe());
+            assertNotNull(wrapped, "wrapping a Java object must produce a non-null Lua value");
+        }
+
+        @Test
+        void wrappedValueExposesTheOriginalJavaObjectWrapped() {
+            ILuaEngine engine = new LuavaEngine(false);
+            BridgeProbe probe = new BridgeProbe();
+            ILuaValue wrapped = engine.wrapDynamicJavaObject(probe);
+            assertSame(probe, wrapped.toJavaObject(),
+                    "the dynamic bridge must keep the original Java instance reachable");
+        }
     }
 
-    @Test
-    void overloadResolutionUsesArgumentTypes() {
-        ILuaEngine engine = new LuavaEngine(false);
-        engine.getGlobalEnvironment().rawset("_overloads", engine.wrapDynamicJavaObject(new OverloadProbe()));
+    @Nested
+    class PropertyAndOverloads {
 
-        engine.executeString(
-            "assert(_overloads:pick() == 'zero')\n" +
-            "assert(_overloads:pick(42) == 'int:42')\n" +
-            "assert(_overloads:pick(4.5) == 'double:4.5')\n" +
-            "assert(_overloads:pick('abc') == 'string:abc')",
-            "bridge_overloads"
-        );
-        assertNull(engine.getAndClearLastExecutionError());
+        @Test
+        void gettersSettersAndPropertyAliasesWorkThroughTheBridgeGetAndClearLastExecutionError() {
+            LuavaEngine engine = engineWithBridge(new BridgeProbe(), PROBE_GLOBAL);
+            engine.executeString(PROPERTY_SCRIPT, "bridge_properties");
+            assertNull(engine.getAndClearLastExecutionError(),
+                    "property reads, writes and aliases must all run without a Lua error");
+        }
+
+        @Test
+        void gettersSettersAndPropertyAliasesWorkThroughTheBridgeTheLuaSetterMustReachTheJavaObject() {
+            BridgeProbe probe = new BridgeProbe();
+            LuavaEngine engine = engineWithBridge(probe, PROBE_GLOBAL);
+            engine.executeString(PROPERTY_SCRIPT, "bridge_properties");
+            assertEquals(40, probe.getAmount(), "the Lua setter must reach the Java object");
+        }
+
+        @Test
+        void overloadResolutionUsesArgumentTypes() {
+            ILuaEngine engine = new LuavaEngine(false);
+            engine.getGlobalEnvironment().rawset(OVERLOAD_GLOBAL, engine.wrapDynamicJavaObject(new OverloadProbe()));
+
+            engine.executeString("""
+                    assert(_overloads:pick() == 'zero')
+                    assert(_overloads:pick(42) == 'int:42')
+                    assert(_overloads:pick(4.5) == 'double:4.5')
+                    assert(_overloads:pick('abc') == 'string:abc')
+                    """, "bridge_overloads");
+            assertNull(engine.getAndClearLastExecutionError(),
+                    "each overload must be selected from the Lua argument types without error");
+        }
+
+        @Test
+        void blacklistedMethodIsDenied() {
+            LuavaEngine engine = engineWithBridge(new BridgeProbe(), BLACKLIST_GLOBAL);
+
+            engine.executeString("""
+                    assert(_blacklistProbe.getClass == nil, 'getClass must not be exposed')
+                    local ok = pcall(function() return _blacklistProbe:getClass() end)
+                    assert(not ok, 'calling a blacklisted method must fail')
+                    """, "bridge_blacklist");
+            assertNull(engine.getAndClearLastExecutionError(),
+                    "reading and calling a blacklisted method must stay silent nil / pcall-failure only");
+        }
     }
 
-    @Test
-    void blacklistedMethodIsDenied() {
-        ILuaEngine engine = new LuavaEngine(false);
-        engine.getGlobalEnvironment().rawset("_blacklistProbe", engine.wrapDynamicJavaObject(new BridgeProbe()));
+    @Nested
+    class RemapperFallback {
 
-        engine.executeString(
-            "assert(_blacklistProbe.getClass == nil, 'getClass must not be exposed')\n" +
-            "local ok = pcall(function() return _blacklistProbe:getClass() end)\n" +
-            "assert(not ok, 'calling a blacklisted method must fail')",
-            "bridge_blacklist"
-        );
-        assertNull(engine.getAndClearLastExecutionError());
-    }
+        @Test
+        void runtimeRemapperFallbackResolvesPropertyGetterTheRemapperFallbackMustMapAPropertyNameT() {
+            Method resolved = RuntimeRemapper.getInstance().resolveMethod(BridgeProbe.class, "Entity");
+            LuavaEngine engine = engineWithBridge(new BridgeProbe(), REMAP_GLOBAL);
+            engine.executeString(REMAPPER_SCRIPT, "bridge_remapper");
+            assertNotNull(resolved, "the remapper fallback must map a property name to a getter");
+        }
 
-    @Test
-    void runtimeRemapperFallbackResolvesPropertyGetter() {
-        Method resolved = RuntimeRemapper.getInstance().resolveMethod(BridgeProbe.class, "Entity");
-        assertNotNull(resolved, "the remapper fallback must map a property name to a getter");
-        assertEquals("getEntity", resolved.getName());
+        @Test
+        void runtimeRemapperFallbackResolvesPropertyGetterGetEntity() {
+            Method resolved = RuntimeRemapper.getInstance().resolveMethod(BridgeProbe.class, "Entity");
+            LuavaEngine engine = engineWithBridge(new BridgeProbe(), REMAP_GLOBAL);
+            engine.executeString(REMAPPER_SCRIPT, "bridge_remapper");
+            assertEquals("getEntity", resolved.getName(),
+                    "the remapper fallback must resolve the property to getEntity");
+        }
 
-        ILuaEngine engine = new LuavaEngine(false);
-        engine.getGlobalEnvironment().rawset("_remapProbe", engine.wrapDynamicJavaObject(new BridgeProbe()));
-        engine.executeString(
-            "assert(_remapProbe.Entity == 'minecraft:player', 'the bridge must use the remapped getter')",
-            "bridge_remapper"
-        );
-        assertNull(engine.getAndClearLastExecutionError());
+        @Test
+        void runtimeRemapperFallbackResolvesPropertyGetterGetAndClearLastExecutionError() {
+            LuavaEngine engine = engineWithBridge(new BridgeProbe(), REMAP_GLOBAL);
+            engine.executeString(REMAPPER_SCRIPT, "bridge_remapper");
+            assertNull(engine.getAndClearLastExecutionError(),
+                    "the remapped property read must not raise a Lua error");
+        }
     }
 }

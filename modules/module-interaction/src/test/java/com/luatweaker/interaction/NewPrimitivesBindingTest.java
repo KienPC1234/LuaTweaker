@@ -1,11 +1,9 @@
 package com.luatweaker.interaction;
 
-import com.luatweaker.api.pal.IPlatformInteraction;
 import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.core.vm.LuaEngineFactory;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,16 +14,105 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-public class NewPrimitivesBindingTest {
+/**
+ * Pins the multiblock-era World primitives added after the first interaction binding: FindBlocks
+ * (raw coordinates and position table, max default), SetEnergy/ProduceEnergy, and the
+ * progress getter/setter.
+ */
+class NewPrimitivesBindingTest {
 
-    private static final class MockInteraction extends BaseMockPlatformInteraction {
-        final List<String> calls = new ArrayList<>();
+    private static final String ORE_FILTER = "#c:ores";
 
+    private MockInteraction interaction;
+    private ILuaEngine engine;
+
+    @BeforeEach
+    void setUp() {
+        engine = LuaEngineFactory.create(false);
+        InteractionLuaBinding.registerBindings(engine);
+        interaction = new MockInteraction();
+        Platform.setInteraction(interaction);
+    }
+
+    @AfterEach
+    void tearDown() {
+        engine.shutdown();
+        Platform.setInteraction(null);
+    }
+
+    @Test
+    void findBlocksAcceptsRawCoordinatesThenAPositionTable() {
+        engine.executeStringOrThrow("""
+                local ore = World:FindBlocks(100, 60, 200, 16, "#c:ores", 10)
+                assert(#ore == 1, "must find exactly one ore block")
+                local crystal = World:FindBlocks({ X = 50, Y = 70, Z = 90 }, 24, "crystal_ore")
+                assert(#crystal == 1, "must find exactly one crystal ore block")
+                """, "test_find_blocks");
+
+        assertEquals(List.of(
+                        "findBlocks 100,60,200 r=16 filter=" + ORE_FILTER + " max=10",
+                        "findBlocks 50,70,90 r=24 filter=crystal_ore max=64"),
+                interaction.calls,
+                "FindBlocks must forward explicit coordinates and a position table, defaulting max to 64");
+    }
+
+    @Test
+    void setEnergyForwardsTheRequestedAmount() {
+        engine.executeStringOrThrow("""
+                local ok = World:SetEnergy(10, 20, 30, 5000)
+                assert(ok == true, "setEnergy should return true")
+                """, "test_set_energy");
+
+        assertEquals("setEnergy 10,20,30 amount=5000", interaction.calls.get(0),
+                "SetEnergy must forward the energy amount to the platform");
+    }
+
+    @Test
+    void produceEnergyReturnsTheProducedAmount() {
+        engine.executeStringOrThrow("""
+                local actual = World:ProduceEnergy({ X = 10, Y = 20, Z = 30 }, 250)
+                assert(actual == 250, "produceEnergy should return the produced amount")
+                """, "test_produce_energy");
+
+        assertEquals("produceEnergy 10,20,30 amount=250", interaction.calls.get(0),
+                "ProduceEnergy must forward the amount and return the platform result");
+    }
+
+    @Test
+    void setProgressForwardsTheFraction() {
+        engine.executeStringOrThrow("""
+                local ok = World:SetProgress(1, 2, 3, 0.45)
+                assert(ok == true, "setProgress should return true")
+                """, "test_set_progress");
+
+        assertEquals("setProgress 1,2,3 prog=0.45", interaction.calls.get(0),
+                "SetProgress must forward the progress fraction to the platform");
+    }
+
+    @Test
+    void progressReadsThePositionTable() {
+        engine.executeStringOrThrow("""
+                local progress = World:GetProgress({ X = 1, Y = 2, Z = 3 })
+                assert(progress > 0.74 and progress < 0.76, "getProgress should return 0.75")
+                """, "test_get_progress");
+
+        assertEquals("getProgress 1,2,3", interaction.calls.get(0),
+                "GetProgress must resolve the position table before querying the platform");
+    }
+
+    /** Records every call as {@code name x,y,z details} so assertions stay exact. */
+    private static final class MockInteraction implements MockPlatformInteraction {
+        private final List<String> calls = new ArrayList<>();
+
+        @NotNull
         @Override
-        public @NotNull List<Map<String, Object>> findBlocks(
-                @NotNull String dimension, int x, int y, int z, int radius, @NotNull String filter, int maxResults) {
-            calls.add("findBlocks " + x + "," + y + "," + z + " r=" + radius + " filter=" + filter + " max=" + maxResults);
-            return List.of(Map.of("X", 10, "Y", 64, "Z", 20, "Id", "minecraft:diamond_ore", "Distance", 5.5));
+        public List<Map<String, Object>> findBlocks(@NotNull String dimension, int x, int y, int z,
+                                                    int radius, @NotNull String filter,
+                                                    int maxResults) {
+            calls.add("findBlocks " + x + "," + y + "," + z + " r=" + radius
+                    + " filter=" + filter + " max=" + maxResults);
+            return List.of(Map.of("X", 10, "Y", 64, "Z", 20, "Id", "minecraft:diamond_ore",
+                    "Distance", 5.5));
         }
 
         @Override
@@ -50,85 +137,6 @@ public class NewPrimitivesBindingTest {
         public float getProgress(@NotNull String dimension, int x, int y, int z) {
             calls.add("getProgress " + x + "," + y + "," + z);
             return 0.75f;
-        }
-    }
-
-    private MockInteraction interaction;
-    private IPlatformInteraction previousInteraction;
-
-    @BeforeEach
-    public void setup() {
-        interaction = new MockInteraction();
-        previousInteraction = Platform.isInitialized() ? Platform.getInteraction() : null;
-        Platform.setInteraction(interaction);
-    }
-
-    @AfterEach
-    public void teardown() {
-        if (previousInteraction != null) {
-            Platform.setInteraction(previousInteraction);
-        }
-    }
-
-    @Test
-    public void testFindBlocks_WithCoordinatesAndPosTable() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        try {
-            InteractionLuaBinding.registerBindings(engine);
-            engine.executeStringOrThrow("""
-                local res1 = World:FindBlocks(100, 60, 200, 16, "#c:ores", 10)
-                assert(#res1 == 1, "must find 1 block")
-            """, "test_find_1");
-            assertEquals(1, interaction.calls.size());
-            assertEquals("findBlocks 100,60,200 r=16 filter=#c:ores max=10", interaction.calls.get(0));
-
-            engine.executeStringOrThrow("""
-                local res2 = World:FindBlocks({ X = 50, Y = 70, Z = 90 }, 24, "crystal_ore")
-                assert(#res2 == 1, "must find 1 block")
-            """, "test_find_2");
-            assertEquals(2, interaction.calls.size());
-            assertEquals("findBlocks 50,70,90 r=24 filter=crystal_ore max=64", interaction.calls.get(1));
-        } finally {
-            engine.shutdown();
-        }
-    }
-
-    @Test
-    public void testSetEnergy_AndProduceEnergy() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        try {
-            InteractionLuaBinding.registerBindings(engine);
-            engine.executeStringOrThrow("""
-                local ok = World:SetEnergy(10, 20, 30, 5000)
-                assert(ok == true, "setEnergy should return true")
-            """, "test_set_energy");
-            assertEquals("setEnergy 10,20,30 amount=5000", interaction.calls.get(0));
-
-            engine.executeStringOrThrow("""
-                local actual = World:ProduceEnergy({ X = 10, Y = 20, Z = 30 }, 250)
-                assert(actual == 250, "produceEnergy should return amount")
-            """, "test_produce_energy");
-            assertEquals("produceEnergy 10,20,30 amount=250", interaction.calls.get(1));
-        } finally {
-            engine.shutdown();
-        }
-    }
-
-    @Test
-    public void testProgress_GetterAndSetter() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        try {
-            InteractionLuaBinding.registerBindings(engine);
-            engine.executeStringOrThrow("""
-                local ok = World:SetProgress(1, 2, 3, 0.45)
-                assert(ok == true, "setProgress should return true")
-                local p = World:GetProgress({ X = 1, Y = 2, Z = 3 })
-                assert(p > 0.74 and p < 0.76, "getProgress should return 0.75")
-            """, "test_progress");
-            assertEquals("setProgress 1,2,3 prog=0.45", interaction.calls.get(0));
-            assertEquals("getProgress 1,2,3", interaction.calls.get(1));
-        } finally {
-            engine.shutdown();
         }
     }
 }

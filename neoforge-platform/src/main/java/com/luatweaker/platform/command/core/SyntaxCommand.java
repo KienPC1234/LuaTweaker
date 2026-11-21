@@ -38,7 +38,7 @@ public class SyntaxCommand implements ILuaTweakerCommand {
             // Check all files in server/
             return checkDirectory(sender, new File(luaRoot, "server"));
         }
-        File target = com.luatweaker.platform.command.core.ListCommand.resolveInsideRoot(luaRoot, args[0]);
+        File target = ListCommand.resolveInsideRoot(luaRoot, args[0]);
         if (target == null) {
             sender.sendError("Refusing path outside the lua/ folder: " + args[0]);
             return 0;
@@ -65,7 +65,7 @@ public class SyntaxCommand implements ILuaTweakerCommand {
         }
         int errors = 0;
         for (File f : files) {
-            if (checkFile(sender, f) == 0) errors++;
+            if (checkFile(sender, f) == 0) { errors++; }
         }
         if (errors == 0) {
             sender.sendSuccess("All " + files.length + " file(s) are syntax-clean.");

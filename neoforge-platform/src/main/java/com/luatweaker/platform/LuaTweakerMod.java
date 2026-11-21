@@ -1,16 +1,17 @@
 package com.luatweaker.platform;
 
+import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.vm.*;
 import com.luatweaker.core.logger.AsyncFileLogger;
 import com.luatweaker.core.lsp.LtvmStubExporter;
 import com.luatweaker.core.lsp.LtvmStubGenerator;
 import com.luatweaker.core.vm.LuaEngineFactory;
+import com.luatweaker.core.vm.LuaEngineLimits;
 import com.luatweaker.platform.command.LuaTweakerCommandRegistry;
 import com.luatweaker.platform.config.LuaTweakerConfig;
 import com.luatweaker.platform.recipe.InterceptionHelper;
 import com.luatweaker.platform.recipe.NeoForgeRecipeManager;
-import com.luatweaker.recipes.RecipesLuaBinding;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimplePreparableReloadListener;
@@ -36,6 +37,10 @@ import java.io.File;
 
 @Mod(LuaTweakerMod.MODID)
 public class LuaTweakerMod {
+    private static final String TRUNCATION_MARKER = "...";
+    /** Load-error reasons longer than this are cut with {@link #TRUNCATION_MARKER} appended. */
+    private static final int MAX_LOAD_REASON_CHARS = 120;
+
     public static final String MODID = "luatweaker";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LuaTweakerMod.class);
@@ -53,13 +58,16 @@ public class LuaTweakerMod {
             new com.luatweaker.network.ChunkAssembler();
 
     // Written on the server/client tick thread and read by the render thread, network handlers
-    // and worldgen workers; publish them safely.
-    private static volatile ILuaEngine activeEngine;
-    private static volatile com.luatweaker.network.NetworkServiceImpl serverNetworkService;
-    private static volatile com.luatweaker.network.NetworkServiceImpl clientNetworkService;
+    // and worldgen workers; published through atomic holders so those threads see the switch.
+    private static final java.util.concurrent.atomic.AtomicReference<ILuaEngine> ACTIVE_ENGINE =
+            new java.util.concurrent.atomic.AtomicReference<>();
+    private static final java.util.concurrent.atomic.AtomicReference<com.luatweaker.network.NetworkServiceImpl>
+            SERVER_NETWORK_SERVICE = new java.util.concurrent.atomic.AtomicReference<>();
+    private static final java.util.concurrent.atomic.AtomicReference<com.luatweaker.network.NetworkServiceImpl>
+            CLIENT_NETWORK_SERVICE = new java.util.concurrent.atomic.AtomicReference<>();
 
     public static ILuaEngine getActiveEngine() {
-        return activeEngine;
+        return ACTIVE_ENGINE.get();
     }
 
     /**
@@ -70,10 +78,10 @@ public class LuaTweakerMod {
      * async Lua callbacks (network RemoteEvents, mana loops, HUD sync) silently die.
      */
     public static void tickActiveEngineTasks() {
-        ILuaEngine engine = activeEngine;
-        if (engine == null) return;
+        ILuaEngine engine = ACTIVE_ENGINE.get();
+        if (engine == null) { return; }
         ILuaValue taskVal = engine.getGlobalEnvironment().rawget("task");
-        if (taskVal == null || !taskVal.isTable()) return;
+        if (taskVal == null || !taskVal.isTable()) { return; }
         ILuaTable taskTbl = taskVal.asTable();
         try {
             ILuaValue luaTick = taskTbl.rawget("_tick");
@@ -85,22 +93,22 @@ public class LuaTweakerMod {
                 engine.callFunction(javaTick);
             }
         } catch (IllegalStateException e) {
-            // A reload shut this engine down between reading activeEngine and pumping it.
+            // A reload shut this engine down between reading ACTIVE_ENGINE.get() and pumping it.
             // The next tick reads the new engine; never let this take down the tick loop.
             LOGGER.debug("Lua task pump skipped: engine was shut down by a reload");
         }
     }
 
     public static void setServerNetworkService(com.luatweaker.network.NetworkServiceImpl service) {
-        serverNetworkService = service;
+        SERVER_NETWORK_SERVICE.set(service);
     }
 
     public static void setClientNetworkService(com.luatweaker.network.NetworkServiceImpl service) {
-        clientNetworkService = service;
+        CLIENT_NETWORK_SERVICE.set(service);
     }
 
     public static com.luatweaker.network.NetworkServiceImpl getServerNetworkService() {
-        return serverNetworkService;
+        return SERVER_NETWORK_SERVICE.get();
     }
 
     /**
@@ -124,6 +132,9 @@ public class LuaTweakerMod {
 
         // Register NeoForge configuration specification
         modContainer.registerConfig(ModConfig.Type.COMMON, LuaTweakerConfig.COMMON_SPEC);
+        // STARTUP configs load inside registerConfig, before LuaMods load below; the VM caps
+        // must be in place by then. Do not move this after loadStartupLuaMods.
+        modContainer.registerConfig(ModConfig.Type.STARTUP, LuaTweakerConfig.ENGINE_SPEC);
 
         // Initialize Platform Abstraction Layer (PAL) Helpers
         Platform.setNetwork(new com.luatweaker.platform.network.NeoForgeNetworkPlatform());
@@ -139,6 +150,12 @@ public class LuaTweakerMod {
             initClientPlatform();
         }
         LOGGER.info("Platform helpers set");
+
+        // Initialize Platform Integrations (GeckoLib, JEI, and extensible hooks)
+        com.luatweaker.platform.integration.IntegrationManager.register(new com.luatweaker.platform.integration.geckolib.GeckoLibIntegration());
+        com.luatweaker.platform.integration.IntegrationManager.register(new com.luatweaker.platform.integration.jei.JeiIntegration());
+        com.luatweaker.platform.integration.IntegrationManager.initModBus(modEventBus);
+        com.luatweaker.platform.integration.IntegrationManager.logStatus();
 
         // Setup the global stage-aware logger
         AsyncFileLogger fileLogger = AsyncFileLogger.get();
@@ -165,7 +182,7 @@ public class LuaTweakerMod {
             modEventBus.register(new com.luatweaker.platform.content.NeoForgeContentRegistry.ClientModEvents(contentRegistry));
         }
         modEventBus.register(luaAssetsPackFinder);        modEventBus.addListener(LuaTweakerMod::registerPayloads);
-        modEventBus.addListener(this::onClientSetup);
+        modEventBus.addListener((net.neoforged.fml.event.lifecycle.FMLClientSetupEvent event) -> onClientSetup());
         modEventBus.addListener(com.luatweaker.platform.dimension.NeoForgeDimensionProvider::registerCodecs);
         modEventBus.addListener(com.luatweaker.platform.worldgen.MixedVeinRegistrar::registerFeatures);
 
@@ -174,6 +191,7 @@ public class LuaTweakerMod {
         NeoForge.EVENT_BUS.register(
                 new com.luatweaker.platform.content.NeoForgeContentRegistry.BossBarTickHandler(contentService));
         com.luatweaker.platform.event.UniversalEventForwarder.registerAll();
+        com.luatweaker.platform.loot.NeoForgeRuntimeLootHandler.register();
 
         if (Platform.getContent().isClient()) {
             modEventBus.addListener(com.luatweaker.platform.client.DynamicKeyMappingHandler::onRegisterKeyMappings);
@@ -181,6 +199,7 @@ public class LuaTweakerMod {
             NeoForge.EVENT_BUS.addListener(com.luatweaker.platform.client.NeoForgeWorldRenderEventListener::onRenderLevel);
             modEventBus.addListener(com.luatweaker.platform.client.dimension.LuaDimensionEffects::register);
             NeoForge.EVENT_BUS.addListener(com.luatweaker.platform.client.ExperimentalWarningHandler::onScreenInit);
+            NeoForge.EVENT_BUS.addListener(com.luatweaker.platform.client.luamods.LuamodMenuButton::onScreenInit);
         }
         // Server tick pump for the Lua task queues is registered via @SubscribeEvent
         // on onServerTick (LuaTweakerMod is registered on NeoForge.EVENT_BUS above).
@@ -188,14 +207,21 @@ public class LuaTweakerMod {
         // Build the command registry (core commands auto-registered inside)
         commandRegistry = new LuaTweakerCommandRegistry(luaDir);
         commandRegistry.register(new com.luatweaker.platform.command.core.DimensionCommand());
+        commandRegistry.register(new com.luatweaker.platform.command.core.SpawnCommand());
     }
 
     private void loadStartupLuaMods(File luaDir) {
-        ILuaEngine startupEngine = LuaEngineFactory.create(isDebugEnabled());
+        // Feed the dependency gates BEFORE any mod loads: the running engine
+        // version, the game version, and every installed platform mod. Core-engine
+        // stays NeoForge-free; this is the only place ModList is read.
+        publishPlatformEnvironment();
+
+        ILuaEngine startupEngine = LuaEngineFactory.create(isDebugEnabled(), engineLimits());
         startupEngine.setLuaDirectory(luaDir);
         com.luatweaker.platform.bootstrap.LuaServiceBootstrap.registerAllServices(
-                startupEngine, contentService, storageService, datapackService, new NeoForgeRecipeManager()
+                startupEngine, contentService, storageService, datapackService, new NeoForgeRecipeManager(datapackService)
         );
+        com.luatweaker.platform.integration.IntegrationManager.initEngine(startupEngine);
 
         // Fresh command set per load cycle: only the mods loaded below register commands.
         com.luatweaker.command.CommandServiceImpl.clear();
@@ -221,9 +247,43 @@ public class LuaTweakerMod {
         // Publish the engine that actually loaded the mods. Without this a dedicated client
         // (and the first dedicated-server reload) ends up ticking/dispatching a different,
         // empty VM: no HUD listeners, no RemoteEvent handlers, no teardown on reload.
-        if (activeEngine == null) {
-            activeEngine = startupEngine;
+        if (ACTIVE_ENGINE.get() == null) {
+            ACTIVE_ENGINE.set(startupEngine);
         }
+    }
+
+    /**
+     * Reads the running platform versions into the LuaMod dependency gates.
+     * Engine version comes from our own mod container, the game version from the
+     * {@code minecraft} container NeoForge always registers, and the installed
+     * set from every loaded mod. Failures fail open (unknown = allowed) so a
+     * broken lookup can never mass-skip version-gated mods.
+     */
+    private static void publishPlatformEnvironment() {
+        String engineVersion = null;
+        String minecraftVersion = null;
+        // Insertion-ordered snapshot built once at mod construction; never shared concurrently.
+        java.util.Map<String, String> installed;
+        installed = new java.util.LinkedHashMap<>();
+        try {
+            net.neoforged.fml.ModList mods = net.neoforged.fml.ModList.get();
+            if (mods != null) {
+                engineVersion = mods.getModContainerById(MODID)
+                        .map(c -> c.getModInfo().getVersion().toString())
+                        .orElse(null);
+                minecraftVersion = mods.getModContainerById("minecraft")
+                        .map(c -> c.getModInfo().getVersion().toString())
+                        .orElse(null);
+                for (net.neoforged.neoforgespi.language.IModInfo c : mods.getMods()) {
+                    installed.put(c.getModId(), c.getVersion().toString());
+                }
+            }
+        } catch (IllegalStateException | LinkageError e) {
+            LOGGER.warn("Platform environment lookup failed, dependency gates fail open: {}", e.getMessage());
+        }
+        com.luatweaker.core.mod.LuaModManager.setEngineVersion(engineVersion);
+        com.luatweaker.core.mod.LuaModManager.setMinecraftVersion(minecraftVersion);
+        com.luatweaker.core.mod.LuaModManager.setInstalledMods(installed);
     }
 
     /**
@@ -254,32 +314,32 @@ public class LuaTweakerMod {
      * Zip-packaged mods have no physical dir and are skipped, same as the runtime
      * fallback. Sorted by mod id for deterministic emission order.
      */
-    private static java.util.List<java.io.File> collectStructureDataRoots(java.io.File luaDir) {
-        java.util.List<java.io.File> roots = new java.util.ArrayList<>();
-        roots.add(new java.io.File(luaDir, "data"));
-        java.io.File luamodsDir = "luamods".equalsIgnoreCase(luaDir.getName())
-                ? luaDir : new java.io.File(luaDir, "luamods");
-        java.io.File[] mods = luamodsDir.isDirectory() ? luamodsDir.listFiles(java.io.File::isDirectory) : null;
+    private static java.util.List<File> collectStructureDataRoots(File luaDir) {
+        java.util.List<File> roots = new java.util.ArrayList<>();
+        roots.add(new File(luaDir, "data"));
+        File luamodsDir = "luamods".equalsIgnoreCase(luaDir.getName())
+                ? luaDir : new File(luaDir, "luamods");
+        File[] mods = luamodsDir.isDirectory() ? luamodsDir.listFiles(File::isDirectory) : null;
         if (mods != null) {
-            java.util.Arrays.sort(mods, java.util.Comparator.comparing(java.io.File::getName));
-            for (java.io.File mod : mods) {
-                roots.add(new java.io.File(mod, "data"));
+            java.util.Arrays.sort(mods, java.util.Comparator.comparing(File::getName));
+            for (File mod : mods) {
+                roots.add(new File(mod, "data"));
             }
         }
         return roots;
     }
 
-    private void onClientSetup(final net.neoforged.fml.event.lifecycle.FMLClientSetupEvent event) {
+    private void onClientSetup() {
         // Lua mods are loaded in the constructor and LuaServiceBootstrap binds every
         // service on that same engine. Re-running the bindings here used to replace
         // Events, GuiService and Client.OnRenderWorld with fresh empty tables, silently
         // dropping every listener a Lua mod connected during startup (HUD, events, world
         // rendering, keybinds). The only case that needs work is a missing engine, which
         // the normal mod-load path never leaves behind.
-        if (activeEngine == null) {
-            ILuaEngine engine = LuaEngineFactory.create(isDebugEnabled());
+        if (ACTIVE_ENGINE.get() == null) {
+            ILuaEngine engine = LuaEngineFactory.create(isDebugEnabled(), engineLimits());
             engine.setLuaDirectory(getLuaDirectory());
-            activeEngine = engine;
+            ACTIVE_ENGINE.set(engine);
             com.luatweaker.platform.bootstrap.LuaServiceBootstrap.registerAllServices(
                     engine, contentService, storageService, datapackService, new NeoForgeRecipeManager());
         }
@@ -290,16 +350,20 @@ public class LuaTweakerMod {
         if (!luaDir.exists()) {
             luaDir.mkdirs();
             com.luatweaker.api.log.LuaTweakerLog.get().info(
-                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    LogStage.SYSTEM,
                     "Created main Lua directory at: " + luaDir.getAbsolutePath());
         }
 
-        String[] requiredSubDirs = new String[] { ".luatweaker/stubs" };
+        String[] requiredSubDirs = { ".luatweaker/stubs" };
         for (String sub : requiredSubDirs) {
-            File subDir = new File(luaDir, sub);
-            if (!subDir.exists()) {
-                subDir.mkdirs();
-            }
+            ensureSubDirectory(luaDir, sub);
+        }
+    }
+
+    private static void ensureSubDirectory(File parent, String name) {
+        File subDir = new File(parent, name);
+        if (!subDir.exists()) {
+            subDir.mkdirs();
         }
     }
 
@@ -313,18 +377,36 @@ public class LuaTweakerMod {
     }
 
     private boolean isDebugEnabled() {
-        try {
-            return LuaTweakerConfig.DEBUG.get();
-        } catch (Exception e) {
-            return false;
-        }
+        return com.luatweaker.platform.util.CallbackFirewall.supply(LuaTweakerConfig.DEBUG::get, false,
+                LogStage.SYSTEM, () -> "debug flag read");
     }
 
     private boolean isAutoStubsEnabled() {
+        return com.luatweaker.platform.util.CallbackFirewall.supply(LuaTweakerConfig.AUTO_GENERATE_STUBS::get,
+                true, LogStage.SYSTEM, () -> "auto-stubs flag read");
+    }
+
+    /**
+     * Reads the VM resource caps from the STARTUP config.
+     *
+     * <p>NeoForge loads STARTUP configs inside {@code registerConfig}, so the values are already
+     * available while the mod constructor loads LuaMods. The guard only covers a failed config
+     * load: in that case the engine stays unlimited instead of guessing a cap that could break a
+     * working setup, and the failure is logged instead of silently swallowed.</p>
+     *
+     * @return the configured caps, never {@code null}
+     */
+    private LuaEngineLimits engineLimits() {
         try {
-            return LuaTweakerConfig.AUTO_GENERATE_STUBS.get();
-        } catch (Exception e) {
-            return true;
+            return new LuaEngineLimits(
+                    LuaTweakerConfig.MAX_MEMORY_BYTES.get(),
+                    LuaTweakerConfig.MAX_CALL_DEPTH.get(),
+                    LuaTweakerConfig.MAX_COROUTINES.get());
+        } catch (IllegalStateException e) {
+            AsyncFileLogger.get().warn(LogStage.SYSTEM,
+                    "Engine limits unavailable because the STARTUP config is not loaded; "
+                            + "running with no caps. " + e.getMessage());
+            return LuaEngineLimits.UNLIMITED;
         }
     }
 
@@ -334,7 +416,7 @@ public class LuaTweakerMod {
     }
 
     @SubscribeEvent
-    public void onPlayerLoggedIn(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent event) {        if (!(event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player)) return;
+    public void onPlayerLoggedIn(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent event) {        if (!(event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player)) { return; }
 
         // Available updates discovered by the engine-side declarative checker.
         for (com.luatweaker.update.UpdateStatus status : com.luatweaker.update.UpdateServiceImpl.getUpdates()) {
@@ -353,6 +435,48 @@ public class LuaTweakerMod {
                                 + "' holds the 'net.http' permission and can access the internet."));
             }
         }
+
+        // Dependency/condition skips: tell every joining player which LuaMods did
+        // NOT load and why (missing dependency, version mismatch, disabled), and
+        // point at /lt doctor for the full per-mod report.
+        java.util.Map<String, String> loadErrors = com.luatweaker.core.mod.LuaModManager.getLoadErrors();
+        for (String line : buildLoadWarningLines(loadErrors, 5)) {
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(line));
+        }
+    }
+
+    /**
+     * Builds the in-game load-failure warning, pure for tests (no Minecraft types
+     * in the signature). Reasons are truncated so one pathological entry cannot
+     * flood chat.
+     *
+     * @param loadErrors mod id to skip/crash reason, as reported by
+     *                   {@link com.luatweaker.core.mod.LuaModManager#getLoadErrors()}
+     * @param maxShown   how many per-mod lines to include before summarizing
+     * @return chat lines, empty when everything loaded cleanly
+     */
+    static java.util.List<String> buildLoadWarningLines(java.util.Map<String, String> loadErrors, int maxShown) {
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        if (loadErrors == null || loadErrors.isEmpty()) { return lines; }
+        lines.add("§c[LuaTweaker] WARNING: " + loadErrors.size() + " LuaMod(s) did not load:");
+        java.util.List<String> ids = new java.util.ArrayList<>(loadErrors.keySet());
+        java.util.Collections.sort(ids);
+        int shown = 0;
+        for (String id : ids) {
+            if (shown >= maxShown) { break; }
+            String reason = String.valueOf(loadErrors.get(id));
+            if (reason.length() > MAX_LOAD_REASON_CHARS) {
+                reason = reason.substring(0, MAX_LOAD_REASON_CHARS - TRUNCATION_MARKER.length()) + TRUNCATION_MARKER;
+            }
+            lines.add("§7 - " + id + ": " + reason);
+            shown++;
+        }
+        if (loadErrors.size() > shown) {
+            lines.add("§7... and " + (loadErrors.size() - shown) + " more. Run /lt doctor for details.");
+        } else {
+            lines.add("§7Run /lt doctor for details.");
+        }
+        return lines;
     }
 
     @SubscribeEvent
@@ -366,7 +490,7 @@ public class LuaTweakerMod {
         // RunService on the server: Stepped (before the tick's world work is done) and
         // Heartbeat (end of tick), with a real wall-clock delta. Previously only the client
         // fired these, so server scripts connecting to Heartbeat never ran.
-        ILuaEngine tickEngine = activeEngine;
+        ILuaEngine tickEngine = ACTIVE_ENGINE.get();
         if (tickEngine != null) {
             double delta = com.luatweaker.platform.runservice.ServerTickClock.nextDelta();
             com.luatweaker.platform.runservice.RunServiceDispatcher.fire(tickEngine, "Stepped", delta);
@@ -382,18 +506,18 @@ public class LuaTweakerMod {
     @SubscribeEvent
     public void onPlayerChangedDimension(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerChangedDimensionEvent event) {
         Object events = com.luatweaker.core.service.LuaServiceRegistry.get("Events");
-        if (!(events instanceof com.luatweaker.api.event.IEventService eventService)) return;
-        if (!(event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player)) return;
+        if (!(events instanceof com.luatweaker.api.event.IEventService eventService)) { return; }
+        if (!(event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player)) { return; }
         try {
             com.luatweaker.platform.entity.NeoForgePlayerWrapper wrapper =
                     new com.luatweaker.platform.entity.NeoForgePlayerWrapper(player);
-            com.luatweaker.api.vm.ILuaTable payload = eventService.getEngine().createTable();
+            ILuaTable payload = eventService.getEngine().createTable();
             payload.rawset("player", com.luatweaker.entities.EntitiesLuaBinding.createPlayerLuaTable(
                     eventService.getEngine(), wrapper));
             payload.rawset("dimensionId", event.getTo().location().toString());
             payload.rawset("fromDimensionId", event.getFrom().location().toString());
             eventService.fireEvent("DimensionEntered", payload);
-        } catch (Exception e) {
+        } catch (org.luava.runtime.LuaException | IllegalStateException e) {
             LOGGER.warn("DimensionEntered event dispatch failed: {}", e.getMessage());
         }
     }
@@ -414,6 +538,7 @@ public class LuaTweakerMod {
     @SubscribeEvent
     public void onServerStopping(net.neoforged.neoforge.event.server.ServerStoppingEvent event) {
         LOGGER.info("ServerStoppingEvent fired, flushing pending storage commits...");
+        com.luatweaker.platform.integration.IntegrationManager.onServerStopping();
         com.luatweaker.storage.StorageServiceImpl.flushAllActive();
     }
 
@@ -462,12 +587,25 @@ public class LuaTweakerMod {
         });
     }
 
-    private long lastReloadTime = 0;
+    private long lastReloadTime;
+
+    /** Explicit reload mutex (block-level locking instead of method-level synchronization). */
+    private final java.util.concurrent.locks.ReentrantLock reloadLock =
+            new java.util.concurrent.locks.ReentrantLock();
 
     /** Minimum gap between reloadServerRecipes calls to dedupe redundant reloads. */
     private static final long MIN_RELOAD_INTERVAL_MS = 500;
 
-    public synchronized void reloadServerRecipes(MinecraftServer server) {
+    public void reloadServerRecipes(MinecraftServer server) {
+        reloadLock.lock();
+        try {
+            reloadServerRecipesLocked(server);
+        } finally {
+            reloadLock.unlock();
+        }
+    }
+
+    private void reloadServerRecipesLocked(MinecraftServer server) {
         long now = System.currentTimeMillis();
         if (now - lastReloadTime < MIN_RELOAD_INTERVAL_MS) {
             LOGGER.info("Skipping redundant reloadServerRecipes call (reloaded {}ms ago)", now - lastReloadTime);
@@ -480,17 +618,17 @@ public class LuaTweakerMod {
         boolean debugMode = isDebugEnabled();
 
         AsyncFileLogger.get().setDebugEnabled(debugMode);
-        com.luatweaker.api.log.LuaTweakerLog.get().stageBegin(com.luatweaker.api.log.LogStage.RELOAD);
-        com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.RELOAD,
+        com.luatweaker.api.log.LuaTweakerLog.get().stageBegin(LogStage.RELOAD);
+        com.luatweaker.api.log.LuaTweakerLog.get().info(LogStage.RELOAD,
                 "Reloading Lua server scripts... (Debug: " + debugMode + ")");
 
-        if (activeEngine != null) {
-            com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.RELOAD,
+        if (ACTIVE_ENGINE.get() != null) {
+            com.luatweaker.api.log.LuaTweakerLog.get().info(LogStage.RELOAD,
                     "Firing OnScriptUnload teardown hooks...");
             try {
                 com.luatweaker.events.EventServiceImpl.fireTeardownHooks();
             } catch (Exception e) {
-                com.luatweaker.api.log.LuaTweakerLog.get().error(com.luatweaker.api.log.LogStage.RELOAD,
+                com.luatweaker.api.log.LuaTweakerLog.get().error(LogStage.RELOAD,
                         "Error during teardown hooks: " + e.getMessage());
             }
         }
@@ -510,7 +648,7 @@ public class LuaTweakerMod {
         }
 
         NeoForgeRecipeManager recipeManager = new NeoForgeRecipeManager();
-        ILuaEngine previousEngine = activeEngine;
+        ILuaEngine previousEngine = ACTIVE_ENGINE.get();
         if (previousEngine != null) {
             // OnDisable must run on the VM that owns the closures, before it is shut down.
             com.luatweaker.core.mod.LuaModManager.fireModTeardownHooks(previousEngine);
@@ -521,13 +659,14 @@ public class LuaTweakerMod {
             // holding Lua closures and can be resumed by a stray delay callback after reload.
             previousEngine.shutdown();
         }
-        activeEngine = LuaEngineFactory.create(debugMode);
-        ILuaEngine engine = activeEngine;
+        ACTIVE_ENGINE.set(LuaEngineFactory.create(debugMode, engineLimits()));
+        ILuaEngine engine = ACTIVE_ENGINE.get();
         engine.setLuaDirectory(getLuaDirectory());
 
         com.luatweaker.core.service.LuaServiceRegistry.clear();
         com.luatweaker.platform.bootstrap.LuaServiceBootstrap.registerAllServices(engine, contentService,
                 storageService, datapackService, recipeManager);
+        com.luatweaker.platform.integration.IntegrationManager.initEngine(engine);
 
         // Fresh command set per load cycle: disabled/removed mods must not leave
         // stale /lt commands behind (see CommandServiceImpl.clear()).
@@ -571,15 +710,15 @@ public class LuaTweakerMod {
         InterceptionHelper.populatePendingEvents(recipeManager.getModifications());
 
         if (server != null) {
-            com.luatweaker.api.log.LuaTweakerLog.get().stageBegin(com.luatweaker.api.log.LogStage.RECIPE_APPLY);
+            com.luatweaker.api.log.LuaTweakerLog.get().stageBegin(LogStage.RECIPE_APPLY);
             RecipeManager mcRecipeManager = server.getRecipeManager();
             InterceptionHelper.applyModifications(mcRecipeManager, recipeManager.getModifications());
-            com.luatweaker.api.log.LuaTweakerLog.get().stageEnd(com.luatweaker.api.log.LogStage.RECIPE_APPLY,
+            com.luatweaker.api.log.LuaTweakerLog.get().stageEnd(LogStage.RECIPE_APPLY,
                     System.currentTimeMillis() - startTime);
         }
-        com.luatweaker.api.log.LuaTweakerLog.get().stageEnd(com.luatweaker.api.log.LogStage.RELOAD,
+        com.luatweaker.api.log.LuaTweakerLog.get().stageEnd(LogStage.RELOAD,
                 System.currentTimeMillis() - startTime);
-        activeEngine = engine;
+        ACTIVE_ENGINE.set(engine);
         LOGGER.info("reloadServerRecipes completed in {}ms", System.currentTimeMillis() - startTime);
     }
 
@@ -601,6 +740,15 @@ public class LuaTweakerMod {
                     com.luatweaker.platform.client.ClientItemAnimationHandler.trigger(
                             payload.entityId(), payload.animationName(), payload.durationTicks(), payload.speed());
                 }));
+        registrar.playToClient(
+                com.luatweaker.platform.network.OpenGuiEditorPayload.TYPE,
+                com.luatweaker.platform.network.OpenGuiEditorPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> {
+                    if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) {
+                        com.luatweaker.platform.client.ClientGuiOpener.openGuiEditor(
+                                payload.title(), payload.guiWidth(), payload.guiHeight(), payload.isJeiMode());
+                    }
+                }));
     }
 
     private static void handleContainerButtonPayload(
@@ -619,7 +767,7 @@ public class LuaTweakerMod {
                         handler.accept(posMap, payload.buttonId());
                     } catch (Exception e) {
                         com.luatweaker.api.log.LuaTweakerLog.get().error(
-                                com.luatweaker.api.log.LogStage.SYSTEM,
+                                LogStage.SYSTEM,
                                 "Failed container button handler for " + payload.buttonId() + ": " + e.getMessage());
                     }
                 }
@@ -641,7 +789,7 @@ public class LuaTweakerMod {
                     payload.data());
         } catch (RuntimeException e) {
             com.luatweaker.api.log.LuaTweakerLog.get().error(
-                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    LogStage.SYSTEM,
                     "[Network] Dropped frame '" + channel + "': " + e.getMessage());
             INBOUND_CHUNKS.clear(connectionKey, channel);
             return;
@@ -650,19 +798,8 @@ public class LuaTweakerMod {
             return; // still waiting for the remaining frames
         }
 
-        if (!serverbound) {
-            if (SYNC_DATA_CHANNEL.equals(channel)) {
-                handleClientSyncData(new String(data, java.nio.charset.StandardCharsets.UTF_8));
-                return;
-            }
-            if (OPEN_SCREEN_CHANNEL.equals(channel)) {
-                handleClientOpenScreen(new String(data, java.nio.charset.StandardCharsets.UTF_8));
-                return;
-            }
-            if (CLOSE_SCREEN_CHANNEL.equals(channel)) {
-                com.luatweaker.api.pal.Platform.getClient().closeScreen();
-                return;
-            }
+        if (!serverbound && dispatchClientboundChannel(channel, data)) {
+            return;
         }
 
         if (com.luatweaker.network.NetworkServiceImpl.RPC_CHANNEL.equals(channel)) {
@@ -671,15 +808,41 @@ public class LuaTweakerMod {
         }
 
         if (serverbound) {
-            String playerUuid = context.player() != null ? context.player().getUUID().toString() : "";
-            com.luatweaker.network.NetworkServiceImpl ns = serverNetworkService;
-            if (ns != null) {
-                ns.OnClientFired(channel, playerUuid, data);
-            } else {
-                LOGGER.warn("serverNetworkService is null when handling serverbound payload {}", channel);
-            }
+            dispatchServerbound(channel, data, context);
             return;
         }
+        dispatchClientbound(channel, data);
+    }
+
+    /** Handles the client-only channels; true when the payload was consumed. */
+    private static boolean dispatchClientboundChannel(String channel, byte[] data) {
+        if (SYNC_DATA_CHANNEL.equals(channel)) {
+            handleClientSyncData(new String(data, java.nio.charset.StandardCharsets.UTF_8));
+            return true;
+        }
+        if (OPEN_SCREEN_CHANNEL.equals(channel)) {
+            handleClientOpenScreen(new String(data, java.nio.charset.StandardCharsets.UTF_8));
+            return true;
+        }
+        if (CLOSE_SCREEN_CHANNEL.equals(channel)) {
+            Platform.getClient().closeScreen();
+            return true;
+        }
+        return false;
+    }
+
+    private static void dispatchServerbound(String channel, byte[] data,
+                                            net.neoforged.neoforge.network.handling.IPayloadContext context) {
+        String playerUuid = context.player() != null ? context.player().getUUID().toString() : "";
+        com.luatweaker.network.NetworkServiceImpl ns = SERVER_NETWORK_SERVICE.get();
+        if (ns != null) {
+            ns.OnClientFired(channel, playerUuid, data);
+        } else {
+            LOGGER.warn("SERVER_NETWORK_SERVICE.get() is null when handling serverbound payload {}", channel);
+        }
+    }
+
+    private static void dispatchClientbound(String channel, byte[] data) {
         // Clientbound: the OnClientEvent listeners are connected on the network service of
         // the CURRENTLY ACTIVE engine (where the mods loaded), not on the client setup engine
         // which never loads mods.
@@ -703,7 +866,7 @@ public class LuaTweakerMod {
             envelope = com.luatweaker.network.RpcEnvelope.decode(data);
         } catch (RuntimeException e) {
             com.luatweaker.api.log.LuaTweakerLog.get().error(
-                    com.luatweaker.api.log.LogStage.SYSTEM,
+                    LogStage.SYSTEM,
                     "[Network] Dropped malformed RemoteFunction envelope: " + e.getMessage());
             return;
         }
@@ -717,7 +880,7 @@ public class LuaTweakerMod {
     }
 
     private static void handleClientSyncData(String dataJson) {
-        com.luatweaker.api.pal.Platform.getClient().handleClientSyncData(dataJson);
+        Platform.getClient().handleClientSyncData(dataJson);
     }
 
     private static void handleClientOpenScreen(String dataJson) {
@@ -729,7 +892,7 @@ public class LuaTweakerMod {
             if (gs instanceof com.luatweaker.api.client.IGuiService guiService) {
                 guiService.openScreen(screenId, title, false);
             } else {
-                com.luatweaker.api.pal.Platform.getClient().openScreen(screenId, title, null, activeEngine, false);
+                Platform.getClient().openScreen(screenId, title, null, ACTIVE_ENGINE.get(), false);
             }
         } catch (Exception e) {
             LOGGER.error("Failed to open canvas screen: {}", e.getMessage());
@@ -742,14 +905,14 @@ public class LuaTweakerMod {
      */
     private static com.luatweaker.network.NetworkServiceImpl rpcService(boolean serverbound) {
         if (serverbound) {
-            return serverNetworkService;
+            return SERVER_NETWORK_SERVICE.get();
         }
         Object ns = com.luatweaker.core.service.LuaServiceRegistry.get("NetworkServiceImpl");
         return ns instanceof com.luatweaker.network.NetworkServiceImpl networkService ? networkService : null;
     }
 
     private void generateStubs() {
-        com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.STUB_GEN,
+        com.luatweaker.api.log.LuaTweakerLog.get().info(LogStage.STUB_GEN,
                 "Generating autocomplete stubs...");
         LtvmStubGenerator stubGen = new LtvmStubGenerator();
         // Static Module Namespaces (require("LuaTweaker.ModuleName"))
@@ -771,12 +934,16 @@ public class LuaTweakerMod {
         stubGen.registerService("Dimensions", com.luatweaker.api.dimension.IDimensionService.class);
         stubGen.registerService("SpawnRules", com.luatweaker.api.spawn.ISpawnRuleService.class);
         stubGen.registerService("Biomes", com.luatweaker.api.biome.IBiomesService.class);
+        stubGen.registerService("Json", com.luatweaker.api.json.IJsonService.class);
 
         // Runtime wrapper classes (entity/player tables created dynamically at runtime)
         stubGen.registerClassStub(com.luatweaker.api.entity.IEntity.class, "Entity");
         stubGen.registerClassStub(com.luatweaker.api.entity.IPlayer.class, "Player");
         stubGen.registerClassStub(com.luatweaker.api.command.ICommandSender.class, "CommandSender");
         stubGen.registerClassStub(com.luatweaker.api.content.IBlockRenderer.class, "BlockRenderer");
+        // Per-mod file handles returned by mod:Files() / mod:Exports().
+        stubGen.registerClassStub(com.luatweaker.api.mod.IModFiles.class, "ModFiles");
+        stubGen.registerClassStub(com.luatweaker.api.mod.IModExports.class, "ModExports");
 
         // Out-of-tree Java plugins contribute their @LuaDoc interfaces here so
         // external APIs get the same EmmyLua autocomplete as built-in services.

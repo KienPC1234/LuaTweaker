@@ -24,15 +24,15 @@ public class DebugCommand implements ILuaTweakerCommand {
     @Override
     public int execute(ICommandSender sender, String[] args) {
         if (args.length == 0) {
-            boolean current = getDebug();
+            boolean current = isDebug();
             sender.sendMessage("§6[LuaTweaker] Debug mode is currently §e" + (current ? "ON" : "OFF") + "§6.");
             return 1;
         }
-        String flag = args[0].toLowerCase();
-        if (flag.equals("on") || flag.equals("true") || flag.equals("1")) {
+        String flag = args[0].toLowerCase(java.util.Locale.ROOT);
+        if ("on".equals(flag) || "true".equals(flag) || "1".equals(flag)) {
             setDebug(true);
             sender.sendSuccess("§aDebug mode §lENABLED§r§a. Reload scripts to apply.");
-        } else if (flag.equals("off") || flag.equals("false") || flag.equals("0")) {
+        } else if ("off".equals(flag) || "false".equals(flag) || "0".equals(flag)) {
             setDebug(false);
             sender.sendSuccess("§eDebug mode §lDISABLED§r§e. Reload scripts to apply.");
         } else {
@@ -42,11 +42,13 @@ public class DebugCommand implements ILuaTweakerCommand {
         return 1;
     }
 
-    private boolean getDebug() {
-        try { return LuaTweakerConfig.DEBUG.get(); } catch (Exception e) { return false; }
+    private boolean isDebug() {
+        return com.luatweaker.platform.util.CallbackFirewall.supply(LuaTweakerConfig.DEBUG::get, false,
+                com.luatweaker.api.log.LogStage.SYSTEM, () -> "debug flag read");
     }
 
     private void setDebug(boolean value) {
-        try { LuaTweakerConfig.DEBUG.set(value); } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
+        com.luatweaker.platform.util.CallbackFirewall.run(() -> LuaTweakerConfig.DEBUG.set(value),
+                com.luatweaker.api.log.LogStage.SYSTEM, () -> "Ignored exception");
     }
 }

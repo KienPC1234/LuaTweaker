@@ -8,7 +8,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.level.biome.Biome;
-import net.minecraft.world.level.biome.BiomeSpecialEffects;
 import net.minecraft.world.level.biome.MobSpawnSettings;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.jetbrains.annotations.NotNull;
@@ -32,52 +31,81 @@ public final class NeoForgeWorldgenPlatform implements IPlatformWorldgen {
     @Override
     public @Nullable Map<String, Object> getBiomeInfo(@NotNull String biomeId) {
         ResourceLocation id = ResourceLocation.tryParse(biomeId);
-        if (id == null) return null;
+        return id == null ? null : biomeInfo(ServerLifecycleHooks.getCurrentServer(), id);
+    }
 
-        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
-        if (server == null) return null;
+    @Nullable
+    private static Map<String, Object> biomeInfo(@Nullable MinecraftServer server, ResourceLocation id) {
+        if (server == null) {
+            return null;
+        }
         Optional<Registry<Biome>> registry = server.registryAccess().registry(Registries.BIOME);
-        if (registry.isEmpty()) return null;
+        if (registry.isEmpty()) {
+            return null;
+        }
         Biome biome = registry.get().get(id);
-        if (biome == null) return null;
+        return biome == null ? null : describe(biome, id);
+    }
 
-        Map<String, Object> info = new LinkedHashMap<>();
+    @NotNull
+    private static Map<String, Object> describe(Biome biome, ResourceLocation id) {
+        var info = new LinkedHashMap<String, Object>();
         info.put("id", id.toString());
-
-        Biome.ClimateSettings climate = biome.getModifiedClimateSettings();
+        var climate = biome.getModifiedClimateSettings();
         info.put("hasPrecipitation", climate.hasPrecipitation());
         info.put("temperature", (double) climate.temperature());
         info.put("downfall", (double) climate.downfall());
         info.put("temperatureModifier", climate.temperatureModifier().getSerializedName());
-
-        BiomeSpecialEffects effects = biome.getModifiedSpecialEffects();
+        var effects = biome.getModifiedSpecialEffects();
         info.put("skyColor", effects.getSkyColor());
         info.put("fogColor", effects.getFogColor());
         info.put("waterColor", effects.getWaterColor());
         info.put("waterFogColor", effects.getWaterFogColor());
         effects.getGrassColorOverride().ifPresent(color -> info.put("grassColor", color));
         effects.getFoliageColorOverride().ifPresent(color -> info.put("foliageColor", color));
+        info.put("spawners", spawners(biome));
+        return info;
+    }
 
-        Map<String, Object> spawners = new LinkedHashMap<>();
+    @NotNull
+    private static Map<String, Object> spawners(Biome biome) {
+        var spawners = new LinkedHashMap<String, Object>();
         for (MobCategory category : MobCategory.values()) {
             List<MobSpawnSettings.SpawnerData> entries = biome.getMobSettings().getMobs(category).unwrap();
-            if (entries.isEmpty()) continue;
-            List<Map<String, Object>> categoryEntries = new ArrayList<>(entries.size());
-            for (MobSpawnSettings.SpawnerData entry : entries) {
-                ResourceLocation entityId = BuiltInRegistries.ENTITY_TYPE.getKey(entry.type);
-                if (entityId == null) continue;
-                Map<String, Object> spawn = new LinkedHashMap<>();
-                spawn.put("entity", entityId.toString());
-                spawn.put("weight", entry.getWeight().asInt());
-                spawn.put("minGroup", entry.minCount);
-                spawn.put("maxGroup", entry.maxCount);
-                categoryEntries.add(spawn);
+            if (entries.isEmpty()) {
+                continue;
             }
-            if (!categoryEntries.isEmpty()) {
-                spawners.put(category.getSerializedName(), categoryEntries);
+            List<Map<String, Object>> described = describeSpawners(entries);
+            if (!described.isEmpty()) {
+                spawners.put(category.getSerializedName(), described);
             }
         }
-        info.put("spawners", spawners);
-        return info;
+        return spawners;
+    }
+
+    @NotNull
+    private static List<Map<String, Object>> describeSpawners(List<MobSpawnSettings.SpawnerData> entries) {
+        List<Map<String, Object>> described = new ArrayList<>(entries.size());
+        for (MobSpawnSettings.SpawnerData entry : entries) {
+            Map<String, Object> spawn = describeSpawner(entry);
+            if (spawn != null) {
+                described.add(spawn);
+            }
+        }
+        return described;
+    }
+
+    @Nullable
+    private static Map<String, Object> describeSpawner(MobSpawnSettings.SpawnerData entry) {
+        ResourceLocation entityId = BuiltInRegistries.ENTITY_TYPE.getKey(entry.type);
+        if (entityId == null) {
+            return null;
+        }
+        var spawn = new LinkedHashMap<String, Object>();
+        spawn.put("entity", entityId.toString());
+        spawn.put("weight", entry.getWeight().asInt());
+        spawn.put("minGroup", entry.minCount);
+        spawn.put("maxGroup", entry.maxCount);
+        return spawn;
     }
 }

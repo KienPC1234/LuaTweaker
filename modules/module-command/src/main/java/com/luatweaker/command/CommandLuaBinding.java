@@ -2,7 +2,6 @@ package com.luatweaker.command;
 
 import com.luatweaker.api.command.ICommandService;
 import com.luatweaker.api.vm.ILuaEngine;
-import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.core.bind.LuaBinder;
 import com.luatweaker.core.stub.StubCatalog;
 import org.jetbrains.annotations.NotNull;
@@ -15,7 +14,7 @@ import org.jetbrains.annotations.NotNull;
  * in {@link CommandServiceImpl} so the platform command tree can always reach
  * the definitions of the current load cycle.</p>
  */
-public class CommandLuaBinding {
+public final class CommandLuaBinding {
 
     private CommandLuaBinding() {}
 

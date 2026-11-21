@@ -1,42 +1,69 @@
 package com.luatweaker.platform.entity.ai;
 
-import com.luatweaker.api.vm.*;
+import com.luatweaker.api.log.LogStage;
+import com.luatweaker.api.log.LuaTweakerLog;
+import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.api.vm.ILuaTable;
+import com.luatweaker.api.vm.ILuaValue;
 import net.minecraft.world.entity.ai.goal.Goal;
-import net.minecraft.world.entity.Mob;
 import org.jetbrains.annotations.NotNull;
-import java.util.EnumSet;
+import org.jetbrains.annotations.Nullable;
+import org.luava.runtime.LuaException;
 
-public class NeoForgeLuaGoal extends Goal {
-    private final Mob mob;
+import java.util.EnumSet;
+import java.util.Locale;
+import java.util.Set;
+
+public final class NeoForgeLuaGoal extends Goal {
+    /** Lua arrays are 1-based; index 0 is always nil. */
+    private static final int FIRST_LUA_INDEX = 1;
+    private static final String FALLBACK_GOAL_NAME = "LuaGoal";
+
     private final ILuaTable goalTable;
     private final ILuaEngine engine;
 
-    public NeoForgeLuaGoal(@NotNull Mob mob, @NotNull ILuaTable goalTable, @NotNull ILuaEngine engine) {
-        this.mob = mob;
+    public NeoForgeLuaGoal(@NotNull ILuaTable goalTable, @NotNull ILuaEngine engine) {
+        super();
         this.goalTable = goalTable;
         this.engine = engine;
-        
-        ILuaValue flagsVal = goalTable.rawget("flags");
-        if (flagsVal != null && flagsVal.isTable()) {
-            EnumSet<Flag> flags = EnumSet.noneOf(Flag.class);
-            ILuaTable flagsTable = flagsVal.asTable();
-            for (int i = 1; i <= flagsTable.length(); i++) {
-                String fName = flagsTable.rawget(i).asString().toUpperCase();
-                try {
-                    flags.add(Flag.valueOf(fName));
-                } catch (IllegalArgumentException e) {
-                    com.luatweaker.api.log.LuaTweakerLog.get().debug(
-                            com.luatweaker.api.log.LogStage.SYSTEM,
-                            "Ignoring unknown AI goal flag '" + fName + "': " + e.getMessage());
-                }
-            }
-            this.setFlags(flags);
-        }
+        applyFlags(goalTable.rawget("flags"));
     }
 
     @NotNull
     public ILuaTable getGoalTable() {
         return goalTable;
+    }
+
+    /**
+     * Reads the optional {@code flags} list ({@code AIGoals:addGoal(ent, 1, { flags = {"MOVE", "LOOK"} })}).
+     * Unknown flag names are reported and skipped instead of failing goal creation.
+     */
+    private void applyFlags(@Nullable ILuaValue flagsValue) {
+        if (flagsValue == null || !flagsValue.isTable()) {
+            return;
+        }
+        Set<Flag> flags = parseFlags(flagsValue.asTable());
+        if (!flags.isEmpty()) {
+            this.setFlags(EnumSet.copyOf(flags));
+        }
+    }
+
+    private static @NotNull Set<Flag> parseFlags(@NotNull ILuaTable flagsTable) {
+        Set<Flag> flags = EnumSet.noneOf(Flag.class);
+        for (int index = FIRST_LUA_INDEX; index <= flagsTable.length(); index++) {
+            ILuaValue value = flagsTable.rawget(index);
+            if (value == null) {
+                continue;
+            }
+            String flagName = value.asString().toUpperCase(Locale.ROOT);
+            try {
+                flags.add(Flag.valueOf(flagName));
+            } catch (IllegalArgumentException e) {
+                LuaTweakerLog.get().debug(LogStage.SYSTEM,
+                        "Ignoring unknown AI goal flag '" + flagName + "': " + e.getMessage());
+            }
+        }
+        return flags;
     }
 
     /**
@@ -55,11 +82,11 @@ public class NeoForgeLuaGoal extends Goal {
                     return name.strip();
                 }
             }
-        } catch (Exception e) {
-            com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
+        } catch (LuaException | IllegalStateException e) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
                     "Lua goal name read failed: " + e.getMessage());
         }
-        return "LuaGoal";
+        return FALLBACK_GOAL_NAME;
     }
 
     /**

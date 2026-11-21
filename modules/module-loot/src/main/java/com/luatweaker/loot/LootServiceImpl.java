@@ -4,8 +4,11 @@ import com.luatweaker.api.loot.ILootService;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class LootServiceImpl implements ILootService {
 
@@ -25,34 +28,26 @@ public class LootServiceImpl implements ILootService {
     private final Map<String, List<MobDropEntry>> pendingMobDrops = new ConcurrentHashMap<>();
     private final Map<String, List<ChestLootEntry>> pendingChestLoot = new ConcurrentHashMap<>();
     private final Map<String, BlockDropEntry> pendingBlockDrops = new ConcurrentHashMap<>();
-    private final List<FishingLootEntry> pendingFishingLoot = Collections.synchronizedList(new ArrayList<>());
-    private final List<RemovalEntry> pendingRemovals = Collections.synchronizedList(new ArrayList<>());
+    private final List<FishingLootEntry> pendingFishingLoot = new CopyOnWriteArrayList<>();
+    private final List<RemovalEntry> pendingRemovals = new CopyOnWriteArrayList<>();
 
     @Override
     public void addMobDrop(@NotNull String entityId, @NotNull String itemId,
                            double chance, int minCount, int maxCount, int lootingBonus) {
-        if (entityId.isBlank() || itemId.isBlank()) {
-            throw new IllegalArgumentException("entityId and itemId must not be blank");
-        }
-        if (chance < 0.0 || chance > 1.0) {
-            throw new IllegalArgumentException("chance must be between 0.0 and 1.0, got: " + chance);
-        }
-        if (minCount < 0 || maxCount < minCount) {
-            throw new IllegalArgumentException("Invalid count range: min=" + minCount + ", max=" + maxCount);
-        }
+        LootValidators.requireNonBlankIds(entityId, itemId, "entityId and itemId");
+        LootValidators.requireChance(chance);
+        LootValidators.requireCountRange(minCount, maxCount);
         if (lootingBonus < 0) {
             throw new IllegalArgumentException("lootingBonus must not be negative, got: " + lootingBonus);
         }
 
-        pendingMobDrops.computeIfAbsent(entityId, k -> Collections.synchronizedList(new ArrayList<>()))
+        pendingMobDrops.computeIfAbsent(entityId, k -> new CopyOnWriteArrayList<>())
                 .add(new MobDropEntry(entityId, itemId, chance, minCount, maxCount, lootingBonus));
     }
 
     @Override
     public boolean removeMobDrop(@NotNull String entityId, @NotNull String itemId) {
-        if (entityId.isBlank() || itemId.isBlank()) {
-            throw new IllegalArgumentException("entityId and itemId must not be blank");
-        }
+        LootValidators.requireNonBlankIds(entityId, itemId, "entityId and itemId");
         pendingRemovals.add(new RemovalEntry("mob:" + entityId, itemId));
         applyRemovalsToPending();
         return true;
@@ -61,25 +56,17 @@ public class LootServiceImpl implements ILootService {
     @Override
     public void addChestLoot(@NotNull String tableId, @NotNull String itemId,
                              double chance, int minCount, int maxCount) {
-        if (tableId.isBlank() || itemId.isBlank()) {
-            throw new IllegalArgumentException("tableId and itemId must not be blank");
-        }
-        if (chance < 0.0 || chance > 1.0) {
-            throw new IllegalArgumentException("chance must be between 0.0 and 1.0, got: " + chance);
-        }
-        if (minCount < 0 || maxCount < minCount) {
-            throw new IllegalArgumentException("Invalid count range: min=" + minCount + ", max=" + maxCount);
-        }
+        LootValidators.requireNonBlankIds(tableId, itemId, "tableId and itemId");
+        LootValidators.requireChance(chance);
+        LootValidators.requireCountRange(minCount, maxCount);
 
-        pendingChestLoot.computeIfAbsent(tableId, k -> Collections.synchronizedList(new ArrayList<>()))
+        pendingChestLoot.computeIfAbsent(tableId, k -> new CopyOnWriteArrayList<>())
                 .add(new ChestLootEntry(tableId, itemId, chance, minCount, maxCount));
     }
 
     @Override
     public boolean removeChestLoot(@NotNull String tableId, @NotNull String itemId) {
-        if (tableId.isBlank() || itemId.isBlank()) {
-            throw new IllegalArgumentException("tableId and itemId must not be blank");
-        }
+        LootValidators.requireNonBlankIds(tableId, itemId, "tableId and itemId");
         pendingRemovals.add(new RemovalEntry("chest:" + tableId, itemId));
         applyRemovalsToPending();
         return true;
@@ -88,9 +75,7 @@ public class LootServiceImpl implements ILootService {
     @Override
     public void setBlockDrop(@NotNull String blockId, @NotNull String itemId,
                              int fortuneBonus, @Nullable String silkTouchDrop) {
-        if (blockId.isBlank() || itemId.isBlank()) {
-            throw new IllegalArgumentException("blockId and itemId must not be blank");
-        }
+        LootValidators.requireNonBlankIds(blockId, itemId, "blockId and itemId");
         pendingBlockDrops.put(blockId, new BlockDropEntry(blockId, itemId, fortuneBonus, silkTouchDrop));
     }
 
@@ -99,14 +84,8 @@ public class LootServiceImpl implements ILootService {
         if (itemId.isBlank()) {
             throw new IllegalArgumentException("itemId must not be blank");
         }
-        if (chance < 0.0 || chance > 1.0) {
-            throw new IllegalArgumentException("chance must be between 0.0 and 1.0, got: " + chance);
-        }
-        String normalizedCategory = category.toUpperCase(Locale.ROOT);
-        if (!normalizedCategory.equals("FISH") && !normalizedCategory.equals("JUNK")
-                && !normalizedCategory.equals("TREASURE")) {
-            throw new IllegalArgumentException("category must be FISH, JUNK, or TREASURE, got: " + category);
-        }
+        LootValidators.requireChance(chance);
+        String normalizedCategory = LootValidators.requireFishingCategory(category);
 
         pendingFishingLoot.add(new FishingLootEntry(itemId, chance, normalizedCategory));
     }
@@ -121,39 +100,17 @@ public class LootServiceImpl implements ILootService {
      * original table would require a verified resource-manager PAL capability.
      */
     public void applyRemovalsToPending() {
-        synchronized (pendingRemovals) {
-            for (RemovalEntry removal : pendingRemovals) {
-                if (removal.targetId().startsWith("mob:")) {
-                    String entityId = removal.targetId().substring("mob:".length());
-                    List<MobDropEntry> drops = pendingMobDrops.get(entityId);
-                    if (drops != null) {
-                        synchronized (drops) {
-                            drops.removeIf(drop -> drop.itemId().equals(removal.itemId()));
-                        }
-                    }
-                } else if (removal.targetId().startsWith("chest:")) {
-                    String tableId = removal.targetId().substring("chest:".length());
-                    List<ChestLootEntry> entries = pendingChestLoot.get(tableId);
-                    if (entries != null) {
-                        synchronized (entries) {
-                            entries.removeIf(entry -> entry.itemId().equals(removal.itemId()));
-                        }
-                    }
-                }
-            }
-        }
+        LootRemovalApplier.applyRemovals(pendingRemovals, pendingMobDrops, pendingChestLoot);
     }
 
     @Override
     @NotNull
     public Map<String, Object> getModifications() {
-        Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("mobDrops", pendingMobDrops.values().stream().mapToInt(List::size).sum());
-        summary.put("chestLoot", pendingChestLoot.values().stream().mapToInt(List::size).sum());
-        summary.put("blockDrops", pendingBlockDrops.size());
-        summary.put("fishingLoot", pendingFishingLoot.size());
-        summary.put("removals", pendingRemovals.size());
-        return summary;
+        return Map.of("mobDrops", pendingMobDrops.values().stream().mapToInt(List::size).sum(),
+                "chestLoot", pendingChestLoot.values().stream().mapToInt(List::size).sum(),
+                "blockDrops", pendingBlockDrops.size(),
+                "fishingLoot", pendingFishingLoot.size(),
+                "removals", pendingRemovals.size());
     }
 
     @Override

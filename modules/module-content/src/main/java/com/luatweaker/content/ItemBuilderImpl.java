@@ -5,26 +5,35 @@ import com.luatweaker.api.content.ItemHurtHandler;
 import com.luatweaker.api.content.ItemMineHandler;
 import com.luatweaker.api.content.ItemReleaseHandler;
 import com.luatweaker.api.content.ItemUseTickHandler;
+import java.util.Locale;
 import java.util.function.BiConsumer;
 
 public class ItemBuilderImpl implements IItemBuilder {
+    /** DSL defaults applied before any Lua callback runs. */
+    private static final String DEFAULT_TYPE = "GENERIC";
+    private static final int DEFAULT_MAX_STACK_SIZE = 64;
+    private static final String DEFAULT_RARITY = "COMMON";
+    private static final float DEFAULT_MINING_SPEED = 4.0f;
+    private static final int DEFAULT_ENCHANTABILITY = 10;
+    private static final String DEFAULT_USE_ANIMATION = "NONE";
+
     private final String id;
-    private String type = "GENERIC";
-    private int maxStackSize = 64;
-    private String rarity = "COMMON";
-    private int durability = 0;
-    private int miningLevel = 0;
-    private float miningSpeed = 4.0f;
-    private float attackDamage = 0.0f;
-    private float attackSpeed = 0.0f;
-    private int defense = 0;
-    private float toughness = 0.0f;
-    private float knockbackResistance = 0.0f;
-    private int enchantability = 10;
-    private int burnTime = 0;
-    private String displayName;
-    private String model;
-    private String texture;
+    private String itemType = DEFAULT_TYPE;
+    private int maxStackSizeValue = DEFAULT_MAX_STACK_SIZE;
+    private String rarityName = DEFAULT_RARITY;
+    private int durabilityValue;
+    private int miningLevelValue;
+    private float miningSpeedValue = DEFAULT_MINING_SPEED;
+    private float attackDamageValue;
+    private float attackSpeedValue;
+    private int defenseValue;
+    private float toughnessValue;
+    private float knockbackResistanceValue;
+    private int enchantabilityValue = DEFAULT_ENCHANTABILITY;
+    private int burnTimeTicks;
+    private String displayNameText;
+    private String modelPath;
+    private String texturePath;
     private BiConsumer<Object, Object> rightClickHandler;
 
     public ItemBuilderImpl(String id) {
@@ -33,139 +42,129 @@ public class ItemBuilderImpl implements IItemBuilder {
 
     @Override
     public IItemBuilder type(String type) {
-        if (type != null) this.type = type.toUpperCase();
+        if (type != null) {
+            this.itemType = type.toUpperCase(Locale.ROOT);
+        }
         return this;
     }
 
     @Override
     public IItemBuilder maxStackSize(int size) {
-        this.maxStackSize = size;
+        this.maxStackSizeValue = size;
         return this;
     }
 
     @Override
     public IItemBuilder rarity(String rarity) {
-        if (rarity != null) this.rarity = rarity.toUpperCase();
+        if (rarity != null) {
+            this.rarityName = rarity.toUpperCase(Locale.ROOT);
+        }
         return this;
     }
 
     @Override
     public IItemBuilder durability(int durability) {
-        this.durability = durability;
+        this.durabilityValue = durability;
         return this;
     }
 
     @Override
     public IItemBuilder miningLevel(int level) {
-        this.miningLevel = level;
+        this.miningLevelValue = level;
         return this;
     }
 
     @Override
     public IItemBuilder miningLevel(String levelName) {
         if (levelName != null) {
-            this.miningLevel = switch (levelName.toUpperCase()) {
-                case "WOOD", "GOLD" -> 0;
-                case "STONE" -> 1;
-                case "IRON" -> 2;
-                case "DIAMOND" -> 3;
-                case "NETHERITE" -> 4;
-                default -> {
-                    try { 
-                        yield Integer.parseInt(levelName); 
-                    } catch (NumberFormatException e) { 
-                        com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Invalid mining level: " + levelName + ". Defaulting to 1.");
-                        yield 1; 
-                    }
-                }
-            };
+            this.miningLevelValue = MiningLevels.parse(levelName);
         }
         return this;
     }
 
     @Override
     public IItemBuilder miningSpeed(float speed) {
-        this.miningSpeed = speed;
+        this.miningSpeedValue = speed;
         return this;
     }
 
     @Override
     public IItemBuilder attackDamage(float damage) {
-        this.attackDamage = damage;
+        this.attackDamageValue = damage;
         return this;
     }
 
     @Override
     public IItemBuilder attackSpeed(float speed) {
-        this.attackSpeed = speed;
+        this.attackSpeedValue = speed;
         return this;
     }
 
     @Override
     public IItemBuilder defense(int defense) {
-        this.defense = defense;
+        this.defenseValue = defense;
         return this;
     }
 
     @Override
     public IItemBuilder toughness(float toughness) {
-        this.toughness = toughness;
+        this.toughnessValue = toughness;
         return this;
     }
 
     @Override
     public IItemBuilder knockbackResistance(float kbRes) {
-        this.knockbackResistance = kbRes;
+        this.knockbackResistanceValue = kbRes;
         return this;
     }
 
     @Override
     public IItemBuilder enchantability(int enchValue) {
-        this.enchantability = enchValue;
+        this.enchantabilityValue = enchValue;
         return this;
     }
 
     @Override
     public IItemBuilder burnTime(int ticks) {
-        this.burnTime = ticks;
+        this.burnTimeTicks = ticks;
         return this;
     }
 
     @Override
     public IItemBuilder displayName(String name) {
-        this.displayName = name;
+        this.displayNameText = name;
         return this;
     }
 
     @Override
     public IItemBuilder model(String modelPath) {
-        this.model = modelPath;
+        this.modelPath = modelPath;
         return this;
     }
 
     @Override
     public IItemBuilder texture(String texturePath) {
-        this.texture = texturePath;
+        this.texturePath = texturePath;
         return this;
     }
 
     private final java.util.List<String> tags = new java.util.ArrayList<>();
-    private String armorMaterial;
-    private String armorTexture;
-    private String creativeTab;
+    private String armorMaterialId;
+    private String armorTexturePath;
+    private String creativeTabId;
     private BiConsumer<Object, Object> onHitEntityHandler;
     private java.util.function.BiFunction<Object, Object, Boolean> onUseOnBlockHandler;
 
 
     @Override
     public IItemBuilder armorMaterial(String materialId) {
-        this.armorMaterial = materialId;
+        this.armorMaterialId = materialId;
         return this;
     }
 
     @Override
     public IItemBuilder armorTexture(String texturePath) {
-        this.armorTexture = texturePath;
+        this.armorTexturePath = texturePath;
         return this;
     }
 
@@ -189,25 +188,27 @@ public class ItemBuilderImpl implements IItemBuilder {
 
     @Override
     public IItemBuilder tag(String tagId) {
-        if (tagId != null && !tagId.isBlank()) this.tags.add(tagId);
+        if (tagId != null && !tagId.isBlank()) {
+            this.tags.add(tagId);
+        }
         return this;
     }
 
     @Override
     public IItemBuilder creativeTab(String tabId) {
-        this.creativeTab = tabId;
+        this.creativeTabId = tabId;
         return this;
     }
 
     private int foodHunger;
     private float foodSaturation;
-    private boolean alwaysEdible;
+    private boolean alwaysEdibleEnabled;
     private BiConsumer<Object, Object> onConsumeHandler;
-    private boolean glow;
+    private boolean glowEnabled;
     private final java.util.List<String> tooltips = new java.util.ArrayList<>();
 
-    private String useAnimation = "NONE";
-    private int useDuration = 0;
+    private String useAnimationName = DEFAULT_USE_ANIMATION;
+    private int useDurationTicks;
     private ItemUseTickHandler onUseTickHandler;
     private ItemReleaseHandler onReleaseUsingHandler;
     private BiConsumer<Object, Object> onFinishUsingHandler;
@@ -224,7 +225,7 @@ public class ItemBuilderImpl implements IItemBuilder {
 
     @Override
     public IItemBuilder alwaysEdible() {
-        this.alwaysEdible = true;
+        this.alwaysEdibleEnabled = true;
         return this;
     }
 
@@ -236,25 +237,29 @@ public class ItemBuilderImpl implements IItemBuilder {
 
     @Override
     public IItemBuilder glow(boolean enable) {
-        this.glow = enable;
+        this.glowEnabled = enable;
         return this;
     }
 
     @Override
     public IItemBuilder tooltip(String text) {
-        if (text != null && !text.isBlank()) this.tooltips.add(text);
+        if (text != null && !text.isBlank()) {
+            this.tooltips.add(text);
+        }
         return this;
     }
 
     @Override
     public IItemBuilder useAnimation(String animation) {
-        if (animation != null) this.useAnimation = animation.toUpperCase();
+        if (animation != null) {
+            this.useAnimationName = animation.toUpperCase(Locale.ROOT);
+        }
         return this;
     }
 
     @Override
     public IItemBuilder useDuration(int ticks) {
-        this.useDuration = ticks;
+        this.useDurationTicks = ticks;
         return this;
     }
 
@@ -294,54 +299,54 @@ public class ItemBuilderImpl implements IItemBuilder {
         return this;
     }
 
-    private com.luatweaker.api.content.GeoModelSpec geoModel;
+    private com.luatweaker.integration.geo.GeoModelSpec geoModelSpec;
 
     @Override
     public IItemBuilder geoModel(String modelPath, String texturePath, String animationPath, @org.jetbrains.annotations.Nullable String defaultAnimation) {
-        this.geoModel = new com.luatweaker.api.content.GeoModelSpec(modelPath, texturePath, animationPath, defaultAnimation);
+        this.geoModelSpec = new com.luatweaker.integration.geo.GeoModelSpec(modelPath, texturePath, animationPath, defaultAnimation);
         return this;
     }
 
     @Override
     @org.jetbrains.annotations.Nullable
-    public com.luatweaker.api.content.GeoModelSpec getGeoModel() {
-        return geoModel;
+    public com.luatweaker.integration.geo.GeoModelSpec getGeoModel() {
+        return geoModelSpec;
     }
 
     @Override public String getId() { return id; }
-    @Override public String getType() { return type; }
-    @Override public int getMaxStackSize() { return maxStackSize; }
-    @Override public String getRarity() { return rarity; }
-    @Override public int getDurability() { return durability; }
-    @Override public int getMiningLevel() { return miningLevel; }
-    @Override public float getMiningSpeed() { return miningSpeed; }
-    @Override public float getAttackDamage() { return attackDamage; }
-    @Override public String getDisplayName() { return displayName; }
-    @Override public float getAttackSpeed() { return attackSpeed; }
-    @Override public int getDefense() { return defense; }
-    @Override public float getToughness() { return toughness; }
-    @Override public float getKnockbackResistance() { return knockbackResistance; }
-    @Override public int getEnchantability() { return enchantability; }
-    @Override public String getArmorMaterial() { return armorMaterial; }
-    @Override public String getArmorTexture() { return armorTexture; }
-    @Override public int getBurnTime() { return burnTime; }
-    @Override public String getModel() { return model; }
-    @Override public String getTexture() { return texture; }
+    @Override public String getType() { return itemType; }
+    @Override public int getMaxStackSize() { return maxStackSizeValue; }
+    @Override public String getRarity() { return rarityName; }
+    @Override public int getDurability() { return durabilityValue; }
+    @Override public int getMiningLevel() { return miningLevelValue; }
+    @Override public float getMiningSpeed() { return miningSpeedValue; }
+    @Override public float getAttackDamage() { return attackDamageValue; }
+    @Override public String getDisplayName() { return displayNameText; }
+    @Override public float getAttackSpeed() { return attackSpeedValue; }
+    @Override public int getDefense() { return defenseValue; }
+    @Override public float getToughness() { return toughnessValue; }
+    @Override public float getKnockbackResistance() { return knockbackResistanceValue; }
+    @Override public int getEnchantability() { return enchantabilityValue; }
+    @Override public String getArmorMaterial() { return armorMaterialId; }
+    @Override public String getArmorTexture() { return armorTexturePath; }
+    @Override public int getBurnTime() { return burnTimeTicks; }
+    @Override public String getModel() { return modelPath; }
+    @Override public String getTexture() { return texturePath; }
     @Override public java.util.List<String> getTags() { return tags; }
-    @Override public String getCreativeTab() { return creativeTab; }
+    @Override public String getCreativeTab() { return creativeTabId; }
     @Override public BiConsumer<Object, Object> getRightClickHandler() { return rightClickHandler; }
     @Override public java.util.function.BiFunction<Object, Object, Boolean> getOnUseOnBlockHandler() { return onUseOnBlockHandler; }
     @Override public BiConsumer<Object, Object> getOnHitEntityHandler() { return onHitEntityHandler; }
 
     @Override public int getFoodHunger() { return foodHunger; }
     @Override public float getFoodSaturation() { return foodSaturation; }
-    @Override public boolean isAlwaysEdible() { return alwaysEdible; }
+    @Override public boolean isAlwaysEdible() { return alwaysEdibleEnabled; }
     @Override public BiConsumer<Object, Object> getOnConsumeHandler() { return onConsumeHandler; }
-    @Override public boolean isGlow() { return glow; }
+    @Override public boolean isGlow() { return glowEnabled; }
     @Override public java.util.List<String> getTooltips() { return tooltips; }
 
-    @Override public String getUseAnimation() { return useAnimation; }
-    @Override public int getUseDuration() { return useDuration; }
+    @Override public String getUseAnimation() { return useAnimationName; }
+    @Override public int getUseDuration() { return useDurationTicks; }
     @Override public ItemUseTickHandler getOnUseTickHandler() { return onUseTickHandler; }
     @Override public ItemReleaseHandler getOnReleaseUsingHandler() { return onReleaseUsingHandler; }
     @Override public BiConsumer<Object, Object> getOnFinishUsingHandler() { return onFinishUsingHandler; }
@@ -349,7 +354,3 @@ public class ItemBuilderImpl implements IItemBuilder {
     @Override public ItemMineHandler getOnMineBlockHandler() { return onMineBlockHandler; }
     @Override public BiConsumer<Object, Object> getOnSwingHandler() { return onSwingHandler; }
 }
-
-
-
-

@@ -23,6 +23,8 @@ import net.neoforged.neoforge.items.IItemHandler;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.List;
+
 /**
  * Generic Lua-configured container block entity. The slot count is fixed by the
  * owning {@link CustomContainerBlock} (rows x cols from the Lua builder), so the
@@ -40,6 +42,9 @@ import org.jetbrains.annotations.Nullable;
  * {@code World:SetBlockEntityData} calls.</p>
  */
 public class CustomContainerBlockEntity extends BlockEntity implements Container, MenuProvider, IItemHandler, IEnergyStorage, IFluidHandler, software.bernie.geckolib.animatable.GeoBlockEntity {
+    private static final float MIN_PROGRESS = 0.0f;
+    private static final float MAX_PROGRESS = 1.0f;
+
 
     private final software.bernie.geckolib.animatable.instance.AnimatableInstanceCache geoCache =
             software.bernie.geckolib.util.GeckoLibUtil.createInstanceCache(this);
@@ -63,7 +68,6 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
         }).receiveTriggeredAnimations());
     }
 
-    private static final String TAG_ITEMS = "Items";
     private static final String TAG_EXTRA = "LuaData";
     private static final String TAG_ENERGY = "Energy";
     private static final String TAG_FLUID_ID = "FluidId";
@@ -80,7 +84,11 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
     /** Block-center offset for the use-distance check (half a block, vanilla convention). */
     private static final double BLOCK_CENTER_OFFSET = 0.5;
 
-    private final NonNullList<ItemStack> items;
+    /**
+     * Backed by {@link NonNullList} (see the constructor); declared as {@link List} so callers
+     * couple to the interface, and cast at the four {@link ContainerHelper} call sites.
+     */
+    private final List<ItemStack> items;
     private CompoundTag extraNbt = new CompoundTag();
 
     // ===== Machine state (Lua-driven via World:SetBlockEntityData / GetBlockEntityData) =====
@@ -99,7 +107,7 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
     private static net.minecraft.world.level.block.entity.BlockEntityType<?> resolveType(BlockState state) {
         if (state.getBlock() instanceof CustomContainerBlock container) {
             net.minecraft.world.level.block.entity.BlockEntityType<CustomContainerBlockEntity> type = CustomContainerRegistry.TYPE_BY_BLOCK.get(container);
-            if (type != null) return type;
+            if (type != null) { return type; }
             LuaTweakerLog.get().warn(LogStage.SYSTEM, "No block entity type registered for container " + container.getContainerId() + " - using fallback");
         }
         return net.minecraft.world.level.block.entity.BlockEntityType.BARREL;
@@ -108,7 +116,7 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
     @Override
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
-        ContainerHelper.saveAllItems(tag, items, registries);
+        ContainerHelper.saveAllItems(tag, (NonNullList<ItemStack>) items, registries);
         if (energyStored > 0) {
             tag.putInt(TAG_ENERGY, energyStored);
         }
@@ -116,7 +124,7 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
             tag.putString(TAG_FLUID_ID, fluidId);
             tag.putInt(TAG_FLUID_AMOUNT, fluidAmount);
         }
-        if (progress > 0f) {
+        if (progress > MIN_PROGRESS) {
             tag.putFloat(TAG_PROGRESS, progress);
         }
         if (!extraNbt.isEmpty()) {
@@ -128,7 +136,7 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
         items.clear();
-        ContainerHelper.loadAllItems(tag, items, registries);
+        ContainerHelper.loadAllItems(tag, (NonNullList<ItemStack>) items, registries);
         extraNbt = tag.getCompound(TAG_EXTRA);
         energyStored = tag.getInt(TAG_ENERGY);
         fluidId = tag.getString(TAG_FLUID_ID);
@@ -167,9 +175,9 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
             fluidAmount = 0;
             fluidId = "";
         }
-        if (progress < 0f) {
+        if (progress < MIN_PROGRESS) {
             progress = 0f;
-        } else if (progress > 1f) {
+        } else if (progress > MAX_PROGRESS) {
             progress = 1f;
         }
     }
@@ -183,7 +191,7 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
         // energy/fluid). Real values always come from the Lua Container()/ContainerUseDistance()
         // builder via BlockBuilderImpl -> ContainerSpec -> CustomContainerBlock.
         return new ContainerSpec(DEFAULT_ROWS, DEFAULT_COLS, "packed", null, DEFAULT_USE_DISTANCE,
-                null, null, null, 0, 0, 0, 0, java.util.List.of(), null, false, null);
+                null, null, null, 0, 0, 0, 0, List.of(), null, false, null);
     }
 
     // ===== Machine state accessors (Lua + GUI DataSlots + capabilities) =====
@@ -255,13 +263,13 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
     }
 
     public int getCustomNumericValue(@Nullable String key) {
-        if (key == null || extraNbt == null) return 0;
+        if (key == null || extraNbt == null) { return 0; }
         if (extraNbt.contains(key, net.minecraft.nbt.Tag.TAG_INT)) {
             return extraNbt.getInt(key);
         } else if (extraNbt.contains(key, net.minecraft.nbt.Tag.TAG_DOUBLE)) {
             return (int) Math.round(extraNbt.getDouble(key));
         } else if (extraNbt.contains(key, net.minecraft.nbt.Tag.TAG_FLOAT)) {
-            return (int) Math.round(extraNbt.getFloat(key));
+            return Math.round(extraNbt.getFloat(key));
         } else if (extraNbt.contains(key, net.minecraft.nbt.Tag.TAG_LONG)) {
             return (int) extraNbt.getLong(key);
         }
@@ -288,7 +296,7 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
         if (isSlotLocked(slot)) {
             return ItemStack.EMPTY;
         }
-        return ContainerHelper.removeItem(items, slot, amount);
+        return ContainerHelper.removeItem((NonNullList<ItemStack>) items, slot, amount);
     }
 
     @Override
@@ -296,7 +304,7 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
         if (isSlotLocked(slot)) {
             return ItemStack.EMPTY;
         }
-        return ContainerHelper.takeItem(items, slot);
+        return ContainerHelper.takeItem((NonNullList<ItemStack>) items, slot);
     }
 
     @Override
@@ -329,7 +337,7 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
 
     /** Lua-defined container rule, shared by GUI clicks and external IItemHandler inserts. */
     public boolean acceptsStack(ItemStack stack) {
-        if (level == null || stack == null || stack.isEmpty()) return true;
+        if (level == null || stack == null || stack.isEmpty()) { return true; }
         if (level.getBlockState(worldPosition).getBlock() instanceof CustomContainerBlock container) {
             return container.acceptsItem(stack);
         }
@@ -337,7 +345,7 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
     }
 
     private void fireRejected(ItemStack stack, int slot) {
-        if (level == null) return;
+        if (level == null) { return; }
         if (level.getBlockState(worldPosition).getBlock() instanceof CustomContainerBlock container) {
             String itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
             final int fx = worldPosition.getX();
@@ -369,21 +377,34 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
 
     @Override
     public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
-        if (stack.isEmpty() || slot < 0 || slot >= items.size()) return stack;
-        if (isSlotLocked(slot)) {
-            if (!simulate) fireRejected(stack, slot);
+        if (!canInsert(slot, stack, simulate)) {
             return stack;
         }
         ItemStack existing = getItem(slot);
-        if (!acceptsStack(stack)) {
-            if (!simulate) fireRejected(stack, slot);
+        if (!existing.isEmpty() && !ItemStack.isSameItemSameComponents(existing, stack)) {
             return stack;
         }
-        if (!existing.isEmpty() && !ItemStack.isSameItemSameComponents(existing, stack)) return stack;
-        int max = Math.min(stack.getMaxStackSize(), getSlotLimit(slot));
-        int space = max - existing.getCount();
-        if (space <= 0) return stack;
-        int taken = Math.min(space, stack.getCount());
+        int space = Math.min(stack.getMaxStackSize(), getSlotLimit(slot)) - existing.getCount();
+        if (space <= 0) {
+            return stack;
+        }
+        return mergeInto(slot, stack, existing, Math.min(space, stack.getCount()), simulate);
+    }
+
+    private boolean canInsert(int slot, ItemStack stack, boolean simulate) {
+        if (stack.isEmpty() || slot < 0 || slot >= items.size()) {
+            return false;
+        }
+        if (isSlotLocked(slot) || !acceptsStack(stack)) {
+            if (!simulate) {
+                fireRejected(stack, slot);
+            }
+            return false;
+        }
+        return true;
+    }
+
+    private ItemStack mergeInto(int slot, ItemStack stack, ItemStack existing, int taken, boolean simulate) {
         ItemStack remainder = stack.copy();
         remainder.shrink(taken);
         if (!simulate) {
@@ -399,12 +420,12 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
 
     @Override
     public ItemStack extractItem(int slot, int amount, boolean simulate) {
-        if (amount <= 0 || slot < 0 || slot >= items.size()) return ItemStack.EMPTY;
+        if (amount <= 0 || slot < 0 || slot >= items.size()) { return ItemStack.EMPTY; }
         if (isSlotLocked(slot)) {
             return ItemStack.EMPTY;
         }
         ItemStack existing = getItem(slot);
-        if (existing.isEmpty()) return ItemStack.EMPTY;
+        if (existing.isEmpty()) { return ItemStack.EMPTY; }
         int taken = Math.min(amount, existing.getCount());
         ItemStack result = existing.copyWithCount(taken);
         if (!simulate) {
@@ -430,7 +451,7 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
 
     @Override
     public boolean stillValid(Player player) {
-        if (level == null || level.getBlockEntity(worldPosition) != this) {
+        if (level == null || !java.util.Objects.equals(level.getBlockEntity(worldPosition), this)) {
             return false;
         }
         double distance = DEFAULT_USE_DISTANCE;
@@ -598,7 +619,7 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
      * Lua/addon territory.
      */
     public static void machineTick(net.minecraft.world.level.Level level, net.minecraft.core.BlockPos pos,
-                                   net.minecraft.world.level.block.state.BlockState state, CustomContainerBlockEntity be) {
+                                   BlockState state, CustomContainerBlockEntity be) {
         if (level.isClientSide() || be.isRemoved()) {
             return;
         }
@@ -611,12 +632,8 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
                 "Energy", be.energyStored, "EnergyCapacity", be.getEnergyCapacity(),
                 "FluidId", be.fluidId, "FluidAmount", be.fluidAmount, "FluidCapacity", be.getFluidCapacity(),
                 "Progress", be.progress);
-        try {
-            handler.accept(data, null);
-        } catch (Exception e) {
-            LuaTweakerLog.get().error(LogStage.SYSTEM,
-                    "Failed Lua onTick handler at " + pos + ": " + e.getMessage());
-        }
+        com.luatweaker.platform.util.CallbackFirewall.run(() -> handler.accept(data, null),
+                LogStage.SYSTEM, () -> "Failed Lua onTick handler at " + pos);
     }
 
     @Override
@@ -649,3 +666,8 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
         return new CustomContainerMenu(type, containerId, playerInventory, this, rows, cols, slotPositions, lockedSlots);
     }
 }
+
+
+
+
+

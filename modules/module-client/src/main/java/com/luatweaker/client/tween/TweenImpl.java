@@ -5,8 +5,10 @@ import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
-import java.util.HashMap;
+import com.luatweaker.client.TweenServiceImpl;
+
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class TweenImpl {
 
@@ -19,11 +21,12 @@ public class TweenImpl {
 
     /** Roblox uses -1 for "repeat forever". */
     private static final int INFINITE_REPEAT = -1;
+    private static final double ZERO = 0.0;
 
     private final ILuaTable targetInstance;
     private final ILuaEngine engine;
-    private final Map<String, Double> targetProperties = new HashMap<>();
-    private final Map<String, Double> initialProperties = new HashMap<>();
+    private final Map<String, Double> targetProperties = new ConcurrentHashMap<>();
+    private final Map<String, Double> initialProperties = new ConcurrentHashMap<>();
 
     private final double duration;
     private final double delayTime;
@@ -33,7 +36,7 @@ public class TweenImpl {
     private final EasingHelper.EasingDirection easingDirection;
 
     private TweenState state = TweenState.PAUSED;
-    private double timeElapsed = 0.0;
+    private double timeElapsed;
     private boolean started;
     private ILuaTable boundTable;
 
@@ -41,47 +44,13 @@ public class TweenImpl {
         this.engine = engine;
         this.targetInstance = instance;
 
-        double tDuration = 1.0;
-        EasingHelper.EasingStyle tStyle = EasingHelper.EasingStyle.LINEAR;
-        EasingHelper.EasingDirection tDirection = EasingHelper.EasingDirection.OUT;
-
-        if (tweenInfo != null) {
-            // The shipped TweenInfo.new writes Time; older/hand-built tables use Duration.
-            tDuration = readNumber(tweenInfo, "Duration", readNumber(tweenInfo, "Time", 1.0));
-
-            ILuaValue styleVal = tweenInfo.rawget("EasingStyle");
-            if (styleVal != null && styleVal.isString()) {
-                try {
-                    tStyle = EasingHelper.EasingStyle.valueOf(styleVal.asString().toUpperCase(java.util.Locale.ROOT));
-                } catch (IllegalArgumentException e) {
-                    LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                            "Unknown Tween EasingStyle '" + styleVal.asString() + "', using LINEAR");
-                }
-            }
-
-            ILuaValue dirVal = tweenInfo.rawget("EasingDirection");
-            if (dirVal != null && dirVal.isString()) {
-                try {
-                    tDirection = EasingHelper.EasingDirection.valueOf(dirVal.asString().toUpperCase(java.util.Locale.ROOT));
-                } catch (IllegalArgumentException e) {
-                    LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                            "Unknown Tween EasingDirection '" + dirVal.asString() + "', using OUT");
-                }
-            }
-
-            this.delayTime = Math.max(0.0, readNumber(tweenInfo, "DelayTime", 0.0));
-            this.repeatCount = Math.max(INFINITE_REPEAT, (int) readNumber(tweenInfo, "RepeatCount", 0.0));
-            ILuaValue reversesVal = tweenInfo.rawget("Reverses");
-            this.reverses = reversesVal != null && reversesVal.isBoolean() && reversesVal.asBoolean();
-        } else {
-            this.delayTime = 0.0;
-            this.repeatCount = 0;
-            this.reverses = false;
-        }
-
-        this.duration = Math.max(0.001, tDuration);
-        this.easingStyle = tStyle;
-        this.easingDirection = tDirection;
+        TweenConfig config = TweenConfig.parse(tweenInfo);
+        this.delayTime = config.delayTime();
+        this.repeatCount = config.repeatCount();
+        this.reverses = config.reverses();
+        this.duration = Math.max(0.001, config.duration());
+        this.easingStyle = config.style();
+        this.easingDirection = config.direction();
 
         if (properties != null) {
             properties.forEach((k, v) -> {
@@ -104,7 +73,7 @@ public class TweenImpl {
             started = true;
         }
         state = TweenState.PLAYING;
-        com.luatweaker.client.TweenServiceImpl.registerActiveTween(this);
+        TweenServiceImpl.registerActiveTween(this);
     }
 
     public void pause() {
@@ -141,7 +110,7 @@ public class TweenImpl {
         }
         timeElapsed += Math.max(0.0, deltaTime);
         double activeTime = timeElapsed - delayTime;
-        if (activeTime < 0.0) {
+        if (activeTime < ZERO) {
             return;
         }
 
@@ -152,7 +121,7 @@ public class TweenImpl {
         int cycle = finished
                 ? totalCycles - 1
                 : (int) Math.min(Integer.MAX_VALUE - 1.0, Math.floor(activeTime / duration));
-        double progressInCycle = finished ? 1.0 : (activeTime % duration) / duration;
+        double progressInCycle = finished ? 1.0 : activeTime % duration / duration;
         boolean reversedCycle = reverses && (cycle % 2 == 1);
         double progress = reversedCycle ? 1.0 - progressInCycle : progressInCycle;
 
@@ -197,17 +166,9 @@ public class TweenImpl {
         }
         try {
             engine.callFunction(fireFn, signal);
-        } catch (RuntimeException e) {
+        } catch (IllegalStateException e) {
             LuaTweakerLog.get().warn(LogStage.SYSTEM,
                     "Failed to fire Tween.Completed: " + e.getMessage());
         }
-    }
-
-    private static double readNumber(ILuaTable table, String key, double fallback) {
-        if (table == null) {
-            return fallback;
-        }
-        ILuaValue value = table.rawget(key);
-        return value != null && value.isNumber() ? value.asDouble() : fallback;
     }
 }

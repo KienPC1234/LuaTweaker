@@ -17,7 +17,9 @@ public final class ProjectileRegistry {
     private ProjectileRegistry() {}
 
     public static void register(String id, ProjectileDefinition definition) {
-        if (id == null || id.isBlank() || definition == null) return;
+        if (id == null || id.isBlank() || definition == null) {
+            return;
+        }
         DEFINITIONS.put(id, definition);
     }
 

@@ -38,6 +38,22 @@ public interface IInteractableItem {
     default @Nullable Object getCustomData(@NotNull String key) { return null; }
     default void setCustomData(@NotNull String key, @Nullable Object value) {}
 
+    default boolean playAnimation(@NotNull String animName, @NotNull String controllerName) {
+        return com.luatweaker.api.pal.Platform.getInteraction().triggerGeoAnimation(this, controllerName, animName, 1.0, false);
+    }
+
+    default boolean playAnimation(@NotNull String animName) {
+        return playAnimation(animName, "controller");
+    }
+
+    default boolean stopAnimation(@NotNull String animName, @NotNull String controllerName) {
+        return com.luatweaker.api.pal.Platform.getInteraction().stopGeoAnimation(this, controllerName, animName);
+    }
+
+    default boolean stopAnimation(@NotNull String animName) {
+        return stopAnimation(animName, "controller");
+    }
+
     @NotNull
     Object getRawItemStack();
 }

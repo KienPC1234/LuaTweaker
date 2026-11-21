@@ -12,6 +12,7 @@ import java.util.Map;
  * maps are plain Java collections so the Lua binder can convert them without leaking
  * platform types into {@code common-api}.</p>
  */
+@FunctionalInterface
 public interface IPlatformWorldgen {
 
     /**

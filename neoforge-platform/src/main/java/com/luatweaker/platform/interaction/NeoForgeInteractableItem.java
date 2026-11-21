@@ -26,7 +26,12 @@ public class NeoForgeInteractableItem implements IInteractableItem {
         this(null, -1, directStack);
     }
 
-    private ItemStack getItemStack() {
+    @Nullable
+    public Object getOwner() {
+        return owner;
+    }
+
+    public ItemStack getItemStack() {
         if (owner instanceof Player player) {
             var inv = player.getInventory();
             if (slot >= 0 && slot < inv.getContainerSize()) {
@@ -97,34 +102,7 @@ public class NeoForgeInteractableItem implements IInteractableItem {
 
     @Override
     public boolean useItem(@NotNull Object actorEntity) {
-        if (actorEntity instanceof Player player) {
-            ItemStack stack = getItemStack();
-            if (!stack.isEmpty()) {
-                var hand = net.minecraft.world.InteractionHand.MAIN_HAND;
-                if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-                    var res = serverPlayer.gameMode.useItem(serverPlayer, serverPlayer.level(), stack, hand);
-                    if (res.consumesAction()) {
-                        return true;
-                    }
-                    var hit = new net.minecraft.world.phys.BlockHitResult(
-                        player.position(), net.minecraft.core.Direction.UP, player.blockPosition(), false
-                    );
-                    var resOn = serverPlayer.gameMode.useItemOn(serverPlayer, serverPlayer.level(), stack, hand, hit);
-                    return resOn.consumesAction();
-                } else {
-                    var res = stack.use(player.level(), player, hand);
-                    if (res.getResult().consumesAction()) {
-                        return true;
-                    }
-                    var hit = new net.minecraft.world.phys.BlockHitResult(
-                        player.position(), net.minecraft.core.Direction.UP, player.blockPosition(), false
-                    );
-                    var resOn = stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, hand, hit));
-                    return resOn.consumesAction();
-                }
-            }
-        }
-        return false;
+        return actorEntity instanceof Player player && InventoryInteractionHelper.useStack(player, getItemStack());
     }
 
     @Override
@@ -203,85 +181,34 @@ public class NeoForgeInteractableItem implements IInteractableItem {
 
     @Override
     public void setNbt(@NotNull String nbtJson) {
-        ItemStack stack = getItemStack();
-        if (!stack.isEmpty()) {
-            try {
-                net.minecraft.nbt.CompoundTag tag = net.minecraft.nbt.TagParser.parseTag(nbtJson);
-                net.minecraft.world.item.component.CustomData.update(net.minecraft.core.component.DataComponents.CUSTOM_DATA, stack, t -> t.merge(tag));
-            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Ignored exception: " + e.getMessage()); }
-        }
+        ItemStackAccess.setNbt(getItemStack(), nbtJson);
     }
 
     @Override
     @Nullable
     public Object getCustomData(@NotNull String key) {
-        ItemStack stack = getItemStack();
-        if (stack.has(net.minecraft.core.component.DataComponents.CUSTOM_DATA)) {
-            net.minecraft.world.item.component.CustomData customData = stack.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
-            if (customData != null && customData.contains(key)) {
-                net.minecraft.nbt.CompoundTag tag = customData.copyTag();
-                net.minecraft.nbt.Tag valTag = tag.get(key);
-                if (valTag instanceof net.minecraft.nbt.NumericTag num) {
-                    if (valTag instanceof net.minecraft.nbt.ByteTag bt && (bt.getAsByte() == 0 || bt.getAsByte() == 1)) {
-                        return bt.getAsByte() == 1;
-                    }
-                    return num.getAsDouble();
-                } else if (valTag instanceof net.minecraft.nbt.StringTag str) {
-                    return str.getAsString();
-                } else if (valTag != null) {
-                    return valTag.getAsString();
-                }
-            }
-        }
-        return null;
+        return ItemStackAccess.getCustomData(getItemStack(), key);
     }
 
     @Override
     public void setCustomData(@NotNull String key, @Nullable Object value) {
-        ItemStack stack = getItemStack();
-        if (!stack.isEmpty()) {
-            net.minecraft.world.item.component.CustomData.update(net.minecraft.core.component.DataComponents.CUSTOM_DATA, stack, t -> {
-                if (value == null) {
-                    t.remove(key);
-                } else if (value instanceof Boolean b) {
-                    t.putBoolean(key, b);
-                } else if (value instanceof Number num) {
-                    t.putDouble(key, num.doubleValue());
-                } else {
-                    t.putString(key, value.toString());
-                }
-            });
-        }
+        ItemStackAccess.setCustomData(getItemStack(), key, value);
     }
 
     @Override
     @Nullable
     public String getAttribute(@NotNull String key) {
-        ItemStack stack = getItemStack();
-        if (stack.has(net.minecraft.core.component.DataComponents.CUSTOM_DATA)) {
-            net.minecraft.world.item.component.CustomData customData = stack.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
-            if (customData != null && customData.contains(key)) {
-                net.minecraft.nbt.CompoundTag tag = customData.copyTag();
-                if (tag.contains(key, net.minecraft.nbt.Tag.TAG_STRING)) {
-                    return tag.getString(key);
-                }
-                return tag.get(key).getAsString();
-            }
-        }
-        return null;
+        return ItemStackAccess.getAttribute(getItemStack(), key);
     }
 
     @Override
     public void setAttribute(@NotNull String key, @NotNull String value) {
-        ItemStack stack = getItemStack();
-        if (!stack.isEmpty()) {
-            net.minecraft.world.item.component.CustomData.update(net.minecraft.core.component.DataComponents.CUSTOM_DATA, stack, tag -> tag.putString(key, value));
-        }
+        ItemStackAccess.setAttribute(getItemStack(), key, value);
     }
-
     @Override
     @NotNull
     public Object getRawItemStack() {
         return getItemStack();
     }
 }
+

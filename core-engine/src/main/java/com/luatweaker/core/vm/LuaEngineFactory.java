@@ -13,13 +13,24 @@ public final class LuaEngineFactory {
     }
 
     /**
-     * Creates a fresh luava engine.
+     * Creates a fresh luava engine with luava's default resource caps.
      *
      * @param debugMode whether debug logging is enabled
      * @return the new engine instance
      */
     public static @NotNull ILuaEngine create(boolean debugMode) {
         return new LuavaEngine(debugMode);
+    }
+
+    /**
+     * Creates a fresh luava engine with explicit resource caps.
+     *
+     * @param debugMode whether debug logging is enabled
+     * @param limits    caps enforced by the VM; never {@code null}
+     * @return the new engine instance
+     */
+    public static @NotNull ILuaEngine create(boolean debugMode, @NotNull LuaEngineLimits limits) {
+        return new LuavaEngine(debugMode, limits);
     }
 
     /**

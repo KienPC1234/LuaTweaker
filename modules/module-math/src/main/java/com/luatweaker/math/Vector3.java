@@ -10,7 +10,9 @@ public record Vector3(double x, double y, double z) {
 
     public Vector3 getUnit() {
         double m = getMagnitude();
-        if (m == 0) return ZERO;
+        if (m == 0) {
+            return ZERO;
+        }
         return new Vector3(x / m, y / m, z / m);
     }
 
@@ -27,7 +29,9 @@ public record Vector3(double x, double y, double z) {
     }
 
     public Vector3 div(double scale) {
-        if (scale == 0) return ZERO;
+        if (scale == 0) {
+            return ZERO;
+        }
         return new Vector3(x / scale, y / scale, z / scale);
     }
 
@@ -54,7 +58,9 @@ public record Vector3(double x, double y, double z) {
     public double angle(Vector3 other) {
         double m1 = getMagnitude();
         double m2 = other.getMagnitude();
-        if (m1 == 0 || m2 == 0) return 0;
+        if (m1 == 0 || m2 == 0) {
+            return 0;
+        }
         double cos = dot(other) / (m1 * m2);
         return Math.acos(Math.clamp(cos, -1.0, 1.0));
     }

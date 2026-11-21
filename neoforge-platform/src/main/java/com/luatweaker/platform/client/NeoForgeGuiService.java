@@ -6,19 +6,19 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 
 public class NeoForgeGuiService implements IGuiService {
-    private static final ThreadLocal<GuiGraphics> currentGraphics = new ThreadLocal<>();
+    private static final ThreadLocal<GuiGraphics> CURRENT_GRAPHICS = new ThreadLocal<>();
     private static int clipDepth;
     private static int poseDepth;
 
     public static void setGraphics(GuiGraphics graphics) {
-        currentGraphics.set(graphics);
+        CURRENT_GRAPHICS.set(graphics);
         // A script that forgot popClip()/popPose() must not leak into the next frame.
         clipDepth = 0;
         poseDepth = 0;
     }
 
     public static void clearGraphics() {
-        GuiGraphics graphics = currentGraphics.get();
+        GuiGraphics graphics = CURRENT_GRAPHICS.get();
         if (graphics != null) {
             while (clipDepth > 0) {
                 graphics.disableScissor();
@@ -31,14 +31,14 @@ public class NeoForgeGuiService implements IGuiService {
                 poseDepth--;
             }
         }
-        currentGraphics.remove();
+        CURRENT_GRAPHICS.remove();
         clipDepth = 0;
         poseDepth = 0;
     }
 
     @Override
     public void drawRect(int x, int y, int width, int height, int color) {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g != null) {
             g.fill(x, y, x + width, y + height, color);
         }
@@ -46,7 +46,7 @@ public class NeoForgeGuiService implements IGuiService {
 
     @Override
     public void drawText(String text, int x, int y, int color, boolean dropShadow) {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g != null) {
             g.drawString(Minecraft.getInstance().font, text, x, y, color, dropShadow);
         }
@@ -54,7 +54,7 @@ public class NeoForgeGuiService implements IGuiService {
 
     @Override
     public void drawTextCentered(String text, int centerX, int y, int color, boolean dropShadow) {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g != null) {
             int textWidth = Minecraft.getInstance().font.width(text);
             g.drawString(Minecraft.getInstance().font, text, centerX - textWidth / 2, y, color, dropShadow);
@@ -63,7 +63,7 @@ public class NeoForgeGuiService implements IGuiService {
 
     @Override
     public void drawOutline(int x, int y, int width, int height, int color) {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g != null) {
             g.fill(x, y, x + width, y + 1, color);
             g.fill(x, y + height - 1, x + width, y + height, color);
@@ -74,7 +74,7 @@ public class NeoForgeGuiService implements IGuiService {
 
     @Override
     public void drawProgressBar(int x, int y, int width, int height, double fillPercent, int backgroundColor, int fillColor) {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g != null) {
             g.fill(x, y, x + width, y + height, backgroundColor);
             double clamped = Math.clamp(fillPercent, 0.0, 1.0);
@@ -101,7 +101,7 @@ public class NeoForgeGuiService implements IGuiService {
 
     @Override
     public void drawTexture(String textureId, int x, int y, int width, int height) {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g == null || textureId == null || textureId.isBlank()) {
             return;
         }
@@ -117,7 +117,7 @@ public class NeoForgeGuiService implements IGuiService {
 
     @Override
     public void pushClip(int x, int y, int width, int height) {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g == null) {
             return;
         }
@@ -129,7 +129,7 @@ public class NeoForgeGuiService implements IGuiService {
 
     @Override
     public void popClip() {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g == null || clipDepth <= 0) {
             return;
         }
@@ -139,7 +139,7 @@ public class NeoForgeGuiService implements IGuiService {
 
     @Override
     public void drawLine(int x1, int y1, int x2, int y2, int color, int thickness) {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g == null) {
             return;
         }
@@ -170,7 +170,7 @@ public class NeoForgeGuiService implements IGuiService {
 
     @Override
     public void drawGradient(int x, int y, int width, int height, int topColor, int bottomColor) {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g != null) {
             g.fillGradient(x, y, x + width, y + height, topColor, bottomColor);
         }
@@ -178,7 +178,7 @@ public class NeoForgeGuiService implements IGuiService {
 
     @Override
     public void drawSprite(String spriteId, int x, int y, int width, int height) {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g == null || spriteId == null || spriteId.isBlank()) {
             return;
         }
@@ -194,7 +194,7 @@ public class NeoForgeGuiService implements IGuiService {
 
     @Override
     public void drawTooltip(String text, int x, int y) {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g != null && text != null) {
             g.renderTooltip(Minecraft.getInstance().font,
                     net.minecraft.network.chat.Component.literal(text), x, y);
@@ -203,7 +203,7 @@ public class NeoForgeGuiService implements IGuiService {
 
     @Override
     public void pushPose() {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g != null) {
             g.pose().pushPose();
             poseDepth++;
@@ -212,7 +212,7 @@ public class NeoForgeGuiService implements IGuiService {
 
     @Override
     public void popPose() {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g != null && poseDepth > 0) {
             g.pose().popPose();
             poseDepth--;
@@ -221,7 +221,7 @@ public class NeoForgeGuiService implements IGuiService {
 
     @Override
     public void translate(double x, double y, double z) {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g != null) {
             g.pose().translate((float) x, (float) y, (float) z);
         }
@@ -229,7 +229,7 @@ public class NeoForgeGuiService implements IGuiService {
 
     @Override
     public void scale(double x, double y, double z) {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g != null) {
             g.pose().scale((float) x, (float) y, (float) z);
         }
@@ -237,7 +237,7 @@ public class NeoForgeGuiService implements IGuiService {
 
     @Override
     public void drawItem(String itemId, int x, int y, int count) {
-        GuiGraphics g = currentGraphics.get();
+        GuiGraphics g = CURRENT_GRAPHICS.get();
         if (g == null || itemId == null || itemId.isBlank()) {
             return;
         }

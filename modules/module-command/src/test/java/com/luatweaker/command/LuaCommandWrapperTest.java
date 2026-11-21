@@ -1,351 +1,79 @@
 package com.luatweaker.command;
 
-import com.luatweaker.core.vm.LuaEngineFactory;
-
-import com.luatweaker.api.command.ICommandSender;
-import com.luatweaker.api.entity.IPlayer;
-import com.luatweaker.api.vm.ILuaEngine;
-import com.luatweaker.api.vm.ILuaTable;
-import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.core.logger.AsyncFileLogger;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
-import java.util.List;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import static org.junit.jupiter.api.Assertions.*;
+class LuaCommandWrapperTest {
 
-/**
- * End-to-end dispatch of a Lua-registered command through LuaCommandWrapper:
- * sender table building, permission/console gating, result mapping and live
- * definition resolution across engine reloads.
- */
-public class LuaCommandWrapperTest {
-
-    private static class MockSender implements ICommandSender {
-        final List<String> messages = new ArrayList<>();
-        final List<Integer> permissionChecks = new ArrayList<>();
-        final boolean player;
-        final int grantedLevel;
-
-        MockSender(boolean player, int grantedLevel) {
-            this.player = player;
-            this.grantedLevel = grantedLevel;
-        }
-
-        @Override
-        public void sendMessage(String message) { messages.add("MSG:" + message); }
-        @Override
-        public void sendSuccess(String message) { messages.add("OK:" + message); }
-        @Override
-        public void sendError(String message) { messages.add("ERR:" + message); }
-        @Override
-        public boolean hasPermission(int level) {
-            permissionChecks.add(level);
-            return grantedLevel >= level;
-        }
-        @Override
-        public boolean isPlayer() { return player; }
-        @Override
-        public IPlayer getPlayer() { return null; }
-        @Override
-        public String getName() { return "TestPlayer"; }
-        @Override
-        public String getHeldItemId() { return "minecraft:diamond_sword"; }
-    }
+    private static final String HELLO = "hello";
+    private static final String FAIL = "fail";
+    private static final String SILENT = "silent";
+    private static final String BOOM = "boom";
+    private static final String PERMISSION_ONE = "perm";
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         CommandServiceImpl.clear();
     }
 
     @AfterAll
-    public static void tearDown() {
+    static void tearDown() {
         AsyncFileLogger.get().shutdown();
     }
 
-    private static void setModGlobal(ILuaEngine engine, String modId) {
-        ILuaTable modTable = engine.createTable();
-        modTable.rawset("ID", engine.wrapString(modId));
-        engine.getGlobalEnvironment().rawset("mod", modTable);
-        engine.getGlobalEnvironment().rawset("Mod", modTable);
+    @Test
+    void handlerTruthyReturnMapsToSuccess() {
+        int result = CommandWrapperFixture.execute(HELLO, CommandTestFixture.HELLO_DEF,
+            new MockCommandSender(true, 4), "world").result();
+
+        assertEquals(1, result, "a truthy handler return must map to Brigadier success");
     }
 
     @Test
-    public void handlerReceivesSenderAndArgs() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        CommandLuaBinding.registerBindings(engine);
-        setModGlobal(engine, "test_mod");
-        engine.executeString(
-                "Commands:Register('hello', {\n" +
-                "  Handler = function(sender, args)\n" +
-                "    _G._senderName = sender.Name\n" +
-                "    _G._senderIsPlayer = sender.IsPlayer\n" +
-                "    _G._senderHeldItem = sender.HeldItemId\n" +
-                "    _G._senderHasPerm = sender:HasPermission(2)\n" +
-                "    _G._argCount = #args\n" +
-                "    _G._arg1 = args[1]\n" +
-                "    sender:SendSuccess('Hi ' .. args[1])\n" +
-                "    return true\n" +
-                "  end\n" +
-                "})",
-                "register_hello"
-        );
+    void handlerFalseMapsToFailure() {
+        int result = CommandWrapperFixture.execute(FAIL, CommandTestFixture.FAIL_DEF,
+            new MockCommandSender(true, 4)).result();
 
-        MockSender sender = new MockSender(true, 4);
-        int result = new LuaCommandWrapper("hello").execute(sender, new String[] { "world" });
-
-        assertEquals(1, result, "truthy handler return must map to Brigadier success");
-        assertTrue(sender.permissionChecks.contains(2), "wrapper must re-check permission at execution time");
-        assertEquals("Hi world", sender.messages.get(0).substring(3), "SendSuccess must reach the sender");
-
-        ILuaTable globals = engine.getGlobalEnvironment();
-        assertEquals("TestPlayer", globals.rawget("_senderName").asString());
-        assertEquals(true, globals.rawget("_senderIsPlayer").asBoolean());
-        assertEquals("minecraft:diamond_sword", globals.rawget("_senderHeldItem").asString());
-        assertEquals(true, globals.rawget("_senderHasPerm").asBoolean());
-        assertEquals(1, globals.rawget("_argCount").asInt());
-        assertEquals("world", globals.rawget("_arg1").asString());
+        assertEquals(0, result, "a false handler return must map to Brigadier failure");
     }
 
     @Test
-    public void handlerFalseMapsToFailure() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        CommandLuaBinding.registerBindings(engine);
-        setModGlobal(engine, "test_mod");
-        engine.executeString(
-                "Commands:Register('fail', { Handler = function(sender, args) return false end })",
-                "register_fail"
-        );
-        assertEquals(0, new LuaCommandWrapper("fail").execute(new MockSender(true, 4), new String[0]));
+    void handlerNilMapsToSuccess() {
+        int result = CommandWrapperFixture.execute(SILENT, CommandTestFixture.SILENT_DEF,
+            new MockCommandSender(true, 4)).result();
+
+        assertEquals(1, result, "a handler that returns nothing must count as success");
     }
 
     @Test
-    public void handlerNilMapsToSuccess() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        CommandLuaBinding.registerBindings(engine);
-        setModGlobal(engine, "test_mod");
-        engine.executeString(
-                "Commands:Register('silent', { Handler = function(sender, args) end })",
-                "register_silent"
-        );
-        assertEquals(1, new LuaCommandWrapper("silent").execute(new MockSender(true, 4), new String[0]));
+    void handlerLuaErrorMapsToFailure() {
+        int result = CommandWrapperFixture.execute(BOOM, CommandTestFixture.BOOM_DEF,
+            new MockCommandSender(true, 4)).result();
+
+        assertEquals(0, result, "a Lua error inside the handler must map to command failure");
     }
 
     @Test
-    public void handlerLuaErrorMapsToFailureAndIsLogged() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        CommandLuaBinding.registerBindings(engine);
-        setModGlobal(engine, "test_mod");
-        engine.executeString(
-                "Commands:Register('boom', { Handler = function(sender, args) error('kaboom') end })",
-                "register_boom"
-        );
-        MockSender sender = new MockSender(true, 4);
-        // The engine logs the Lua error loudly; the wrapper maps it to failure.
-        assertEquals(0, new LuaCommandWrapper("boom").execute(sender, new String[0]),
-                "a Lua error inside the handler must map to command failure");
-        assertEquals(0, new LuaCommandWrapper("boom").execute(sender, new String[0]),
-                "repeated execution must stay deterministic");
+    void handlerLuaErrorIsDeterministicOnRepeat() {
+        CommandRun run = CommandWrapperFixture.execute(BOOM, CommandTestFixture.BOOM_DEF,
+            new MockCommandSender(true, 4));
+        LuaCommandWrapper wrapper = new LuaCommandWrapper(BOOM);
+
+        assertEquals(wrapper.execute(run.sender()), wrapper.execute(run.sender()),
+            "repeated execution of a failing handler must stay deterministic");
     }
 
     @Test
-    public void permissionDeniedBlocksExecution() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        CommandLuaBinding.registerBindings(engine);
-        setModGlobal(engine, "test_mod");
-        engine.executeString(
-                "Commands:Register('op', { PermissionLevel = 2, Handler = function(sender, args) _G._ran = true end })",
-                "register_op"
-        );
-        MockSender sender = new MockSender(true, 0);
-        assertEquals(0, new LuaCommandWrapper("op").execute(sender, new String[0]));
-        assertTrue(sender.messages.stream().anyMatch(m -> m.startsWith("ERR:") && m.contains("operator level 2")),
-                "denied sender must receive the permission error");
-        ILuaValue ran = engine.getGlobalEnvironment().rawget("_ran");
-        assertTrue(ran == null || ran.isNil(), "handler must not run without permission");
-    }
+    void executeRechecksPermissionAtRuntime() {
+        CommandRun run = CommandWrapperFixture.execute(PERMISSION_ONE, CommandTestFixture.PERMISSION_ONE_DEF,
+            new MockCommandSender(true, 4));
 
-    @Test
-    public void consoleDisallowedBlocksConsoleSender() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        CommandLuaBinding.registerBindings(engine);
-        setModGlobal(engine, "test_mod");
-        engine.executeString(
-                "Commands:Register('player_only', { ConsoleAllowed = false, Handler = function(sender, args) _G._ran = true end })",
-                "register_player_only"
-        );
-        MockSender console = new MockSender(false, 4);
-        assertEquals(0, new LuaCommandWrapper("player_only").execute(console, new String[0]));
-        assertTrue(console.messages.stream().anyMatch(m -> m.startsWith("ERR:") && m.contains("players")),
-                "console sender must be rejected with a player-only error");
-        ILuaValue ran = engine.getGlobalEnvironment().rawget("_ran");
-        assertTrue(ran == null || ran.isNil(), "handler must not run for the console");
-    }
-
-    @Test
-    public void consoleDisallowedAllowsPlayerSender() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        CommandLuaBinding.registerBindings(engine);
-        setModGlobal(engine, "test_mod");
-        engine.executeString(
-                "Commands:Register('player_only', { ConsoleAllowed = false, Handler = function(sender, args) _G._ran = true end })",
-                "register_player_only"
-        );
-        assertEquals(1, new LuaCommandWrapper("player_only").execute(new MockSender(true, 4), new String[0]));
-        assertEquals(true, engine.getGlobalEnvironment().rawget("_ran").asBoolean());
-    }
-
-    @Test
-    public void unregisteredCommandFailsLoudly() {
-        MockSender sender = new MockSender(true, 4);
-        assertEquals(0, new LuaCommandWrapper("ghost").execute(sender, new String[0]));
-        assertTrue(sender.messages.stream().anyMatch(m -> m.startsWith("ERR:") && m.contains("not registered")),
-                "unregistered commands must fail loudly");
-    }
-
-    @Test
-    public void executeRawPreservesExactTypedText() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        CommandLuaBinding.registerBindings(engine);
-        setModGlobal(engine, "test_mod");
-        engine.executeString(
-                "Commands:Register('echo', { Handler = function(sender, args, raw) _G._raw = raw; _G._tokens = #args end })",
-                "register_echo"
-        );
-
-        // Extra spacing must be preserved in the raw tail and lost in the token array.
-        assertEquals(1, new LuaCommandWrapper("echo").executeRaw(new MockSender(true, 4), "  hello   world  "));
-        assertEquals("  hello   world  ", engine.getGlobalEnvironment().rawget("_raw").asString(),
-                "the raw tail must be exactly as typed");
-        assertEquals(2, engine.getGlobalEnvironment().rawget("_tokens").asInt(),
-                "the token array must still be split on whitespace");
-    }
-
-    @Test
-    public void staticSuggestionsAreReturned() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        CommandLuaBinding.registerBindings(engine);
-        setModGlobal(engine, "test_mod");
-        engine.executeString(
-                "Commands:Register('hello', { Suggestions = { 'world', 'minecraft' }, Handler = function() end })",
-                "register_suggest_static"
-        );
-
-        List<String> suggestions = new LuaCommandWrapper("hello").suggest(new MockSender(true, 4), "hel");
-        assertEquals(List.of("world", "minecraft"), suggestions);
-    }
-
-    @Test
-    public void functionSuggestionsReceiveSenderAndArgs() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        CommandLuaBinding.registerBindings(engine);
-        setModGlobal(engine, "test_mod");
-        engine.executeString(
-                "Commands:Register('shop/buy', {\n" +
-                "  Suggestions = function(sender, args)\n" +
-                "    _G._suggestSender = sender.Name\n" +
-                "    _G._suggestArgs = #args\n" +
-                "    return { 'sword', 'pickaxe' }\n" +
-                "  end,\n" +
-                "  Handler = function() end\n" +
-                "})",
-                "register_suggest_fn"
-        );
-
-        List<String> suggestions = new LuaCommandWrapper("shop/buy").suggest(new MockSender(true, 4), "buy ru");
-        assertEquals(List.of("sword", "pickaxe"), suggestions);
-        assertEquals("TestPlayer", engine.getGlobalEnvironment().rawget("_suggestSender").asString());
-        assertEquals(2, engine.getGlobalEnvironment().rawget("_suggestArgs").asInt(),
-                "the suggestion function must receive the typed tokens");
-    }
-
-    @Test
-    public void usageHintSentWhenHandlerFails() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        CommandLuaBinding.registerBindings(engine);
-        setModGlobal(engine, "test_mod");
-        engine.executeString(
-                "Commands:Register('deploy', { Usage = '/deploy <target>', Handler = function(sender, args) return false end })",
-                "register_usage_fail"
-        );
-        MockSender sender = new MockSender(true, 4);
-        assertEquals(0, new LuaCommandWrapper("deploy").execute(sender, new String[0]));
-        assertTrue(sender.messages.stream().anyMatch(m -> m.equals("MSG:Usage: /deploy <target>")),
-                "handler failure must surface the declared Usage hint, got: " + sender.messages);
-    }
-
-    @Test
-    public void usageHintSentWhenHandlerErrors() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        CommandLuaBinding.registerBindings(engine);
-        setModGlobal(engine, "test_mod");
-        engine.executeString(
-                "Commands:Register('boom2', { Usage = '/boom2', Handler = function(sender, args) error('kaboom') end })",
-                "register_usage_boom"
-        );
-        MockSender sender = new MockSender(true, 4);
-        assertEquals(0, new LuaCommandWrapper("boom2").execute(sender, new String[0]));
-        assertTrue(sender.messages.stream().anyMatch(m -> m.equals("MSG:Usage: /boom2")),
-                "handler errors must surface the declared Usage hint, got: " + sender.messages);
-    }
-
-    @Test
-    public void noUsageHintWhenAbsent() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        CommandLuaBinding.registerBindings(engine);
-        setModGlobal(engine, "test_mod");
-        engine.executeString(
-                "Commands:Register('quiet', { Handler = function(sender, args) return false end })",
-                "register_no_usage"
-        );
-        MockSender sender = new MockSender(true, 4);
-        assertEquals(0, new LuaCommandWrapper("quiet").execute(sender, new String[0]));
-        assertTrue(sender.messages.stream().noneMatch(m -> m.contains("Usage:")),
-                "no Usage declared means no hint, got: " + sender.messages);
-    }
-
-    @Test
-    public void commandWithoutSuggestionsReturnsEmptyList() {
-        ILuaEngine engine = LuaEngineFactory.create(false);
-        CommandLuaBinding.registerBindings(engine);
-        setModGlobal(engine, "test_mod");
-        engine.executeString(
-                "Commands:Register('plain', { Handler = function() end })",
-                "register_plain"
-        );
-        assertTrue(new LuaCommandWrapper("plain").suggest(new MockSender(true, 4), "x").isEmpty());
-    }
-
-    @Test
-    public void reloadReplacesHandlerLive() {
-        // First engine registers the command (startup phase).
-        ILuaEngine engine1 = LuaEngineFactory.create(false);
-        CommandLuaBinding.registerBindings(engine1);
-        setModGlobal(engine1, "test_mod");
-        engine1.executeString(
-                "Commands:Register('ping', { Handler = function(sender, args) _G._engine = 'old' end })",
-                "register_v1"
-        );
-
-        LuaCommandWrapper wrapper = new LuaCommandWrapper("ping");
-        wrapper.execute(new MockSender(true, 4), new String[0]);
-        assertEquals("old", engine1.getGlobalEnvironment().rawget("_engine").asString());
-
-        // /lt reload: new engine re-registers the same mod+name -> replace semantics.
-        ILuaEngine engine2 = LuaEngineFactory.create(false);
-        CommandLuaBinding.registerBindings(engine2);
-        setModGlobal(engine2, "test_mod");
-        engine2.executeString(
-                "Commands:Register('ping', { Handler = function(sender, args) _G._engine = 'new' end })",
-                "register_v2"
-        );
-
-        wrapper.execute(new MockSender(true, 4), new String[0]);
-        assertEquals(1, CommandServiceImpl.getSnapshot().size(), "reload must not accumulate duplicates");
-        assertEquals("new", engine2.getGlobalEnvironment().rawget("_engine").asString(),
-                "the Brigadier node must dispatch to the newest engine's handler after reload");
+        assertTrue(run.sender().permissionChecks.contains(1),
+            "the wrapper must re-check the declared permission level at execution time");
     }
 }

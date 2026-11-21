@@ -1,6 +1,8 @@
 package com.luatweaker.api.dimension;
 
+import com.luatweaker.api.annotation.LuaDefault;
 import com.luatweaker.api.annotation.LuaDoc;
+import com.luatweaker.api.doc.LuaDocFragments;
 import com.luatweaker.api.entity.IEntity;
 import com.luatweaker.api.vm.ILuaValue;
 import org.jetbrains.annotations.NotNull;
@@ -19,38 +21,33 @@ public interface IDimensionService {
     @LuaDoc(
         description = "Register a new dimension from a config table (hasSkyLight, seaLevel, surfaceBlock, biomes, features, spawnEntities, ...).",
         params = {"dimensionId: string - e.g. 'arcane:crystal_realm'",
-                  "config: table - dimension config (terrain, blocks, biomes, visuals, spawn)"},
-        returnType = "void"
+                  "config: table - dimension config (terrain, blocks, biomes, visuals, spawn)"}
     )
     void create(@NotNull String dimensionId, @NotNull ILuaValue config);
 
     @LuaDoc(
         description = "Set the terrain generator callback. The function receives (x, z, baseHeight) and returns (height, blockId).",
-        params = {"dimensionId: string", "luaFunction: function - function(x, z, baseHeight) -> height, blockId"},
-        returnType = "void"
+        params = {LuaDocFragments.Common.DIMENSION_ID, "luaFunction: function - function(x, z, baseHeight) -> height, blockId"}
     )
     void setTerrainGenerator(@NotNull String dimensionId, @NotNull Object luaFunction);
 
     @LuaDoc(
         description = "Set the biome provider callback. The function receives (x, z) and returns a biome id string (e.g. 'arcane:crystal_plains').",
-        params = {"dimensionId: string", "luaFunction: function - function(x, z) -> biomeId"},
-        returnType = "void"
+        params = {LuaDocFragments.Common.DIMENSION_ID, "luaFunction: function - function(x, z) -> biomeId"}
     )
     void setBiomeProvider(@NotNull String dimensionId, @NotNull Object luaFunction);
 
     @LuaDoc(
         description = "Low-level block picker: overrides the default column fill. The function receives (x, z, surfaceY, minY) and returns a table {[y] = blockId, ...} - use 'minecraft:air' to carve caves.",
-        params = {"dimensionId: string",
-                  "luaFunction: function - function(x, z, surfaceY, minY) -> {[y] = blockId, ...}"},
-        returnType = "void"
+        params = {LuaDocFragments.Common.DIMENSION_ID,
+                  "luaFunction: function - function(x, z, surfaceY, minY) -> {[y] = blockId, ...}"}
     )
     void setBlockPicker(@NotNull String dimensionId, @NotNull Object luaFunction);
 
     @LuaDoc(
         description = "Custom strata picker: overrides the ground layers per column. The function receives (x, z, surfaceY) and returns a table {[depthFromSurface] = blockId, ...} (depth 1 = the block below the surface).",
-        params = {"dimensionId: string",
-                  "luaFunction: function - function(x, z, surfaceY) -> {[depth] = blockId, ...}"},
-        returnType = "void"
+        params = {LuaDocFragments.Common.DIMENSION_ID,
+                  "luaFunction: function - function(x, z, surfaceY) -> {[depth] = blockId, ...}"}
     )
     void setStrataPicker(@NotNull String dimensionId, @NotNull Object luaFunction);
 
@@ -61,9 +58,8 @@ public interface IDimensionService {
             + "surfaces: optional 256 block ids for the top block (nil = config surfaceBlock). "
             + "overrides: optional table {[column] = {[y] = blockId}} with column 1..256; "
             + "'minecraft:air' carves. Replaces SetTerrainGenerator and the per-column pickers.",
-        params = {"dimensionId: string",
-                  "luaFunction: function - function(chunkX, chunkZ, ctx) -> heights, surfaces, overrides"},
-        returnType = "void"
+        params = {LuaDocFragments.Common.DIMENSION_ID,
+                  "luaFunction: function - function(chunkX, chunkZ, ctx) -> heights, surfaces, overrides"}
     )
     void setChunkTerrain(@NotNull String dimensionId, @NotNull Object luaFunction);
 
@@ -71,8 +67,7 @@ public interface IDimensionService {
         description = "Batch biome source: the callback runs ONCE per chunk and returns up to 16 biome ids "
             + "for the 4 x 4 quart grid (index = qz * 4 + qx + 1). A nil entry falls back to the weighted "
             + "pick. Replaces SetBiomeProvider.",
-        params = {"dimensionId: string", "luaFunction: function - function(chunkX, chunkZ, ctx) -> table"},
-        returnType = "void"
+        params = {LuaDocFragments.Common.DIMENSION_ID, "luaFunction: function - function(chunkX, chunkZ, ctx) -> table"}
     )
     void setBiomeBatch(@NotNull String dimensionId, @NotNull Object luaFunction);
 
@@ -88,15 +83,81 @@ public interface IDimensionService {
             + "The height array is optional when density is set. water = false disables water fill. "
             + "With density, a block is solid when sum(amp * noise3) > threshold + thresholdSpline(y), "
             + "which produces overhangs, caves and floating islands (no heightmap involved).",
-        params = {"dimensionId: string", "spec: table - declarative terrain spec"},
-        returnType = "void"
+        params = {LuaDocFragments.Common.DIMENSION_ID, "spec: table - declarative terrain spec"}
     )
     void setTerrainSpec(@NotNull String dimensionId, @NotNull ILuaValue spec);
 
     @LuaDoc(
+        description = "Carve 3D caves into a dimension in ANY terrain mode (legacy, chunk or spec). "
+            + "The spec uses the density table format: { density = { layers = { {kind='fbm3'|'simplex3', "
+            + "amp, frequency, octaves, lacunarity, gain}, ... }, threshold, thresholdSpline = { {y, offset}, "
+            + "... }, cellSize, cellHeight } }. A block becomes air where "
+            + "sum(amp * noise3d) > threshold + thresholdSpline(y). The top 3 blocks of every column and the "
+            + "bottom 3 blocks above minHeight stay solid, so heightmaps and the floor survive. Caves are dry "
+            + "(no aquifers). Replaces nothing: terrain, biomes and surfaces keep their own config.",
+        params = {LuaDocFragments.Common.DIMENSION_ID, "spec: table - density-style cave spec"}
+    )
+    void setCaveSpec(@NotNull String dimensionId, @NotNull ILuaValue spec);
+
+    @LuaDoc(
+        description = "Surface Y (top solid block) of a world column, produced by the same pipeline as "
+            + "generation. Returns minY - 1 when the column has no ground (void). Density dimensions sample "
+            + "the chunk's density field per call - use PreviewChunk for bulk reads.",
+        params = {LuaDocFragments.Common.DIMENSION_ID, LuaDocFragments.Geometry.X_NUMBER, LuaDocFragments.Geometry.Z_NUMBER},
+        returnType = "number"
+    )
+    int getColumnHeight(@NotNull String dimensionId, int x, int z);
+
+    @LuaDoc(
+        description = "Top block id of a world column, or nil when the column has no ground.",
+        params = {LuaDocFragments.Common.DIMENSION_ID, LuaDocFragments.Geometry.X_NUMBER, LuaDocFragments.Geometry.Z_NUMBER},
+        returnType = "string|nil"
+    )
+    @Nullable
+    String getSurfaceBlock(@NotNull String dimensionId, int x, int z);
+
+    @LuaDoc(
+        description = "Local surface slope in blocks per block: the larger of the X and Z central height "
+            + "differences to the neighbouring columns. 0 for void columns.",
+        params = {LuaDocFragments.Common.DIMENSION_ID, LuaDocFragments.Geometry.X_NUMBER, LuaDocFragments.Geometry.Z_NUMBER},
+        returnType = "number"
+    )
+    double getSlope(@NotNull String dimensionId, int x, int z);
+
+    @LuaDoc(
+        description = "Biome id the biome source resolves at a world position: the batch provider, the "
+            + "per-column provider, or the weighted config pick, in that order.",
+        params = {LuaDocFragments.Common.DIMENSION_ID, LuaDocFragments.Geometry.X_NUMBER, LuaDocFragments.Geometry.Z_NUMBER},
+        returnType = "string"
+    )
+    @NotNull
+    String getBiomeAt(@NotNull String dimensionId, int x, int z);
+
+    @LuaDoc(
+        description = "Sample one chunk cheaply: returns { heights = 256 absolute Y values, surfaces = 256 "
+            + "block ids (nil for void columns), biomes = 16 ids for the 4 x 4 quart grid }. Runs the terrain "
+            + "and biome pipelines ONCE per chunk - use this instead of 256 GetColumnHeight calls for maps, "
+            + "spawn scans and diagnostics.",
+        params = {LuaDocFragments.Common.DIMENSION_ID, "chunkX: number", "chunkZ: number"},
+        returnType = "table"
+    )
+    @NotNull
+    Object previewChunk(@NotNull String dimensionId, int chunkX, int chunkZ);
+
+    @LuaDoc(
+        description = "Find the nearest buildable surface around (x, z) within radius blocks (0..64). Skips "
+            + "void columns and, when the dimension fills water, submerged columns. Returns "
+            + "{ x, y, z, block, biome } or nil when nothing is found.",
+        params = {LuaDocFragments.Common.DIMENSION_ID, LuaDocFragments.Geometry.X_NUMBER, LuaDocFragments.Geometry.Z_NUMBER, "radius: number - default 16"},
+        returnType = "table|nil"
+    )
+    @Nullable
+    Object findSurface(@NotNull String dimensionId, int x, int z,
+                       @LuaDefault("16") int radius);
+
+    @LuaDoc(
         description = "Set a custom spawn position for the dimension (used by teleports).",
-        params = {"dimensionId: string", "x: number", "z: number"},
-        returnType = "void"
+        params = {LuaDocFragments.Common.DIMENSION_ID, LuaDocFragments.Geometry.X_NUMBER, LuaDocFragments.Geometry.Z_NUMBER}
     )
     void setSpawnPoint(@NotNull String dimensionId, int x, int z);
 
@@ -110,21 +171,19 @@ public interface IDimensionService {
 
     @LuaDoc(
         description = "Register a portal block that leads to the target dimension. The mapping is exposed via getDimension().portals.",
-        params = {"blockId: string - e.g. 'arcane:crystal_portal'", "targetDimension: string"},
-        returnType = "void"
+        params = {"blockId: string - e.g. 'arcane:crystal_portal'", "targetDimension: string"}
     )
     void registerPortal(@NotNull String blockId, @NotNull String targetDimension);
 
     @LuaDoc(
         description = "Teleport a player to the given dimension (at a safe surface position).",
-        params = {"player: Player - player entity table", "dimensionId: string"},
-        returnType = "void"
+        params = {"player: Player - player entity table", LuaDocFragments.Common.DIMENSION_ID}
     )
     void teleportTo(@NotNull IEntity player, @NotNull String dimensionId);
 
     @LuaDoc(
         description = "Get dimension info as a table (id, terrain, blocks, biomes, features, spawnEntities, portals) or nil if unknown.",
-        params = {"dimensionId: string"},
+        params = {LuaDocFragments.Common.DIMENSION_ID},
         returnType = "table|nil"
     )
     @Nullable

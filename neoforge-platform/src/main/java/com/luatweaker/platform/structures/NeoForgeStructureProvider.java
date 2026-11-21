@@ -47,6 +47,8 @@ import java.util.Optional;
  * missing template can never crash the datapack load.
  */
 public class NeoForgeStructureProvider {
+    private static final String JSON_EXTENSION = ".json";
+
 
     private final StructureServiceImpl structureService;
     private final IDatapackService datapackService;
@@ -95,13 +97,13 @@ public class NeoForgeStructureProvider {
         String templateLocation = NbtStructureLoader.templateLocation(entry.template());
         String tagReference = "#" + namespace + ":has_structure/" + path;
 
-        datapackService.addData(namespace + "/worldgen/structure/" + path + ".json",
+        datapackService.addData(namespace + "/worldgen/structure/" + path + JSON_EXTENSION,
                 buildStructureJson(tagReference, namespace + ":" + path, entry));
-        datapackService.addData(namespace + "/worldgen/template_pool/" + path + ".json",
+        datapackService.addData(namespace + "/worldgen/template_pool/" + path + JSON_EXTENSION,
                 buildPoolJson(templateLocation));
-        datapackService.addData(namespace + "/worldgen/structure_set/" + path + ".json",
+        datapackService.addData(namespace + "/worldgen/structure_set/" + path + JSON_EXTENSION,
                 buildStructureSetJson(entry));
-        datapackService.addData(namespace + "/tags/worldgen/biome/has_structure/" + path + ".json",
+        datapackService.addData(namespace + "/tags/worldgen/biome/has_structure/" + path + JSON_EXTENSION,
                 buildBiomeTagJson(entry));
     }
 

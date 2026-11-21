@@ -1,7 +1,6 @@
 package com.luatweaker.dimension;
 
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 

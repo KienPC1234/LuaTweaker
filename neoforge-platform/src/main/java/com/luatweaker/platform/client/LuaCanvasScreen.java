@@ -1,7 +1,6 @@
 package com.luatweaker.platform.client;
 
 import com.luatweaker.api.log.LogStage;
-import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
@@ -63,18 +62,12 @@ public class LuaCanvasScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (callNumbers("OnMouseClick", mouseX, mouseY, button)) {
-            return true;
-        }
-        return super.mouseClicked(mouseX, mouseY, button);
+        return callNumbers("OnMouseClick", mouseX, mouseY, button) || super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (callNumbers("OnMouseRelease", mouseX, mouseY, button)) {
-            return true;
-        }
-        return super.mouseReleased(mouseX, mouseY, button);
+        return callNumbers("OnMouseRelease", mouseX, mouseY, button) || super.mouseReleased(mouseX, mouseY, button);
     }
 
     @Override
@@ -85,42 +78,28 @@ public class LuaCanvasScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        if (callNumbers("OnMouseMove", mouseX, mouseY, button, dragX, dragY)) {
-            return true;
-        }
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+        return callNumbers("OnMouseMove", mouseX, mouseY, button, dragX, dragY)
+                || super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        if (callNumbers("OnScroll", mouseX, mouseY, scrollX, scrollY)) {
-            return true;
-        }
-        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+        return callNumbers("OnScroll", mouseX, mouseY, scrollX, scrollY) || super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (callNumbers("OnKeyDown", keyCode, scanCode, modifiers)) {
-            return true;
-        }
-        return super.keyPressed(keyCode, scanCode, modifiers);
+        return callNumbers("OnKeyDown", keyCode, scanCode, modifiers) || super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
     public boolean keyReleased(int keyCode, int scanCode, int modifiers) {
-        if (callNumbers("OnKeyUp", keyCode, scanCode, modifiers)) {
-            return true;
-        }
-        return super.keyReleased(keyCode, scanCode, modifiers);
+        return callNumbers("OnKeyUp", keyCode, scanCode, modifiers) || super.keyReleased(keyCode, scanCode, modifiers);
     }
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
-        if (callNumbers("OnCharTyped", codePoint, modifiers)) {
-            return true;
-        }
-        return super.charTyped(codePoint, modifiers);
+        return callNumbers("OnCharTyped", codePoint, modifiers) || super.charTyped(codePoint, modifiers);
     }
 
     @Override
@@ -152,18 +131,14 @@ public class LuaCanvasScreen extends Screen {
         if (callback == null || !callback.isFunction()) {
             return false;
         }
-        try {
-            ILuaValue[] callArgs = new ILuaValue[args.length + 1];
-            callArgs[0] = screenTable;
-            System.arraycopy(args, 0, callArgs, 1, args.length);
-            ILuaValue result = engine.callFunction(callback, callArgs);
-            return result != null && result.isBoolean() && result.asBoolean();
-        } catch (Throwable t) {
-            // Render/input callbacks run inside Minecraft's frame loop; letting an error
-            // escape would crash the client instead of failing one script.
-            LuaTweakerLog.get().error(LogStage.SYSTEM,
-                    "CanvasScreen '" + screenId + "' " + callbackName + " error: " + t.getMessage());
-            return false;
-        }
+        ILuaValue[] callArgs = new ILuaValue[args.length + 1];
+        callArgs[0] = screenTable;
+        System.arraycopy(args, 0, callArgs, 1, args.length);
+        ILuaValue result = com.luatweaker.platform.util.CallbackFirewall.supply(
+                () -> engine.callFunction(callback, callArgs),
+                null,
+                LogStage.SYSTEM,
+                () -> "CanvasScreen '" + screenId + "' " + callbackName + " error");
+        return result != null && result.isBoolean() && result.asBoolean();
     }
 }

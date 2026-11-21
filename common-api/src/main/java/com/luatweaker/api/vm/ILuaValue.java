@@ -11,6 +11,7 @@ public interface ILuaValue {
     boolean isNumber();
     boolean isString();
     default boolean isBoolean() { return false; }
+    default boolean isUserdata() { return false; }
     ILuaTable asTable();
     Object toJavaObject();
 }

@@ -5,7 +5,10 @@ import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.core.bind.LuaBinder;
 import org.jetbrains.annotations.NotNull;
 
-public class AIGoalLuaBinding {
+public final class AIGoalLuaBinding {
+
+    private AIGoalLuaBinding() {}
+
     public static void registerBindings(@NotNull ILuaEngine engine) {
         LuaBinder.bind(engine, "AIGoals", new AIGoalServiceImpl(engine), IAIGoalService.class);
     }

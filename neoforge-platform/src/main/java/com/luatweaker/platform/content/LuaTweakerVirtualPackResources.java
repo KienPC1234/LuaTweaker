@@ -8,16 +8,13 @@ import net.minecraft.server.packs.AbstractPackResources;
 import net.minecraft.server.packs.PackLocationInfo;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.resources.IoSupplier;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -30,7 +27,7 @@ import java.util.Set;
  *   <li>Virtual files registered via Lua scripts ({@link IDatapackService}) are served from RAM,
  *       taking highest priority.</li>
  *   <li>Static JSON files under {@code lua/data/} or {@code lua/assets/} are served as-is from
- *       the filesystem (lazy read).</li>
+ *       the filesystem (lazy read, see {@link VirtualPackDirectoryScanner}).</li>
  * </ol>
  *
  * <p>No physical files are ever written for virtual data — they live entirely in memory.
@@ -53,6 +50,7 @@ public class LuaTweakerVirtualPackResources extends AbstractPackResources {
     private final PackType packType;
     private final File luaDir;
     private final IDatapackService datapackService;
+    private final VirtualPackDirectoryScanner directoryScanner;
 
     public LuaTweakerVirtualPackResources(PackLocationInfo location,
                                           PackType packType,
@@ -62,6 +60,7 @@ public class LuaTweakerVirtualPackResources extends AbstractPackResources {
         this.packType = packType;
         this.luaDir = luaDir;
         this.datapackService = datapackService;
+        this.directoryScanner = new VirtualPackDirectoryScanner(luaDir);
     }
 
     // -------------------------------------------------------------------------
@@ -70,18 +69,17 @@ public class LuaTweakerVirtualPackResources extends AbstractPackResources {
 
     @Override
     public IoSupplier<InputStream> getRootResource(String... paths) {
-        if (paths.length == 1 && "pack.mcmeta".equals(paths[0])) {
-            File metaFile = new File(luaDir, "pack.mcmeta");
-            if (metaFile.exists()) {
-                return () -> new FileInputStream(metaFile);
-            }
+        if (paths.length != 1 || !"pack.mcmeta".equals(paths[0])) {
+            return null;
+        }
+        File metaFile = new File(luaDir, "pack.mcmeta");
+        if (metaFile.exists()) {
+            return () -> Files.newInputStream(metaFile.toPath());
+        }
         // Serve dynamic in-memory mcmeta with the correct pack format for the
         // served pack type (48 for data packs, 34 for resource packs).
         int format = packType == PackType.SERVER_DATA ? DATA_PACK_FORMAT : RESOURCE_PACK_FORMAT;
-        String meta = String.format(PACK_MCMETA, format);
-        return () -> new ByteArrayInputStream(meta.getBytes(StandardCharsets.UTF_8));
-        }
-        return null;
+        return utf8Supplier(String.format(PACK_MCMETA, format));
     }
 
     // -------------------------------------------------------------------------
@@ -90,7 +88,7 @@ public class LuaTweakerVirtualPackResources extends AbstractPackResources {
 
     @Override
     public IoSupplier<InputStream> getResource(PackType type, ResourceLocation location) {
-        if (type != packType) return null;
+        if (type != packType) { return null; }
 
         // Priority 1: Virtual files from Lua scripts (in-memory, highest priority)
         String virtualKey = type.getDirectory() + "/" + location.getNamespace() + "/" + location.getPath();
@@ -99,14 +97,14 @@ public class LuaTweakerVirtualPackResources extends AbstractPackResources {
             if (content != null) {
                 LuaTweakerLog.get().info(LogStage.SYSTEM,
                         "[VirtualPack] Serving in-memory: " + virtualKey);
-                return () -> new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8));
+                return utf8Supplier(content);
             }
         }
 
         // Priority 2: Static files on disk under lua/data/ or lua/assets/
-        File physicalFile = resolvePhysicalFile(type, location);
+        File physicalFile = directoryScanner.resolveResourceFile(type, location);
         if (physicalFile != null && physicalFile.exists()) {
-            return () -> new FileInputStream(physicalFile);
+            return () -> Files.newInputStream(physicalFile.toPath());
         }
 
         return null;
@@ -119,51 +117,9 @@ public class LuaTweakerVirtualPackResources extends AbstractPackResources {
     @Override
     public void listResources(PackType type, String namespace, String prefix,
                               ResourceOutput resourceOutput) {
-        if (type != packType) return;
-
-        // Collect from virtual (RAM) files
-        if (datapackService != null) {
-            String dirPrefix = type.getDirectory() + "/" + namespace + "/";
-            for (Map.Entry<String, String> entry : datapackService.getVirtualFiles().entrySet()) {
-                String key = entry.getKey();
-                if (key.startsWith(dirPrefix)) {
-                    String relativePath = key.substring(dirPrefix.length()); // e.g. "loot_table/blocks/ruby_ore.json"
-                    // Directory-segment prefix match: "dimension" must NOT match
-                    // "dimension_type/..." (RegistryDataLoader would decode the
-                    // dimension type file with the LevelStem codec and crash).
-                    if (matchesPrefix(relativePath, prefix)) {
-                        ResourceLocation rl = safeResourceLocation(namespace, relativePath);
-                        if (rl != null) {
-                            String content = entry.getValue();
-                            resourceOutput.accept(rl,
-                                    () -> new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)));
-                        }
-                    }
-                }
-            }
-        }
-
-        // From physical directories under lua/<packTypeDir>/<namespace>/<prefix>/
-        File physRoot = new File(luaDir, type.getDirectory() + "/" + namespace);
-        File prefixDir = prefix.isEmpty() ? physRoot : new File(physRoot, prefix);
-        if (prefixDir.exists() && prefixDir.isDirectory()) {
-            collectPhysicalResources(prefixDir, physRoot.toPath(), namespace, resourceOutput, datapackService, type);
-        }
-
-        // From luamods/<mod_id>/<packTypeDir>/<namespace>/<prefix>/
-        File luamodsDir = getLuamodsDir();
-        if (luamodsDir.exists() && luamodsDir.isDirectory()) {
-            File[] mods = luamodsDir.listFiles(File::isDirectory);
-            if (mods != null) {
-                for (File modFolder : mods) {
-                    File modNsRoot = new File(modFolder, type.getDirectory() + "/" + namespace);
-                    File modPrefixDir = prefix.isEmpty() ? modNsRoot : new File(modNsRoot, prefix);
-                    if (modPrefixDir.exists() && modPrefixDir.isDirectory()) {
-                        collectPhysicalResources(modPrefixDir, modNsRoot.toPath(), namespace, resourceOutput, datapackService, type);
-                    }
-                }
-            }
-        }
+        if (type != packType) { return; }
+        collectVirtualResources(type, namespace, prefix, resourceOutput);
+        directoryScanner.collectResources(type, namespace, prefix, resourceOutput::accept, datapackService);
     }
 
     // -------------------------------------------------------------------------
@@ -172,54 +128,10 @@ public class LuaTweakerVirtualPackResources extends AbstractPackResources {
 
     @Override
     public Set<String> getNamespaces(PackType type) {
-        if (type != packType) return Set.of();
-
+        if (type != packType) { return Set.of(); }
         Set<String> namespaces = new HashSet<>();
-
-        // From virtual files
-        if (datapackService != null) {
-            String prefix = type.getDirectory() + "/";
-            for (String key : datapackService.getVirtualFiles().keySet()) {
-                if (key.startsWith(prefix)) {
-                    String rest = key.substring(prefix.length()); // "luatweaker/loot_table/..."
-                    int slash = rest.indexOf('/');
-                    if (slash > 0) {
-                        namespaces.add(rest.substring(0, slash));
-                    }
-                }
-            }
-        }
-
-        // From physical directories
-        File physRoot = new File(luaDir, type.getDirectory());
-        if (physRoot.exists() && physRoot.isDirectory()) {
-            File[] dirs = physRoot.listFiles(File::isDirectory);
-            if (dirs != null) {
-                for (File dir : dirs) {
-                    namespaces.add(dir.getName());
-                }
-            }
-        }
-
-        // From luamods directories
-        File luamodsDir = getLuamodsDir();
-        if (luamodsDir.exists() && luamodsDir.isDirectory()) {
-            File[] mods = luamodsDir.listFiles(File::isDirectory);
-            if (mods != null) {
-                for (File modFolder : mods) {
-                    File packDir = new File(modFolder, type.getDirectory());
-                    if (packDir.exists() && packDir.isDirectory()) {
-                        File[] nsDirs = packDir.listFiles(File::isDirectory);
-                        if (nsDirs != null) {
-                            for (File nsDir : nsDirs) {
-                                namespaces.add(nsDir.getName());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
+        collectVirtualNamespaces(type, namespaces);
+        namespaces.addAll(directoryScanner.listNamespaces(type));
         return namespaces;
     }
 
@@ -229,80 +141,52 @@ public class LuaTweakerVirtualPackResources extends AbstractPackResources {
     }
 
     // -------------------------------------------------------------------------
-    // Helpers
+    // Virtual (in-memory) listing helpers
     // -------------------------------------------------------------------------
 
-    private File getLuamodsDir() {
-        if ("luamods".equalsIgnoreCase(luaDir.getName())) return luaDir;
-        File sub = new File(luaDir, "luamods");
-        return sub.exists() ? sub : luaDir;
-    }
-
-    private File resolvePhysicalFile(PackType type, ResourceLocation location) {
-        String relativePath = type.getDirectory()
-                + "/" + location.getNamespace()
-                + "/" + location.getPath();
-        File direct = new File(luaDir, relativePath);
-        if (direct.exists()) return direct;
-
-        File luamodsDir = getLuamodsDir();
-        if (luamodsDir.exists() && luamodsDir.isDirectory()) {
-            File[] mods = luamodsDir.listFiles(File::isDirectory);
-            if (mods != null) {
-                for (File modFolder : mods) {
-                    File modFile = new File(modFolder, relativePath);
-                    if (modFile.exists()) return modFile;
-                }
-            }
-        }
-
-        return direct;
-    }
-
-    /**
-     * Directory-segment prefix match: {@code relativePath} is under the
-     * {@code prefix} directory (or {@code prefix} is empty). "dimension" must
-     * NOT match "dimension_type/...".
-     */
-    static boolean matchesPrefix(String relativePath, String prefix) {
-        return prefix == null || prefix.isEmpty()
-                || relativePath.equals(prefix)
-                || relativePath.startsWith(prefix + "/");
-    }
-
-    // -------------------------------------------------------------------------
-    // Resource listing helper
-    // -------------------------------------------------------------------------
-
-    private static void collectPhysicalResources(File dir, Path nsRoot, String namespace,
-                                                  ResourceOutput output,
-                                                  IDatapackService datapackService,
-                                                  PackType type) {
-        File[] children = dir.listFiles();
-        if (children == null) return;
-        for (File child : children) {
-            if (child.isDirectory()) {
-                collectPhysicalResources(child, nsRoot, namespace, output, datapackService, type);
-            } else if (child.isFile()) {
-                String relToNs = nsRoot.relativize(child.toPath()).toString().replace('\\', '/');
-                // Skip if already served from virtual (RAM wins)
-                String virtualKey = type.getDirectory() + "/" + namespace + "/" + relToNs;
-                if (datapackService != null && datapackService.getVirtualFiles().containsKey(virtualKey)) {
-                    continue; // virtual already registered above
-                }
-                ResourceLocation rl = safeResourceLocation(namespace, relToNs);
-                if (rl != null) {
-                    output.accept(rl, () -> new FileInputStream(child));
-                }
-            }
+    private void collectVirtualResources(PackType type, String namespace, String prefix,
+                                         ResourceOutput output) {
+        if (datapackService == null) { return; }
+        String dirPrefix = type.getDirectory() + "/" + namespace + "/";
+        for (Map.Entry<String, String> entry : datapackService.getVirtualFiles().entrySet()) {
+            acceptVirtualEntry(entry, dirPrefix, prefix, namespace, output);
         }
     }
 
-    private static ResourceLocation safeResourceLocation(String namespace, String path) {
-        try {
-            return ResourceLocation.fromNamespaceAndPath(namespace, path);
-        } catch (Exception e) {
-            return null;
+    private static void acceptVirtualEntry(Map.Entry<String, String> entry, String dirPrefix,
+                                           String prefix, String namespace, ResourceOutput output) {
+        String key = entry.getKey();
+        if (!key.startsWith(dirPrefix)) { return; }
+        String relativePath = key.substring(dirPrefix.length());
+        // Directory-segment prefix match: "dimension" must NOT match
+        // "dimension_type/..." (RegistryDataLoader would decode the
+        // dimension type file with the LevelStem codec and crash).
+        if (!VirtualPackDirectoryScanner.matchesPrefix(relativePath, prefix)) { return; }
+        ResourceLocation rl = VirtualPackDirectoryScanner.safeResourceLocation(namespace, relativePath);
+        if (rl == null) { return; }
+        output.accept(rl, utf8Supplier(entry.getValue()));
+    }
+
+    private void collectVirtualNamespaces(PackType type, Set<String> namespaces) {
+        if (datapackService == null) { return; }
+        String prefix = type.getDirectory() + "/";
+        for (String key : datapackService.getVirtualFiles().keySet()) {
+            String namespace = virtualNamespace(key, prefix);
+            if (namespace != null) { namespaces.add(namespace); }
         }
+    }
+
+    /** Namespace segment of a virtual key ({@code luatweaker/loot_table/...}), if any. */
+    @Nullable
+    private static String virtualNamespace(String key, String prefix) {
+        if (!key.startsWith(prefix)) { return null; }
+        String rest = key.substring(prefix.length());
+        int slash = rest.indexOf('/');
+        if (slash <= 0) { return null; }
+        return rest.substring(0, slash);
+    }
+
+    private static IoSupplier<InputStream> utf8Supplier(String content) {
+        return () -> new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8));
     }
 }

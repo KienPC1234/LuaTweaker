@@ -21,6 +21,8 @@ import org.jetbrains.annotations.NotNull;
  * </ul>
  */
 public final class NeoForgeDimensionProvider {
+    private static final String JSON_TYPE_FIELD = "type";
+
 
     public static final String GENERATOR_TYPE = "luatweaker:lua";
 
@@ -46,7 +48,7 @@ public final class NeoForgeDimensionProvider {
         }
         for (String dimensionId : service.getDimensionIds()) {
             DimensionConfig config = service.getConfig(dimensionId);
-            if (config == null) continue;
+            if (config == null) { continue; }
             String[] parts = splitId(dimensionId);
             String typeJson = buildDimensionTypeJson(config);
             String dimensionJson = buildDimensionJson(config);
@@ -62,7 +64,7 @@ public final class NeoForgeDimensionProvider {
     /** Splits "namespace:path" -> [namespace, path]; defaults the namespace to "luatweaker". */
     private static String[] splitId(String id) {
         int colon = id.indexOf(':');
-        if (colon > 0) return new String[]{id.substring(0, colon), id.substring(colon + 1)};
+        if (colon > 0) { return new String[]{id.substring(0, colon), id.substring(colon + 1)}; }
         return new String[]{"luatweaker", id};
     }
 
@@ -89,7 +91,7 @@ public final class NeoForgeDimensionProvider {
         // monster_spawn_light_level is a keyed IntProvider in 1.21.1 (vanilla
         // uses {"type":"minecraft:uniform",...}); a bare int fails to decode.
         JsonObject monsterLight = new JsonObject();
-        monsterLight.addProperty("type", "minecraft:constant");
+        monsterLight.addProperty(JSON_TYPE_FIELD, "minecraft:constant");
         monsterLight.addProperty("value", config.monsterSpawnLightLevel());
         json.add("monster_spawn_light_level", monsterLight);
         json.addProperty("monster_spawn_block_light_limit", config.monsterSpawnBlockLightLimit());
@@ -101,11 +103,11 @@ public final class NeoForgeDimensionProvider {
 
     private static String buildDimensionJson(DimensionConfig config) {
         JsonObject biomeSource = new JsonObject();
-        biomeSource.addProperty("type", GENERATOR_TYPE);
+        biomeSource.addProperty(JSON_TYPE_FIELD, GENERATOR_TYPE);
         biomeSource.addProperty("dimension_id", config.id());
 
         JsonObject generator = new JsonObject();
-        generator.addProperty("type", GENERATOR_TYPE);
+        generator.addProperty(JSON_TYPE_FIELD, GENERATOR_TYPE);
         generator.addProperty("dimension_id", config.id());
         generator.add("biome_source", biomeSource);
 
@@ -113,7 +115,7 @@ public final class NeoForgeDimensionProvider {
         // The dimension type id MUST be the custom one (data/<ns>/dimension_type/<path>.json);
         // referencing "minecraft:overworld" would silently use vanilla min_y/height
         // and desync the chunk generator bounds.
-        dimension.addProperty("type", config.id());
+        dimension.addProperty(JSON_TYPE_FIELD, config.id());
         dimension.add("generator", generator);
         return dimension.toString();
     }

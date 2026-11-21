@@ -1,12 +1,17 @@
 package com.luatweaker.events;
 
 import com.luatweaker.api.event.IEventService;
-import com.luatweaker.api.vm.*;
+import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.api.vm.ILuaFunction;
+import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.core.bind.LuaBinder;
 import com.luatweaker.core.stub.StubCatalog;
 import org.jetbrains.annotations.NotNull;
 
-public class EventLuaBinding {
+public final class EventLuaBinding {
+
+    private EventLuaBinding() {}
+
     public static void registerBindings(@NotNull ILuaEngine engine) {
         IEventService service = new EventServiceImpl(engine);
         ILuaTable table = LuaBinder.bind(engine, "Events", service, IEventService.class, "events");

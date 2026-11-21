@@ -25,7 +25,7 @@ public final class BlockPropertyParser {
 
     @Nullable
     public static MapColor parseMapColor(String input) {
-        if (input == null || input.isBlank()) return null;
+        if (input == null || input.isBlank()) { return null; }
         String name = input.trim().toUpperCase(Locale.ROOT);
         if (name.matches("\\d+")) {
             try {
@@ -44,7 +44,7 @@ public final class BlockPropertyParser {
 
     @Nullable
     public static PushReaction parsePushReaction(String input) {
-        if (input == null || input.isBlank()) return null;
+        if (input == null || input.isBlank()) { return null; }
         return switch (input.trim().toUpperCase(Locale.ROOT)) {
             case "NORMAL" -> PushReaction.NORMAL;
             case "DESTROY" -> PushReaction.DESTROY;
@@ -60,7 +60,7 @@ public final class BlockPropertyParser {
 
     @Nullable
     public static BlockBehaviour.OffsetType parseOffsetType(String input) {
-        if (input == null || input.isBlank()) return null;
+        if (input == null || input.isBlank()) { return null; }
         return switch (input.trim().toUpperCase(Locale.ROOT)) {
             case "NONE" -> BlockBehaviour.OffsetType.NONE;
             case "XZ" -> BlockBehaviour.OffsetType.XZ;
@@ -74,6 +74,14 @@ public final class BlockPropertyParser {
 
     private static Map<String, MapColor> buildMapColors() {
         Map<String, MapColor> colors = new ConcurrentHashMap<>();
+        putBaseColors(colors);
+        putDyePalette(colors);
+        putTerracottaPalette(colors);
+        putNetherWoodPalette(colors);
+        return colors;
+    }
+
+    private static void putBaseColors(Map<String, MapColor> colors) {
         colors.put("NONE", MapColor.NONE);
         colors.put("GRASS", MapColor.GRASS);
         colors.put("SAND", MapColor.SAND);
@@ -98,38 +106,28 @@ public final class BlockPropertyParser {
         colors.put("DEEPSLATE", MapColor.DEEPSLATE);
         colors.put("RAW_IRON", MapColor.RAW_IRON);
         colors.put("GLOW_LICHEN", MapColor.GLOW_LICHEN);
-        // COLOR_* (dye palette) with plain aliases: "RED" -> COLOR_RED
-        colors.put("COLOR_ORANGE", MapColor.COLOR_ORANGE);
-        colors.put("ORANGE", MapColor.COLOR_ORANGE);
-        colors.put("COLOR_MAGENTA", MapColor.COLOR_MAGENTA);
-        colors.put("MAGENTA", MapColor.COLOR_MAGENTA);
-        colors.put("COLOR_LIGHT_BLUE", MapColor.COLOR_LIGHT_BLUE);
-        colors.put("LIGHT_BLUE", MapColor.COLOR_LIGHT_BLUE);
-        colors.put("COLOR_YELLOW", MapColor.COLOR_YELLOW);
-        colors.put("YELLOW", MapColor.COLOR_YELLOW);
-        colors.put("COLOR_LIGHT_GREEN", MapColor.COLOR_LIGHT_GREEN);
-        colors.put("LIGHT_GREEN", MapColor.COLOR_LIGHT_GREEN);
-        colors.put("COLOR_PINK", MapColor.COLOR_PINK);
-        colors.put("PINK", MapColor.COLOR_PINK);
-        colors.put("COLOR_GRAY", MapColor.COLOR_GRAY);
-        colors.put("GRAY", MapColor.COLOR_GRAY);
-        colors.put("COLOR_LIGHT_GRAY", MapColor.COLOR_LIGHT_GRAY);
-        colors.put("LIGHT_GRAY", MapColor.COLOR_LIGHT_GRAY);
-        colors.put("COLOR_CYAN", MapColor.COLOR_CYAN);
-        colors.put("CYAN", MapColor.COLOR_CYAN);
-        colors.put("COLOR_PURPLE", MapColor.COLOR_PURPLE);
-        colors.put("PURPLE", MapColor.COLOR_PURPLE);
-        colors.put("COLOR_BLUE", MapColor.COLOR_BLUE);
-        colors.put("BLUE", MapColor.COLOR_BLUE);
-        colors.put("COLOR_BROWN", MapColor.COLOR_BROWN);
-        colors.put("BROWN", MapColor.COLOR_BROWN);
-        colors.put("COLOR_GREEN", MapColor.COLOR_GREEN);
-        colors.put("GREEN", MapColor.COLOR_GREEN);
-        colors.put("COLOR_RED", MapColor.COLOR_RED);
-        colors.put("RED", MapColor.COLOR_RED);
-        colors.put("COLOR_BLACK", MapColor.COLOR_BLACK);
-        colors.put("BLACK", MapColor.COLOR_BLACK);
-        // TERRACOTTA_* palette
+    }
+
+    /** COLOR_* (dye palette) with plain aliases: "RED" -> COLOR_RED. */
+    private static void putDyePalette(Map<String, MapColor> colors) {
+        putAlias(colors, "ORANGE", MapColor.COLOR_ORANGE);
+        putAlias(colors, "MAGENTA", MapColor.COLOR_MAGENTA);
+        putAlias(colors, "LIGHT_BLUE", MapColor.COLOR_LIGHT_BLUE);
+        putAlias(colors, "YELLOW", MapColor.COLOR_YELLOW);
+        putAlias(colors, "LIGHT_GREEN", MapColor.COLOR_LIGHT_GREEN);
+        putAlias(colors, "PINK", MapColor.COLOR_PINK);
+        putAlias(colors, "GRAY", MapColor.COLOR_GRAY);
+        putAlias(colors, "LIGHT_GRAY", MapColor.COLOR_LIGHT_GRAY);
+        putAlias(colors, "CYAN", MapColor.COLOR_CYAN);
+        putAlias(colors, "PURPLE", MapColor.COLOR_PURPLE);
+        putAlias(colors, "BLUE", MapColor.COLOR_BLUE);
+        putAlias(colors, "BROWN", MapColor.COLOR_BROWN);
+        putAlias(colors, "GREEN", MapColor.COLOR_GREEN);
+        putAlias(colors, "RED", MapColor.COLOR_RED);
+        putAlias(colors, "BLACK", MapColor.COLOR_BLACK);
+    }
+
+    private static void putTerracottaPalette(Map<String, MapColor> colors) {
         colors.put("TERRACOTTA_WHITE", MapColor.TERRACOTTA_WHITE);
         colors.put("TERRACOTTA_ORANGE", MapColor.TERRACOTTA_ORANGE);
         colors.put("TERRACOTTA_MAGENTA", MapColor.TERRACOTTA_MAGENTA);
@@ -146,7 +144,9 @@ public final class BlockPropertyParser {
         colors.put("TERRACOTTA_GREEN", MapColor.TERRACOTTA_GREEN);
         colors.put("TERRACOTTA_RED", MapColor.TERRACOTTA_RED);
         colors.put("TERRACOTTA_BLACK", MapColor.TERRACOTTA_BLACK);
-        // Nether wood palette
+    }
+
+    private static void putNetherWoodPalette(Map<String, MapColor> colors) {
         colors.put("CRIMSON_NYLIUM", MapColor.CRIMSON_NYLIUM);
         colors.put("CRIMSON_STEM", MapColor.CRIMSON_STEM);
         colors.put("CRIMSON_HYPHAE", MapColor.CRIMSON_HYPHAE);
@@ -154,6 +154,10 @@ public final class BlockPropertyParser {
         colors.put("WARPED_STEM", MapColor.WARPED_STEM);
         colors.put("WARPED_HYPHAE", MapColor.WARPED_HYPHAE);
         colors.put("WARPED_WART_BLOCK", MapColor.WARPED_WART_BLOCK);
-        return colors;
+    }
+
+    private static void putAlias(Map<String, MapColor> colors, String name, MapColor color) {
+        colors.put("COLOR_" + name, color);
+        colors.put(name, color);
     }
 }

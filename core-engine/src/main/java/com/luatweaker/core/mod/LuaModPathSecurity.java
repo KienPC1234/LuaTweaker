@@ -1,6 +1,7 @@
 package com.luatweaker.core.mod;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Path;
 import java.nio.file.Files;
@@ -46,11 +47,39 @@ public final class LuaModPathSecurity {
             throw new IllegalArgumentException("LuaMod manifest 'main' must be a relative Lua path: " + entryPoint);
         }
         for (String part : trimmed.split("/", -1)) {
-            if (part.isEmpty() || part.equals(".") || part.equals("..")) {
-                throw new IllegalArgumentException("LuaMod manifest 'main' contains an unsafe path segment: " + entryPoint);
-            }
+            checkEntrySegment(part, entryPoint);
         }
         return trimmed;
+    }
+
+    private static void checkEntrySegment(@NotNull String part, @NotNull String entryPoint) {
+        if (part.isEmpty() || ".".equals(part) || "..".equals(part)) {
+            throw new IllegalArgumentException(
+                    "LuaMod manifest 'main' contains an unsafe path segment: " + entryPoint);
+        }
+    }
+
+    /**
+     * Validates a Lua-supplied relative path for mod file access.
+     *
+     * <p>Rejects absolute paths, {@code ..} segments, empty segments, drive letters /
+     * alternate data streams ({@code :}) and control characters. Write targets are
+     * additionally checked against Windows quirks (trailing dot/space, reserved
+     * device names) so a script gets a clear error instead of an OS failure.</p>
+     *
+     * @param path     raw Lua path; backslashes are normalised to {@code /}
+     * @param forWrite true when the path is a write target
+     * @return the normalised relative path ({@code ""} for the root)
+     */
+    public static @NotNull String validateRelativePath(@Nullable String path, boolean forWrite) {
+        return RelativePathValidator.validate(path, forWrite);
+    }
+
+    /** True for Windows device names ({@code CON}, {@code NUL}, {@code COM1}, ...), with or without an extension. */
+    public static boolean isReservedWindowsName(@NotNull String name) {
+        int dot = name.indexOf('.');
+        String base = dot > 0 ? name.substring(0, dot) : name;
+        return RESERVED_WINDOWS_NAMES.contains(base.toUpperCase(Locale.ROOT));
     }
 
     public static @NotNull Path resolveContained(@NotNull Path root, @NotNull String relativePath) {
@@ -59,9 +88,17 @@ public final class LuaModPathSecurity {
         if (!candidate.startsWith(normalizedRoot)) {
             throw new IllegalArgumentException("LuaMod path escapes its root: " + relativePath);
         }
-        // Lexical normalization does not stop a mod from placing a symlink inside
-        // its directory that points outside. Check the real path when the target
-        // exists, and otherwise check the nearest existing parent.
+        checkNoSymlinkEscape(normalizedRoot, candidate, relativePath);
+        return candidate;
+    }
+
+    /**
+     * Lexical normalization does not stop a mod from placing a symlink inside
+     * its directory that points outside. Check the real path when the target
+     * exists, and otherwise check the nearest existing parent.
+     */
+    private static void checkNoSymlinkEscape(@NotNull Path normalizedRoot, @NotNull Path candidate,
+            @NotNull String relativePath) {
         try {
             Path realRoot = normalizedRoot.toRealPath();
             Path existing = candidate;
@@ -69,11 +106,11 @@ public final class LuaModPathSecurity {
                 existing = existing.getParent();
             }
             if (existing != null && !existing.toRealPath().startsWith(realRoot)) {
-                throw new IllegalArgumentException("LuaMod path follows a symlink outside its root: " + relativePath);
+                throw new IllegalArgumentException(
+                        "LuaMod path follows a symlink outside its root: " + relativePath);
             }
         } catch (IOException e) {
             throw new IllegalArgumentException("Unable to validate LuaMod path: " + relativePath, e);
         }
-        return candidate;
     }
 }

@@ -34,6 +34,9 @@ import java.util.function.Function;
  * the same per-chunk frequency and height rules as vanilla ores.
  */
 public class MixedVeinFeature extends Feature<MixedVeinConfiguration> {
+    private static final double ZERO_RADIUS_DELTA = 0.0;
+    private static final double UNIT_SPHERE_BOUND = 1.0;
+    private static final float VEIN_SPREAD_DIVISOR = 8.0F;
 
     public MixedVeinFeature(Codec<MixedVeinConfiguration> codec) {
         super(codec);
@@ -45,26 +48,11 @@ public class MixedVeinFeature extends Feature<MixedVeinConfiguration> {
         BlockPos origin = context.origin();
         WorldGenLevel level = context.level();
         MixedVeinConfiguration config = context.config();
-        float angle = random.nextFloat() * (float) Math.PI;
-        float spread = (float) config.size() / 8.0F;
-        int radius = Mth.ceil(((float) config.size() / 16.0F * 2.0F + 1.0F) / 2.0F);
-        double minX = (double) origin.getX() + Math.sin(angle) * (double) spread;
-        double maxX = (double) origin.getX() - Math.sin(angle) * (double) spread;
-        double minZ = (double) origin.getZ() + Math.cos(angle) * (double) spread;
-        double maxZ = (double) origin.getZ() - Math.cos(angle) * (double) spread;
-        double minY = (double) (origin.getY() + random.nextInt(3) - 2);
-        double maxY = (double) (origin.getY() + random.nextInt(3) - 2);
-        int x = origin.getX() - Mth.ceil(spread) - radius;
-        int y = origin.getY() - 2 - radius;
-        int z = origin.getZ() - Mth.ceil(spread) - radius;
-        int width = 2 * (Mth.ceil(spread) + radius);
-        int height = 2 * (2 + radius);
-
-        for (int l1 = x; l1 <= x + width; l1++) {
-            for (int i2 = z; i2 <= z + width; i2++) {
-                if (y <= level.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, l1, i2)) {
-                    return doPlace(level, random, config, minX, maxX, minZ, maxZ,
-                            minY, maxY, x, y, z, width, height);
+        VeinShape shape = VeinShape.from(origin, random, config);
+        for (int worldX = shape.x(); worldX <= shape.x() + shape.width(); worldX++) {
+            for (int worldZ = shape.z(); worldZ <= shape.z() + shape.width(); worldZ++) {
+                if (shape.y() <= level.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, worldX, worldZ)) {
+                    return doPlace(level, random, config, shape);
                 }
             }
         }
@@ -72,126 +60,106 @@ public class MixedVeinFeature extends Feature<MixedVeinConfiguration> {
     }
 
     @SuppressWarnings("deprecation")
-    protected boolean doPlace(WorldGenLevel level, RandomSource random,
-                              MixedVeinConfiguration config,
-                              double minX, double maxX, double minZ, double maxZ,
-                              double minY, double maxY,
-                              int x, int y, int z, int width, int height) {
-        int placed = 0;
-        BitSet visited = new BitSet(width * height * width);
-        BlockPos.MutableBlockPos mutable = new BlockPos.MutableBlockPos();
+    protected boolean doPlace(WorldGenLevel level, RandomSource random, MixedVeinConfiguration config,
+                              VeinShape shape) {
         int size = config.size();
-        double[] spheres = new double[size * 4];
-
-        for (int k = 0; k < size; k++) {
-            float f = (float) k / (float) size;
-            double d0 = Mth.lerp(f, minX, maxX);
-            double d1 = Mth.lerp(f, minY, maxY);
-            double d2 = Mth.lerp(f, minZ, maxZ);
-            double d3 = random.nextDouble() * (double) size / 16.0;
-            double d4 = ((double) (Mth.sin((float) Math.PI * f) + 1.0F) * d3 + 1.0) / 2.0;
-            spheres[k * 4 + 0] = d0;
-            spheres[k * 4 + 1] = d1;
-            spheres[k * 4 + 2] = d2;
-            spheres[k * 4 + 3] = d4;
-        }
-
-        for (int l3 = 0; l3 < size - 1; l3++) {
-            if (!(spheres[l3 * 4 + 3] <= 0.0)) {
-                for (int i4 = l3 + 1; i4 < size; i4++) {
-                    if (!(spheres[i4 * 4 + 3] <= 0.0)) {
-                        double d8 = spheres[l3 * 4 + 0] - spheres[i4 * 4 + 0];
-                        double d10 = spheres[l3 * 4 + 1] - spheres[i4 * 4 + 1];
-                        double d12 = spheres[l3 * 4 + 2] - spheres[i4 * 4 + 2];
-                        double d14 = spheres[l3 * 4 + 3] - spheres[i4 * 4 + 3];
-                        if (d14 * d14 > d8 * d8 + d10 * d10 + d12 * d12) {
-                            if (d14 > 0.0) {
-                                spheres[i4 * 4 + 3] = -1.0;
-                            } else {
-                                spheres[l3 * 4 + 3] = -1.0;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        List<MixedVeinConfiguration.WeightedTarget> matching = new ArrayList<>();
+        double[] spheres = SphereField.build(random, config, shape);
+        SphereField.mergeOverlapping(spheres, size);
+        var vein = new VeinContext(level, random, config, shape,
+                new BitSet(shape.width() * shape.height() * shape.width()),
+                new BlockPos.MutableBlockPos(), new ArrayList<>());
         try (BulkSectionAccess access = new BulkSectionAccess(level)) {
-            for (int j4 = 0; j4 < size; j4++) {
-                double radiusAt = spheres[j4 * 4 + 3];
-                if (!(radiusAt < 0.0)) {
-                    double cx = spheres[j4 * 4 + 0];
-                    double cy = spheres[j4 * 4 + 1];
-                    double cz = spheres[j4 * 4 + 2];
-                    int x0 = Math.max(Mth.floor(cx - radiusAt), x);
-                    int y0 = Math.max(Mth.floor(cy - radiusAt), y);
-                    int z0 = Math.max(Mth.floor(cz - radiusAt), z);
-                    int x1 = Math.max(Mth.floor(cx + radiusAt), x0);
-                    int y1 = Math.max(Mth.floor(cy + radiusAt), y0);
-                    int z1 = Math.max(Mth.floor(cz + radiusAt), z0);
+            return carve(vein, spheres, access) > 0;
+        }
+    }
 
-                    for (int px = x0; px <= x1; px++) {
-                        double dx = ((double) px + 0.5 - cx) / radiusAt;
-                        if (dx * dx < 1.0) {
-                            for (int py = y0; py <= y1; py++) {
-                                double dy = ((double) py + 0.5 - cy) / radiusAt;
-                                if (dx * dx + dy * dy < 1.0) {
-                                    for (int pz = z0; pz <= z1; pz++) {
-                                        double dz = ((double) pz + 0.5 - cz) / radiusAt;
-                                        if (dx * dx + dy * dy + dz * dz < 1.0
-                                                && !level.isOutsideBuildHeight(py)) {
-                                            int index = px - x + (py - y) * width
-                                                    + (pz - z) * width * height;
-                                            if (!visited.get(index)) {
-                                                visited.set(index);
-                                                mutable.set(px, py, pz);
-                                                if (level.ensureCanWrite(mutable)) {
-                                                    LevelChunkSection section =
-                                                            access.getSection(mutable);
-                                                    if (section != null) {
-                                                        int sx = SectionPos.sectionRelative(px);
-                                                        int sy = SectionPos.sectionRelative(py);
-                                                        int sz = SectionPos.sectionRelative(pz);
-                                                        BlockState current =
-                                                                section.getBlockState(sx, sy, sz);
-                                                        matching.clear();
-                                                        int totalWeight = 0;
-                                                        for (MixedVeinConfiguration.WeightedTarget candidate
-                                                                : config.targets()) {
-                                                            if (canPlaceOre(current,
-                                                                    access::getBlockState,
-                                                                    random, config, candidate, mutable)) {
-                                                                matching.add(candidate);
-                                                                totalWeight += candidate.weight();
-                                                            }
-                                                        }
-                                                        if (!matching.isEmpty()) {
-                                                            int roll = random.nextInt(totalWeight);
-                                                            for (MixedVeinConfiguration.WeightedTarget candidate
-                                                                    : matching) {
-                                                                roll -= candidate.weight();
-                                                                if (roll < 0) {
-                                                                    section.setBlockState(sx, sy, sz,
-                                                                            candidate.state(), false);
-                                                                    placed++;
-                                                                    break;
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+    private static int carve(VeinContext vein, double[] spheres, BulkSectionAccess access) {
+        int placed = 0;
+        for (int index = 0; index < vein.config().size(); index++) {
+            double radius = SphereField.radius(spheres, index);
+            if (radius >= ZERO_RADIUS_DELTA) {
+                placed += carveSphere(vein, access, spheres, index, radius);
+            }
+        }
+        return placed;
+    }
+
+    private static int carveSphere(VeinContext vein, BulkSectionAccess access, double[] spheres,
+                                   int index, double radius) {
+        VeinShape shape = vein.shape();
+        double centerX = SphereField.center(spheres, index, 0);
+        double centerY = SphereField.center(spheres, index, 1);
+        double centerZ = SphereField.center(spheres, index, 2);
+        int minX = Math.max(Mth.floor(centerX - radius), shape.x());
+        int minY = Math.max(Mth.floor(centerY - radius), shape.y());
+        int minZ = Math.max(Mth.floor(centerZ - radius), shape.z());
+        int maxX = Math.max(Mth.floor(centerX + radius), minX);
+        int maxY = Math.max(Mth.floor(centerY + radius), minY);
+        int maxZ = Math.max(Mth.floor(centerZ + radius), minZ);
+        int placed = 0;
+        for (int blockX = minX; blockX <= maxX; blockX++) {
+            double dx = (blockX + 0.5 - centerX) / radius;
+            for (int blockY = minY; blockY <= maxY; blockY++) {
+                double dy = (blockY + 0.5 - centerY) / radius;
+                for (int blockZ = minZ; blockZ <= maxZ; blockZ++) {
+                    double dz = (blockZ + 0.5 - centerZ) / radius;
+                    if (dx * dx + dy * dy + dz * dz < UNIT_SPHERE_BOUND
+                            && !vein.level().isOutsideBuildHeight(blockY)) {
+                        placed += placeAt(vein, access, blockX, blockY, blockZ);
                     }
                 }
             }
         }
-        return placed > 0;
+        return placed;
+    }
+
+    private static int placeAt(VeinContext vein, BulkSectionAccess access, int blockX, int blockY, int blockZ) {
+        VeinShape shape = vein.shape();
+        int index = blockX - shape.x() + (blockY - shape.y()) * shape.width()
+                + (blockZ - shape.z()) * shape.width() * shape.height();
+        if (vein.visited().get(index)) {
+            return 0;
+        }
+        vein.visited().set(index);
+        vein.mutable().set(blockX, blockY, blockZ);
+        if (!vein.level().ensureCanWrite(vein.mutable())) {
+            return 0;
+        }
+        LevelChunkSection section = access.getSection(vein.mutable());
+        if (section == null) {
+            return 0;
+        }
+        int localX = SectionPos.sectionRelative(blockX);
+        int localY = SectionPos.sectionRelative(blockY);
+        int localZ = SectionPos.sectionRelative(blockZ);
+        BlockState current = section.getBlockState(localX, localY, localZ);
+        return rollTarget(vein, access, section, current, localX, localY, localZ);
+    }
+
+    private static int rollTarget(VeinContext vein, BulkSectionAccess access, LevelChunkSection section,
+                                  BlockState current, int localX, int localY, int localZ) {
+        List<MixedVeinConfiguration.WeightedTarget> matching = vein.matching();
+        matching.clear();
+        int totalWeight = 0;
+        for (MixedVeinConfiguration.WeightedTarget candidate : vein.config().targets()) {
+            if (canPlaceOre(current, access::getBlockState, vein.random(), vein.config(), candidate,
+                    vein.mutable())) {
+                matching.add(candidate);
+                totalWeight += candidate.weight();
+            }
+        }
+        if (matching.isEmpty()) {
+            return 0;
+        }
+        int roll = vein.random().nextInt(totalWeight);
+        for (MixedVeinConfiguration.WeightedTarget candidate : matching) {
+            roll -= candidate.weight();
+            if (roll < 0) {
+                section.setBlockState(localX, localY, localZ, candidate.state(), false);
+                return 1;
+            }
+        }
+        return 0;
     }
 
     /**
@@ -211,6 +179,39 @@ public class MixedVeinFeature extends Feature<MixedVeinConfiguration> {
         if (chance <= 0.0F || random.nextFloat() >= chance) {
             return true;
         }
-        return !Feature.isAdjacentToAir(adjacentAccessor, pos);
+        return !isAdjacentToAir(adjacentAccessor, pos);
+    }
+
+    /** Ellipsoid bounds computed once per vein. */
+    record VeinShape(double minX, double maxX, double minZ, double maxZ, double minY, double maxY,
+                     int x, int y, int z, int width, int height) {
+
+        static VeinShape from(BlockPos origin, RandomSource random, MixedVeinConfiguration config) {
+            float angle = random.nextFloat() * (float) Math.PI;
+            float spread = config.size() / VEIN_SPREAD_DIVISOR;
+            int radius = Mth.ceil((config.size() / 16.0F * 2.0F + 1.0F) / 2.0F);
+            return new VeinShape(
+                    origin.getX() + Math.sin(angle) * spread,
+                    origin.getX() - Math.sin(angle) * spread,
+                    origin.getZ() + Math.cos(angle) * spread,
+                    origin.getZ() - Math.cos(angle) * spread,
+                    origin.getY() + random.nextInt(3) - 2,
+                    origin.getY() + random.nextInt(3) - 2,
+                    origin.getX() - Mth.ceil(spread) - radius,
+                    origin.getY() - 2 - radius,
+                    origin.getZ() - Mth.ceil(spread) - radius,
+                    2 * (Mth.ceil(spread) + radius),
+                    2 * (2 + radius));
+        }
+    }
+
+    /** Per-vein mutable state shared by the carve walk. */
+    record VeinContext(WorldGenLevel level, RandomSource random, MixedVeinConfiguration config,
+                       VeinShape shape, BitSet visited, BlockPos.MutableBlockPos mutable,
+                       List<MixedVeinConfiguration.WeightedTarget> matching) {
     }
 }
+
+
+
+

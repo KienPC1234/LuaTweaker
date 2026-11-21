@@ -1,37 +1,93 @@
 package com.luatweaker.core.mod;
 
-import com.luatweaker.api.log.LogStage;
-import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.api.vm.ILuaEngine;
-import com.luatweaker.api.vm.ILuaTable;
-import com.luatweaker.api.vm.ILuaValue;
-
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Autonomous LuaMod Manager responsible for scanning, sorting dependencies,
+ * Autonomous LuaMod Manager: scanning, sorting dependencies,
  * mounting assets/data, and executing single entrypoint main.lua for each mod in luamods/.
+ *
+ * <p>Thin facade over focused collaborators: {@link ModDiscovery} scans,
+ * {@link ModSwitches} owns the on/off switches and deletion,
+ * {@link ModConfigStore} owns editable configs,
+ * {@link ModDependencyGates} owns load gates and ordering,
+ * {@link ModIntegrationRunner} runs cross-mod entries, and
+ * {@link ModLoader} runs the load cycle.</p>
  */
-public class LuaModManager {
+public final class LuaModManager {
+    private LuaModManager() {}
 
     private static final String LUAMODS_DIR_NAME = "luamods";
-    private static final String MANIFEST_FILE = "manifest.json";
-    private static final String DEFAULT_CONFIG_FILE = "default_config.json";
-    private static final String MODS_MANAGER_FILE = "mods_manager.json";
-    private static final String ZIP_SUFFIX = ".zip";
 
     private static final Map<String, LuaMod> LOADED_MODS = new ConcurrentHashMap<>();
     private static final Map<String, String> LOAD_ERRORS = new ConcurrentHashMap<>();
+
+    /**
+     * Per-mod integration outcomes from the most recent load cycle:
+     * {@code modId -> (targetModId -> "loaded ..."/"skipped: ..."/"error: ...")}.
+     * Always soft: an integration never fails its owning mod.
+     */
+    private static final Map<String, Map<String, String>> INTEGRATION_STATUS = new ConcurrentHashMap<>();
+
+    /**
+     * Platform environment injected once by the platform layer (NeoForge) before
+     * loading. Core-engine stays free of Minecraft/NeoForge imports; when a value
+     * is unknown ({@code null}) its gate fails open with a warning instead of
+     * skipping every mod that declares the matching constraint.
+     */
+    private static final AtomicReference<String> ENGINE_VERSION = new AtomicReference<>();
+    private static final AtomicReference<String> MINECRAFT_VERSION = new AtomicReference<>();
+    private static final AtomicReference<Map<String, String>> INSTALLED_MODS =
+            new AtomicReference<>(Collections.emptyMap());
+
+    /** Integration outcomes from the most recent load cycle (empty when nothing declared). */
+    public static @NotNull Map<String, Map<String, String>> getIntegrationStatus() {
+        Map<String, Map<String, String>> copy =
+                Collections.synchronizedMap(new LinkedHashMap<>());
+        for (Map.Entry<String, Map<String, String>> entry : INTEGRATION_STATUS.entrySet()) {
+            copy.put(entry.getKey(), unmodifiableCopy(entry.getValue()));
+        }
+        return Collections.unmodifiableMap(copy);
+    }
+
+    private static @NotNull Map<String, String> unmodifiableCopy(@NotNull Map<String, String> inner) {
+        return Collections.unmodifiableMap(new LinkedHashMap<>(inner));
+    }
+
+    /** Records the running LuaTweaker engine version (from the platform mod container). */
+    public static void setEngineVersion(@Nullable String version) {
+        ENGINE_VERSION.set(version);
+    }
+
+    /** Records the running Minecraft version. */
+    public static void setMinecraftVersion(@Nullable String version) {
+        MINECRAFT_VERSION.set(version);
+    }
+
+    /** Records installed platform mods ({@code modId -> version}) for {@code "mods"} gates. */
+    public static void setInstalledMods(@Nullable Map<String, String> mods) {
+        INSTALLED_MODS.set(mods == null
+                ? Collections.emptyMap()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(mods)));
+    }
+
+    /** Clears injected environment state (tests). */
+    static void resetEnvironment() {
+        ENGINE_VERSION.set(null);
+        MINECRAFT_VERSION.set(null);
+        INSTALLED_MODS.set(Collections.emptyMap());
+    }
 
     public static @NotNull Map<String, LuaMod> getLoadedMods() {
         return Collections.unmodifiableMap(LOADED_MODS);
@@ -42,9 +98,98 @@ public class LuaModManager {
         return Collections.unmodifiableMap(LOAD_ERRORS);
     }
 
+    /** Resolves the editable config file for a mod (may not exist yet). */
+    public static @NotNull File configFileFor(@NotNull File targetDir, @NotNull String modId) {
+        return ModConfigStore.configFileFor(resolveLuamodsDir(targetDir), modId);
+    }
+
     /**
-     * Scans and loads all autonomous LuaMods from the given luamods directory.
+     * Reads a mod's editable config: the live {@code luaconfig/<id>.json} when
+     * present, otherwise the shipped {@code default_config.json} (directory mods
+     * only), otherwise {@code null} when the mod has no config at all.
      */
+    public static @Nullable String readConfigFor(@NotNull File targetDir, @NotNull String modId) {
+        return ModConfigStore.readConfigFor(resolveLuamodsDir(targetDir), modId);
+    }
+
+    /**
+     * Validates and saves a mod's editable config. The content must be a JSON
+     * object so a typo cannot brick the mod's next load. The previous live
+     * file is kept as {@code <id>.json.bak} (single backup) before overwriting.
+     *
+     * @return {@code null} on success, otherwise a human-readable error
+     */
+    public static @Nullable String writeConfigFor(@NotNull File targetDir, @NotNull String modId,
+                                                  @NotNull String json) {
+        return ModConfigStore.writeConfigFor(resolveLuamodsDir(targetDir), modId, json);
+    }
+
+    /**
+     * Lists every discovered mod with its switch, load result, and dependencies.
+     * Sorted by id. Safe to call from UIs at any time; triggers no loading.
+     */
+    public static @NotNull List<ModSummary> listModSummaries(@NotNull File targetDir) {
+        File luamodsDir = resolveLuamodsDir(targetDir);
+        if (!luamodsDir.isDirectory()) {
+            return List.of();
+        }
+        Map<String, Boolean> state = ModSwitches.readModsState(luamodsDir);
+        List<ModSummary> out = new ArrayList<>();
+        for (DiscoveredMod found : ModDiscovery.discoverMods(luamodsDir)) {
+            LuaModManifest manifest = found.manifest();
+            String id = manifest.id();
+            out.add(ModSummary.summarize(manifest, !Boolean.FALSE.equals(state.get(id)),
+                    LOADED_MODS.containsKey(id), LOAD_ERRORS.get(id),
+                    getIntegrationStatus().getOrDefault(id, Map.of())));
+        }
+        out.sort(Comparator.comparing(ModSummary::id, String.CASE_INSENSITIVE_ORDER));
+        return List.copyOf(out);
+    }
+
+    /**
+     * Flips a mod's on/off switch and persists {@code mods_manager.json}.
+     *
+     * @return ids whose switch actually changed, in discovery order
+     */
+    public static @NotNull List<String> setModEnabled(@NotNull File targetDir,
+                                                      @NotNull String modId, boolean enabled) {
+        return ModSwitches.applySwitch(resolveLuamodsDir(targetDir), modId, enabled);
+    }
+
+    /**
+     * Previews which mods disabling {@code modId} would switch off: the target
+     * plus every mod that (transitively) requires it through a non-optional
+     * dependency. In discovery order. Empty when the id is unknown.
+     */
+    public static @NotNull List<String> previewDisableCascade(@NotNull File targetDir,
+                                                              @NotNull String modId) {
+        return ModSwitches.previewDisableCascade(resolveLuamodsDir(targetDir), modId);
+    }
+
+    /**
+     * Deletes a mod from disk (directory mods recursively, zip mods as files)
+     * and drops its on/off switch. There is no undo; the UI confirms first.
+     *
+     * @return {@code null} on success, otherwise a human-readable error
+     */
+    public static @Nullable String deleteMod(@NotNull File targetDir, @NotNull String modId) {
+        File luamodsDir = resolveLuamodsDir(targetDir);
+        if (!luamodsDir.isDirectory()) {
+            return "luamods directory not found.";
+        }
+        return ModSwitches.deleteMod(luamodsDir, modId);
+    }
+
+    /**
+     * Resolves the luamods directory from a game/lua target dir: the target
+     * itself when it already IS the luamods dir, otherwise its {@code luamods}
+     * child. Shared by the loader and the management UI so both read one path.
+     */
+    public static @NotNull File resolveLuamodsDir(@NotNull File targetDir) {
+        return LUAMODS_DIR_NAME.equalsIgnoreCase(targetDir.getName()) ? targetDir : new File(targetDir, LUAMODS_DIR_NAME);
+    }
+
+    /** Scans and loads all autonomous LuaMods from the given luamods directory. */
     public static void loadLuaMods(@NotNull File targetDir, @NotNull ILuaEngine engine,
                                    @NotNull String currentEnv) {
         loadLuaMods(targetDir, engine, currentEnv, LuaModLoadObserver.NONE);
@@ -57,232 +202,8 @@ public class LuaModManager {
      */
     public static void loadLuaMods(@NotNull File targetDir, @NotNull ILuaEngine engine,
                                    @NotNull String currentEnv, @NotNull LuaModLoadObserver observer) {
-        fireModTeardownHooks(engine);
-        LOADED_MODS.clear();
-        LOAD_ERRORS.clear();
-
-        File luamodsDir = LUAMODS_DIR_NAME.equalsIgnoreCase(targetDir.getName()) ? targetDir : new File(targetDir, LUAMODS_DIR_NAME);
-        if (!luamodsDir.exists()) {
-            LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                    "[LuaModManager] luamods directory not found: " + luamodsDir.getAbsolutePath());
-            return;
-        }
-
-        File[] files = luamodsDir.listFiles();
-        if (files == null || files.length == 0) return;
-        // File-system enumeration order is unspecified; stable discovery makes dependency
-        // diagnostics and duplicate-id behavior reproducible across operating systems.
-        Arrays.sort(files, Comparator.comparing(File::getName, String.CASE_INSENSITIVE_ORDER));
-
-        List<DiscoveredMod> discovered = new ArrayList<>();
-
-        for (File file : files) {
-            if (file.isDirectory()) {
-                File manifestFile = new File(file, MANIFEST_FILE);
-                if (manifestFile.exists()) {
-                    try {
-                        String json = Files.readString(manifestFile.toPath(), StandardCharsets.UTF_8);
-                        LuaModManifest manifest = LuaModManifest.parseJson(json);
-                        if (manifest != null) {
-                            String defaultConfig = null;
-                            File cfgFile = new File(file, DEFAULT_CONFIG_FILE);
-                            if (cfgFile.exists()) defaultConfig = Files.readString(cfgFile.toPath(), StandardCharsets.UTF_8);
-                            discovered.add(new DiscoveredMod(manifest, file, defaultConfig));
-                        }
-                    } catch (Exception e) {
-                        LuaTweakerLog.get().error(LogStage.SYSTEM,
-                                "[LuaModManager] Failed to read manifest from directory: " + file.getName() + " - " + e.getMessage());
-                    }
-                }
-            } else if (file.getName().endsWith(ZIP_SUFFIX)) {
-                try (ZipFile zip = new ZipFile(file)) {
-                    ZipEntry manifestEntry = zip.getEntry(MANIFEST_FILE);
-                    if (manifestEntry != null) {
-                        try (InputStream is = zip.getInputStream(manifestEntry)) {
-                            String json = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-                            LuaModManifest manifest = LuaModManifest.parseJson(json);
-                            if (manifest != null) {
-                                String defaultConfig = null;
-                                ZipEntry cfgEntry = zip.getEntry(DEFAULT_CONFIG_FILE);
-                                if (cfgEntry != null) {
-                                    try (InputStream cfgIs = zip.getInputStream(cfgEntry)) {
-                                        defaultConfig = new String(cfgIs.readAllBytes(), StandardCharsets.UTF_8);
-                                    }
-                                }
-                                discovered.add(new DiscoveredMod(manifest, file, defaultConfig));
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    LuaTweakerLog.get().error(LogStage.SYSTEM,
-                            "[LuaModManager] Failed to read zip mod: " + file.getName() + " - " + e.getMessage());
-                }
-            }
-        }
-
-        if (discovered.isEmpty()) return;
-
-        // Manage mods_manager.json state
-        File modsManagerFile = new File(luamodsDir, MODS_MANAGER_FILE);
-        Map<String, Boolean> modsState = new LinkedHashMap<>();
-        com.google.gson.Gson prettyGson = new com.google.gson.GsonBuilder().setPrettyPrinting().create();
-
-        if (modsManagerFile.exists()) {
-            try {
-                String content = Files.readString(modsManagerFile.toPath(), StandardCharsets.UTF_8);
-                Map<String, Boolean> parsed = prettyGson.fromJson(content, Map.class);
-                if (parsed != null) {
-                    for (Map.Entry<String, Boolean> e : parsed.entrySet()) {
-                        modsState.put(e.getKey(), Boolean.TRUE.equals(e.getValue()));
-                    }
-                }
-            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Failed to read mods_manager.json: " + e.getMessage()); }
-        }
-
-        boolean stateChanged = false;
-        for (DiscoveredMod dm : discovered) {
-            String modId = dm.manifest().id();
-            if (!modsState.containsKey(modId)) {
-                modsState.put(modId, true);
-                stateChanged = true;
-            }
-        }
-
-        if (stateChanged || !modsManagerFile.exists()) {
-            try {
-                Files.writeString(modsManagerFile.toPath(), prettyGson.toJson(modsState), StandardCharsets.UTF_8);
-                LuaTweakerLog.get().info(LogStage.SYSTEM, "[LuaModManager] Updated " + modsManagerFile.getAbsolutePath());
-            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Failed to write mods_manager.json: " + e.getMessage()); }
-        }
-
-        LuaTweakerLog.get().info(LogStage.SYSTEM,
-                "========================================================================");
-        LuaTweakerLog.get().info(LogStage.SYSTEM,
-                "                     LUATWEAKER LUAMOD MANAGER                          ");
-        LuaTweakerLog.get().info(LogStage.SYSTEM,
-                "========================================================================");
-        LuaTweakerLog.get().info(LogStage.SYSTEM,
-                "[LuaModManager] Scanning directory: " + luamodsDir.getName() + " (" + luamodsDir.getAbsolutePath() + ")");
-        LuaTweakerLog.get().info(LogStage.SYSTEM,
-                "[LuaModManager] Discovered " + discovered.size() + " Autonomous LuaMod(s):");
-
-        for (DiscoveredMod dm : discovered) {
-            String modId = dm.manifest().id();
-            boolean isEnabled = !Boolean.FALSE.equals(modsState.get(modId));
-            String statusStr = isEnabled ? "[ENABLED]" : "[DISABLED]";
-            LuaTweakerLog.get().info(LogStage.SYSTEM,
-                    String.format("[LuaModManager]   - %s v%s (%s) %s",
-                            modId, dm.manifest().version(), dm.manifest().name(), statusStr));
-        }
-        LuaTweakerLog.get().info(LogStage.SYSTEM,
-                "------------------------------------------------------------------------");
-
-        // Topological Sort by dependencies
-        List<DiscoveredMod> sorted = sortModsByDependencies(discovered);
-
-        int totalMods = sorted.size();
-        int modIndex = 0;
-        for (DiscoveredMod dm : sorted) {
-            String modId = dm.manifest().id();
-            modIndex++;
-            observer.onModStart(modIndex, totalMods, modId);
-            if (Boolean.FALSE.equals(modsState.get(modId))) {
-                LuaTweakerLog.get().info(LogStage.SYSTEM,
-                        "[LuaModManager] Mod '" + modId + "' is DISABLED in mods_manager.json - Skipping execution.");
-                continue;
-            }
-
-            List<String> missingDependencies = dm.manifest().dependencies().stream()
-                    .filter(dep -> !LOADED_MODS.containsKey(dep))
-                    .toList();
-            if (!missingDependencies.isEmpty()) {
-                String dependencyMessage = "Dependencies not loaded: " + String.join(", ", missingDependencies);
-                LOAD_ERRORS.put(modId, dependencyMessage);
-                LuaTweakerLog.get().error(LogStage.SYSTEM,
-                        "[LuaModManager] Skipping mod '" + modId + "': " + dependencyMessage);
-                continue;
-            }
-
-            List<String> missingOptional = dm.manifest().optionalDependencies().stream()
-                    .filter(dep -> !LOADED_MODS.containsKey(dep))
-                    .toList();
-            if (!missingOptional.isEmpty()) {
-                LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                        "[LuaModManager] Mod '" + modId + "' optional dependencies not loaded: "
-                                + String.join(", ", missingOptional) + " - continuing.");
-            }
-
-            String modEnv = dm.manifest().environment();
-            if (!shouldLoadInEnvironment(modEnv, currentEnv)) {
-                LuaTweakerLog.get().info(LogStage.SYSTEM,
-                        "[LuaModManager] Mod '" + modId + "' is declared as '" + modEnv + "' but current environment is '" + currentEnv + "' - Skipping execution.");
-                continue;
-            }
-
-            // Initialize fresh dedicated log file for this mod
-            com.luatweaker.core.logger.AsyncFileLogger.get().initModLog(modId);
-
-            LuaTweakerLog.get().info(LogStage.SYSTEM,
-                    "[LuaModManager] Loading active LuaMod: " + modId + " v" + dm.manifest().version() + " by " + dm.manifest().author() + " (" + dm.file().getName() + ")");
-
-            LuaMod mod = new LuaMod(dm.manifest(), dm.file(), currentEnv, LOADED_MODS, luamodsDir);
-            mod.ensureConfigFile(dm.defaultConfig());
-
-            ILuaTable modTable = mod.createModTable(engine);
-            engine.getGlobalEnvironment().rawset("mod", modTable);
-            engine.getGlobalEnvironment().rawset("Mod", modTable);
-
-            // Execute main.lua ONLY
-            String mainScriptPath = dm.manifest().main();
-            LuaModContext.pushLoadingMod(modId);
-            try {
-                clearEngineError(engine);
-                String mainCode = readScriptContent(dm.file(), mainScriptPath);
-                if (mainCode != null) {
-                    LuaTweakerLog.get().info(LogStage.SCRIPT_LOAD,
-                            "[LuaMod][" + modId + "] Executing entrypoint: " + mainScriptPath);
-                    engine.executeString(mainCode, modId + "/" + mainScriptPath);
-                    String loadError = clearEngineError(engine);
-                    if (loadError != null) {
-                        LOAD_ERRORS.put(modId, loadError);
-                        continue;
-                    }
-
-                    // Trigger mod.OnEnable() if provided
-                    ILuaValue onEnableVal = modTable.rawget("OnEnable");
-                    if (onEnableVal == null || onEnableVal.isNil()) {
-                        onEnableVal = modTable.rawget("onEnable");
-                    }
-                    if (onEnableVal != null && onEnableVal.isFunction()) {
-                        engine.callFunction(onEnableVal);
-                        String enableError = clearEngineError(engine);
-                        if (enableError != null) {
-                            LOAD_ERRORS.put(modId, enableError);
-                            continue;
-                        }
-                    }
-                    LOADED_MODS.put(modId, mod);
-                    LuaTweakerLog.get().info(LogStage.SCRIPT_LOAD,
-                            "[LuaMod][" + dm.manifest().id() + "] Successfully loaded v" + dm.manifest().version());
-                } else {
-                    String missingMessage = "Main entrypoint script not found: " + mainScriptPath;
-                    LOAD_ERRORS.put(modId, missingMessage);
-                    LuaTweakerLog.get().error(LogStage.SCRIPT_LOAD,
-                            "[LuaMod][" + dm.manifest().id() + "] " + missingMessage);
-                }
-            } catch (Exception e) {
-                LOAD_ERRORS.put(modId, errorMessage(e));
-                LuaTweakerLog.get().error(LogStage.SCRIPT_LOAD,
-                        "[LuaMod][" + dm.manifest().id() + "] Error executing " + mainScriptPath + ": " + errorMessage(e));
-            } finally {
-                LuaModContext.popLoadingMod();
-            }
-        }
-        LuaTweakerLog.get().info(LogStage.SYSTEM,
-                "[LuaModManager] Successfully initialized " + LOADED_MODS.size() + " active LuaMod(s).");
-        observer.onLoadComplete(LOADED_MODS.size(), totalMods);
-        LuaTweakerLog.get().info(LogStage.SYSTEM,
-                "========================================================================");
+        ModLoader.load(targetDir, engine, currentEnv, observer, LOADED_MODS, LOAD_ERRORS,
+                INTEGRATION_STATUS, INSTALLED_MODS.get(), ENGINE_VERSION.get(), MINECRAFT_VERSION.get());
     }
 
     /**
@@ -293,110 +214,6 @@ public class LuaModManager {
      * @param engine engine that loaded the mods
      */
     public static void fireModTeardownHooks(@NotNull ILuaEngine engine) {
-        for (Map.Entry<String, LuaMod> entry : LOADED_MODS.entrySet()) {
-            String modId = entry.getKey();
-            LuaMod mod = entry.getValue();
-            ILuaTable modTable = mod.getModTable();
-            if (modTable == null) continue;
-
-            ILuaValue onDisable = modTable.rawget("OnDisable");
-            if (onDisable == null || onDisable.isNil()) {
-                onDisable = modTable.rawget("onDisable");
-            }
-            if (onDisable != null && onDisable.isFunction()) {
-                try {
-                    LuaTweakerLog.get().info(LogStage.SYSTEM,
-                            "[LuaMod][" + modId + "] Firing OnDisable teardown hook...");
-                    engine.callFunction(onDisable);
-                } catch (Exception e) {
-                    LuaTweakerLog.get().error(LogStage.SYSTEM,
-                            "[LuaMod][" + modId + "] Error in OnDisable hook: " + e.getMessage());
-                }
-            }
-        }
-        LOADED_MODS.clear();
-    }
-
-    private static boolean shouldLoadInEnvironment(String modEnv, String currentEnv) {
-        if ("universal".equals(currentEnv)) return true;
-        return "universal".equals(modEnv) || modEnv.equals(currentEnv);
-    }
-
-    private static String clearEngineError(ILuaEngine engine) {
-        return engine.getAndClearLastExecutionError();
-    }
-
-    private static String errorMessage(Exception e) {
-        String message = e.getMessage();
-        return (message == null || message.isBlank()) ? e.getClass().getSimpleName() : message;
-    }
-
-    private static String readScriptContent(File fileOrDir, String relPath) {
-        relPath = LuaModPathSecurity.validateEntryPoint(relPath);
-        if (fileOrDir.isDirectory()) {
-            Path scriptPath = LuaModPathSecurity.resolveContained(fileOrDir.toPath(), relPath);
-            File scriptFile = scriptPath.toFile();
-            if (scriptFile.exists()) {
-                try {
-                    return Files.readString(scriptFile.toPath(), StandardCharsets.UTF_8);
-                } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Failed to read script '" + relPath + "': " + e.getMessage()); }
-            }
-        } else if (fileOrDir.getName().endsWith(".zip")) {
-            try (ZipFile zip = new ZipFile(fileOrDir)) {
-                ZipEntry entry = zip.getEntry(relPath);
-                if (entry != null) {
-                    try (InputStream is = zip.getInputStream(entry)) {
-                        return new String(is.readAllBytes(), StandardCharsets.UTF_8);
-                    }
-                }
-            } catch (Exception e) { com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM, "Failed to read script '" + relPath + "' from zip: " + e.getMessage()); }
-        }
-        return null;
-    }
-
-    private static record DiscoveredMod(LuaModManifest manifest, File file, String defaultConfig) {}
-
-    private static List<DiscoveredMod> sortModsByDependencies(List<DiscoveredMod> mods) {
-        Map<String, DiscoveredMod> modMap = new HashMap<>();
-        for (DiscoveredMod m : mods) modMap.put(m.manifest().id(), m);
-
-        List<DiscoveredMod> sorted = new ArrayList<>();
-        Set<String> visited = new HashSet<>();
-        Set<String> visiting = new HashSet<>();
-
-        for (DiscoveredMod m : mods) {
-            visitMod(m, modMap, sorted, visited, visiting);
-        }
-        return sorted;
-    }
-
-    private static void visitMod(DiscoveredMod mod,
-                                 Map<String, DiscoveredMod> modMap,
-                                 List<DiscoveredMod> sorted,
-                                 Set<String> visited,
-                                 Set<String> visiting) {
-        String id = mod.manifest().id();
-        if (visited.contains(id)) return;
-        if (visiting.contains(id)) {
-            LuaTweakerLog.get().warn(LogStage.SYSTEM, "[LuaModManager] Circular dependency detected involving: " + id);
-            return;
-        }
-
-        visiting.add(id);
-        for (String dep : mod.manifest().dependencies()) {
-            DiscoveredMod depMod = modMap.get(dep);
-            if (depMod != null) {
-                visitMod(depMod, modMap, sorted, visited, visiting);
-            }
-        }
-        for (String dep : mod.manifest().optionalDependencies()) {
-            DiscoveredMod depMod = modMap.get(dep);
-            if (depMod != null) {
-                visitMod(depMod, modMap, sorted, visited, visiting);
-            }
-        }
-        visiting.remove(id);
-        visited.add(id);
-        sorted.add(mod);
+        ModLifecycleHooks.fireModTeardownHooks(engine, LOADED_MODS);
     }
 }

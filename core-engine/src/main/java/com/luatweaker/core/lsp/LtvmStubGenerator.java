@@ -9,7 +9,13 @@ import com.luatweaker.api.wrapper.ItemCount;
 import com.luatweaker.core.stub.StubCatalog;
 
 import java.lang.reflect.Method;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Dynamic EmmyLua Stub Generator for LuaTweaker (LTVM Engine).
@@ -18,12 +24,18 @@ import java.util.*;
  * to dynamically produce type-safe EmmyLua (.luatweaker/stubs/luatweaker-api.lua) stubs.
  */
 public class LtvmStubGenerator {
-    private final Map<String, Class<?>> registeredModules = new LinkedHashMap<>();
+    // Insertion-ordered: stub output order follows registration order, so the map is
+    // created as a LinkedHashMap in the constructor (single-threaded use; no concurrent access).
+    private final Map<String, Class<?>> registeredModules;
     private final Set<Class<?>> processedClasses = new HashSet<>();
-    private final Map<Class<?>, String> classNameByType = new HashMap<>();
-    private final StringBuilder classStubs = new StringBuilder();
+    private final Map<Class<?>, String> classNameByType;
+    // Chunks (not one growing buffer): emission order is registration order and
+    // getResult() joins once, so no StringBuilder field is retained.
+    private final List<String> classStubs = new ArrayList<>();
 
     public LtvmStubGenerator() {
+        this.registeredModules = new LinkedHashMap<>();
+        this.classNameByType = new HashMap<>();
         // Automatically register standard core API object wrappers
         registerClassStub(IItem.class, "IItem");
         registerClassStub(ILocatedItem.class, "ILocatedItem");
@@ -39,7 +51,7 @@ public class LtvmStubGenerator {
      * @param serviceInterface The Java interface or class annotated with @LuaDoc
      * @return This generator instance for chaining
      */
-    public LtvmStubGenerator registerService(String moduleName, Class<?> serviceInterface) {
+    public final LtvmStubGenerator registerService(String moduleName, Class<?> serviceInterface) {
         if (moduleName != null && serviceInterface != null) {
             registeredModules.put(moduleName, serviceInterface);
             generateClassStub(serviceInterface, moduleName);
@@ -47,7 +59,7 @@ public class LtvmStubGenerator {
         return this;
     }
 
-    public LtvmStubGenerator registerClassStub(Class<?> clazz, String luaClassName) {
+    public final LtvmStubGenerator registerClassStub(Class<?> clazz, String luaClassName) {
         if (clazz != null && luaClassName != null) {
             classNameByType.put(clazz, luaClassName);
             generateClassStub(clazz, luaClassName);
@@ -55,88 +67,86 @@ public class LtvmStubGenerator {
         return this;
     }
 
-    public void generateClassStub(Class<?> clazz, String luaClassName) {
+    public final void generateClassStub(Class<?> clazz, String luaClassName) {
         if (clazz == null || processedClasses.contains(clazz)) {
             return;
         }
         processedClasses.add(clazz);
+        emitClassHeader(clazz, luaClassName);
+        for (Method method : clazz.getDeclaredMethods()) {
+            emitMethodStub(luaClassName, method);
+            scanTransitiveTypes(method);
+        }
+    }
 
+    /** Emits the {@code ---doc} / {@code ---@class} / {@code local X = {}} header. */
+    private void emitClassHeader(Class<?> clazz, String luaClassName) {
         // Emit parent class stubs first so `---@class X: Parent` references resolve.
-        StringBuilder inheritance = new StringBuilder();
+        List<String> parents = new ArrayList<>();
         for (Class<?> iface : clazz.getInterfaces()) {
             if (iface.isAnnotationPresent(LuaDoc.class)) {
                 String parentName = classNameByType.getOrDefault(iface, iface.getSimpleName());
                 generateClassStub(iface, parentName);
-                if (inheritance.length() > 0) {
-                    inheritance.append(", ");
-                }
-                inheritance.append(parentName);
+                parents.add(parentName);
             }
         }
-
         LuaDoc typeDoc = clazz.getAnnotation(LuaDoc.class);
         if (typeDoc != null && !typeDoc.description().isEmpty()) {
-            classStubs.append("--- ").append(typeDoc.description()).append("\n");
+            classStubs.add("--- " + typeDoc.description() + "\n");
         }
-        classStubs.append("---@class ").append(luaClassName)
-                .append(inheritance.length() > 0 ? ": " + inheritance : "")
-                .append("\n");
-        classStubs.append("local ").append(luaClassName).append(" = {}\n\n");
+        String inheritance = parents.isEmpty() ? "" : ": " + String.join(", ", parents);
+        classStubs.add("---@class " + luaClassName + inheritance + "\n");
+        classStubs.add("local " + luaClassName + " = {}\n\n");
+    }
 
-        for (Method method : clazz.getDeclaredMethods()) {
-            LuaDoc doc = method.getAnnotation(LuaDoc.class);
-            if (doc != null) {
-                if (!doc.description().isEmpty()) {
-                    classStubs.append("--- ").append(doc.description()).append("\n");
-                }
-                for (String param : doc.params()) {
-                    classStubs.append("---@param ").append(param).append("\n");
-                }
-                if (!"void".equalsIgnoreCase(doc.returnType())) {
-                    classStubs.append("---@return ").append(doc.returnType()).append("\n");
-                }
+    /** Emits the doc comment plus colon-call and dot-call signatures for one method. */
+    private void emitMethodStub(String luaClassName, Method method) {
+        LuaDoc doc = method.getAnnotation(LuaDoc.class);
+        if (doc == null) {
+            return;
+        }
+        if (!doc.description().isEmpty()) {
+            classStubs.add("--- " + doc.description() + "\n");
+        }
+        for (String param : doc.params()) {
+            classStubs.add("---@param " + param + "\n");
+        }
+        if (!"void".equalsIgnoreCase(doc.returnType())) {
+            classStubs.add("---@return " + doc.returnType() + "\n");
+        }
+        String argList = luaArgList(doc.params());
+        // Colon call signature (e.g. function Module:method(a, b) end)
+        classStubs.add("function " + luaClassName + ":" + method.getName() + "(" + argList + ") end\n\n");
+        // Dot call signature (e.g. function Module.method(a, b) end) for Static Namespace style
+        classStubs.add("function " + luaClassName + "." + method.getName() + "(" + argList + ") end\n\n");
+    }
 
-                // Colon call signature (e.g. function Module:method(a, b) end)
-                classStubs.append("function ").append(luaClassName).append(":")
-                    .append(method.getName()).append("(");
+    /** Renders {@code {"a: number", "b: string"}} as {@code "a, b"}. */
+    private static String luaArgList(String... params) {
+        List<String> names = new ArrayList<>(params.length);
+        for (String param : params) {
+            names.add(luaParamName(param));
+        }
+        return String.join(", ", names);
+    }
 
-                String[] params = doc.params();
-                for (int i = 0; i < params.length; i++) {
-                    String p = params[i];
-                    int colonIndex = p.indexOf(':');
-                    String pName = colonIndex != -1 ? p.substring(0, colonIndex).trim() : p.trim();
-                    classStubs.append(pName);
-                    if (i < params.length - 1) {
-                        classStubs.append(", ");
-                    }
-                }
-                classStubs.append(") end\n\n");
+    private static String luaParamName(String param) {
+        int colonIndex = param.indexOf(':');
+        if (colonIndex < 0) {
+            return param.trim();
+        }
+        return param.substring(0, colonIndex).trim();
+    }
 
-                // Dot call signature (e.g. function Module.method(a, b) end) for Static Namespace style
-                classStubs.append("function ").append(luaClassName).append(".")
-                    .append(method.getName()).append("(");
-                for (int i = 0; i < params.length; i++) {
-                    String p = params[i];
-                    int colonIndex = p.indexOf(':');
-                    String pName = colonIndex != -1 ? p.substring(0, colonIndex).trim() : p.trim();
-                    classStubs.append(pName);
-                    if (i < params.length - 1) {
-                        classStubs.append(", ");
-                    }
-                }
-                classStubs.append(") end\n\n");
-            }
-
-            // Transitive scanning: check return type for @LuaDoc
-            Class<?> returnType = method.getReturnType();
-            if (returnType.isAnnotationPresent(LuaDoc.class) && !processedClasses.contains(returnType)) {
-                generateClassStub(returnType, classNameByType.getOrDefault(returnType, returnType.getSimpleName()));
-            }
-            // Transitive scanning: check parameter types for @LuaDoc
-            for (Class<?> paramType : method.getParameterTypes()) {
-                if (paramType.isAnnotationPresent(LuaDoc.class) && !processedClasses.contains(paramType)) {
-                    generateClassStub(paramType, classNameByType.getOrDefault(paramType, paramType.getSimpleName()));
-                }
+    /** Transitive scanning: queue @LuaDoc return and parameter types for stubbing. */
+    private void scanTransitiveTypes(Method method) {
+        Class<?> returnType = method.getReturnType();
+        if (returnType.isAnnotationPresent(LuaDoc.class) && !processedClasses.contains(returnType)) {
+            generateClassStub(returnType, classNameByType.getOrDefault(returnType, returnType.getSimpleName()));
+        }
+        for (Class<?> paramType : method.getParameterTypes()) {
+            if (paramType.isAnnotationPresent(LuaDoc.class) && !processedClasses.contains(paramType)) {
+                generateClassStub(paramType, classNameByType.getOrDefault(paramType, paramType.getSimpleName()));
             }
         }
     }
@@ -145,7 +155,7 @@ public class LtvmStubGenerator {
         // Merge static StubCatalog entries (registered by *LuaBinding classes)
         // in addition to instance registrations. Idempotent: processedClasses
         // guards re-generation, putIfAbsent guards duplicate names.
-        Map<String, Class<?>> merged = new LinkedHashMap<>(registeredModules);
+        var merged = new LinkedHashMap<String, Class<?>>(registeredModules);
         for (Map.Entry<String, Class<?>> entry : StubCatalog.snapshot().entrySet()) {
             merged.putIfAbsent(entry.getKey(), entry.getValue());
         }
@@ -155,28 +165,29 @@ public class LtvmStubGenerator {
             }
         }
 
-        StringBuilder stub = new StringBuilder("---@meta\n-- Auto-generated by LTVM LuaTweaker Engine v1.0 (Dynamic Reflection Generator)\n\n");
+        List<String> out = new ArrayList<>();
+        out.add("---@meta\n-- Auto-generated by LTVM LuaTweaker Engine v1.0 (Dynamic Reflection Generator)\n\n");
 
         // 1. Dynamic require() Overloads for ALL Registered Modules
-        stub.append("--- Native Module Loader for LuaTweaker Static Namespaces\n");
+        out.add("--- Native Module Loader for LuaTweaker Static Namespaces\n");
         for (String modName : merged.keySet()) {
-            stub.append("---@overload fun(modName: 'LuaTweaker.").append(modName).append("'): ").append(modName).append("\n");
-            stub.append("---@overload fun(modName: '").append(modName).append("'): ").append(modName).append("\n");
+            out.add("---@overload fun(modName: 'LuaTweaker." + modName + "'): " + modName + "\n");
+            out.add("---@overload fun(modName: '" + modName + "'): " + modName + "\n");
         }
-        stub.append("---@param modName string\n");
-        stub.append("---@return any\n");
-        stub.append("function require(modName) end\n\n");
+        out.add("---@param modName string\n");
+        out.add("---@return any\n");
+        out.add("function require(modName) end\n\n");
 
         // 2. Legacy Mod Service Compatibility
-        stub.append("--- Global Mod service manager\n");
-        stub.append("---@class Mod\n");
-        stub.append("Mod = {}\n");
-        stub.append("---@param name string\n---@return any\nfunction Mod:GetService(name) end\n\n");
+        out.add("--- Global Mod service manager\n");
+        out.add("---@class Mod\n");
+        out.add("Mod = {}\n");
+        out.add("---@param name string\n---@return any\nfunction Mod:GetService(name) end\n\n");
 
         // 3. Append all collected class stubs generated dynamically from @LuaDoc reflection
-        stub.append(classStubs);
+        out.add(String.join("", classStubs));
 
-        return stub.toString();
+        return String.join("", out);
     }
 }
 

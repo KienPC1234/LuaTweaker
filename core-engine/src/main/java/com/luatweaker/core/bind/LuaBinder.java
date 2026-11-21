@@ -1,12 +1,12 @@
 package com.luatweaker.core.bind;
 
 import com.luatweaker.api.annotation.LuaDefault;
-import com.luatweaker.api.entity.IEntity;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaFunction;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -33,12 +33,14 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class LuaBinder {
     private LuaBinder() {}
 
+    private static final String RAW_ENTITY_GETTER = "getRawEntity";
+    private static final int MAX_BIND_PARAMETERS = 12;
+
     /** Converts a Java return value into an {@link ILuaValue} for a specific return type. */
+    @FunctionalInterface
     public interface ValueConverter {
         ILuaValue toLua(ILuaEngine engine, Object value);
     }
-
-    private static final Map<Class<?>, ValueConverter> RETURN_CONVERTERS = new ConcurrentHashMap<>();
 
     /**
      * Precomputed binding plan for one API interface: sorted, de-duplicated methods
@@ -55,7 +57,7 @@ public final class LuaBinder {
     private static final Map<Class<?>, List<BoundMethod>> BIND_PLAN_CACHE = new ConcurrentHashMap<>();
 
     public static void registerReturnConverter(Class<?> type, ValueConverter converter) {
-        RETURN_CONVERTERS.put(type, converter);
+        LuaResultConverter.registerReturnConverter(type, converter);
     }
 
     /**
@@ -70,14 +72,21 @@ public final class LuaBinder {
             engine.registerService(alias, table);
             engine.getGlobalEnvironment().rawset(alias, table);
         }
+        com.luatweaker.core.stub.StubCatalog.register(name, api);
+        com.luatweaker.core.vm.NativeModuleResolver.registerModule(name, aliases);
         return table;
     }
 
     /**
      * Standard helper to determine if the first argument is a table (the self parameter).
      * Replaces the banned manual 'int off = (args.length > 0 && args[0].isTable()) ? 1 : 0' anti-pattern.
+     *
+     * <p>Because a receiver table and a genuine table argument are indistinguishable here,
+     * a dot call whose first real argument is a table cannot be expressed: {@code Json.Encode(t)}
+     * is read as {@code Json:Encode()} with a missing argument. Lua scripts must use the colon
+     * form ({@code Json:Encode(t)}) whenever the first argument is a table. See docs/JSON_API.md.</p>
      */
-    public static int getOffset(ILuaValue[] args) {
+    public static int getOffset(ILuaValue... args) {
         return (args != null && args.length > 0 && args[0] != null && args[0].isTable()) ? 1 : 0;
     }
 
@@ -86,7 +95,13 @@ public final class LuaBinder {
         ILuaTable table = engine.createTable();
 
         for (BoundMethod bound : bindPlan(api)) {
-            ILuaFunction fn = args -> invoke(engine, impl, bound, args);
+            ILuaFunction fn = args -> {
+                try {
+                    return invoke(engine, impl, bound, args);
+                } catch (ReflectiveOperationException e) {
+                    throw new IllegalStateException(describeBindingFailure(bound, e), e);
+                }
+            };
             table.rawset(bound.camelName(), fn);
             if (!bound.pascalName().equals(bound.camelName())) {
                 table.rawset(bound.pascalName(), fn);
@@ -101,14 +116,7 @@ public final class LuaBinder {
     }
 
     private static List<BoundMethod> computeBindPlan(Class<?> api) {
-        List<Method> methods = new ArrayList<>();
-        for (Method m : api.getMethods()) {
-            if (m.isSynthetic() || m.isBridge()) continue;
-            if (Modifier.isStatic(m.getModifiers())) continue;
-            if ("getRawEntity".equals(m.getName())) continue;
-            if (m.getParameterCount() > 12) continue;
-            methods.add(m);
-        }
+        List<Method> methods = collectBindableMethods(api);
 
         // Deterministic order; when overloads exist keep the most-parameter variant.
         methods.sort(Comparator
@@ -118,143 +126,84 @@ public final class LuaBinder {
         Set<String> seen = new HashSet<>();
         List<BoundMethod> plan = new ArrayList<>(methods.size());
         for (Method m : methods) {
-            if (!seen.add(m.getName())) continue;
-            java.lang.reflect.Parameter[] params = m.getParameters();
-            Class<?>[] paramTypes = m.getParameterTypes();
-            String[] defaultRaws = new String[params.length];
-            for (int i = 0; i < params.length; i++) {
-                LuaDefault annotation = params[i].getAnnotation(LuaDefault.class);
-                defaultRaws[i] = annotation == null ? null : annotation.value();
-            }
-            plan.add(new BoundMethod(m, m.getName(), pascalCase(m.getName()),
-                    paramTypes, defaultRaws, m.getReturnType()));
+            if (!seen.add(m.getName())) { continue; }
+            plan.add(buildBoundMethod(m));
         }
         return List.copyOf(plan);
     }
 
-    private static ILuaValue invoke(ILuaEngine engine, Object impl, BoundMethod bound, ILuaValue[] args) throws Exception {
+    /** Collects the interface methods that become Lua-callable entries. */
+    private static List<Method> collectBindableMethods(Class<?> api) {
+        List<Method> methods = new ArrayList<>();
+        for (Method m : api.getMethods()) {
+            if (isSkippedBindingMethod(m)) { continue; }
+            methods.add(m);
+        }
+        return methods;
+    }
+
+    /** Synthetic, static, internal or overly-wide methods never become Lua entries. */
+    private static boolean isSkippedBindingMethod(Method m) {
+        return m.isSynthetic() || m.isBridge()
+            || Modifier.isStatic(m.getModifiers())
+            || RAW_ENTITY_GETTER.equals(m.getName())
+            || m.getParameterCount() > MAX_BIND_PARAMETERS;
+    }
+
+    /** Resolves one method's parameter types and raw {@code @LuaDefault} values. */
+    private static BoundMethod buildBoundMethod(Method m) {
+        java.lang.reflect.Parameter[] params = m.getParameters();
+        Class<?>[] paramTypes = m.getParameterTypes();
+        String[] defaultRaws = new String[params.length];
+        for (int i = 0; i < params.length; i++) {
+            LuaDefault annotation = params[i].getAnnotation(LuaDefault.class);
+            if (annotation != null) {
+                defaultRaws[i] = annotation.value();
+            }
+        }
+        String methodName = m.getName();
+        String pascalName = methodName.isEmpty() || Character.isUpperCase(methodName.charAt(0))
+            ? methodName
+            : Character.toUpperCase(methodName.charAt(0)) + methodName.substring(1);
+        return new BoundMethod(m, methodName, pascalName, paramTypes, defaultRaws, m.getReturnType());
+    }
+
+    /**
+     * Names the binding and the root failure in one message so a Lua
+     * traceback shows both which binding broke and why (the reflection
+     * wrapper itself is chained as the cause).
+     */
+    private static String describeBindingFailure(BoundMethod bound, ReflectiveOperationException e) {
+        Throwable root = e instanceof InvocationTargetException ite && ite.getCause() != null
+            ? ite.getCause()
+            : e;
+        String detail = root.getMessage() != null ? root.getMessage() : root.toString();
+        return "Lua binding failed for " + bound.method().getName() + ": " + detail;
+    }
+
+    private static ILuaValue invoke(ILuaEngine engine, Object impl, BoundMethod bound, ILuaValue... args)
+            throws ReflectiveOperationException {
         if (impl == null) {
             return engine.nilValue();
         }
-        int off = com.luatweaker.core.bind.LuaBinder.getOffset(args);
+        int off = getOffset(args);
         Class<?>[] paramTypes = bound.paramTypes();
         String[] defaultRaws = bound.defaultRaws();
         Object[] callArgs = new Object[paramTypes.length];
 
         for (int i = 0; i < paramTypes.length; i++) {
-            boolean provided = off + i < args.length && args[off + i] != null && !args[off + i].isNil();
-            if (!provided) {
-                String def = defaultRaws[i];
-                if (def == null) {
-                    throw new IllegalArgumentException(bound.method().getName() + " requires argument " + (i + 1)
-                            + " (" + paramTypes[i].getSimpleName() + ")");
-                }
-                callArgs[i] = parseDefault(def, paramTypes[i], bound.method().getName(), i + 1);
+            if (off + i < args.length && args[off + i] != null && !args[off + i].isNil()) {
+                callArgs[i] = LuaArgConverter.convertArg(paramTypes[i], args[off + i]);
+            } else if (defaultRaws[i] != null) {
+                callArgs[i] = LuaArgConverter.parseDefault(defaultRaws[i], paramTypes[i],
+                    bound.method().getName(), i + 1);
             } else {
-                callArgs[i] = convertArg(paramTypes[i], args[off + i]);
+                throw new IllegalArgumentException(bound.method().getName() + " requires argument " + (i + 1)
+                        + " (" + paramTypes[i].getSimpleName() + ")");
             }
         }
 
         Object result = bound.method().invoke(impl, callArgs);
-        return toLua(engine, bound.returnType(), result);
-    }
-
-    private static Object convertArg(Class<?> type, ILuaValue arg) {
-        if (type == String.class || type == CharSequence.class) return arg.asString();
-        if (type == int.class || type == Integer.class) return arg.asInt();
-        if (type == long.class || type == Long.class) return (long) arg.asDouble();
-        if (type == double.class || type == Double.class) return arg.asDouble();
-        if (type == float.class || type == Float.class) return (float) arg.asDouble();
-        if (type == boolean.class || type == Boolean.class) return arg.asBoolean();
-        if (type == ILuaValue.class) return arg;
-        if (type == ILuaTable.class) return arg.asTable();
-        if (type == Object.class) return arg;
-        if (IEntity.class.isAssignableFrom(type)) return unwrapEntity(arg);
-
-        // Array parameters (e.g. String[] biomes) arrive as Lua tables.
-        if (type.isArray() && arg.isTable()) {
-            ILuaTable tbl = arg.asTable();
-            int len = tbl.length();
-            Class<?> comp = type.getComponentType();
-            Object array = java.lang.reflect.Array.newInstance(comp, len);
-            for (int i = 1; i <= len; i++) {
-                ILuaValue item = tbl.rawget(i);
-                if (item == null || item.isNil()) break;
-                java.lang.reflect.Array.set(array, i - 1, convertArg(comp, item));
-            }
-            return array;
-        }
-
-        Object raw = arg.toJavaObject();
-        if (raw != null && type.isAssignableFrom(raw.getClass())) return raw;
-        return raw;
-    }
-
-    private static IEntity unwrapEntity(ILuaValue arg) {
-        if (arg.isTable()) {
-            ILuaValue inner = arg.asTable().rawget("__entity");
-            if (inner != null && !inner.isNil()) {
-                Object obj = inner.toJavaObject();
-                if (obj instanceof IEntity entity) {
-                    return entity;
-                }
-            }
-        }
-        return null;
-    }
-
-    private static Object parseDefault(String def, Class<?> type, String methodName, int index) {
-        try {
-            if (type == String.class || type == CharSequence.class) return def;
-            if (type == int.class || type == Integer.class) return Integer.parseInt(def);
-            if (type == long.class || type == Long.class) return Long.parseLong(def);
-            if (type == double.class || type == Double.class) return Double.parseDouble(def);
-            if (type == float.class || type == Float.class) return Float.parseFloat(def);
-            if (type == boolean.class || type == Boolean.class) return Boolean.parseBoolean(def);
-            if (type == ILuaValue.class || type == ILuaTable.class || type == Object.class) return null;
-            if (IEntity.class.isAssignableFrom(type)) return null;
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("Invalid @LuaDefault for " + methodName + " argument " + index + ": " + def);
-        }
-        return null;
-    }
-
-    private static ILuaValue toLua(ILuaEngine engine, Class<?> returnType, Object result) {
-        if (result == null || returnType == void.class || returnType == Void.class) {
-            return engine.nilValue();
-        }
-        if (result instanceof ILuaValue lv) return lv;
-        if (result instanceof String s) return engine.wrapString(s);
-        if (result instanceof Boolean b) return engine.wrapBoolean(b);
-        if (result instanceof Number n) return engine.wrapNumber(n.doubleValue());
-
-        // Maps and Lists must arrive as Lua tables (not userdata) so scripts
-        // can index them directly (e.g. Loot:GetModifications()["mob"]).
-        if (result instanceof java.util.Map<?, ?> map) {
-            ILuaTable table = engine.createTable();
-            for (java.util.Map.Entry<?, ?> entry : map.entrySet()) {
-                table.rawset(String.valueOf(entry.getKey()), toLua(engine, entry.getValue() == null ? Object.class : entry.getValue().getClass(), entry.getValue()));
-            }
-            return table;
-        }
-        if (result instanceof java.util.List<?> list) {
-            ILuaTable table = engine.createTable();
-            int i = 1;
-            for (Object item : list) {
-                table.rawset(i++, toLua(engine, item == null ? Object.class : item.getClass(), item));
-            }
-            return table;
-        }
-
-        ValueConverter converter = RETURN_CONVERTERS.get(returnType);
-        if (converter != null) {
-            return converter.toLua(engine, result);
-        }
-        return engine.wrapUserdata(result);
-    }
-
-    private static String pascalCase(String name) {
-        if (name == null || name.isEmpty() || Character.isUpperCase(name.charAt(0))) return name;
-        return Character.toUpperCase(name.charAt(0)) + name.substring(1);
+        return LuaResultConverter.toLua(engine, bound.returnType(), result);
     }
 }

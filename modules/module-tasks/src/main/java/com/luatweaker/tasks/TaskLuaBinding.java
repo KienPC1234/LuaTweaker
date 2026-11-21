@@ -6,9 +6,9 @@ import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.Arrays;
+public final class TaskLuaBinding {
 
-public class TaskLuaBinding {
+    private TaskLuaBinding() {}
 
     public static void registerBindings(@NotNull ILuaEngine engine, @NotNull ITaskService taskService) {
         ILuaTable globals = engine.getGlobalEnvironment();

@@ -3,7 +3,9 @@ package com.luatweaker.core.service;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class LuaServiceRegistry {
+public final class LuaServiceRegistry {
+    private LuaServiceRegistry() {}
+
     private static final Map<String, Object> SERVICES = new ConcurrentHashMap<>();
 
     public static void register(String name, Object service) {
@@ -15,8 +17,7 @@ public class LuaServiceRegistry {
     }
 
     public static Object get(String name) {
-        Object res = SERVICES.get(name);
-        return res;
+        return SERVICES.get(name);
     }
 
     public static int size() {

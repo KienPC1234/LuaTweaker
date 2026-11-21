@@ -1,86 +1,92 @@
 package com.luatweaker.client.tween;
 
-import com.luatweaker.api.vm.ILuaEngine;
-import com.luatweaker.core.vm.LuaEngineFactory;
 import com.luatweaker.client.TweenServiceImpl;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * RepeatCount / Reverses / DelayTime used to be accepted by TweenInfo.new and then
- * silently ignored by the ticker. These tests pin the real behaviour.
+ * RepeatCount / Reverses / DelayTime used to be accepted by TweenInfo.new and then silently ignored
+ * by the ticker. These tests pin the real behaviour.
  */
-public class TweenTimingTest {
+class TweenTimingTest extends TweenTimingFixture {
 
-    private ILuaEngine engine;
-
-    @BeforeEach
-    public void setUp() {
-        TweenServiceImpl.clearAll();
-        engine = LuaEngineFactory.create(false);
-        com.luatweaker.core.bind.LuaBinder.bind(engine, "TweenService",
-                new TweenServiceImpl(engine), com.luatweaker.api.client.ITweenService.class);
-        engine.executeStringOrThrow("target = { Value = 0 }", "tween_setup");
-    }
-
-    private double value() {
-        return engine.getGlobalEnvironment().rawget("target").asTable().rawget("Value").asDouble();
-    }
-
-    private void createAndPlay(String info) {
-        engine.executeStringOrThrow(
-                "tween = TweenService:Create(target, " + info + ", { Value = 10.0 })\n" +
-                "assert(tween ~= nil, 'Create must return a handle')\n" +
-                "tween:Play()",
-                "tween_create");
-    }
+    private static final double HALF_DURATION = 0.25;
 
     @Test
-    public void delayTimePostponesTheInterpolation() {
+    void delayTimeWritesNothingDuringTheDelay() {
         createAndPlay("{ Duration = 1.0, DelayTime = 0.5 }");
-
-        TweenServiceImpl.tickAll(0.25);
-        assertEquals(0.0, value(), 1e-9, "nothing must be written during the delay");
-
-        TweenServiceImpl.tickAll(0.5); // 0.25s into the 1s tween
-        assertEquals(2.5, value(), 1e-6);
+        TweenServiceImpl.tickAll(HALF_DURATION);
+        assertEquals(0.0, value(), 1e-9,
+                "nothing must be written while the tween is still inside its delay");
     }
 
     @Test
-    public void repeatCountRunsTheTweenAgain() {
+    void delayTimePostponesTheInterpolation() {
+        createAndPlay("{ Duration = 1.0, DelayTime = 0.5 }");
+        TweenServiceImpl.tickAll(HALF_DURATION);
+        TweenServiceImpl.tickAll(0.5);
+        assertEquals(2.5, value(), 1e-6,
+                "0.25s into a 1s tween must be a quarter of the way from 0 to 10");
+    }
+
+    @Test
+    void repeatCountStartsTheTweenAgain() {
         createAndPlay("{ Duration = 0.5, RepeatCount = 1 }");
+        TweenServiceImpl.tickAll(HALF_DURATION);
+        assertEquals(5.0, value(), 1e-6,
+                "half of the first 0.5s cycle must interpolate to 5.0");
+    }
 
-        TweenServiceImpl.tickAll(0.25);
-        assertEquals(5.0, value(), 1e-6);
+    @Test
+    void repeatCountReplaysTheSecondCycle() {
+        createAndPlay("{ Duration = 0.5, RepeatCount = 1 }");
+        TweenServiceImpl.tickAll(HALF_DURATION);
+        TweenServiceImpl.tickAll(0.5);
+        assertEquals(5.0, value(), 1e-6,
+                "halfway through the repeated cycle (0.75s total) must be 5.0 again");
+    }
 
-        TweenServiceImpl.tickAll(0.5); // second cycle, halfway (0.75s total)
-        assertEquals(5.0, value(), 1e-6);
-
-        TweenServiceImpl.tickAll(0.5); // 1.25s >= 2 cycles of 0.5s
+    @Test
+    void repeatCountFinishesOnTheEndValue() {
+        createAndPlay("{ Duration = 0.5, RepeatCount = 1 }");
+        TweenServiceImpl.tickAll(HALF_DURATION);
+        TweenServiceImpl.tickAll(0.5);
+        TweenServiceImpl.tickAll(0.5);
         assertEquals(10.0, value(), 1e-6, "the tween must finish on the end value");
     }
 
     @Test
-    public void reversesPlaysTheSecondCycleBackwards() {
+    void reversesPlaysTheSecondCycleBackwards() {
         createAndPlay("{ Duration = 0.5, RepeatCount = 1, Reverses = true }");
-
-        TweenServiceImpl.tickAll(0.75); // cycle 1 (reversed) at 50%
-        assertEquals(5.0, value(), 1e-6);
-
-        TweenServiceImpl.tickAll(0.5); // finished: cycle 1 fully reversed
-        assertEquals(0.0, value(), 1e-6, "a ping-pong tween must return to the start value");
+        TweenServiceImpl.tickAll(0.75);
+        assertEquals(5.0, value(), 1e-6,
+                "the reversed cycle at 50% must interpolate back to 5.0");
     }
 
     @Test
-    public void infiniteRepeatNeverCompletes() {
+    void reversesReturnsToTheStartValue() {
+        createAndPlay("{ Duration = 0.5, RepeatCount = 1, Reverses = true }");
+        TweenServiceImpl.tickAll(0.75);
+        TweenServiceImpl.tickAll(0.5);
+        assertEquals(0.0, value(), 1e-6,
+                "a ping-pong tween must return to the start value");
+    }
+
+    @Test
+    void infiniteRepeatKeepsInterpolating() {
         createAndPlay("{ Duration = 0.5, RepeatCount = -1 }");
+        TweenServiceImpl.tickAll(1.25);
+        assertEquals(5.0, value(), 1e-6,
+                "an infinite tween must keep interpolating after two and a half cycles");
+    }
 
-        TweenServiceImpl.tickAll(1.25); // 2.5 cycles
-        assertEquals(5.0, value(), 1e-6, "an infinite tween keeps interpolating");
-
-        TweenServiceImpl.tickAll(0.25); // exactly 3 cycles -> start of cycle 3
-        assertEquals(0.0, value(), 1e-6);
+    @Test
+    void infiniteRepeatRestartsEachCycle() {
+        createAndPlay("{ Duration = 0.5, RepeatCount = -1 }");
+        TweenServiceImpl.tickAll(1.25);
+        TweenServiceImpl.tickAll(HALF_DURATION);
+        assertEquals(0.0, value(), 1e-6,
+                "exactly three elapsed cycles must put an infinite tween back at the start value");
     }
 }

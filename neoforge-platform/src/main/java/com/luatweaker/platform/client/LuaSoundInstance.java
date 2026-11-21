@@ -31,7 +31,7 @@ final class LuaSoundInstance extends AbstractSoundInstance {
     }
 
     /** Non-positional UI sound (no panning, no distance falloff). */
-    static LuaSoundInstance ui(@org.jetbrains.annotations.NotNull ResourceLocation location,
+    static LuaSoundInstance uiSound(@org.jetbrains.annotations.NotNull ResourceLocation location,
                                @org.jetbrains.annotations.NotNull SoundSource source,
                                float volume, float pitch, boolean loop) {
         return new LuaSoundInstance(location, source, volume, pitch, loop, true, 0.0, 0.0, 0.0);

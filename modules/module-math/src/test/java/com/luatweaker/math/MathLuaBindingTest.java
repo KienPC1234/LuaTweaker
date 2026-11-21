@@ -1,51 +1,88 @@
 package com.luatweaker.math;
 
-import com.luatweaker.core.vm.LuaEngineFactory;
-
 import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.api.vm.ILuaTable;
+import com.luatweaker.core.vm.LuaEngineFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class MathLuaBindingTest {
+class MathLuaBindingTest {
+
+    private static final String MATH_SCRIPT =
+            "_G._mathResults = {\n"
+            + "    math.clamp(150, 0, 100),\n"
+            + "    math.lerp(10, 20, 0.5),\n"
+            + "    math.round(4.6),\n"
+            + "}";
+
+    private static final String SPLIT_SCRIPT =
+            "_G._splitCount = #string.split('a,b,c', ',')";
+
+    private static final String TRIM_SCRIPT =
+            "_G._trimmed = string.trim('  hello  ')";
+
+    private static final String FAILING_SCRIPT = "assert(false, 'boom')";
 
     private ILuaEngine engine;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         engine = LuaEngineFactory.create(true);
         MathLuaBinding.registerBindings(engine);
     }
 
     @Test
-    public void testRobloxMathExtensions() {
-        engine.executeStringOrThrow(
-            "local c = math.clamp(150, 0, 100)\n" +
-            "assert(c == 100, 'math.clamp failed')\n" +
-            "local l = math.lerp(10, 20, 0.5)\n" +
-            "assert(l == 15, 'math.lerp failed')\n" +
-            "local r = math.round(4.6)\n" +
-            "assert(r == 5, 'math.round failed')",
-            "MathTest"
-        );
+    void robloxMathExtensionsReturnClampedLerpedAndRoundedValues() {
+        engine.executeStringOrThrow(MATH_SCRIPT, "MathTest");
+
+        ILuaTable results = engine.getGlobalEnvironment().rawget("_mathResults").asTable();
+        double[] actual = {
+            results.rawget(1).asDouble(),
+            results.rawget(2).asDouble(),
+            results.rawget(3).asDouble(),
+        };
+        assertArrayEquals(new double[] {100.0, 15.0, 5.0}, actual, 1e-9,
+                "math.clamp/lerp/round must return 100, 15 and 5 for the scripted inputs");
     }
 
     @Test
-    public void testRobloxStringExtensions() {
-        engine.executeStringOrThrow(
-            "local parts = string.split('a,b,c', ',')\n" +
-            "assert(#parts == 3, 'string.split count failed')\n" +
-            "local trimmed = string.trim('  hello  ')\n" +
-            "assert(trimmed == 'hello', 'string.trim failed')",
-            "StringTest"
-        );
+    void robloxStringSplitReturnsEveryPart() {
+        engine.executeStringOrThrow(SPLIT_SCRIPT, "StringTest");
+
+        assertEquals(3, engine.getGlobalEnvironment().rawget("_splitCount").asInt(),
+                "string.split('a,b,c', ',') must return three parts");
     }
 
     @Test
-    public void executeStringOrThrowSurfacesAFailingChunk() {
-        IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> engine.executeStringOrThrow("assert(false, 'boom')", "FailingTest"));
-        assertTrue(error.getMessage().contains("boom"), error.getMessage());
+    void robloxStringTrimStripsSurroundingWhitespace() {
+        engine.executeStringOrThrow(TRIM_SCRIPT, "StringTest");
+
+        assertEquals("hello", engine.getGlobalEnvironment().rawget("_trimmed").asString(),
+                "string.trim must strip the surrounding spaces");
+    }
+
+    @Test
+    void executeStringOrThrowSurfacesAFailingChunk() {
+        assertThrows(IllegalStateException.class,
+                () -> engine.executeStringOrThrow(FAILING_SCRIPT, "FailingTest"),
+                "a Lua assertion failure must surface as a Java exception");
+    }
+
+    @Test
+    void failingChunkErrorMentionsTheLuaMessage() {
+        IllegalStateException error = runFailingChunk();
+
+        assertTrue(error.getMessage() != null && error.getMessage().contains("boom"),
+                "the Java error must carry the Lua failure message, got: " + error.getMessage());
+    }
+
+    private IllegalStateException runFailingChunk() {
+        return assertThrows(IllegalStateException.class,
+                () -> engine.executeStringOrThrow(FAILING_SCRIPT, "FailingTest"));
     }
 }

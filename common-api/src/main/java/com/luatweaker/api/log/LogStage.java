@@ -44,6 +44,8 @@ public enum LogStage {
     // -- General ---
     /** Server reload triggered. */
     RELOAD,
+    /** World/player/session storage load and save (module-storage). */
+    STORAGE,
     /** Miscellaneous system message not tied to a specific stage. */
     SYSTEM
 }

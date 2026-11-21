@@ -17,6 +17,8 @@ import net.neoforged.neoforge.client.event.ScreenEvent;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Objects;
+
 /**
  * Auto-accepts Minecraft's "experimental features" confirmations when the mod config option
  * {@code suppressExperimentalWarning} is enabled (default: true), because the LuaTweaker virtual
@@ -37,7 +39,10 @@ import org.jetbrains.annotations.Nullable;
  * callback, and their own callback creates or opens the world (another {@code setScreen}), so
  * pressing during {@code Screen.init} would re-enter the screen lifecycle.</p>
  */
-public class ExperimentalWarningHandler {
+public final class ExperimentalWarningHandler {
+
+    private ExperimentalWarningHandler() {
+    }
 
     private static final Component WORLD_WARNING_TITLE =
             Component.translatable("selectWorld.warning.experimental.title");
@@ -48,15 +53,14 @@ public class ExperimentalWarningHandler {
 
     @SubscribeEvent
     public static void onScreenInit(ScreenEvent.Init.Post event) {
-        if (!LuaTweakerConfig.SUPPRESS_EXPERIMENTAL_WARNING.get()) return;
+        if (!LuaTweakerConfig.SUPPRESS_EXPERIMENTAL_WARNING.get()) { return; }
 
         Screen screen = event.getScreen();
         Component confirmLabel = confirmLabelFor(screen);
-        if (confirmLabel == null) return;
+        if (confirmLabel == null) { return; }
 
-        Minecraft minecraft = Minecraft.getInstance();
-        minecraft.execute(() -> {
-            if (minecraft.screen != screen) return;
+        Minecraft.getInstance().execute(() -> {
+            if (!Objects.equals(Minecraft.getInstance().screen, screen)) { return; }
             if (!pressButton(screen, confirmLabel)) {
                 LuaTweakerLog.get().warn(LogStage.SYSTEM,
                         "[LuaTweaker] Could not auto-confirm " + screen.getClass().getSimpleName()

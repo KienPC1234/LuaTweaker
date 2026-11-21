@@ -16,91 +16,95 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * covered here: fresh paths register, previous-cycle paths skip quietly,
  * same-cycle duplicates and vanilla-occupied prefixes stay loud.
  */
-public class LuaTweakerCommandRegistryTest {
+class LuaTweakerCommandRegistryTest {
 
-    private static CommandDefinition def(String modId, String name, String... aliases) {
+    private static final String HELLO_PATH = "hello";
+    private static final String CORE_NAMESPACE = "luatweaker";
+    private static final String SHOP_ROOT = "shop";
+    private static final String SHOP_BUY_PATH = "shop/buy";
+
+    static CommandDefinition def(String modId, String name, String... aliases) {
         return new CommandDefinition(modId, name, "desc", 0, true, "usage",
                 List.of(aliases), null, null, null);
     }
 
     @Test
-    void allPathsOf_primaryFirstThenAliases() {
-        assertEquals(List.of("shop/buy", "shop", "store"),
-                LuaTweakerCommandRegistry.allPathsOf(def("mymod", "shop/buy", "shop", "store")));
+    void allPathsOfPrimaryFirstThenAliases() {
+        assertEquals(List.of(SHOP_BUY_PATH, SHOP_ROOT, "store"),
+                LuaTweakerCommandRegistry.allPathsOf(def("mymod", SHOP_BUY_PATH, SHOP_ROOT, "store")),
+                "the primary path must come first, then aliases in order");
     }
 
     @Test
-    void decidePath_freshPathRegisters() {
+    void decidePathFreshPathRegisters() {
         assertEquals(LuaTweakerCommandRegistry.PathDecision.REGISTER,
-                LuaTweakerCommandRegistry.decidePath("hello", Set.of("luatweaker", "lt"),
-                        new HashSet<>(), new HashSet<>()));
+                LuaTweakerCommandRegistry.decidePath(HELLO_PATH, Set.of(CORE_NAMESPACE, "lt"),
+                        new HashSet<>(), new HashSet<>()),
+                "a brand-new path must register on the dispatcher");
     }
 
     @Test
-    void decidePath_previousCyclePathSkipsQuietly() {
+    void decidePathPreviousCyclePathSkipsQuietly() {
         assertEquals(LuaTweakerCommandRegistry.PathDecision.SKIP_ALREADY_LIVE,
-                LuaTweakerCommandRegistry.decidePath("hello", Set.of("luatweaker", "lt", "hello"),
-                        new HashSet<>(), Set.of("hello")));
+                LuaTweakerCommandRegistry.decidePath(HELLO_PATH,
+                        Set.of(CORE_NAMESPACE, "lt", HELLO_PATH),
+                        new HashSet<>(), Set.of(HELLO_PATH)),
+                "a path that is already live must skip without noise");
     }
 
     @Test
-    void decidePath_sameCycleDuplicateStaysLoud() {
+    void decidePathSameCycleDuplicateStaysLoud() {
         assertEquals(LuaTweakerCommandRegistry.PathDecision.REJECT_DUPLICATE_THIS_CYCLE,
-                LuaTweakerCommandRegistry.decidePath("hello", Set.of("luatweaker", "lt"),
-                        Set.of("hello"), new HashSet<>()));
+                LuaTweakerCommandRegistry.decidePath(HELLO_PATH, Set.of(CORE_NAMESPACE, "lt"),
+                        Set.of(HELLO_PATH), new HashSet<>()),
+                "registering the same path twice in one cycle must stay loud");
     }
 
     @Test
-    void decidePath_occupiedPrefixRejected() {
+    void decidePathNestedUnderOccupiedRootIsRejected() {
         // "shop" taken by vanilla/another mod: nested path must not step into it.
         assertEquals(LuaTweakerCommandRegistry.PathDecision.REJECT_OCCUPIED,
-                LuaTweakerCommandRegistry.decidePath("shop/buy", Set.of("luatweaker", "shop"),
-                        new HashSet<>(), new HashSet<>()));
+                LuaTweakerCommandRegistry.decidePath(SHOP_BUY_PATH, Set.of(CORE_NAMESPACE, SHOP_ROOT),
+                        new HashSet<>(), new HashSet<>()),
+                "a nested path under an occupied root must be rejected");
+    }
+
+    @Test
+    void decidePathSiblingUnderFreeRootRegisters() {
         // Sibling root is fine.
         assertEquals(LuaTweakerCommandRegistry.PathDecision.REGISTER,
-                LuaTweakerCommandRegistry.decidePath("store/buy", Set.of("luatweaker", "shop"),
-                        new HashSet<>(), new HashSet<>()));
+                LuaTweakerCommandRegistry.decidePath("store/buy", Set.of(CORE_NAMESPACE, SHOP_ROOT),
+                        new HashSet<>(), new HashSet<>()),
+                "a sibling path that avoids the occupied root must register");
     }
 
     @Test
-    void decidePath_cyclePriorityDuplicateOverLiveOverOccupied() {
-        Set<String> live = new HashSet<>(Set.of("hello"));
-        Set<String> justAdded = new HashSet<>(Set.of("hello"));
+    void decidePathSameCycleDuplicateWinsOverLive() {
+        Set<String> live = new HashSet<>(Set.of(HELLO_PATH));
+        Set<String> justAdded = new HashSet<>(Set.of(HELLO_PATH));
         // Same-cycle duplicate wins even when the path is also live + occupied.
         assertEquals(LuaTweakerCommandRegistry.PathDecision.REJECT_DUPLICATE_THIS_CYCLE,
-                LuaTweakerCommandRegistry.decidePath("hello", Set.of("hello"), justAdded, live));
+                LuaTweakerCommandRegistry.decidePath(HELLO_PATH, Set.of(HELLO_PATH), justAdded, live),
+                "a same-cycle duplicate must win even when the path is also live");
+    }
+
+    @Test
+    void decidePathLiveWinsOverOccupied() {
+        Set<String> live = new HashSet<>(Set.of(HELLO_PATH));
         // Live wins over occupied (dispatcher still lists it from the earlier cycle).
         assertEquals(LuaTweakerCommandRegistry.PathDecision.SKIP_ALREADY_LIVE,
-                LuaTweakerCommandRegistry.decidePath("hello", Set.of("hello"), new HashSet<>(), live));
-        assertTrue(live.contains("hello"));
+                LuaTweakerCommandRegistry.decidePath(HELLO_PATH, Set.of(HELLO_PATH),
+                        new HashSet<>(), live),
+                "an already-live path must skip even when the root looks occupied");
     }
 
     @Test
-    void decidePath_siblingUnderOwnLiveRootMerges() {
-        // /shop/buy went live in cycle 1, /shop/info is brand-new in cycle 2
-        // while the live dispatcher still lists the "shop" root.
-        assertEquals(LuaTweakerCommandRegistry.PathDecision.REGISTER,
-                LuaTweakerCommandRegistry.decidePath("shop/info",
-                        Set.of("luatweaker", "lt", "shop", "tell"),
-                        new HashSet<>(), Set.of("shop/buy")));
-        // The already-live sibling still skips quietly.
-        assertEquals(LuaTweakerCommandRegistry.PathDecision.SKIP_ALREADY_LIVE,
-                LuaTweakerCommandRegistry.decidePath("shop/buy",
-                        Set.of("luatweaker", "lt", "shop", "tell"),
-                        new HashSet<>(), Set.of("shop/buy")));
-        // A foreign/vanilla root still rejects loudly (no own-root merge).
-        assertEquals(LuaTweakerCommandRegistry.PathDecision.REJECT_OCCUPIED,
-                LuaTweakerCommandRegistry.decidePath("tell/info",
-                        Set.of("luatweaker", "lt", "shop", "tell"),
-                        new HashSet<>(), Set.of("shop/buy")));
-    }
+    void decidePathKeepsLiveSetIntact() {
+        Set<String> live = new HashSet<>(Set.of(HELLO_PATH));
+        LuaTweakerCommandRegistry.decidePath(HELLO_PATH, Set.of(HELLO_PATH),
+                new HashSet<>(Set.of(HELLO_PATH)), live);
 
-    @Test
-    void isOwnLiveRoot_matchesExactAndNestedPaths() {
-        assertTrue(LuaTweakerCommandRegistry.isOwnLiveRoot("shop", Set.of("shop/buy", "store")));
-        assertTrue(LuaTweakerCommandRegistry.isOwnLiveRoot("store", Set.of("shop/buy", "store")));
-        assertTrue(LuaTweakerCommandRegistry.isOwnLiveRoot("shop", Set.of("shop")));
-        assertEquals(false, LuaTweakerCommandRegistry.isOwnLiveRoot("tell", Set.of("shop/buy")));
-        assertEquals(false, LuaTweakerCommandRegistry.isOwnLiveRoot("shopkeeper", Set.of("shop/buy")));
+        assertTrue(live.contains(HELLO_PATH),
+                "deciding a path must not drain the live set");
     }
 }

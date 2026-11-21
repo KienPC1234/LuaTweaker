@@ -12,11 +12,14 @@ import org.jetbrains.annotations.NotNull;
  * @param maxCount maximum stack size (at least minCount)
  */
 public record EntityDrop(@NotNull String itemId, int minCount, int maxCount) {
+    /** Smallest legal stack size for a drop entry. */
+    private static final int MIN_COUNT = 1;
+
     public EntityDrop {
         if (itemId == null || itemId.isBlank()) {
             throw new IllegalArgumentException("drop itemId must not be blank");
         }
-        if (minCount < 1) {
+        if (minCount < MIN_COUNT) {
             throw new IllegalArgumentException("drop minCount must be at least 1");
         }
         if (maxCount < minCount) {

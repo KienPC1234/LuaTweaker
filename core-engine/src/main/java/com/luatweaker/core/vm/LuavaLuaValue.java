@@ -4,6 +4,7 @@ import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.luava.runtime.LuaException;
 import org.luava.runtime.LuaTable;
 import org.luava.runtime.LuaUserdata;
 import org.luava.runtime.LuaValue;
@@ -61,7 +62,7 @@ public class LuavaLuaValue implements ILuaValue {
         if (value.isInteger()) {
             try {
                 return (int) value.toLong();
-            } catch (Exception ignored) {
+            } catch (LuaException ignored) {
                 return (int) (long) value.toDouble();
             }
         }
@@ -140,6 +141,11 @@ public class LuavaLuaValue implements ILuaValue {
     }
 
     @Override
+    public boolean isUserdata() {
+        return value.isUserdata();
+    }
+
+    @Override
     public @NotNull ILuaTable asTable() {
         if (value instanceof LuaTable tbl) {
             return new LuavaLuaTable(tbl);
@@ -174,10 +180,7 @@ public class LuavaLuaValue implements ILuaValue {
 
     @Override
     public boolean equals(Object obj) {
-        if (obj instanceof LuavaLuaValue other) {
-            return value.equals(other.value);
-        }
-        return false;
+        return obj instanceof LuavaLuaValue other && value.equals(other.value);
     }
 
     @Override

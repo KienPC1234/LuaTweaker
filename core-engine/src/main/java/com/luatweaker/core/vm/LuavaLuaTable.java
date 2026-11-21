@@ -5,15 +5,14 @@ import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.luava.runtime.LuaException;
 import org.luava.runtime.LuaFunction;
 import org.luava.runtime.LuaNil;
 import org.luava.runtime.LuaTable;
 import org.luava.runtime.LuaUserdata;
 import org.luava.runtime.LuaValue;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
 /**
@@ -81,14 +80,12 @@ public class LuavaLuaTable extends LuavaLuaValue implements ILuaTable {
         table.rawset(LuaValue.valueOf(key), LuaFunction.of(args -> {
             ILuaValue[] wrappedArgs = new ILuaValue[args.length];
             for (int i = 0; i < args.length; i++) {
-                wrappedArgs[i] = LuavaLuaValue.wrap(args[i]);
+                wrappedArgs[i] = wrap(args[i]);
             }
             try {
                 ILuaValue result = function.invoke(wrappedArgs);
                 return result == null ? LuaNil.NIL : unwrap(result);
-            } catch (LuaException e) {
-                throw e;
-            } catch (Exception e) {
+            } catch (IllegalArgumentException e) {
                 String message = e.getMessage() != null ? e.getMessage() : e.toString();
                 throw LuaFunction.hostError(message, e);
             }
@@ -122,12 +119,12 @@ public class LuavaLuaTable extends LuavaLuaValue implements ILuaTable {
 
     @Override
     public @NotNull ILuaValue rawget(@NotNull String key) {
-        return LuavaLuaValue.wrap(table.rawget(LuaValue.valueOf(key)));
+        return wrap(table.rawget(LuaValue.valueOf(key)));
     }
 
     @Override
     public @NotNull ILuaValue rawget(int index) {
-        return LuavaLuaValue.wrap(table.rawgetInt(index));
+        return wrap(table.rawgetInt(index));
     }
 
     @Override
@@ -137,7 +134,7 @@ public class LuavaLuaTable extends LuavaLuaValue implements ILuaTable {
 
     @Override
     public void forEach(@NotNull BiConsumer<ILuaValue, ILuaValue> action) {
-        table.forEach((key, value) -> action.accept(LuavaLuaValue.wrap(key), LuavaLuaValue.wrap(value)));
+        table.forEach((key, value) -> action.accept(wrap(key), wrap(value)));
     }
 
     @Override
@@ -152,8 +149,8 @@ public class LuavaLuaTable extends LuavaLuaValue implements ILuaTable {
 
     @Override
     public @NotNull Map<ILuaValue, ILuaValue> asMap() {
-        Map<ILuaValue, ILuaValue> map = new HashMap<>();
-        table.forEach((key, value) -> map.put(LuavaLuaValue.wrap(key), LuavaLuaValue.wrap(value)));
+        Map<ILuaValue, ILuaValue> map = new ConcurrentHashMap<>();
+        table.forEach((key, value) -> map.put(wrap(key), wrap(value)));
         return map;
     }
 }

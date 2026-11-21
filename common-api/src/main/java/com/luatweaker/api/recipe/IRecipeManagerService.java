@@ -3,6 +3,7 @@ package com.luatweaker.api.recipe;
 import java.util.List;
 import java.util.Map;
 import com.luatweaker.api.annotation.LuaDoc;
+import com.luatweaker.api.doc.LuaDocFragments;
 import com.luatweaker.api.wrapper.ItemCount;
 import com.luatweaker.api.wrapper.IngredientWrapper;
 
@@ -10,97 +11,93 @@ import com.luatweaker.api.wrapper.IngredientWrapper;
 public interface IRecipeManagerService {
     @LuaDoc(
         description = "Removes all recipes that result in the specified output item.",
-        params = {"output: string"},
-        returnType = "void"
+        params = {"output: string"}
     )
     void removeByOutput(String output);
 
     @LuaDoc(
         description = "Removes all recipes that contain the specified input item.",
-        params = {"input: string"},
-        returnType = "void"
+        params = {"input: string"}
     )
     void removeByInput(String input);
 
     @LuaDoc(
         description = "Removes a specific recipe by its registry ID.",
-        params = {"id: string"},
-        returnType = "void"
+        params = {"id: string"}
     )
     void removeById(String id);
 
     @LuaDoc(
-        description = "Removes all recipes registered in the game.",
-        returnType = "void"
+        description = "Removes all recipes registered in the game."
     )
     void removeAll();
 
     @LuaDoc(
         description = "Removes all recipes registered by a specific mod ID.",
-        params = {"modId: string"},
-        returnType = "void"
+        params = {"modId: string"}
     )
     void removeByMod(String modId);
 
     @LuaDoc(
         description = "Adds a new shapeless crafting recipe.",
-        params = {"recipeId: string", "output: IItem", "ingredients: IngredientWrapper[]"},
-        returnType = "void"
+        params = {LuaDocFragments.Recipe.RECIPE_ID, LuaDocFragments.Recipe.OUTPUT_ITEM, "ingredients: IngredientWrapper[]"}
     )
     void addShapeless(String recipeId, ItemCount output, List<IngredientWrapper> ingredients);
 
     @LuaDoc(
         description = "Adds a new shaped crafting recipe.",
-        params = {"recipeId: string", "output: IItem", "pattern: string[]", "keys: table"},
-        returnType = "void"
+        params = {LuaDocFragments.Recipe.RECIPE_ID, LuaDocFragments.Recipe.OUTPUT_ITEM, "pattern: string[]", "keys: table"}
     )
     void addShaped(String recipeId, ItemCount output, List<String> pattern, Map<String, IngredientWrapper> keys);
 
     @LuaDoc(
         description = "Globally replaces an input ingredient in all recipes.",
-        params = {"target: string", "replacement: string"},
-        returnType = "void"
+        params = {"target: string", "replacement: string"}
     )
     void replaceInput(String target, String replacement);
 
     @LuaDoc(
         description = "Globally replaces an output item in all recipes.",
-        params = {"target: string", "replacement: string"},
-        returnType = "void"
+        params = {"target: string", "replacement: string"}
     )
     void replaceOutput(String target, String replacement);
 
-    @LuaDoc(description = "Adds a new furnace smelting recipe.", params = {"recipeId: string", "output: IItem", "input: IngredientWrapper", "xp: number", "cookTime: integer"})
+    @LuaDoc(description = "Adds a new furnace smelting recipe.", params = {LuaDocFragments.Recipe.RECIPE_ID, LuaDocFragments.Recipe.OUTPUT_ITEM, LuaDocFragments.Recipe.INPUT_INGREDIENT, LuaDocFragments.Recipe.XP_NUMBER, LuaDocFragments.Recipe.COOK_TIME})
     void addSmelting(String recipeId, ItemCount output, IngredientWrapper input, float xp, int cookTime);
 
-    @LuaDoc(description = "Adds a new blast furnace recipe.", params = {"recipeId: string", "output: IItem", "input: IngredientWrapper", "xp: number", "cookTime: integer"})
+    @LuaDoc(description = "Adds a new blast furnace recipe.", params = {LuaDocFragments.Recipe.RECIPE_ID, LuaDocFragments.Recipe.OUTPUT_ITEM, LuaDocFragments.Recipe.INPUT_INGREDIENT, LuaDocFragments.Recipe.XP_NUMBER, LuaDocFragments.Recipe.COOK_TIME})
     void addBlasting(String recipeId, ItemCount output, IngredientWrapper input, float xp, int cookTime);
 
-    @LuaDoc(description = "Adds a new smoker recipe.", params = {"recipeId: string", "output: IItem", "input: IngredientWrapper", "xp: number", "cookTime: integer"})
+    @LuaDoc(description = "Adds a new smoker recipe.", params = {LuaDocFragments.Recipe.RECIPE_ID, LuaDocFragments.Recipe.OUTPUT_ITEM, LuaDocFragments.Recipe.INPUT_INGREDIENT, LuaDocFragments.Recipe.XP_NUMBER, LuaDocFragments.Recipe.COOK_TIME})
     void addSmoking(String recipeId, ItemCount output, IngredientWrapper input, float xp, int cookTime);
 
-    @LuaDoc(description = "Adds a new campfire cooking recipe.", params = {"recipeId: string", "output: IItem", "input: IngredientWrapper", "xp: number", "cookTime: integer"})
+    @LuaDoc(description = "Adds a new campfire cooking recipe.", params = {LuaDocFragments.Recipe.RECIPE_ID, LuaDocFragments.Recipe.OUTPUT_ITEM, LuaDocFragments.Recipe.INPUT_INGREDIENT, LuaDocFragments.Recipe.XP_NUMBER, LuaDocFragments.Recipe.COOK_TIME})
     void addCampfire(String recipeId, ItemCount output, IngredientWrapper input, float xp, int cookTime);
 
-    @LuaDoc(description = "Adds a new stonecutter recipe.", params = {"recipeId: string", "output: IItem", "input: IngredientWrapper"})
+    @LuaDoc(description = "Adds a new stonecutter recipe.", params = {LuaDocFragments.Recipe.RECIPE_ID, LuaDocFragments.Recipe.OUTPUT_ITEM, LuaDocFragments.Recipe.INPUT_INGREDIENT})
     void addStonecutting(String recipeId, ItemCount output, IngredientWrapper input);
 
-    @LuaDoc(description = "Adds a new smithing table upgrade recipe.", params = {"recipeId: string", "output: IItem", "template: IngredientWrapper", "base: IngredientWrapper", "addition: IngredientWrapper"})
+    @LuaDoc(description = "Adds a new smithing table upgrade recipe.", params = {LuaDocFragments.Recipe.RECIPE_ID, LuaDocFragments.Recipe.OUTPUT_ITEM, "template: IngredientWrapper", "base: IngredientWrapper", "addition: IngredientWrapper"})
     void addSmithing(String recipeId, ItemCount output, IngredientWrapper template, IngredientWrapper base, IngredientWrapper addition);
 
     @LuaDoc(
         description = "Removes all recipes that use items belonging to the specified tag as input or output.",
-        params = {"tag: string"},
-        returnType = "void"
+        params = {"tag: string"}
     )
     void removeByTag(String tag);
 
-    @LuaDoc(description = "Adds a new anvil combination recipe.", params = {"recipeId: string", "output: IItem", "leftInput: IngredientWrapper", "rightInput: IngredientWrapper", "expCost: integer"})
+    @LuaDoc(description = "Adds a new anvil combination recipe.", params = {LuaDocFragments.Recipe.RECIPE_ID, LuaDocFragments.Recipe.OUTPUT_ITEM, "leftInput: IngredientWrapper", "rightInput: IngredientWrapper", "expCost: integer"})
     void addAnvil(String recipeId, ItemCount output, IngredientWrapper leftInput, IngredientWrapper rightInput, int expCost);
 
-    @LuaDoc(description = "Adds a new brewing stand potion recipe.", params = {"recipeId: string", "outputPotion: string", "inputPotion: string", "ingredient: IngredientWrapper"})
+    @LuaDoc(description = "Adds a new brewing stand potion recipe.", params = {LuaDocFragments.Recipe.RECIPE_ID, "outputPotion: string", "inputPotion: string", "ingredient: IngredientWrapper"})
     void addBrewing(String recipeId, String outputPotion, String inputPotion, IngredientWrapper ingredient);
 
     @LuaDoc(description = "Adds a new villager trade recipe.", params = {"profession: string", "level: integer", "buy1: IItem", "buy2: IItem", "sell: IItem", "maxUses: integer", "xp: integer"})
     void addTrade(String profession, int level, ItemCount buy1, ItemCount buy2, ItemCount sell, int maxUses, int xp);
+
+    @LuaDoc(
+        description = "Registers an arbitrary data-driven JSON recipe for any mod or vanilla recipe type (e.g. 'mekanism:crushing', 'create:mixing'). Data is written directly as a virtual JSON recipe into the datapack.",
+        params = {"recipeType: string", LuaDocFragments.Recipe.RECIPE_ID, "recipeDataJson: string"}
+    )
+    default void registerCustom(String recipeType, String recipeId, String recipeDataJson) {}
 }

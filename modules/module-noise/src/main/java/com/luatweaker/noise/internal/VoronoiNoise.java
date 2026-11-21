@@ -39,12 +39,11 @@ public final class VoronoiNoise {
                 }
             }
         }
-        double result = switch (returnType) {
+        return switch (returnType) {
             case 1 -> Math.sqrt(f2);
             case 2 -> Math.sqrt(f2) - Math.sqrt(f1);
             default -> Math.sqrt(f1);
         };
-        return result;
     }
 
     /** Deterministic hash in [0, 1) derived from seed and integer cell coordinates. */

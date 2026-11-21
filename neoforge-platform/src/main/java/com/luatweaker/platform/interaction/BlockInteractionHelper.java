@@ -4,12 +4,15 @@ import com.luatweaker.api.entity.IEntity;
 import com.luatweaker.api.objects.IWorldBlock;
 import com.luatweaker.platform.NeoForgeWorldBlock;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -29,47 +32,52 @@ public final class BlockInteractionHelper {
     private static final int PERFORMANCE_WARNING_RADIUS = 32;
 
     public static boolean performBlockBreak(@NotNull IEntity actor, int x, int y, int z) {
-        if (actor.getRawEntity() instanceof Entity entity && entity.level() instanceof ServerLevel level) {
-            BlockPos pos = new BlockPos(x, y, z);
-            if (entity instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-                return serverPlayer.gameMode.destroyBlock(pos);
-            } else if (entity instanceof Player player) {
-                return level.destroyBlock(pos, true, player);
-            } else {
-                return level.destroyBlock(pos, true, entity);
-            }
+        return actor.getRawEntity() instanceof Entity entity && ServerLevels.map(ServerLevels.asServer(entity.level()), false,
+                level -> destroyBlock(level, entity, new BlockPos(x, y, z)));
+    }
+
+    private static boolean destroyBlock(ServerLevel level, Entity entity, BlockPos pos) {
+        if (entity instanceof ServerPlayer serverPlayer) {
+            return serverPlayer.gameMode.destroyBlock(pos);
         }
-        return false;
+        if (entity instanceof Player player) {
+            return level.destroyBlock(pos, true, player);
+        }
+        return level.destroyBlock(pos, true, entity);
     }
 
     public static boolean performBlockPlace(@NotNull IEntity actor, int x, int y, int z, @NotNull String blockId) {
-        if (actor.getRawEntity() instanceof Entity entity && entity.level() instanceof ServerLevel level) {
-            BlockPos pos = new BlockPos(x, y, z);
-            ResourceLocation rl = ResourceLocation.parse(blockId);
-            Block block = BuiltInRegistries.BLOCK.get(rl);
-            if (block != null && block != Blocks.AIR) {
-                return level.setBlockAndUpdate(pos, block.defaultBlockState());
-            }
-        }
-        return false;
+        return actor.getRawEntity() instanceof Entity entity && ServerLevels.map(ServerLevels.asServer(entity.level()), false,
+                level -> placeBlock(level, new BlockPos(x, y, z), blockId));
+    }
+
+    private static boolean placeBlock(ServerLevel level, BlockPos pos, String blockId) {
+        // An invalid id must fail loudly: silently returning false is indistinguishable
+        // from "no level / no permission" and hides Lua typos (AGENTS 0.12).
+        ResourceLocation rl = ResourceLocation.parse(blockId);
+        return placeResolved(level, pos, rl);
+    }
+
+    private static boolean placeResolved(ServerLevel level, BlockPos pos, ResourceLocation rl) {
+        Block block = BuiltInRegistries.BLOCK.get(rl);
+        return block != Blocks.AIR && level.setBlockAndUpdate(pos, block.defaultBlockState());
     }
 
     public static boolean performBlockUse(@NotNull IEntity actor, int x, int y, int z) {
-        if (actor.getRawEntity() instanceof Entity entity && entity.level() instanceof ServerLevel level) {
-            BlockPos pos = new BlockPos(x, y, z);
-            BlockState state = level.getBlockState(pos);
-            if (entity instanceof Player player) {
-                BlockHitResult hit = new BlockHitResult(
-                        new Vec3(x + 0.5, y + 0.5, z + 0.5),
-                        net.minecraft.core.Direction.UP,
-                        pos,
-                        false
-                );
-                InteractionResult res = state.useWithoutItem(level, player, hit);
-                return res.consumesAction();
-            }
-        }
-        return false;
+        return actor.getRawEntity() instanceof Entity entity && entity instanceof Player player && ServerLevels.map(ServerLevels.asServer(entity.level()), false,
+                level -> useBlock(level, player, new BlockPos(x, y, z)));
+    }
+
+    private static boolean useBlock(ServerLevel level, Player player, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        BlockHitResult hit = new BlockHitResult(
+                new Vec3(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5),
+                Direction.UP,
+                pos,
+                false
+        );
+        InteractionResult result = state.useWithoutItem(level, player, hit);
+        return result.consumesAction();
     }
 
     @NotNull
@@ -82,20 +90,24 @@ public final class BlockInteractionHelper {
                         + "); this scans up to " + (2L * radius + 1) * (2L * radius + 1) * (2L * radius + 1)
                         + " blocks and may lag the server.");
             }
-            net.minecraft.world.level.Level level = mcEntity.level();
-            BlockPos center = mcEntity.blockPosition();
-            for (int dx = -radius; dx <= radius; dx++) {
-                for (int dy = -radius; dy <= radius; dy++) {
-                    for (int dz = -radius; dz <= radius; dz++) {
-                        BlockPos pos = center.offset(dx, dy, dz);
-                        BlockState state = level.getBlockState(pos);
-                        String blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
-                        String dimension = level.dimension().location().toString();
-                        list.add(new NeoForgeWorldBlock(blockId, pos.getX(), pos.getY(), pos.getZ(), dimension, state));
-                    }
-                }
-            }
+            collectNearbyBlocks(mcEntity.level(), mcEntity.blockPosition(), radius, list);
         }
         return list;
     }
+
+    private static void collectNearbyBlocks(Level level, BlockPos center, int radius, List<IWorldBlock> out) {
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dy = -radius; dy <= radius; dy++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    BlockPos pos = center.offset(dx, dy, dz);
+                    BlockState state = level.getBlockState(pos);
+                    String blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+                    String dimension = level.dimension().location().toString();
+                    out.add(new NeoForgeWorldBlock(blockId, pos.getX(), pos.getY(), pos.getZ(), dimension, state));
+                }
+            }
+        }
+    }
 }
+
+

@@ -14,7 +14,7 @@ public record ProjectileDefinition(
         @LuaDoc(description = "Trail particle id (e.g. 'minecraft:flame').", returnType = "string") String trailParticle
 ) {
     public ProjectileDefinition {
-        if (damage < 0) throw new IllegalArgumentException("damage must be >= 0");
-        if (explosionPower < 0) throw new IllegalArgumentException("explosionPower must be >= 0");
+        if (damage < 0) { throw new IllegalArgumentException("damage must be >= 0"); }
+        if (explosionPower < 0) { throw new IllegalArgumentException("explosionPower must be >= 0"); }
     }
 }

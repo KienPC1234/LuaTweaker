@@ -6,6 +6,7 @@ import org.jetbrains.annotations.NotNull;
  * Platform abstraction for runtime structure operations
  * (implemented by the NeoForge platform).
  */
+@FunctionalInterface
 public interface IPlatformStructures {
 
     /**

@@ -6,6 +6,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -37,9 +38,11 @@ public final class ChunkAssembler {
     public static final int MAX_ASSEMBLIES_PER_KEY = 2;
     /** An assembly nobody finishes is dropped after this long. */
     public static final long TTL_NANOS = TimeUnit.SECONDS.toNanos(15);
+    /** A message delivered in a single frame skips assembly entirely. */
+    private static final int SINGLE_FRAME_CHUNKS = 1;
 
     private final LongSupplier clock;
-    private final ConcurrentHashMap<AssemblyKey, Assembly> assemblies = new ConcurrentHashMap<>();
+    private final Map<AssemblyKey, Assembly> assemblies = new ConcurrentHashMap<>();
 
     public ChunkAssembler() {
         this(System::nanoTime);
@@ -87,6 +90,26 @@ public final class ChunkAssembler {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(channel, "channel");
         Objects.requireNonNull(data, "data");
+        validateFrameBounds(index, total, data);
+        if (total == SINGLE_FRAME_CHUNKS) {
+            return data;
+        }
+
+        long now = clock.getAsLong();
+        assemblies.entrySet().removeIf(entry -> now - entry.getValue().createdAtNanos > TTL_NANOS);
+
+        AssemblyKey assemblyKey = new AssemblyKey(key, channel);
+        if (!assemblies.containsKey(assemblyKey)) {
+            rejectOverCapacity(key);
+        }
+
+        byte[][] completed = new byte[1][];
+        assemblies.compute(assemblyKey, (ignored, existing) ->
+                accumulateChunk(existing, total, index, data, now, completed));
+        return completed[0];
+    }
+
+    private static void validateFrameBounds(int index, int total, byte[] data) {
         if (total < 1 || total > MAX_CHUNKS) {
             throw new IllegalArgumentException("Invalid chunk count " + total + " (max " + MAX_CHUNKS + ")");
         }
@@ -97,46 +120,43 @@ public final class ChunkAssembler {
             throw new IllegalArgumentException(
                     "Chunk is " + data.length + " bytes (max " + CHUNK_BYTES + ")");
         }
-        if (total == 1) {
-            return data;
+    }
+
+    private void rejectOverCapacity(@NotNull String key) {
+        if (assemblies.size() >= MAX_ASSEMBLIES) {
+            throw new IllegalArgumentException(
+                    "Too many concurrent chunked messages (" + MAX_ASSEMBLIES + ")");
         }
-
-        long now = clock.getAsLong();
-        pruneExpired(now);
-
-        AssemblyKey assemblyKey = new AssemblyKey(key, channel);
-        boolean isNew = !assemblies.containsKey(assemblyKey);
-        if (isNew) {
-            if (assemblies.size() >= MAX_ASSEMBLIES) {
-                throw new IllegalArgumentException(
-                        "Too many concurrent chunked messages (" + MAX_ASSEMBLIES + ")");
-            }
-            if (countFor(key) >= MAX_ASSEMBLIES_PER_KEY) {
-                throw new IllegalArgumentException("Too many concurrent chunked messages for this connection");
+        int forKey = 0;
+        for (AssemblyKey assemblyKey : assemblies.keySet()) {
+            if (assemblyKey.key().equals(key)) {
+                forKey++;
             }
         }
+        if (forKey >= MAX_ASSEMBLIES_PER_KEY) {
+            throw new IllegalArgumentException("Too many concurrent chunked messages for this connection");
+        }
+    }
 
-        byte[][] completed = new byte[1][];
-        assemblies.compute(assemblyKey, (ignored, existing) -> {
-            Assembly assembly = existing;
-            if (assembly == null) {
-                assembly = new Assembly(total, now);
-            } else if (assembly.total != total) {
-                throw new IllegalArgumentException(
-                        "Chunk count changed from " + assembly.total + " to " + total);
-            }
-            assembly.add(index, data);
-            if (assembly.bytes > MAX_MESSAGE_BYTES) {
-                throw new IllegalArgumentException(
-                        "Reassembled message is " + assembly.bytes + " bytes (max " + MAX_MESSAGE_BYTES + ")");
-            }
-            if (assembly.received == total) {
-                completed[0] = assembly.concatenate();
-                return null;
-            }
-            return assembly;
-        });
-        return completed[0];
+    private static Assembly accumulateChunk(Assembly existing, int total, int index,
+                                            byte[] data, long now, byte[][] completed) {
+        Assembly assembly = existing;
+        if (assembly == null) {
+            assembly = new Assembly(total, now);
+        } else if (assembly.total != total) {
+            throw new IllegalArgumentException(
+                    "Chunk count changed from " + assembly.total + " to " + total);
+        }
+        assembly.add(index, data);
+        if (assembly.bytes > MAX_MESSAGE_BYTES) {
+            throw new IllegalArgumentException(
+                    "Reassembled message is " + assembly.bytes + " bytes (max " + MAX_MESSAGE_BYTES + ")");
+        }
+        if (assembly.received == total) {
+            completed[0] = assembly.concatenate();
+            return null;
+        }
+        return assembly;
     }
 
     /** Drops every partial message of one connection (logout, dimension change, reload). */
@@ -157,20 +177,6 @@ public final class ChunkAssembler {
     /** Number of in-flight messages, for diagnostics and tests. */
     public int size() {
         return assemblies.size();
-    }
-
-    private int countFor(@NotNull String key) {
-        int count = 0;
-        for (AssemblyKey assemblyKey : assemblies.keySet()) {
-            if (assemblyKey.key().equals(key)) {
-                count++;
-            }
-        }
-        return count;
-    }
-
-    private void pruneExpired(long now) {
-        assemblies.entrySet().removeIf(entry -> now - entry.getValue().createdAtNanos > TTL_NANOS);
     }
 
     private record AssemblyKey(String key, String channel) {

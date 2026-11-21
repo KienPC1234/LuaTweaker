@@ -64,8 +64,16 @@ Every Lua Mod **must** contain a `manifest.json` at its root:
     "main": "main.lua",
     "description": "Adds superhero abilities, custom items, and boss encounters.",
     "icon": "textures/gui/icon.png",
-    "dependencies": ["mod_economy"],
-    "minLuaTweakerVersion": "1.0.0",
+    "environment": "universal",
+    "dependencies": [
+        "mod_economy",
+        {"id": "lib_powers", "min_version": "1.2.0", "max_version": "2.0.0"},
+        {"id": "soft_cosmetics", "min_version": "0.5.0", "optional": true}
+    ],
+    "optional_dependencies": ["legacy_pack"],
+    "mods": [{"id": "jei", "min_version": "19.0.0"}],
+    "minecraft": {"min_version": "1.21", "max_version": "1.21.1"},
+    "luatweaker": {"min_version": "1.0.0"},
     "permissions": ["runtime.reflection", "runtime.bytecode_hook"]
 }
 ```
@@ -79,10 +87,46 @@ Every Lua Mod **must** contain a `manifest.json` at its root:
 | `main` | ❌ | `"main.lua"` | Single entry script |
 | `description` | ❌ | `""` | Human-readable description |
 | `icon` | ❌ | `""` | Icon path inside `assets/` (e.g. `textures/gui/icon.png`) |
-| `dependencies` | ❌ | `[]` | Required LuaMod IDs (validated at load) |
-| `minLuaTweakerVersion` | ❌ | `""` | Minimum LuaTweaker version required |
+| `environment` | ✅ | — | `"client"`, `"server"`, or `"universal"` (skipped outside its side) |
+| `dependencies` | ❌ | `[]` | Required LuaMods: plain IDs or `{id, min_version?, max_version?, optional?}` objects. A missing entry or a version outside the inclusive `[min, max]` window **skips the load** with a recorded reason |
+| `optional_dependencies` | ❌ | `[]` | Legacy soft deps (always `optional: true`): warn and continue when absent |
+| `mods` | ❌ | `[]` | Required platform (NeoForge/Jar) mods, same object shape. Missing/mismatched entries skip the load; `optional: true` only warns |
+| `integrations` | ❌ | `{}` | Declared cross-mod integrations, keyed by host mod id. Each entry runs automatically when the host is installed (see below); always soft — a miss only skips that entry, never the mod |
+| `minecraft` | ❌ | — | `{min_version?, max_version?}` (or a single exact-version string): skips the load outside the window |
+| `luatweaker` | ❌ | — | Same shape for the engine version. Unknown running versions fail open with a warning so tests/datagen never mass-skip |
 | `permissions` | ❌ | `[]` | Runtime permissions granted to the mod (e.g. `runtime.reflection`, `runtime.bytecode_hook`, `net.http`). Denied at load time if undeclared. See [**JAVA_PATCHER.md**](JAVA_PATCHER.md) |
 | `update_url` | ❌ | — | **HTTPS** URL of a JSON update feed (see [Update Checking](#-update-checking--network-security)) |
+
+Skipped mods are reported three ways: the load log, the per-mod errors
+surfaced by `/lt doctor`, and an in-game chat warning to every joining player
+listing the first few failures. Runtime feature flags belong in Lua:
+`mod:HasMod(id)`, `mod:GetModVersion(id)`, and
+`mod:CheckDependency(id [, minVersion [, maxVersion]])`.
+
+## 🧩 Declared integrations (mekanism-style compat)
+
+For "load `integrations/<mod>.lua` only when that mod is present, with a
+version window", declare it instead of hand-rolling `if HasMod` guards:
+
+```json
+"integrations": {
+    "jei": "integrations/jei.lua",
+    "mekanism": {"entry": "integrations/mekanism.lua", "min_version": "10.7.0"},
+    "curios": {"min_version": "7.0.0"},
+    "jade": true
+}
+```
+
+- Key = host platform mod id. Value = entry path string, `true` (defaults to
+  `integrations/<id>.lua`), or an object with optional `entry`,
+  `min_version`, `max_version` (inclusive, same tolerant comparison as deps).
+- Load order: `main.lua` → matching integrations → `mod:OnEnable()`.
+- Outcomes are always soft: missing host, version mismatch, missing entry, or
+  a runtime error records `skipped:`/`error:` for that entry (visible in the
+  manager UI, `/lt doctor` data, and `mod:GetIntegrationStatus()`), while the
+  mod itself keeps loading.
+- Lua runtime: `mod:HasIntegration(id)` and
+  `mod:GetIntegrationStatus([id])` for feature flags inside scripts.
 
 ---
 
@@ -179,13 +223,12 @@ The old split between an internal `config.json` and an external `luaconfig/` sys
 ### Usage in Lua (`main.lua` or any module)
 
 ```lua
--- 1. Read config (auto-loaded from config/luatweaker/mod_sieu_nhan.json)
+-- 1. Read config (auto-loaded from luaconfig/mod_sieu_nhan.json)
 local Config = mod:GetConfig()
 print("Boss shake intensity:", Config.boss_shake_intensity)
 
--- 2. Modify and save back down to disk
-Config.debug_mode = true
-mod:SaveConfig(Config)
+-- 2. Edit the file directly; config changes are not written back by Lua.
+--    The table returned by GetConfig() is a snapshot of the JSON file.
 ```
 
 ### Example `default_config.json`
@@ -351,39 +394,62 @@ require("LuaTweaker.Content") → Core engine API (Content, Events, Recipe, ...)
 ### Full `mod` table API
 
 ```lua
--- ========== METADATA ==========
-mod.Id            -- "mod_sieu_nhan"
+-- ========== METADATA (set by the engine) ==========
+mod.ID            -- "mod_sieu_nhan"
 mod.Name          -- "Superhero Capabilities Mod"
 mod.Author        -- "KienDev"
 mod.Version       -- "2.0.0"
-mod.Description   -- "Adds superhero abilities, custom items, and boss encounters."
-mod.Icon          -- "textures/gui/icon.png"
-mod.Main          -- "main.lua"
-mod.Type          -- "folder" or "zip"
-mod.Dependencies  -- {"mod_economy", ...}
 
--- ========== UNIFIED CONFIG (config/luatweaker/<id>.json) ==========
-local Config = mod:GetConfig()          -- Auto-loaded; falls back to default_config.json
-Config.debug_mode = true
-mod:SaveConfig(Config)                  -- Write back to disk
+-- ========== CONFIG (luaconfig/<id>.json) ==========
+local Config = mod:GetConfig()   -- merged with default_config.json; returns a snapshot table
 
 -- ========== INTER-MOD IPC ==========
-mod:ExportAPI("Economy", EconomyAPI)    -- Publish a public API
-local api = mod:ImportAPI("mod_economy", "Economy")  -- Import a neighbor's API
+mod:ExportAPI("Economy", EconomyAPI)                   -- publish
+local api = mod:ImportAPI("mod_economy", "Economy")    -- import
+mod:HasMod(id) / mod:GetModVersion(id)                 -- presence / version
+mod:CheckDependency(id [, minVersion [, maxVersion]])   -- optional interop gate
+mod:GetUpdateStatus([modId])                           -- read-only update feed
 
--- ========== STATUS ==========
-mod:IsEnabled()     -- true/false
+-- ========== FILES ==========
+local Files = mod:Files()    -- read-only: this mod's own folder or .zip
+local Out   = mod:Exports()  -- writable: gameDir/luatweaker/exports/<mod_id>/
 
--- ========== RELOAD ==========
-mod:Reload()        -- Re-run main.lua (folder mods only)
+Files:ReadText("data/items.json")     -- UTF-8 text; throws when missing
+Files:ReadBase64("data/atlas.bin")    -- binary as Base64
+Files:Exists("data/items.json")
+Files:List("data")                    -- {"items.json", ...}
+Files:Stat("data/items.json")         -- { size, directory, modified }
+Files:Directory()                     -- absolute path of the folder/zip
 
--- ========== FILE OPERATIONS (folder mods only) ==========
-mod:ListFiles()                    -- {"main.lua", "src/recipes.lua", ...}
-mod:ListFiles(".lua")              -- Filter by extension
-mod:ReadFile("config.json")        -- Read file content as string
-mod:WriteFile("data.txt", "hello") -- Write content to file
-mod:Exists("manifest.json")        -- Check if file exists
+Out:WriteText("report.csv", csv)      -- atomic replace; parent dirs created
+Out:WriteBase64("map.png", base64)    -- binary-safe
+Out:AppendText("run.log", line)
+Out:ReadText("report.csv")
+Out:Exists("report.csv")
+Out:List(".")
+Out:Stat("report.csv")
+Out:Delete("old.csv")                 -- files / empty directories only
+Out:Mkdir("cache")
+Out:Directory()                       -- absolute path; created on first call
 ```
+
+File rules:
+
+- Paths are relative. `..`, absolute paths, `C:`/alternate data streams, control
+  characters and symlinks that leave the root are rejected with a Lua error.
+- `mod:Files()` is read-only and never leaves the mod's own folder/zip (zip mods
+  are read as entries, not extracted). A single read is capped at 8 MiB.
+- `mod:Exports()` is the only writable location. It never touches the mod folder,
+  so updates and zip installs stay intact and scripts cannot rewrite their own
+  code. A single write is capped at 8 MiB.
+- Lua strings in this VM are UTF-8 text; binary data uses
+  `ReadBase64` / `WriteBase64`. `ReadText` throws on invalid UTF-8 instead of
+  silently replacing bytes.
+- Exports are local to the machine. They are not synced to a server or to
+  clients; use the `Network` service for that.
+- Capture the handles once after load (`local Files = mod:Files()`). Each handle
+  is bound to the mod that created it; the `mod` global itself is shared by every
+  mod in the engine.
 
 ---
 
@@ -393,10 +459,13 @@ mod:Exists("manifest.json")        -- Check if file exists
 
 1. LuaTweaker scans `luamods/` for `.zip` files.
 2. Opens the ZIP in-memory using `java.util.zip.ZipFile` (no disk extraction).
-3. Searches for `manifest.json` at root, or nested one level (e.g. `mod_name/manifest.json`).
-4. Reads all `assets/**` entries → Virtual ResourcePack.
-5. Reads all `data/**` entries → Virtual Datapack.
-6. Executes **only `main.lua`** in the isolated sandbox (all other code is loaded via `require`).
+3. Reads `manifest.json` from the archive root.
+4. Runs **only `main.lua`** in the isolated sandbox. `require()` resolves files on
+   disk under `luamods/`, so a zip mod must keep its code in `main.lua` (install it
+   as a folder when you want split modules). `mod:Files()` can still read data
+   files from inside the zip.
+5. Per-mod `assets/**` / `data/**` virtual packs are served from **folder** mods;
+   zip archives are not mounted as resource/datapack roots.
 
 ### Safety Checks (Error Prevention)
 

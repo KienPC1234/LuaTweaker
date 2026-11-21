@@ -3,8 +3,10 @@ package com.luatweaker.platform.content;
 import com.luatweaker.content.ContentServiceImpl;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -14,44 +16,73 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * (content files are regenerated from the SAME content service), so it must be
  * deterministic and complete.
  */
-public class ContentTagMapperTest {
+class ContentTagMapperTest {
 
-    @Test
-    public void computesMineableAndLevelTags() {
+    private static Map<String, List<String>> computeTags(ContentServiceImpl content) {
+        return ContentTagMapper.computeBlockTags(content);
+    }
+
+    private static ContentServiceImpl oreAndStairsContent() {
         ContentServiceImpl content = new ContentServiceImpl();
-        content.createBlock("my_ore", b -> {
-            b.mineableWith("pickaxe");
-            b.miningLevel(2);
+        content.createBlock("my_ore", block -> {
+            block.mineableWith("pickaxe");
+            block.miningLevel(2);
         });
-        content.createBlock("my_iron_stairs", b -> {
-            b.mineableWith("pickaxe");
+        content.createBlock("my_iron_stairs", block -> {
+            block.mineableWith("pickaxe");
         });
-
-        Map<String, List<String>> tags = ContentTagMapper.computeBlockTags(content);
-
-        assertEquals(List.of("luatweaker:my_ore", "luatweaker:my_iron_stairs"),
-                tags.get("tags/block/mineable/pickaxe.json"));
-        assertEquals(List.of("luatweaker:my_ore"), tags.get("tags/block/needs_iron_tool.json"));
-        assertTrue(tags.containsKey("tags/block/stairs.json"));
+        return content;
     }
 
     @Test
-    public void defaultsNamespaceWhenMissing() {
-        ContentServiceImpl content = new ContentServiceImpl();
-        content.createBlock("ruby_ore", b -> b.mineableWith("axe"));
-
-        Map<String, List<String>> tags = ContentTagMapper.computeBlockTags(content);
-        assertEquals(List.of("luatweaker:ruby_ore"), tags.get("tags/block/mineable/axe.json"));
+    void pickaxeTagListsBothPickaxeBlocks() {
+        // The mapper iterates a registry whose iteration order is not guaranteed,
+        // so compare the tag contents as an unordered set.
+        assertEquals(Set.of("luatweaker:my_ore", "luatweaker:my_iron_stairs"),
+                new HashSet<>(computeTags(oreAndStairsContent()).get("tags/block/mineable/pickaxe.json")),
+                "both pickaxe-mineable blocks must land in the pickaxe tag");
     }
 
     @Test
-    public void wallAndSlabSuffixesProduceShapeTags() {
-        ContentServiceImpl content = new ContentServiceImpl();
-        content.createBlock("my_wall", b -> {});
-        content.createBlock("my_slab", b -> {});
+    void ironToolTagListsOnlyLevelTwoOre() {
+        assertEquals(List.of("luatweaker:my_ore"),
+                computeTags(oreAndStairsContent()).get("tags/block/needs_iron_tool.json"),
+                "only the mining-level-2 ore must require an iron tool");
+    }
 
-        Map<String, List<String>> tags = ContentTagMapper.computeBlockTags(content);
-        assertTrue(tags.containsKey("tags/block/walls.json"));
-        assertTrue(tags.containsKey("tags/block/slabs.json"));
+    @Test
+    void stairsSuffixProducesStairsTag() {
+        assertTrue(computeTags(oreAndStairsContent()).containsKey("tags/block/stairs.json"),
+                "the _stairs suffix must produce a stairs tag for stair placement rules");
+    }
+
+    @Test
+    void axeTagUsesDefaultNamespace() {
+        ContentServiceImpl content = new ContentServiceImpl();
+        content.createBlock("ruby_ore", block -> block.mineableWith("axe"));
+
+        assertEquals(List.of("luatweaker:ruby_ore"),
+                computeTags(content).get("tags/block/mineable/axe.json"),
+                "blocks without an explicit namespace must default to luatweaker");
+    }
+
+    @Test
+    void wallSuffixProducesWallsTag() {
+        ContentServiceImpl content = new ContentServiceImpl();
+        content.createBlock("my_wall", block -> {
+        });
+
+        assertTrue(computeTags(content).containsKey("tags/block/walls.json"),
+                "the _wall suffix must produce a walls tag for wall placement rules");
+    }
+
+    @Test
+    void slabSuffixProducesSlabsTag() {
+        ContentServiceImpl content = new ContentServiceImpl();
+        content.createBlock("my_slab", block -> {
+        });
+
+        assertTrue(computeTags(content).containsKey("tags/block/slabs.json"),
+                "the _slab suffix must produce a slabs tag for slab placement rules");
     }
 }

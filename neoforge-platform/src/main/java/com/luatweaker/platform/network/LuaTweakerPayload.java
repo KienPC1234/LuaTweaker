@@ -25,6 +25,8 @@ public record LuaTweakerPayload(String channelName, int index, int total, byte[]
     public static final int MAX_CHANNEL_CHARS = 128;
     /** Defensive bound on the declared frame size, matching the sender's chunk size. */
     public static final int MAX_FRAME_BYTES = ChunkAssembler.CHUNK_BYTES;
+    public static final int MIN_FRAME_TOTAL = 1;
+
 
     public static final CustomPacketPayload.Type<LuaTweakerPayload> TYPE =
             new CustomPacketPayload.Type<>(
@@ -38,7 +40,7 @@ public record LuaTweakerPayload(String channelName, int index, int total, byte[]
                         buf.writeVarInt(payload.total());
                         buf.writeByteArray(payload.data());
                     },
-                    buf -> decodeFrame(buf));
+                    LuaTweakerPayload::decodeFrame);
 
     private static LuaTweakerPayload decodeFrame(FriendlyByteBuf buf) {
         String channel = buf.readUtf(MAX_CHANNEL_CHARS);
@@ -59,7 +61,7 @@ public record LuaTweakerPayload(String channelName, int index, int total, byte[]
         if (channelName == null || channelName.isBlank()) {
             throw new IllegalArgumentException("Network frame channel must not be empty");
         }
-        if (total < 1) {
+        if (total < MIN_FRAME_TOTAL) {
             throw new IllegalArgumentException("Network frame total must be at least 1, got " + total);
         }
         if (index < 0 || index >= total) {
