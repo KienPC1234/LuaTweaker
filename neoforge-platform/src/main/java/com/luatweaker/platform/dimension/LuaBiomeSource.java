@@ -113,17 +113,40 @@ public final class LuaBiomeSource extends BiomeSource {
                     + "' is not registered; call Dimensions:Create(\"" + dimensionId + "\", {...}) before loading the world");
         }
         List<BiomeHolderEntry> out = new ArrayList<>();
-        for (DimensionConfig.BiomeEntry entry : config.biomes()) {
-            ResourceLocation id = ResourceLocation.tryParse(entry.id());
-            if (id == null) { continue; }
-            Holder<Biome> holder = getter.getOrThrow(ResourceKey.create(Registries.BIOME, id));
-            out.add(new BiomeHolderEntry(entry.id(), holder, entry.weight()));
-        }
+        populateConfiguredBiomes(out, config.biomes(), getter, dimensionId);
         if (out.isEmpty()) {
-            throw new IllegalStateException("Dimension '" + dimensionId
-                    + "' has no usable biomes; configure at least one biome in Dimensions:Create");
+            out.add(resolveFallbackBiome(getter, dimensionId));
         }
         return out;
+    }
+
+    private static void populateConfiguredBiomes(List<BiomeHolderEntry> out,
+                                                 List<DimensionConfig.BiomeEntry> entries,
+                                                 HolderGetter<Biome> getter,
+                                                 String dimensionId) {
+        for (DimensionConfig.BiomeEntry entry : entries) {
+            ResourceLocation id = ResourceLocation.tryParse(entry.id());
+            if (id == null) { continue; }
+            Optional<Holder.Reference<Biome>> opt = getter.get(ResourceKey.create(Registries.BIOME, id));
+            if (opt.isPresent()) {
+                out.add(new BiomeHolderEntry(entry.id(), opt.get(), entry.weight()));
+            } else {
+                LuaTweakerLog.get().error(LogStage.SYSTEM,
+                        "Biome '" + entry.id() + "' in dimension '" + dimensionId + "' was not found in registry; skipping");
+            }
+        }
+    }
+
+    private static BiomeHolderEntry resolveFallbackBiome(HolderGetter<Biome> getter, String dimensionId) {
+        Optional<Holder.Reference<Biome>> fallback = getter.get(ResourceKey.create(Registries.BIOME,
+                ResourceLocation.parse("minecraft:plains")));
+        if (fallback.isPresent()) {
+            LuaTweakerLog.get().error(LogStage.SYSTEM, "Dimension '" + dimensionId
+                    + "' has no valid biomes! Using fallback 'minecraft:plains'");
+            return new BiomeHolderEntry("minecraft:plains", fallback.get(), 1);
+        }
+        throw new IllegalStateException("Dimension '" + dimensionId
+                + "' has no usable biomes; configure at least one valid biome in Dimensions:Create");
     }
 
     @Override

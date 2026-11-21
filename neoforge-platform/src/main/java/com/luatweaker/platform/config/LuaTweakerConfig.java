@@ -7,6 +7,13 @@ public final class LuaTweakerConfig {
     public static final ModConfigSpec.BooleanValue DEBUG;
     public static final ModConfigSpec.BooleanValue AUTO_GENERATE_STUBS;
     public static final ModConfigSpec.BooleanValue SUPPRESS_EXPERIMENTAL_WARNING;
+    public static final ModConfigSpec.ConfigValue<String> MOD_SYNC_MODE;
+    public static final ModConfigSpec.IntValue MOD_SYNC_TIMEOUT_SECONDS;
+    public static final ModConfigSpec.ConfigValue<String> SERVER_MOD_BUNDLE_URL;
+    public static final ModConfigSpec.ConfigValue<String> SERVER_MOD_BUNDLE_SHA256;
+    public static final ModConfigSpec.ConfigValue<String> SERVER_MOD_BUNDLE_VERSION;
+    public static final ModConfigSpec.ConfigValue<String> SERVER_MOD_BUNDLE_NAME;
+    public static final ModConfigSpec.ConfigValue<String> SERVER_MOD_BUNDLE_FILE;
 
     /**
      * STARTUP config: NeoForge loads this type synchronously inside
@@ -38,6 +45,43 @@ public final class LuaTweakerConfig {
             .comment("Automatically accept Minecraft's 'experimental features' warnings when "
                 + "creating or opening a world with LuaTweaker datapacks")
             .define("suppressExperimentalWarning", true);
+
+        MOD_SYNC_MODE = builder
+            .comment("LuaMod sync enforcement when a client joins: 'kick' disconnects on",
+                "missing or version-mismatched universal required mods, 'warn' only chats/logs.",
+                "Server Lua can still add conditions via ModSync:CheckPlayer + Server:Kick.")
+            .define("modSyncMode", "kick");
+
+        MOD_SYNC_TIMEOUT_SECONDS = builder
+            .comment("Seconds to wait for the client's LuaMod hello before treating it as missing.",
+                "A client without LuaTweaker never sends a hello.")
+            .defineInRange("modSyncTimeoutSeconds", 10, 3, 60);
+
+        SERVER_MOD_BUNDLE_URL = builder
+            .comment("Optional HTTPS URL of a server LuaMod pack (.zip) offered to mismatched clients.",
+                "Empty (default) disables the offer: the verdict carries no download block.",
+                "The zip is hash-pinned by serverModBundleSha256 and saved per content-hash under",
+                "luatweaker/servers/<id>/luamods/ — never auto-loaded. Requires net access on clients.",
+                "Keep empty unless you host the file yourself over HTTPS.")
+            .define("serverModBundleUrl", "");
+
+        SERVER_MOD_BUNDLE_SHA256 = builder
+            .comment("SHA-256 hex digest (64 chars) of the file at serverModBundleUrl.",
+                "Clients refuse bytes that do not match. Empty disables the offer.")
+            .define("serverModBundleSha256", "");
+
+        SERVER_MOD_BUNDLE_VERSION = builder
+            .comment("Display-only pack version shown in the client download prompt.")
+            .define("serverModBundleVersion", "");
+
+        SERVER_MOD_BUNDLE_NAME = builder
+            .comment("Display-only pack name shown in the client download prompt.")
+            .define("serverModBundleName", "");
+
+        SERVER_MOD_BUNDLE_FILE = builder
+            .comment("Zip file name for the downloaded pack (must end .zip).",
+                "Empty derives it from the URL path, else 'server-modpack.zip'.")
+            .define("serverModBundleFile", "");
 
         builder.pop();
         COMMON_SPEC = builder.build();

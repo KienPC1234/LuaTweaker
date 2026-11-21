@@ -71,10 +71,40 @@ Commands:Register("arcane", {
                 current, maxMana, percent * 100
             ))
 
+        elseif subcommand == "panel" or subcommand == "ui" then
+            local Network = require("LuaTweaker.Network")
+            if Network then
+                local toggleEvent = Network:GetOrCreateRemoteEvent("ToggleArcanePanel")
+                if toggleEvent and toggleEvent.FireClient then
+                    toggleEvent:FireClient(player)
+                end
+            end
+            sender:sendMessage("§bToggled Arcane Panel")
+
         else
             sender:sendMessage("§cUnknown subcommand: " .. subcommand)
         end
     end
 })
 
-print("[LuaTweakerTest] Commands registered: /arcane")
+Commands:Register("imgui", {
+    Description = "Toggle Arcane ImGui panel",
+    PermissionLevel = 0,
+    ConsoleAllowed = false,
+    Handler = function(sender, args, raw)
+        local player = sender.Player
+        if player then
+            local Network = require("LuaTweaker.Network")
+            if Network then
+                local toggleEvent = Network:GetOrCreateRemoteEvent("ToggleArcanePanel")
+                if toggleEvent and toggleEvent.FireClient then
+                    toggleEvent:FireClient(player)
+                end
+            end
+            sender:sendMessage("§bToggled Arcane Panel")
+        end
+        return true
+    end
+})
+
+print("[LuaTweakerTest] Commands registered: /arcane, /imgui")

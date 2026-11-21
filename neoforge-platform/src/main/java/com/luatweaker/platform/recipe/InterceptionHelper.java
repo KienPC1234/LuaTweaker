@@ -758,6 +758,11 @@ public final class InterceptionHelper {
         String descriptor = data.ingredient().descriptor();
         String itemId = descriptor.startsWith("#") ? descriptor.substring(1) : descriptor;
         Item catalystItem = BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId));
+        if (catalystItem == Items.AIR) {
+            LOGGER.warn("[LuaTweaker] Unknown catalyst item in brewing recipe '{}': {}",
+                    data.recipeId(), itemId);
+            return false;
+        }
         builder.addMix(inputHolder, catalystItem, outputHolder);
         com.luatweaker.api.log.LuaTweakerLog.get().info(
                 com.luatweaker.api.log.LogStage.RECIPE_APPLY,

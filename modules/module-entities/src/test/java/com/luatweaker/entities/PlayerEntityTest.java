@@ -37,6 +37,24 @@ class PlayerEntityTest {
     }
 
     @Test
+    void playerGameModeAndFlightControls() throws IOException {
+        runLua("player:setGameMode('CREATIVE')\n"
+                + "player:setCanFly(true)\n"
+                + "player:setFlying(true)\n"
+                + "player.Level = 30\n"
+                + "player.SelectedSlot = 5\n"
+                + "player:setItemCooldown('minecraft:ender_pearl', 40)");
+
+        Assertions.assertAll("player game mode and flight controls must be updated",
+            () -> Assertions.assertEquals("CREATIVE", player.gameMode, "game mode must be CREATIVE"),
+            () -> Assertions.assertTrue(player.allowFlight, "canFly must be true"),
+            () -> Assertions.assertTrue(player.flying, "flying must be true"),
+            () -> Assertions.assertEquals(30, player.level, "level must be 30"),
+            () -> Assertions.assertEquals(5, player.selectedSlot, "selectedSlot must be 5"),
+            () -> Assertions.assertEquals(40, player.cooldowns.get("minecraft:ender_pearl"), "cooldown must be 40"));
+    }
+
+    @Test
     void playerSendMessageFromLua() throws IOException {
         runLua("player:sendMessage('Hello Minecraft!')");
 
@@ -90,7 +108,13 @@ class PlayerEntityTest {
         final List<String> actionBars = new ArrayList<>();
         final List<String> screens = new ArrayList<>();
         final Map<String, Object> syncedData = new ConcurrentHashMap<>();
+        final Map<String, Integer> cooldowns = new ConcurrentHashMap<>();
         float health = MAX_HEALTH;
+        String gameMode = "SURVIVAL";
+        boolean allowFlight;
+        boolean flying;
+        int level;
+        int selectedSlot;
 
         @Override public void sendMessage(String message) { messages.add(message); }
         @Override public void sendActionBar(String message) { actionBars.add(message); }
@@ -98,6 +122,18 @@ class PlayerEntityTest {
         @Override public String getUuid() { return PLAYER_UUID; }
         @Override public boolean isSneaking() { return false; }
         @Override public boolean isCreative() { return true; }
+        @Override public String getGameMode() { return gameMode; }
+        @Override public void setGameMode(String mode) { this.gameMode = mode; }
+        @Override public boolean canFly() { return allowFlight; }
+        @Override public void setCanFly(boolean canFly) { this.allowFlight = canFly; }
+        @Override public void setFlying(boolean flying) { this.flying = flying; }
+        @Override public boolean isFlying() { return flying; }
+        @Override public int getLevel() { return level; }
+        @Override public void setLevel(int level) { this.level = level; }
+        @Override public int getSelectedSlot() { return selectedSlot; }
+        @Override public void setSelectedSlot(int slot) { this.selectedSlot = slot; }
+        @Override public boolean hasItemCooldown(String itemId) { return cooldowns.containsKey(itemId); }
+        @Override public void setItemCooldown(String itemId, int ticks) { cooldowns.put(itemId, ticks); }
         @Override public void giveItem(String itemId, int count) { }
         @Override public void giveExperience(int exp) { }
         @Override public void addEffect(String effectId, int durationTicks, int amplifier) { }

@@ -383,6 +383,40 @@ function RemoteEvent:FireAllClients(...)
     end
 end
 
+function RemoteEvent:FireClients(players, ...)
+    local args = {...}
+    if type(players) ~= "table" then
+        return
+    end
+    if self._javaService then
+        pcall(function() self._javaService:FireClients(self.Name, players, args) end)
+    end
+end
+
+function RemoteEvent:FireAllClientsExcept(excluded, ...)
+    local args = {...}
+    local uuid = ""
+    if type(excluded) == "string" then
+        uuid = excluded
+    elseif type(excluded) == "table" and type(excluded.getUuid) == "function" then
+        uuid = excluded:getUuid()
+    end
+    if self._javaService then
+        pcall(function() self._javaService:FireAllClientsExcept(self.Name, uuid, args) end)
+    end
+end
+
+--- Push-only channels refuse forged client packets with SetInboundEnabled(false).
+--- Inbound is accepted by default; pass true to re-allow after blocking.
+function RemoteEvent:SetInboundEnabled(enabled)
+    if enabled == nil then
+        enabled = true
+    end
+    if self._javaService then
+        pcall(function() self._javaService:SetInboundEnabled(self.Name, enabled) end)
+    end
+end
+
 _G.RemoteEvent = RemoteEvent
 
 local RemoteFunction = {}
@@ -467,6 +501,17 @@ function RemoteFunction:InvokeClient(player, ...)
     end
     local requestId = net:_RpcInvokeClient(self.Name, uuid, args)
     return awaitRpc(net, requestId, 'RemoteFunction:InvokeClient(' .. tostring(self.Name) .. ')')
+end
+
+--- Push-only functions refuse forged client invokes with SetInboundEnabled(false).
+--- Inbound is accepted by default; pass true to re-allow after blocking.
+function RemoteFunction:SetInboundEnabled(enabled)
+    if enabled == nil then
+        enabled = true
+    end
+    if self._javaService then
+        pcall(function() self._javaService:SetInboundEnabled(self.Name, enabled) end)
+    end
 end
 
 _G.RemoteFunction = RemoteFunction

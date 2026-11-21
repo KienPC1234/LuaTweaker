@@ -41,7 +41,7 @@ public class NeoForgeInteractionPlatform implements IPlatformInteraction {
 
     @Override
     public void playAnimation(@NotNull IEntity entity, @NotNull String animName, double speed, double transition) {
-        EntityInteractionHelper.playAnimation(entity, animName, speed, transition);
+        EntityAnimationHelper.playAnimation(entity, animName, speed, transition);
     }
 
     @Override
@@ -262,7 +262,16 @@ public class NeoForgeInteractionPlatform implements IPlatformInteraction {
                               double x, double y, double z,
                               double vx, double vy, double vz,
                               int count, double speed) {
-        WorldEffectsOps.spawnParticle(dimension, particleId, x, y, z, vx, vy, vz, count, speed);
+        WorldParticleOps.spawnParticle(dimension, particleId,
+                new com.luatweaker.api.particle.ParticleSpawn(
+                        x, y, z, vx, vy, vz, count, speed));
+    }
+
+    @Override
+    public void spawnParticleOptions(@NotNull String dimension, @NotNull String particleId,
+                                     @NotNull com.luatweaker.api.particle.ParticleSpawn spawn,
+                                     @NotNull com.luatweaker.api.particle.ParticleOptionsSpec options) {
+        WorldParticleOps.spawnParticleOptions(dimension, particleId, spawn, options);
     }
 
     @Override

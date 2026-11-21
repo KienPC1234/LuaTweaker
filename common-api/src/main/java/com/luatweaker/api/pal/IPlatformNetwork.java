@@ -27,6 +27,24 @@ public interface IPlatformNetwork {
     /** Sends one message to every connected player (server side). */
     void broadcastPayloadBytes(String channelName, byte[] data);
 
+    /**
+     * Sends one message to a subset of players (server side). The payload is
+     * encoded and split once, then fanned out, so targeting N players costs
+     * one encode instead of N. Default loops over {@link #sendPayloadBytes};
+     * transports override for single-split fan-out.
+     */
+    default void sendPayloadBytesToPlayers(java.util.List<String> playerUuids,
+                                           String channelName, byte[] data) {
+        if (playerUuids == null || playerUuids.isEmpty()) {
+            return;
+        }
+        for (String uuid : playerUuids) {
+            if (uuid != null && !uuid.isBlank()) {
+                sendPayloadBytes(uuid, channelName, data);
+            }
+        }
+    }
+
     /** Sends one message to the server (client side). */
     void sendPayloadBytesToServer(String channelName, byte[] data);
 

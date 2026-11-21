@@ -5,7 +5,6 @@ import com.luatweaker.api.vm.ILuaValue;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Map;
 
 /**
  * Binary encoding half of {@link LuaPayloadCodec}: Lua values to the tagged wire stream.
@@ -15,8 +14,9 @@ final class LuaPayloadEncoder {
     private LuaPayloadEncoder() {}
 
     static void writeAll(@NotNull BinaryWriter out, ILuaValue... values) {
+        CycleGuard guard = new CycleGuard();
         for (ILuaValue value : values) {
-            writeValue(out, value, 0);
+            writeValue(out, value, 0, guard);
             if (out.size() > LuaPayloadCodec.MAX_MESSAGE_BYTES) {
                 throw new IllegalArgumentException("Network payload is larger than "
                         + LuaPayloadCodec.MAX_MESSAGE_BYTES + " bytes");
@@ -24,7 +24,8 @@ final class LuaPayloadEncoder {
         }
     }
 
-    static void writeValue(@NotNull BinaryWriter out, @Nullable ILuaValue value, int depth) {
+    static void writeValue(@NotNull BinaryWriter out, @Nullable ILuaValue value, int depth,
+                           @NotNull CycleGuard guard) {
         if (depth > LuaPayloadCodec.MAX_NESTING) {
             throw new IllegalArgumentException(
                     "Network payload nesting is too deep (max " + LuaPayloadCodec.MAX_NESTING + " levels)");
@@ -34,7 +35,7 @@ final class LuaPayloadEncoder {
             return;
         }
         if (value.isTable()) {
-            writeTable(out, value.asTable(), depth);
+            writeTable(out, value.asTable(), depth, guard);
             return;
         }
         if (value.isBoolean()) {
@@ -63,52 +64,13 @@ final class LuaPayloadEncoder {
                         + value.getClass().getSimpleName());
     }
 
-    static void writeTable(@NotNull BinaryWriter out, @NotNull ILuaTable table, int depth) {
-        int length = table.length();
-        Map<ILuaValue, ILuaValue> entries = table.asMap();
-        if (isDenseArray(length, entries)) {
-            if (length > LuaPayloadCodec.MAX_ELEMENTS) {
-                throw new IllegalArgumentException("Array has " + length
-                        + " entries (max " + LuaPayloadCodec.MAX_ELEMENTS + ")");
-            }
-            out.writeByte(LuaPayloadCodec.TAG_ARRAY);
-            out.writeVarInt(length);
-            writeArrayEntries(out, table, length, depth);
-            return;
-        }
-        if (entries.size() > LuaPayloadCodec.MAX_ELEMENTS) {
-            throw new IllegalArgumentException("Table has " + entries.size()
-                    + " entries (max " + LuaPayloadCodec.MAX_ELEMENTS + ")");
-        }
-        out.writeByte(LuaPayloadCodec.TAG_MAP);
-        out.writeVarInt(entries.size());
-        writeMapEntries(out, entries, depth);
-    }
-
-    private static boolean isDenseArray(int length, Map<ILuaValue, ILuaValue> entries) {
-        if (length <= 0 || entries.size() != length) {
-            return false;
-        }
-        for (ILuaValue key : entries.keySet()) {
-            if (!key.isNumber() || key.asInt() < 1 || key.asInt() > length) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static void writeArrayEntries(@NotNull BinaryWriter out, @NotNull ILuaTable table,
-                                          int length, int depth) {
-        for (int i = 1; i <= length; i++) {
-            writeValue(out, table.rawget(i), depth + 1);
-        }
-    }
-
-    private static void writeMapEntries(@NotNull BinaryWriter out,
-                                        Map<ILuaValue, ILuaValue> entries, int depth) {
-        for (Map.Entry<ILuaValue, ILuaValue> entry : entries.entrySet()) {
-            out.writeUtf8(entry.getKey().asString(), LuaPayloadCodec.MAX_STRING_BYTES);
-            writeValue(out, entry.getValue(), depth + 1);
+    static void writeTable(@NotNull BinaryWriter out, @NotNull ILuaTable table, int depth,
+                           @NotNull CycleGuard guard) {
+        Object scope = guard.enter(table);
+        try {
+            LuaPayloadTableWriter.writeTableBody(out, table, depth, guard);
+        } finally {
+            guard.exit(scope);
         }
     }
 

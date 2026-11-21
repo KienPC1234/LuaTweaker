@@ -83,6 +83,35 @@ class EntityTablePropertyAliasTest {
     }
 
     @Test
+    void extendedPropertyAliasesFunctionAsExpected() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        MockEntity entity = bossEntity(engine);
+
+        runScript(engine, "extended_props",
+                "assert(boss.Dimension == 'minecraft:overworld')\n"
+                + "assert(math.abs(boss.Width - 0.6) < 0.001)\n"
+                + "assert(math.abs(boss.Height - 1.8) < 0.001)\n"
+                + "boss.NoGravity = true\n"
+                + "assert(boss.NoGravity == true)\n"
+                + "boss.Silent = true\n"
+                + "assert(boss.Silent == true)\n"
+                + "boss.AirSupply = 150\n"
+                + "assert(boss.AirSupply == 150)\n"
+                + "boss.Absorption = 5.0\n"
+                + "assert(boss.Absorption == 5.0)\n"
+                + "boss.FallDistance = 3.5\n"
+                + "assert(boss.FallDistance == 3.5)",
+                BOSS_GLOBAL);
+
+        Assertions.assertAll("extended properties must update and resolve",
+            () -> Assertions.assertTrue(entity.noGravity, "noGravity must be updated"),
+            () -> Assertions.assertTrue(entity.silent, "silent must be updated"),
+            () -> Assertions.assertEquals(150, entity.airSupply, "air supply must be updated"),
+            () -> Assertions.assertEquals(5.0f, entity.absorption, 1e-6, "absorption must be updated"),
+            () -> Assertions.assertEquals(3.5f, entity.fallDistance, 1e-6, "fall distance must be updated"));
+    }
+
+    @Test
     void propertyAliasesMirrorTheMethodApi() {
         ILuaEngine engine = LuaEngineFactory.create(false);
         MockEntity entity = bossEntity(engine);
@@ -165,6 +194,11 @@ class EntityTablePropertyAliasTest {
         private String lastOperation;
         private double lastAmount;
         private double baseValue = 20;
+        private boolean noGravity;
+        private boolean silent;
+        private int airSupply = 300;
+        private float absorption;
+        private float fallDistance;
 
         @Override public String getType() { return ENTITY_ID; }
         @Override public String getName() { return "Boss"; }
@@ -188,6 +222,17 @@ class EntityTablePropertyAliasTest {
         @Override public void setCustomData(String key, Object value) { customData.put(key, value); }
         @Override public Double getAttributeValue(String attributeId) { return baseValue; }
         @Override public Double getAttributeBaseValue(String attributeId) { return baseValue; }
+
+        @Override public boolean isNoGravity() { return noGravity; }
+        @Override public void setNoGravity(boolean noGravity) { this.noGravity = noGravity; }
+        @Override public boolean isSilent() { return silent; }
+        @Override public void setSilent(boolean silent) { this.silent = silent; }
+        @Override public int getAirSupply() { return airSupply; }
+        @Override public void setAirSupply(int air) { this.airSupply = air; }
+        @Override public float getAbsorption() { return absorption; }
+        @Override public void setAbsorption(float amount) { this.absorption = amount; }
+        @Override public float getFallDistance() { return fallDistance; }
+        @Override public void setFallDistance(float distance) { this.fallDistance = distance; }
 
         @Override
         public boolean setAttributeBaseValue(String attributeId, double value) {

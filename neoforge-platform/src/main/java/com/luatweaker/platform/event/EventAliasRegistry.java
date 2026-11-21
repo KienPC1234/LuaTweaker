@@ -46,12 +46,15 @@ public final class EventAliasRegistry {
         // Block
         ALIAS_MAP.put("BlockBreak", BlockEvent.BreakEvent.class);
         ALIAS_MAP.put("BlockPlace", BlockEvent.EntityPlaceEvent.class);
+        ALIAS_MAP.put("BlockBreakSpeed", PlayerEvent.BreakSpeed.class);
 
         // Player
         ALIAS_MAP.put("PlayerJoin", PlayerEvent.PlayerLoggedInEvent.class);
         ALIAS_MAP.put("PlayerLeave", PlayerEvent.PlayerLoggedOutEvent.class);
         ALIAS_MAP.put("PlayerRespawn", PlayerEvent.PlayerRespawnEvent.class);
         ALIAS_MAP.put("PlayerAdvancement", net.neoforged.neoforge.event.entity.player.AdvancementEvent.AdvancementEarnEvent.class);
+        ALIAS_MAP.put("ContainerOpen", net.neoforged.neoforge.event.entity.player.PlayerContainerEvent.Open.class);
+        ALIAS_MAP.put("ContainerClose", net.neoforged.neoforge.event.entity.player.PlayerContainerEvent.Close.class);
 
         // World & Entity
         ALIAS_MAP.put("EntitySpawn", EntityJoinLevelEvent.class);
@@ -63,6 +66,7 @@ public final class EventAliasRegistry {
 
         // Tick
         ALIAS_MAP.put("ServerTick", ServerTickEvent.Post.class);
+        ALIAS_MAP.put("PlayerTick", net.neoforged.neoforge.event.tick.PlayerTickEvent.Post.class);
     }
 
     public static Class<? extends Event> getClassForAlias(String alias) {

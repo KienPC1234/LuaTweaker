@@ -291,4 +291,34 @@ public interface IPlatformImGui {
     default boolean imguiShowDemoWindow(boolean open) { return open; }
 
     default String imguiGetVersion() { return "unavailable"; }
+
+    default void imguiSetScreen(boolean open) {}
+
+    default boolean imguiIsScreenOpen() { return false; }
+
+    default boolean imguiToggleScreen() { return false; }
+
+    default void imguiProgressBar(double fraction, String label, double width, double height) {
+        imguiProgressBar(fraction, label);
+    }
+
+    default boolean imguiInvisibleButton(String id, double width, double height) { return false; }
+
+    default double imguiGetMousePosX() { return 0.0; }
+
+    default double imguiGetMousePosY() { return 0.0; }
+
+    default double imguiGetCursorPosX() { return 0.0; }
+
+    default double imguiGetCursorPosY() { return 0.0; }
+
+    default void imguiSetCursorPos(double x, double y) {}
+
+    default double imguiGetWindowPosX() { return 0.0; }
+
+    default double imguiGetWindowPosY() { return 0.0; }
+
+    default double imguiGetWindowWidth() { return 0.0; }
+
+    default double imguiGetWindowHeight() { return 0.0; }
 }

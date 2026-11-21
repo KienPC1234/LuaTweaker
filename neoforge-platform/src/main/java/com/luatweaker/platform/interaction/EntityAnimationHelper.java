@@ -6,7 +6,7 @@ import net.minecraft.world.entity.LivingEntity;
 import org.jetbrains.annotations.NotNull;
 
 /** Geo/vanilla animation dispatch for {@code Entity:PlayAnimation}. */
-final class EntityAnimationHelper {
+public final class EntityAnimationHelper {
 
     private static final String ANIMATION_SWING = "swing";
     private static final String ANIMATION_OFFHAND_SWING = "offhand_swing";
@@ -16,7 +16,7 @@ final class EntityAnimationHelper {
     private EntityAnimationHelper() {
     }
 
-    static void playAnimation(@NotNull IEntity entity, @NotNull String animName, double speed, double transition) {
+    public static void playAnimation(@NotNull IEntity entity, @NotNull String animName, double speed, double transition) {
         com.luatweaker.api.pal.Platform.getInteraction().triggerGeoAnimation(entity, null, animName, speed, false);
         if (!(entity.getRawEntity() instanceof LivingEntity living)) {
             return;

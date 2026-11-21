@@ -37,6 +37,11 @@ import java.util.function.BiFunction;
  */
 public final class CustomContainerBlock extends CustomBlock implements EntityBlock {
 
+    private static final ContainerSpec EMPTY_SPEC = new ContainerSpec(
+            1, 1, "none", null, 8.0, java.util.Map.of(), java.util.Set.of(), null,
+            0, 0, 0, 0, java.util.List.of(), null, false, null, false, null,
+            java.util.List.of(), null, null, false);
+
     private static final ThreadLocal<ContainerSpec> INIT_SPEC = new ThreadLocal<>();
 
     private static Properties pushSpec(Properties props, ContainerSpec spec) {
@@ -65,10 +70,10 @@ public final class CustomContainerBlock extends CustomBlock implements EntityBlo
                                  boolean unused) {
         super(properties, crateId, spec != null ? spec.facing() : null,
                 spec != null ? spec.boxes() : java.util.List.of(), rightClickHandler);
-        INIT_SPEC.remove();
         this.crateTitle = crateTitle;
         this.spec = new AtomicReference<>(spec);
         this.itemFilter = new AtomicReference<>(itemFilter);
+        INIT_SPEC.remove();
         BooleanStateSpec stateSpec = spec != null ? spec.booleanState() : null;
         this.stateProperty = resolveStateProperty(stateSpec);
         registerDefaultState(initialDefaultState(defaultBlockState(), spec, this.stateProperty));
@@ -102,13 +107,19 @@ public final class CustomContainerBlock extends CustomBlock implements EntityBlo
     }
 
     @NotNull
+    private ContainerSpec currentSpec() {
+        ContainerSpec current = this.spec != null ? this.spec.get() : INIT_SPEC.get();
+        return current != null ? current : EMPTY_SPEC;
+    }
+
+    @NotNull
     public ContainerSpec getSpec() {
-        return spec.get();
+        return currentSpec();
     }
 
     @Override
     public RenderShape getRenderShape(BlockState state) {
-        if (spec.get().geoModel() != null) {
+        if (currentSpec().geoModel() != null) {
             return RenderShape.ENTITYBLOCK_ANIMATED;
         }
         return super.getRenderShape(state);
@@ -151,23 +162,23 @@ public final class CustomContainerBlock extends CustomBlock implements EntityBlo
     }
 
     public int getSlotCount() {
-        return spec.get().rows() * spec.get().cols();
+        return currentSpec().rows() * currentSpec().cols();
     }
 
     public int getRows() {
-        return spec.get().rows();
+        return currentSpec().rows();
     }
 
     public int getCols() {
-        return spec.get().cols();
+        return currentSpec().cols();
     }
 
     public String getDropMode() {
-        return spec.get().dropMode();
+        return currentSpec().dropMode();
     }
 
     public double getUseDistance() {
-        return spec.get().useDistance();
+        return currentSpec().useDistance();
     }
 
     public boolean acceptsItem(ItemStack stack) {
@@ -189,10 +200,7 @@ public final class CustomContainerBlock extends CustomBlock implements EntityBlo
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         super.createBlockStateDefinition(builder);
-        ContainerSpec current = this.spec != null ? this.spec.get() : INIT_SPEC.get();
-        if (current == null) {
-            return;
-        }
+        ContainerSpec current = currentSpec();
         BooleanStateSpec stateSpec = current.booleanState();
         if (stateSpec != null && stateSpec.property() != null) {
             builder.add(BooleanProperty.create(stateSpec.property()));
@@ -205,7 +213,7 @@ public final class CustomContainerBlock extends CustomBlock implements EntityBlo
     @Override
     @NotNull
     public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
-        return PipeConnections.shape(state, spec.get().connections(), super.getShape(state, level, pos, context));
+        return PipeConnections.shape(state, currentSpec().connections(), super.getShape(state, level, pos, context));
     }
 
     @Override
@@ -223,16 +231,15 @@ public final class CustomContainerBlock extends CustomBlock implements EntityBlo
     }
 
     private boolean hasCustomShape() {
-        ContainerSpec current = spec.get();
+        ContainerSpec current = currentSpec();
         return current.connections() || current.geoModel() != null || !current.boxes().isEmpty();
     }
 
     @Override
     @Nullable
     public BlockState getStateForPlacement(BlockPlaceContext context) {
-        return super.getStateForPlacement(context) != null
-                ? super.getStateForPlacement(context)
-                : defaultBlockState();
+        BlockState placement = super.getStateForPlacement(context);
+        return placement != null ? placement : defaultBlockState();
     }
 
     @Nullable
@@ -245,7 +252,8 @@ public final class CustomContainerBlock extends CustomBlock implements EntityBlo
     @Nullable
     public <T extends BlockEntity> net.minecraft.world.level.block.entity.BlockEntityTicker<T> getTicker(
             Level level, BlockState state, net.minecraft.world.level.block.entity.BlockEntityType<T> type) {
-        if (level.isClientSide() || spec.get().tickHandler() == null) {
+        ContainerSpec current = currentSpec();
+        if (level.isClientSide() || current.tickHandler() == null) {
             return null;
         }
         net.minecraft.world.level.block.entity.BlockEntityType<?> ownType =
@@ -284,8 +292,7 @@ public final class CustomContainerBlock extends CustomBlock implements EntityBlo
     }
 
     private boolean isConnected() {
-        ContainerSpec current = spec.get();
-        return current != null && current.connections();
+        return currentSpec().connections();
     }
 
     @Override
@@ -296,7 +303,7 @@ public final class CustomContainerBlock extends CustomBlock implements EntityBlo
             return InteractionResult.sidedSuccess(level.isClientSide());
         }
         ContainerBlockActions.fireRightClick(rightClickHandler.get(), player, level, pos, blockId);
-        if (!spec.get().isContainer()) {
+        if (!currentSpec().isContainer()) {
             return InteractionResult.sidedSuccess(level.isClientSide());
         }
         return ContainerBlockActions.openMenu(this, container, player, level, pos);
@@ -306,7 +313,7 @@ public final class CustomContainerBlock extends CustomBlock implements EntityBlo
     public boolean onDestroyedByPlayer(BlockState state, Level level, BlockPos pos, Player player,
                                        boolean willHarvest, FluidState fluid) {
         if (!level.isClientSide() && level.getBlockEntity(pos) instanceof CustomContainerBlockEntity container) {
-            ContainerBlockActions.dropContents(this, container, level, pos, spec.get());
+            ContainerBlockActions.dropContents(this, container, level, pos, currentSpec());
         }
         return super.onDestroyedByPlayer(state, level, pos, player, willHarvest, fluid);
     }

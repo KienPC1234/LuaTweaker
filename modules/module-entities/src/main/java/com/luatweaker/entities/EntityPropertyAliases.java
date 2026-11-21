@@ -13,20 +13,56 @@ import java.util.Map;
  * of the generated method-style API, so both syntaxes work on the same table.
  */
 final class EntityPropertyAliases {
+    private static final String CAN_FLY = "canFly";
 
     /** Property name (both casings) to the backing getter bound on the table. */
-    private static final Map<String, String> DIRECT_GETTERS = Map.of(
-            "Type", "getType", "type", "getType",
-            "Name", "getName", "name", "getName",
-            "Health", "getHealth", "health", "getHealth",
-            "MaxHealth", "getMaxHealth", "maxHealth", "getMaxHealth",
-            "CustomName", "getCustomName", "customName", "getCustomName");
+    private static final Map<String, String> DIRECT_GETTERS = Map.ofEntries(
+            Map.entry("Type", "getType"), Map.entry("type", "getType"),
+            Map.entry("Name", "getName"), Map.entry("name", "getName"),
+            Map.entry("Health", "getHealth"), Map.entry("health", "getHealth"),
+            Map.entry("MaxHealth", "getMaxHealth"), Map.entry("maxHealth", "getMaxHealth"),
+            Map.entry("CustomName", "getCustomName"), Map.entry("customName", "getCustomName"),
+            Map.entry("Dimension", "getDimension"), Map.entry("dimension", "getDimension"),
+            Map.entry("Width", "getWidth"), Map.entry("width", "getWidth"),
+            Map.entry("Height", "getHeight"), Map.entry("height", "getHeight"),
+            Map.entry("EyeHeight", "getEyeHeight"), Map.entry("eyeHeight", "getEyeHeight"),
+            Map.entry("NoGravity", "isNoGravity"), Map.entry("noGravity", "isNoGravity"),
+            Map.entry("Silent", "isSilent"), Map.entry("silent", "isSilent"),
+            Map.entry("AirSupply", "getAirSupply"), Map.entry("airSupply", "getAirSupply"),
+            Map.entry("MaxAirSupply", "getMaxAirSupply"), Map.entry("maxAirSupply", "getMaxAirSupply"),
+            Map.entry("FireTicks", "getRemainingFireTicks"), Map.entry("fireTicks", "getRemainingFireTicks"),
+            Map.entry("OnFire", "isOnFire"), Map.entry("onFire", "isOnFire"),
+            Map.entry("Absorption", "getAbsorption"), Map.entry("absorption", "getAbsorption"),
+            Map.entry("FallDistance", "getFallDistance"), Map.entry("fallDistance", "getFallDistance"),
+            Map.entry("Vehicle", "getVehicle"), Map.entry("vehicle", "getVehicle"),
+            Map.entry("IsPassenger", "isPassenger"), Map.entry("isPassenger", "isPassenger"),
+            Map.entry("HasPassengers", "hasPassengers"), Map.entry("hasPassengers", "hasPassengers"),
+            Map.entry("GameMode", "getGameMode"), Map.entry("gameMode", "getGameMode"),
+            Map.entry("Level", "getLevel"), Map.entry("level", "getLevel"),
+            Map.entry("TotalExperience", "getTotalExperience"), Map.entry("totalExperience", "getTotalExperience"),
+            Map.entry("ExperienceProgress", "getExperienceProgress"), Map.entry("experienceProgress", "getExperienceProgress"),
+            Map.entry("SelectedSlot", "getSelectedSlot"), Map.entry("selectedSlot", "getSelectedSlot"),
+            Map.entry("CanFly", CAN_FLY), Map.entry(CAN_FLY, CAN_FLY),
+            Map.entry("Flying", "isFlying"), Map.entry("flying", "isFlying")
+    );
 
     /** Property name (both casings) to the backing setter bound on the table. */
-    private static final Map<String, String> DIRECT_SETTERS = Map.of(
-            "Health", "setHealth", "health", "setHealth",
-            "MaxHealth", "setMaxHealth", "maxHealth", "setMaxHealth",
-            "CustomName", "setCustomName", "customName", "setCustomName");
+    private static final Map<String, String> DIRECT_SETTERS = Map.ofEntries(
+            Map.entry("Health", "setHealth"), Map.entry("health", "setHealth"),
+            Map.entry("MaxHealth", "setMaxHealth"), Map.entry("maxHealth", "setMaxHealth"),
+            Map.entry("CustomName", "setCustomName"), Map.entry("customName", "setCustomName"),
+            Map.entry("NoGravity", "setNoGravity"), Map.entry("noGravity", "setNoGravity"),
+            Map.entry("Silent", "setSilent"), Map.entry("silent", "setSilent"),
+            Map.entry("AirSupply", "setAirSupply"), Map.entry("airSupply", "setAirSupply"),
+            Map.entry("Absorption", "setAbsorption"), Map.entry("absorption", "setAbsorption"),
+            Map.entry("FallDistance", "setFallDistance"), Map.entry("fallDistance", "setFallDistance"),
+            Map.entry("GameMode", "setGameMode"), Map.entry("gameMode", "setGameMode"),
+            Map.entry("Level", "setLevel"), Map.entry("level", "setLevel"),
+            Map.entry("ExperienceProgress", "setExperienceProgress"), Map.entry("experienceProgress", "setExperienceProgress"),
+            Map.entry("SelectedSlot", "setSelectedSlot"), Map.entry("selectedSlot", "setSelectedSlot"),
+            Map.entry("CanFly", "setCanFly"), Map.entry("canFly", "setCanFly"),
+            Map.entry("Flying", "setFlying"), Map.entry("flying", "setFlying")
+    );
 
     /** Property name (both casings) to the vector-accepting method bound on the table. */
     private static final Map<String, String> VECTOR_SETTERS = Map.of(

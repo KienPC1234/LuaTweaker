@@ -19,21 +19,30 @@ import java.util.Optional;
 final class RpcInvokeHandler {
 
     private static final byte[] EMPTY_PAYLOAD = LuaPayloadCodec.encodeArgs(new ILuaValue[0]);
+    private static final String REMOTE_FN_QUOTE = "RemoteFunction '";
 
     private final ILuaEngine engine;
     private final Map<String, ILuaTable> remoteFunctions;
     private final RateLimiter rateLimiter;
     private final double rpcBurst;
     private final double rpcRefillPerSecond;
+    private final double rpcChannelBurst;
+    private final double rpcChannelRefillPerSecond;
+    private final InboundPolicy inboundPolicy;
 
     RpcInvokeHandler(ILuaEngine engine, Map<String, ILuaTable> remoteFunctions,
                      RateLimiter rateLimiter,
-                     double rpcBurst, double rpcRefillPerSecond) {
+                     double rpcBurst, double rpcRefillPerSecond,
+                     double rpcChannelBurst, double rpcChannelRefillPerSecond,
+                     InboundPolicy inboundPolicy) {
         this.engine = engine;
         this.remoteFunctions = remoteFunctions;
         this.rateLimiter = rateLimiter;
         this.rpcBurst = rpcBurst;
         this.rpcRefillPerSecond = rpcRefillPerSecond;
+        this.rpcChannelBurst = rpcChannelBurst;
+        this.rpcChannelRefillPerSecond = rpcChannelRefillPerSecond;
+        this.inboundPolicy = inboundPolicy;
     }
 
     void invoke(String requestId, String functionName, String playerUuid, byte[] argsData) {
@@ -42,13 +51,7 @@ final class RpcInvokeHandler {
             return;
         }
 
-        // Rate-limit before anything else: unknown function names must not bypass the bucket
-        // and turn the server into an error-packet amplifier.
-        if (fromClient && !rateLimiter.tryConsumeRpc(playerUuid, rpcBurst, rpcRefillPerSecond)) {
-            LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                    "[Network] Rate-limited RemoteFunction '" + functionName + "' from player " + playerUuid);
-            respondRpc(requestId, fromClient, playerUuid, functionName, null,
-                    "Too many RemoteFunction requests; slow down");
+        if (fromClient && !isServerboundAllowed(requestId, functionName, playerUuid)) {
             return;
         }
 
@@ -74,6 +77,37 @@ final class RpcInvokeHandler {
         respondRpc(requestId, fromClient, playerUuid, functionName, resultPayload, "");
     }
 
+    private boolean isServerboundAllowed(String requestId, String functionName, String playerUuid) {
+        if (inboundPolicy.isBlocked(functionName)) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[Network] Dropped serverbound RemoteFunction '" + functionName
+                            + "': inbound blocked by the owning mod");
+            respondRpc(requestId, true, playerUuid, functionName, null,
+                    REMOTE_FN_QUOTE + functionName + "' does not accept client requests");
+            return false;
+        }
+        if (remoteFunctions.containsKey(functionName)
+                && !rateLimiter.tryConsumeRpc(playerUuid + '\0' + functionName,
+                        rpcChannelBurst, rpcChannelRefillPerSecond)) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[Network] Rate-limited RemoteFunction '" + functionName
+                            + "' on its own function budget; other functions are unaffected");
+            respondRpc(requestId, true, playerUuid, functionName, null,
+                    "Too many RemoteFunction requests for '" + functionName + "'; slow down");
+            return false;
+        }
+        // Rate-limit before anything else: unknown function names must not bypass the bucket
+        // and turn the server into an error-packet amplifier.
+        if (!rateLimiter.tryConsumeRpc(playerUuid, rpcBurst, rpcRefillPerSecond)) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[Network] Rate-limited RemoteFunction '" + functionName + "' from player " + playerUuid);
+            respondRpc(requestId, true, playerUuid, functionName, null,
+                    "Too many RemoteFunction requests; slow down");
+            return false;
+        }
+        return true;
+    }
+
     private boolean validateRpcRequest(String requestId, String functionName) {
         if (requestId == null || requestId.isBlank() || functionName == null || functionName.isBlank()) {
             LuaTweakerLog.get().error(LogStage.SYSTEM,
@@ -91,7 +125,7 @@ final class RpcInvokeHandler {
         ILuaValue callback = remoteFn == null ? null : remoteFn.rawget(handlerName);
         if (callback == null || !callback.isFunction()) {
             respondRpc(requestId, fromClient, playerUuid, functionName, null,
-                    "RemoteFunction '" + functionName + "' has no " + handlerName + " handler");
+                    REMOTE_FN_QUOTE + functionName + "' has no " + handlerName + " handler");
             return null;
         }
         return callback;
@@ -126,7 +160,7 @@ final class RpcInvokeHandler {
             return engine.callFunction(callback, callArgs);
         } catch (LuaException e) {
             respondRpc(requestId, fromClient, playerUuid, functionName, null,
-                    "RemoteFunction '" + functionName + "' raised: " + e.getMessage());
+                    REMOTE_FN_QUOTE + functionName + "' raised: " + e.getMessage());
             return null;
         }
     }
@@ -175,7 +209,7 @@ final class RpcInvokeHandler {
             throw new IllegalArgumentException("RemoteFunction name must not be empty");
         }
         if (!remoteFunctions.containsKey(functionName)) {
-            throw new IllegalArgumentException("RemoteFunction '" + functionName
+            throw new IllegalArgumentException(REMOTE_FN_QUOTE + functionName
                     + "' is not registered on this side; call NetworkService:GetOrCreateRemoteFunction('"
                     + functionName + "') first");
         }

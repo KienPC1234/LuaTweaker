@@ -29,16 +29,18 @@ final class ContentBlockMachineBinding {
         ContentBindingSupport.bindMethod(table, "guiBar", args -> {
             int off = LuaBinder.getOffset(args);
             if (ContentBindingSupport.hasMinArgs(args, off, 7)) {
+                String anchor = ContentBindingSupport.hasMinArgs(args, off, 8)
+                        ? args[off + 7].asString() : "topleft";
                 builder.guiBar(args[off].asString(), args[off + 1].asInt(), args[off + 2].asInt(),
                         args[off + 3].asInt(), args[off + 4].asInt(), args[off + 5].asString(),
-                        args[off + 6].asInt());
+                        args[off + 6].asInt(), anchor);
             }
             return table;
         });
         bindCustomBar(table, builder);
     }
 
-    private record BarOptions(String currentKey, String maxKey, int color, String tooltip) {
+    private record BarOptions(String currentKey, String maxKey, int color, String tooltip, String anchor) {
     }
 
     private static void bindCustomBar(ILuaTable table, IBlockBuilder builder) {
@@ -49,7 +51,8 @@ final class ContentBlockMachineBinding {
                 if (options != null && options.currentKey() != null && options.maxKey() != null) {
                     builder.customBar(args[off].asString(), args[off + 1].asInt(), args[off + 2].asInt(),
                             args[off + 3].asInt(), args[off + 4].asInt(),
-                            options.currentKey(), options.maxKey(), options.color(), options.tooltip());
+                            options.currentKey(), options.maxKey(), options.color(), options.tooltip(),
+                            options.anchor());
                 }
             }
             return table;
@@ -65,34 +68,35 @@ final class ContentBlockMachineBinding {
             String maxKey = args[off + 6].asString();
             int color = ContentBindingSupport.hasMinArgs(args, off, 8) ? args[off + 7].asInt() : 0;
             String tooltip = ContentBindingSupport.hasMinArgs(args, off, 9) ? args[off + 8].asString() : null;
-            return new BarOptions(currentKey, maxKey, color, tooltip);
+            String anchor = ContentBindingSupport.hasMinArgs(args, off, 10) ? args[off + 9].asString() : "topleft";
+            return new BarOptions(currentKey, maxKey, color, tooltip, anchor);
         }
         return null;
     }
 
     private static BarOptions readBarOptionsTable(ILuaTable opts) {
-        ILuaValue currentVal = opts.rawget("currentKey");
-        if (currentVal.isNil()) {
-            currentVal = opts.rawget("current");
-        }
-        ILuaValue maxVal = opts.rawget("maxKey");
-        if (maxVal.isNil()) {
-            maxVal = opts.rawget("max");
-        }
-        int color = 0;
-        ILuaValue colorVal = opts.rawget("color");
-        if (!colorVal.isNil()) {
-            color = colorVal.asInt();
-        }
-        ILuaValue tooltipVal = opts.rawget("tooltip");
-        if (tooltipVal.isNil()) {
-            tooltipVal = opts.rawget("tooltipFormat");
-        }
         return new BarOptions(
-                currentVal.isNil() ? null : currentVal.asString(),
-                maxVal.isNil() ? null : maxVal.asString(),
-                color,
-                tooltipVal.isNil() ? null : tooltipVal.asString());
+                textOf(opts, "currentKey", "current", null),
+                textOf(opts, "maxKey", "max", null),
+                intOf(opts, "color"),
+                textOf(opts, "tooltip", "tooltipFormat", null),
+                textOf(opts, "anchor", null, "topleft"));
+    }
+
+    private static String textOf(ILuaTable opts, String primary, String fallback, String missing) {
+        ILuaValue value = opts.rawget(primary);
+        if (value.isNil() && fallback != null) {
+            value = opts.rawget(fallback);
+        }
+        return value.isNil() ? missing : value.asString();
+    }
+
+    private static int intOf(ILuaTable opts, String key) {
+        ILuaValue value = opts.rawget(key);
+        if (value.isNil()) {
+            return 0;
+        }
+        return value.asInt();
     }
 }
 

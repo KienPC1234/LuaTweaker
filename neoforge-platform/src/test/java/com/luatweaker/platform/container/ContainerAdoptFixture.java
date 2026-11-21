@@ -19,14 +19,14 @@ final class ContainerAdoptFixture {
     static ContainerSpec previousSpec(BiConsumer<Object, Object> tickHandler) {
         return new ContainerSpec(2, 3, "packed", "old:texture", 8.0,
                 Map.of(), Set.of(), null, 100, 10, 10, 0, List.of(), null,
-                false, tickHandler, true, "HORIZONTAL", BOXES, null);
+                false, tickHandler, true, "HORIZONTAL", BOXES, null, false);
     }
 
     static ContainerSpec refreshedSpec(BiConsumer<Object, Object> tickHandler,
             BiConsumer<Object, Object> renderHandler) {
         return new ContainerSpec(2, 3, "spill", "new:texture", 9.0,
                 Map.of(), Set.of(), null, 999, 20, 30, 4000, List.of(), null,
-                false, tickHandler, true, "HORIZONTAL", BOXES, renderHandler);
+                false, tickHandler, true, "HORIZONTAL", BOXES, renderHandler, false);
     }
 
     static ContainerSpec adoptedRuntime(AtomicInteger ticks) {
@@ -41,13 +41,13 @@ final class ContainerAdoptFixture {
     static ContainerSpec previousGridSpec() {
         return new ContainerSpec(2, 3, "packed", null, 8.0,
                 Map.of(), Set.of(), null, 0, 0, 0, 0, List.of(), null,
-                false, null);
+                false, null, false);
     }
 
     static ContainerSpec widerGridSpec() {
         return new ContainerSpec(6, 9, "packed", null, 8.0,
                 Map.of(), Set.of(), null, 0, 0, 0, 0, List.of(), null,
-                false, null);
+                false, null, false);
     }
 
     static ContainerSpec adoptedRuntimeWithRender(AtomicInteger ticks,

@@ -30,12 +30,15 @@ public final class NeoForgeDimensionProvider {
 
     /** Called from the mod event bus; registers the custom generator codecs. */
     public static void registerCodecs(RegisterEvent event) {
-        event.register(Registries.CHUNK_GENERATOR,
-                ResourceLocation.parse(GENERATOR_TYPE), () -> LuaChunkGenerator.MAP_CODEC);
-        event.register(Registries.BIOME_SOURCE,
-                ResourceLocation.parse(GENERATOR_TYPE), () -> LuaBiomeSource.MAP_CODEC);
-        LuaTweakerLog.get().info(LogStage.SYSTEM,
-                "Registered Lua chunk generator + biome source codecs under '" + GENERATOR_TYPE + "'");
+        if (event.getRegistryKey().equals(Registries.CHUNK_GENERATOR)) {
+            event.register(Registries.CHUNK_GENERATOR,
+                    ResourceLocation.parse(GENERATOR_TYPE), () -> LuaChunkGenerator.MAP_CODEC);
+        } else if (event.getRegistryKey().equals(Registries.BIOME_SOURCE)) {
+            event.register(Registries.BIOME_SOURCE,
+                    ResourceLocation.parse(GENERATOR_TYPE), () -> LuaBiomeSource.MAP_CODEC);
+            LuaTweakerLog.get().info(LogStage.SYSTEM,
+                    "Registered Lua chunk generator + biome source codecs under '" + GENERATOR_TYPE + "'");
+        }
     }
 
     /** Writes dimension type + dimension JSONs for every registered dimension. */

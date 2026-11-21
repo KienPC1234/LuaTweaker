@@ -346,9 +346,16 @@ public class LuamodDetailScreen extends Screen {
             if (!folder.isDirectory()) {
                 folder = LuamodClientActions.luamodsDir();
             }
-            java.awt.Desktop.getDesktop().open(folder);
-        } catch (java.io.IOException | UnsupportedOperationException e) {
-            actionStatus = "Could not open folder: " + e.getMessage();
+            if (!folder.exists()) {
+                folder.mkdirs();
+            }
+            net.minecraft.Util.getPlatform().openPath(folder.toPath().toAbsolutePath().normalize());
+        } catch (SecurityException e) {
+            // Vanilla already logs IO failures inside openPath; only an OS security manager
+            // rejection can escape, so that is the one case worth surfacing in the UI.
+            String msg = e.getMessage();
+            boolean hasMsg = msg != null && !msg.isBlank() && !"null".equalsIgnoreCase(msg.trim());
+            actionStatus = "Could not open folder: " + (hasMsg ? msg : e.getClass().getSimpleName());
         }
     }
 

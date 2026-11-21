@@ -49,6 +49,9 @@ public class LuaTweakerMod {
     private static final String SYNC_DATA_CHANNEL = "LuaTweaker:SyncData";
     private static final String OPEN_SCREEN_CHANNEL = "LuaTweaker:OpenScreen";
     private static final String CLOSE_SCREEN_CHANNEL = "LuaTweaker:CloseScreen";
+    private static final String MOD_HELLO_CHANNEL = "LuaTweaker:ModHello";
+    private static final String MOD_SYNC_CHANNEL = "LuaTweaker:ModSync";
+    private static final String MOD_SYNC_WARN_PREFIX = "§c[LuaTweaker] WARNING: ";
 
     /**
      * Reassembles chunked inbound frames. Bounded and self-expiring, so a client cannot
@@ -109,6 +112,14 @@ public class LuaTweakerMod {
 
     public static com.luatweaker.network.NetworkServiceImpl getServerNetworkService() {
         return SERVER_NETWORK_SERVICE.get();
+    }
+
+    public static String modHelloChannel() {
+        return MOD_HELLO_CHANNEL;
+    }
+
+    public static String modSyncChannel() {
+        return MOD_SYNC_CHANNEL;
     }
 
     /**
@@ -200,6 +211,9 @@ public class LuaTweakerMod {
             modEventBus.addListener(com.luatweaker.platform.client.dimension.LuaDimensionEffects::register);
             NeoForge.EVENT_BUS.addListener(com.luatweaker.platform.client.ExperimentalWarningHandler::onScreenInit);
             NeoForge.EVENT_BUS.addListener(com.luatweaker.platform.client.luamods.LuamodMenuButton::onScreenInit);
+            NeoForge.EVENT_BUS.addListener(
+                    (net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent.LoggingIn event) ->
+                            com.luatweaker.platform.modsync.ClientModSync.sendHello());
         }
         // Server tick pump for the Lua task queues is registered via @SubscribeEvent
         // on onServerTick (LuaTweakerMod is registered on NeoForge.EVENT_BUS above).
@@ -233,6 +247,7 @@ public class LuaTweakerMod {
                         ? new com.luatweaker.platform.bootstrap.FmlLoadingScreenProgress()
                         : com.luatweaker.core.mod.LuaModLoadObserver.NONE;
         com.luatweaker.core.mod.LuaModManager.loadLuaMods(luaDir, startupEngine, dist, loadProgress);
+        applyModSyncConfig();
 
         // Loud warning for keybind payloads that have no matching server RemoteEvent
         // (typo'd names would otherwise silently drop every key press).
@@ -377,12 +392,14 @@ public class LuaTweakerMod {
     }
 
     private boolean isDebugEnabled() {
-        return com.luatweaker.platform.util.CallbackFirewall.supply(LuaTweakerConfig.DEBUG::get, false,
+        return LuaTweakerConfig.COMMON_SPEC.isLoaded()
+                && com.luatweaker.platform.util.CallbackFirewall.supply(LuaTweakerConfig.DEBUG::get, false,
                 LogStage.SYSTEM, () -> "debug flag read");
     }
 
     private boolean isAutoStubsEnabled() {
-        return com.luatweaker.platform.util.CallbackFirewall.supply(LuaTweakerConfig.AUTO_GENERATE_STUBS::get,
+        return !LuaTweakerConfig.COMMON_SPEC.isLoaded()
+                || com.luatweaker.platform.util.CallbackFirewall.supply(LuaTweakerConfig.AUTO_GENERATE_STUBS::get,
                 true, LogStage.SYSTEM, () -> "auto-stubs flag read");
     }
 
@@ -417,6 +434,9 @@ public class LuaTweakerMod {
 
     @SubscribeEvent
     public void onPlayerLoggedIn(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent event) {        if (!(event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player)) { return; }
+        applyModSyncConfig();
+        com.luatweaker.platform.modsync.ModSyncManager.onPlayerJoin(player.getUUID().toString());
+        sendServerModsTo(player);
 
         // Available updates discovered by the engine-side declarative checker.
         for (com.luatweaker.update.UpdateStatus status : com.luatweaker.update.UpdateServiceImpl.getUpdates()) {
@@ -479,6 +499,220 @@ public class LuaTweakerMod {
         return lines;
     }
 
+    static void applyModSyncConfig() {
+        String mode = "kick";
+        try {
+            if (LuaTweakerConfig.COMMON_SPEC.isLoaded()) {
+                mode = LuaTweakerConfig.MOD_SYNC_MODE.get();
+            }
+        } catch (IllegalStateException e) {
+            LOGGER.debug("ModSync config unavailable, defaulting to kick: {}", e.getMessage());
+        }
+        com.luatweaker.platform.modsync.ModSyncManager.setEnforcementMode(mode);
+        applyModSyncBundleConfig();
+    }
+
+    /** Reads the advertised server bundle; invalid config fails closed to no offer. */
+    static void applyModSyncBundleConfig() {
+        try {
+            if (!LuaTweakerConfig.COMMON_SPEC.isLoaded()) {
+                return;
+            }
+            String url = LuaTweakerConfig.SERVER_MOD_BUNDLE_URL.get();
+            if (url == null || url.isBlank()) {
+                com.luatweaker.platform.modsync.ModSyncBundles.setAdvertised(null);
+                return;
+            }
+            com.luatweaker.core.serverpacks.ServerBundleInfo bundle =
+                    com.luatweaker.core.serverpacks.ServerBundleValidation.create(
+                            new com.luatweaker.core.serverpacks.ServerBundleSpec(url,
+                                    LuaTweakerConfig.SERVER_MOD_BUNDLE_SHA256.get(),
+                                    LuaTweakerConfig.SERVER_MOD_BUNDLE_VERSION.get(),
+                                    LuaTweakerConfig.SERVER_MOD_BUNDLE_NAME.get(),
+                                    LuaTweakerConfig.SERVER_MOD_BUNDLE_FILE.get()));
+            if (bundle == null) {
+                LOGGER.warn("[ModSync] serverModBundleUrl is set but invalid "
+                        + "(need https URL + 64-char sha256): no download will be offered");
+            }
+            com.luatweaker.platform.modsync.ModSyncBundles.setAdvertised(bundle);
+        } catch (IllegalStateException e) {
+            LOGGER.debug("ModSync bundle config unavailable: {}", e.getMessage());
+        }
+    }
+
+    private static void sendServerModsTo(net.minecraft.server.level.ServerPlayer player) {
+        try {
+            java.util.Map<String, String> required =
+                    com.luatweaker.platform.modsync.ModSyncManager.serverRequiredMods();
+            StringBuilder sb = new StringBuilder(128);
+            sb.append("{\"ok\":true,\"mods\":{");
+            boolean first = true;
+            for (java.util.Map.Entry<String, String> entry : required.entrySet()) {
+                if (!first) {
+                    sb.append(',');
+                }
+                sb.append('"').append(entry.getKey()).append("\":\"").append(entry.getValue()).append('"');
+                first = false;
+            }
+            sb.append("}}");
+            Platform.getNetwork().sendPayloadPacket(
+                    player.getUUID().toString(), MOD_SYNC_CHANNEL, sb.toString());
+        } catch (IllegalStateException e) {
+            LOGGER.debug("ModSync server list send failed: {}", e.getMessage());
+        }
+    }
+
+    static void handleModHello(String playerUuid, byte[] data,
+            net.neoforged.neoforge.network.handling.IPayloadContext context) {
+        if (data != null && data.length > 65_536) {
+            LOGGER.warn("[ModSync] Dropped oversized hello from {} ({} bytes)", playerUuid, data.length);
+            return;
+        }
+        String json = data == null ? "{}"
+                : new String(data, java.nio.charset.StandardCharsets.UTF_8);
+        java.util.Map<String, String> clientMods = com.luatweaker.core.mod.ModSync.parseClientHello(json);
+        com.luatweaker.platform.modsync.ModSyncManager.storeHello(playerUuid, clientMods);
+        com.luatweaker.core.mod.ModSync.Report report =
+                com.luatweaker.platform.modsync.ModSyncManager.checkPlayer(playerUuid);
+        fireModSyncLuaEvent(playerUuid, report);
+        if (report.isOk()) {
+            sendModSyncVerdict(playerUuid, true, "LuaMods are in sync.");
+            return;
+        }
+        String message = com.luatweaker.core.mod.ModSync.buildMessage(report, 400);
+        sendModSyncVerdict(playerUuid, false, message);
+        enforceModSyncVerdict(playerUuid, report, message, context);
+    }
+
+    private static void enforceModSyncVerdict(String playerUuid,
+            com.luatweaker.core.mod.ModSync.Report report, String message,
+            net.neoforged.neoforge.network.handling.IPayloadContext context) {
+        net.minecraft.server.level.ServerPlayer target = resolveSyncTarget(context, playerUuid);
+        if (target == null) {
+            return;
+        }
+        if (!com.luatweaker.platform.modsync.ModSyncManager.shouldKick(report)) {
+            target.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                    MOD_SYNC_WARN_PREFIX + message));
+            return;
+        }
+        boolean integrated = target.getServer() != null && !target.getServer().isDedicatedServer();
+        if (integrated) {
+            target.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                    "§c[LuaTweaker] " + message));
+            return;
+        }
+        target.connection.disconnect(net.minecraft.network.chat.Component.literal(
+                "[LuaTweaker] " + message));
+    }
+
+    private static net.minecraft.server.level.ServerPlayer resolveSyncTarget(
+            net.neoforged.neoforge.network.handling.IPayloadContext context, String playerUuid) {
+        if (context.player() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            return serverPlayer;
+        }
+        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        if (server == null) {
+            return null;
+        }
+        try {
+            return server.getPlayerList().getPlayer(java.util.UUID.fromString(playerUuid));
+        } catch (IllegalArgumentException e) {
+            LOGGER.debug("[ModSync] Unknown player UUID: {}", playerUuid);
+            return null;
+        }
+    }
+
+    private static void sendModSyncVerdict(String playerUuid, boolean ok, String message) {
+        try {
+            com.luatweaker.core.serverpacks.ServerBundleInfo bundle = ok ? null
+                    : com.luatweaker.platform.modsync.ModSyncBundles.getAdvertised();
+            String json = com.luatweaker.core.serverpacks.ModSyncVerdict.verdictJson(ok, message, bundle);
+            if (bundle != null) {
+                LOGGER.info("[ModSync] Offering server mod bundle to {}: {} (sha256 {})",
+                        playerUuid, bundle.url(), bundle.sha256());
+            }
+            Platform.getNetwork().sendPayloadPacket(playerUuid, MOD_SYNC_CHANNEL, json);
+        } catch (IllegalStateException e) {
+            LOGGER.debug("ModSync verdict send failed: {}", e.getMessage());
+        }
+    }
+
+    private static void fireModSyncLuaEvent(String playerUuid,
+            com.luatweaker.core.mod.ModSync.Report report) {
+        try {
+            Object events = com.luatweaker.core.service.LuaServiceRegistry.get("Events");
+            if (!(events instanceof com.luatweaker.api.event.IEventService eventService)) {
+                return;
+            }
+            ILuaEngine engine = eventService.getEngine();
+            ILuaTable payload = engine.createTable();
+            payload.rawset("playerUuid", playerUuid);
+            payload.rawset("ok", report.isOk());
+            ILuaTable missing = engine.createTable();
+            int index = 1;
+            for (com.luatweaker.core.mod.ModSync.RequiredMod mod : report.missingOnClient()) {
+                missing.rawset(String.valueOf(index), mod.id() + "@" + mod.version());
+                index++;
+            }
+            payload.rawset("missingOnClient", missing);
+            ILuaTable mismatch = engine.createTable();
+            index = 1;
+            for (String id : report.versionMismatch()) {
+                mismatch.rawset(String.valueOf(index), id);
+                index++;
+            }
+            payload.rawset("versionMismatch", mismatch);
+            eventService.fireEvent("ModSyncCompleted", payload);
+        } catch (org.luava.runtime.LuaException | IllegalStateException e) {
+            LOGGER.debug("ModSync Lua event failed: {}", e.getMessage());
+        }
+    }
+
+    private static void enforceModSyncTimeouts() {
+        long timeoutMillis = 10_000L;
+        try {
+            if (LuaTweakerConfig.COMMON_SPEC.isLoaded()) {
+                timeoutMillis = LuaTweakerConfig.MOD_SYNC_TIMEOUT_SECONDS.get() * 1_000L;
+            }
+        } catch (IllegalStateException e) {
+            LOGGER.debug("ModSync timeout config unavailable: {}", e.getMessage());
+        }
+        java.util.Map<String, Long> pending =
+                com.luatweaker.platform.modsync.ModSyncManager.pendingJoins(timeoutMillis);
+        if (pending.isEmpty()) {
+            return;
+        }
+        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        if (server == null) {
+            return;
+        }
+        for (String uuid : pending.keySet()) {
+            com.luatweaker.platform.modsync.ModSyncManager.onPlayerLeave(uuid);
+            try {
+                net.minecraft.server.level.ServerPlayer target =
+                        server.getPlayerList().getPlayer(java.util.UUID.fromString(uuid));
+                if (target == null) {
+                    continue;
+                }
+                boolean integrated = target.getServer() != null && !target.getServer().isDedicatedServer();
+                String message = "[LuaTweaker] LuaMod sync failed: no client hello received. "
+                        + "Update LuaTweaker or enable required LuaMods, then rejoin.";
+                if (integrated
+                        || !"kick".equalsIgnoreCase(com.luatweaker.platform.modsync.ModSyncManager
+                                .getEnforcementMode())) {
+                    target.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                            MOD_SYNC_WARN_PREFIX + message));
+                } else {
+                    target.connection.disconnect(
+                            net.minecraft.network.chat.Component.literal(message));
+                }
+            } catch (IllegalArgumentException e) {
+                LOGGER.debug("[ModSync] Invalid pending UUID: {}", uuid);
+            }
+        }
+    }
+
     @SubscribeEvent
     public void onServerTick(net.neoforged.neoforge.event.tick.ServerTickEvent.Post event) {
         // ALWAYS pump from the server thread: Lua game logic (mana loops, summoning,
@@ -497,6 +731,7 @@ public class LuaTweakerMod {
             com.luatweaker.platform.runservice.RunServiceDispatcher.fire(tickEngine, "Heartbeat", delta);
         }
         com.luatweaker.platform.dimension.DimensionMobSpawner.onServerTick();
+        enforceModSyncTimeouts();
     }
 
     /**
@@ -526,6 +761,21 @@ public class LuaTweakerMod {
     public void onPlayerLoggedOut(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) {
             INBOUND_CHUNKS.clear("S:" + player.getUUID());
+            String uuid = player.getUUID().toString();
+            com.luatweaker.platform.modsync.ModSyncManager.onPlayerLeave(uuid);
+            evictPlayerBudgets(uuid);
+        }
+    }
+
+    /** Drops a logged-out player's rate-limit buckets so offline UUIDs pin nothing. */
+    private static void evictPlayerBudgets(String playerUuid) {
+        com.luatweaker.network.NetworkServiceImpl serverNs = SERVER_NETWORK_SERVICE.get();
+        if (serverNs != null) {
+            serverNs.evictPlayer(playerUuid);
+        }
+        Object active = com.luatweaker.core.service.LuaServiceRegistry.get("NetworkServiceImpl");
+        if (active instanceof com.luatweaker.network.NetworkServiceImpl activeNs) {
+            activeNs.evictPlayer(playerUuid);
         }
     }
 
@@ -636,6 +886,13 @@ public class LuaTweakerMod {
         // Clear pending Anvil/Brewing/Trade from previous reload cycle
         InterceptionHelper.clearPending();
 
+        // Drop in-flight chunked messages addressed at the old VM: their remaining
+        // frames would otherwise reassemble after the swap and fire new-VM handlers
+        // with pre-reload payloads. Single-frame traffic is unaffected (it never
+        // parks in the assembler); frames already queued in Netty still arrive, but
+        // start a fresh assembly against the new handlers, like any late packet.
+        INBOUND_CHUNKS.clearAll();
+
         // Rebuild the virtual datapack from scratch: files from disabled/edited mods
         // or removed worldgen/loot entries must not survive a reload. Content-driven
         // files (tags/models/lang) are regenerated right away from the same
@@ -675,6 +932,7 @@ public class LuaTweakerMod {
         // Load Autonomous LuaMods from luamods/
         String dist = net.neoforged.fml.loading.FMLEnvironment.dist.isClient() ? "universal" : "server";
         com.luatweaker.core.mod.LuaModManager.loadLuaMods(getLuaDirectory(), engine, dist);
+        applyModSyncConfig();
 
         // Re-attach registered blocks to the new VM: the registry is frozen, the Lua
         // closures are not. Without this every :OnTick/:ItemFilter/:OnRightClick kept
@@ -719,7 +977,34 @@ public class LuaTweakerMod {
         com.luatweaker.api.log.LuaTweakerLog.get().stageEnd(LogStage.RELOAD,
                 System.currentTimeMillis() - startTime);
         ACTIVE_ENGINE.set(engine);
+        recheckOnlinePlayers(server);
         LOGGER.info("reloadServerRecipes completed in {}ms", System.currentTimeMillis() - startTime);
+    }
+
+    private static void recheckOnlinePlayers(MinecraftServer server) {
+        if (server == null) {
+            return;
+        }
+        for (net.minecraft.server.level.ServerPlayer player : server.getPlayerList().getPlayers()) {
+            String uuid = player.getUUID().toString();
+            if (com.luatweaker.platform.modsync.ModSyncManager.clientMods(uuid).isEmpty()) {
+                continue;
+            }
+            com.luatweaker.core.mod.ModSync.Report report =
+                    com.luatweaker.platform.modsync.ModSyncManager.checkPlayer(uuid);
+            if (report.isOk()) {
+                continue;
+            }
+            String message = com.luatweaker.core.mod.ModSync.buildMessage(report, 400);
+            sendModSyncVerdict(uuid, false, message);
+            if (com.luatweaker.platform.modsync.ModSyncManager.shouldKick(report)) {
+                player.connection.disconnect(net.minecraft.network.chat.Component.literal(
+                        "[LuaTweaker] " + message));
+            } else {
+                player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                        MOD_SYNC_WARN_PREFIX + message));
+            }
+        }
     }
 
     public static void registerPayloads(final net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent event) {
@@ -802,6 +1087,10 @@ public class LuaTweakerMod {
             return;
         }
 
+        if (tryHandleModHello(channel, serverbound, data, context)) {
+            return;
+        }
+
         if (com.luatweaker.network.NetworkServiceImpl.RPC_CHANNEL.equals(channel)) {
             handleRpcFrame(data, serverbound, context);
             return;
@@ -814,8 +1103,26 @@ public class LuaTweakerMod {
         dispatchClientbound(channel, data);
     }
 
+    private static boolean tryHandleModHello(String channel, boolean serverbound, byte[] data,
+            net.neoforged.neoforge.network.handling.IPayloadContext context) {
+        if (!MOD_HELLO_CHANNEL.equals(channel) || !serverbound) {
+            return false;
+        }
+        String playerUuid = context.player() != null ? context.player().getUUID().toString() : "";
+        if (playerUuid.isBlank()) {
+            return true;
+        }
+        handleModHello(playerUuid, data, context);
+        return true;
+    }
+
     /** Handles the client-only channels; true when the payload was consumed. */
     private static boolean dispatchClientboundChannel(String channel, byte[] data) {
+        if (MOD_SYNC_CHANNEL.equals(channel)) {
+            com.luatweaker.platform.modsync.ClientModSync.handleVerdict(
+                    new String(data, java.nio.charset.StandardCharsets.UTF_8));
+            return true;
+        }
         if (SYNC_DATA_CHANNEL.equals(channel)) {
             handleClientSyncData(new String(data, java.nio.charset.StandardCharsets.UTF_8));
             return true;
@@ -935,6 +1242,8 @@ public class LuaTweakerMod {
         stubGen.registerService("SpawnRules", com.luatweaker.api.spawn.ISpawnRuleService.class);
         stubGen.registerService("Biomes", com.luatweaker.api.biome.IBiomesService.class);
         stubGen.registerService("Json", com.luatweaker.api.json.IJsonService.class);
+        stubGen.registerService("Server", com.luatweaker.api.server.IServerService.class);
+        stubGen.registerService("ModSync", com.luatweaker.api.modsync.IModSyncService.class);
 
         // Runtime wrapper classes (entity/player tables created dynamically at runtime)
         stubGen.registerClassStub(com.luatweaker.api.entity.IEntity.class, "Entity");

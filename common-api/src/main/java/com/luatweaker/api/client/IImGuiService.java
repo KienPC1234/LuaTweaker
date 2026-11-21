@@ -121,8 +121,8 @@ public interface IImGuiService {
     @LuaDoc(description = "RGBA color picker. Returns {r, g, b, a} (0-1).", params = {LuaDocFragments.Common.LABEL_STRING, "r: number", "g: number", "b: number", "a: number"}, returnType = LuaDocFragments.Types.TABLE)
     java.util.List<Double> colorEdit4(String label, double r, double g, double b, double a);
 
-    @LuaDoc(description = "Progress bar (0-1).", params = {"fraction: number", "label: string (optional)"})
-    void progressBar(double fraction, @LuaDefault("") String label);
+    @LuaDoc(description = "Progress bar (0-1) with optional label and custom width/height.", params = {"fraction: number", "label: string (optional)", "width: number (optional, default 0)", "height: number (optional, default 0)"})
+    void progressBar(double fraction, @LuaDefault("") String label, @LuaDefault("0") double width, @LuaDefault("0") double height);
 
     @LuaDoc(description = "Collapsible header. Returns true when open (draw the body only then).", params = {LuaDocFragments.Common.LABEL_STRING}, returnType = LuaDocFragments.Types.BOOLEAN)
     boolean collapsingHeader(String label);
@@ -359,4 +359,43 @@ public interface IImGuiService {
 
     @LuaDoc(description = "Closes the innermost BeginDragDropTarget.", params = {})
     void endDragDropTarget();
+
+    @LuaDoc(description = "Opens or closes the interactive ImGui overlay screen (releases the mouse from camera control).", params = {"open: boolean"})
+    void setScreen(boolean open);
+
+    @LuaDoc(description = "Returns true if the interactive ImGui overlay screen is currently open.", params = {}, returnType = LuaDocFragments.Types.BOOLEAN)
+    boolean isScreenOpen();
+
+    @LuaDoc(description = "Toggles the interactive ImGui overlay screen. Returns the new open state.", params = {}, returnType = LuaDocFragments.Types.BOOLEAN)
+    boolean toggleScreen();
+
+    @LuaDoc(description = "Invisible clickable button area. Returns true on click.", params = {LuaDocFragments.Common.ID_STRING, LuaDocFragments.Geometry.WIDTH_NUMBER, LuaDocFragments.Geometry.HEIGHT_NUMBER}, returnType = LuaDocFragments.Types.BOOLEAN)
+    boolean invisibleButton(String id, double width, double height);
+
+    @LuaDoc(description = "Returns the mouse X position in ImGui coordinate space.", params = {}, returnType = LuaDocFragments.Types.NUMBER)
+    double getMousePosX();
+
+    @LuaDoc(description = "Returns the mouse Y position in ImGui coordinate space.", params = {}, returnType = LuaDocFragments.Types.NUMBER)
+    double getMousePosY();
+
+    @LuaDoc(description = "Returns the cursor X position in the current window.", params = {}, returnType = LuaDocFragments.Types.NUMBER)
+    double getCursorPosX();
+
+    @LuaDoc(description = "Returns the cursor Y position in the current window.", params = {}, returnType = LuaDocFragments.Types.NUMBER)
+    double getCursorPosY();
+
+    @LuaDoc(description = "Sets the cursor position in the current window.", params = {"x: number", "y: number"})
+    void setCursorPos(double x, double y);
+
+    @LuaDoc(description = "Returns the current window X position.", params = {}, returnType = LuaDocFragments.Types.NUMBER)
+    double getWindowPosX();
+
+    @LuaDoc(description = "Returns the current window Y position.", params = {}, returnType = LuaDocFragments.Types.NUMBER)
+    double getWindowPosY();
+
+    @LuaDoc(description = "Returns the current window width.", params = {}, returnType = LuaDocFragments.Types.NUMBER)
+    double getWindowWidth();
+
+    @LuaDoc(description = "Returns the current window height.", params = {}, returnType = LuaDocFragments.Types.NUMBER)
+    double getWindowHeight();
 }

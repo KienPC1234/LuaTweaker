@@ -116,6 +116,10 @@ final class ContentBlockContainerBinding {
             }
             return table;
         });
+        ContentBindingSupport.bindMethod(table, "manualSlots", args -> {
+            builder.manualSlots();
+            return table;
+        });
     }
 
     static void bindBlockSlotLocks(ILuaTable table, IBlockBuilder builder) {

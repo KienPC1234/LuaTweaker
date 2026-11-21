@@ -124,8 +124,10 @@ public class CustomBlock extends Block {
     @Override
     @NotNull
     public VoxelShape getOcclusionShape(BlockState state, BlockGetter level, BlockPos pos) {
-        if (!shapesByDirection.isEmpty()
-                || !java.util.Objects.equals(defaultShape, net.minecraft.world.phys.shapes.Shapes.block())) {
+        // buildHorizontalShapes always returns a populated map, so testing !isEmpty()
+        // would make every custom block non-occluding. Only a genuinely custom shape
+        // (not the full-block default) should let neighbours render their faces.
+        if (!java.util.Objects.equals(defaultShape, net.minecraft.world.phys.shapes.Shapes.block())) {
             return net.minecraft.world.phys.shapes.Shapes.empty();
         }
         return super.getOcclusionShape(state, level, pos);

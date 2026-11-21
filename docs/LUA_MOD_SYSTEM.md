@@ -96,6 +96,7 @@ Every Lua Mod **must** contain a `manifest.json` at its root:
 | `luatweaker` | ❌ | — | Same shape for the engine version. Unknown running versions fail open with a warning so tests/datagen never mass-skip |
 | `permissions` | ❌ | `[]` | Runtime permissions granted to the mod (e.g. `runtime.reflection`, `runtime.bytecode_hook`, `net.http`). Denied at load time if undeclared. See [**JAVA_PATCHER.md**](JAVA_PATCHER.md) |
 | `update_url` | ❌ | — | **HTTPS** URL of a JSON update feed (see [Update Checking](#-update-checking--network-security)) |
+| `sync` | ❌ | `"required"` for `universal`, `"optional"` otherwise | `"required"` means the mod must exist at the same version on both sides: a mismatched client is kicked (default) or warned. `"optional"` exempts it from the handshake. Only `universal` mods are ever enforced |
 
 Skipped mods are reported three ways: the load log, the per-mod errors
 surfaced by `/lt doctor`, and an in-game chat warning to every joining player

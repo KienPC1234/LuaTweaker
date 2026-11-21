@@ -71,7 +71,7 @@ public final class InteractionLuaBinding {
         final ILuaValue finalAttrSignal = attrSignal;
 
         ILuaTable meta = engine.createTable();
-        ILuaTable methods = engine.createTable();
+        ILuaTable methods = com.luatweaker.core.bind.LuaBinder.bindTable(engine, block, IInteractableBlock.class);
 
         BlockTableBinding.bindBlockCore(methods, engine, block, finalAttrSignal);
         BlockTableBinding.bindBlockGeo(methods, engine, block);
@@ -100,7 +100,7 @@ public final class InteractionLuaBinding {
         final ILuaValue finalAttrSignal = attrSignal;
 
         ILuaTable meta = engine.createTable();
-        ILuaTable methods = engine.createTable();
+        ILuaTable methods = com.luatweaker.core.bind.LuaBinder.bindTable(engine, item, IInteractableItem.class);
 
         ItemTableBinding.bindItemCore(methods, engine, item, finalAttrSignal);
         ItemTableBinding.bindItemData(methods, engine, item);

@@ -97,13 +97,17 @@ public final class ImGuiInputHook {
     }
 
     @SubscribeEvent
-    public static void onCharTyped(net.neoforged.neoforge.client.event.ScreenEvent.CharacterTyped event) {
-        if (platformOrNull() == null) {
+    public static void onCharTyped(net.neoforged.neoforge.client.event.ScreenEvent.CharacterTyped.Pre event) {
+        NeoForgeClientPlatform platform = platformOrNull();
+        if (platform == null) {
             return;
         }
         long handle = windowHandle();
         if (handle != NO_WINDOW_HANDLE) {
             forward("char", () -> ImGuiManager.onChar(handle, event.getCodePoint()));
+        }
+        if (platform.imguiWantsTextInput()) {
+            event.setCanceled(true);
         }
     }
 }

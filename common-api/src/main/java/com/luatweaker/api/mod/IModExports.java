@@ -5,6 +5,8 @@ import com.luatweaker.api.annotation.LuaDoc;
 import com.luatweaker.api.doc.LuaDocFragments;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Per-mod writable folder: {@code <gameDir>/luatweaker/exports/<mod_id>/}.
@@ -34,7 +36,15 @@ public interface IModExports {
             description = "Reads a JSON file from the export folder and decodes it directly into Lua values (tables, primitives).",
             params = {LuaDocFragments.Common.PATH_STRING},
             returnType = "any")
-    ILuaValue readJson(String path);
+    ILuaValue readJson(@NotNull String path);
+
+    @LuaDoc(
+            description = "Reads a JSON file, returning the fallback when the file is missing, "
+                    + "not valid UTF-8, or malformed JSON. "
+                    + "Path-security violations, directories, oversized files and I/O failures still throw.",
+            params = {LuaDocFragments.Common.PATH_STRING, "fallback: any"},
+            returnType = "any")
+    ILuaValue readJsonOr(@NotNull String path, @LuaDefault("nil") @Nullable ILuaValue fallback);
 
     @LuaDoc(
             description = "Encodes a Lua value to JSON and writes it to the export folder (atomic replace). Parent directories are created.",

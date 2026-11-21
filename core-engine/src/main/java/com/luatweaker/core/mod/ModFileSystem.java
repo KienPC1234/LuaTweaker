@@ -5,6 +5,8 @@ import com.luatweaker.api.mod.IModFiles;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -19,6 +21,7 @@ import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.BiFunction;
 
 /**
  * Sandboxed file access for one LuaMod.
@@ -134,6 +137,48 @@ final class ModFileSystem {
         return table;
     }
 
+    private @NotNull ILuaValue fallbackOrNil(@Nullable ILuaValue fallback) {
+        return fallback != null ? fallback : engine.nilValue();
+    }
+
+    private static boolean isNotFound(@NotNull IllegalArgumentException failure) {
+        String message = failure.getMessage();
+        return message != null && message.contains(": not found");
+    }
+
+    /**
+     * Shared body for both {@code readJsonOr} handles: the fallback covers a missing
+     * file, invalid UTF-8 and malformed JSON only. Path-security violations,
+     * directories, oversized files and I/O failures still throw.
+     */
+    private @NotNull ILuaValue decodeJsonOr(@NotNull String path, @Nullable ILuaValue fallback,
+            @NotNull String op, @NotNull BiFunction<String, String, Boolean> exists,
+            @NotNull BiFunction<String, String, byte[]> read) {
+        if (!exists.apply(path, op)) {
+            return fallbackOrNil(fallback);
+        }
+        byte[] bytes;
+        try {
+            bytes = read.apply(path, op);
+        } catch (IllegalArgumentException e) {
+            if (isNotFound(e)) {
+                return fallbackOrNil(fallback);
+            }
+            throw e;
+        }
+        String text;
+        try {
+            text = decodeUtf8(bytes, op, path);
+        } catch (IllegalArgumentException e) {
+            return fallbackOrNil(fallback);
+        }
+        try {
+            return com.luatweaker.core.json.JsonServiceImpl.decodeJson(engine, text);
+        } catch (IllegalArgumentException e) {
+            return fallbackOrNil(fallback);
+        }
+    }
+
     record FileStat(long size, boolean directory, long modified) {
     }
 
@@ -156,6 +201,12 @@ final class ModFileSystem {
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException("[mod:Files():readJson] '" + path + "': " + e.getMessage(), e);
             }
+        }
+
+        @Override
+        public ILuaValue readJsonOr(String path, ILuaValue fallback) {
+            return decodeJsonOr(path, fallback, "mod:Files():readJsonOr",
+                    reader::modExists, reader::readModBytes);
         }
 
         @Override
@@ -199,6 +250,12 @@ final class ModFileSystem {
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException("[mod:Exports():readJson] '" + path + "': " + e.getMessage(), e);
             }
+        }
+
+        @Override
+        public ILuaValue readJsonOr(String path, ILuaValue fallback) {
+            return decodeJsonOr(path, fallback, "mod:Exports():readJsonOr",
+                    exportReader::exportExists, exportReader::readExportBytes);
         }
 
         @Override

@@ -3,7 +3,7 @@ package com.luatweaker.api.interaction;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public interface IInteractableItem {
+public interface IInteractableItem extends IEnchantableItem {
     @NotNull
     String getId();
 
@@ -53,6 +53,19 @@ public interface IInteractableItem {
     default boolean stopAnimation(@NotNull String animName) {
         return stopAnimation(animName, "controller");
     }
+
+    default @NotNull java.util.List<String> getLore() { return java.util.List.of(); }
+    default void setLore(@NotNull java.util.List<String> lore) {}
+    default void addLore(@NotNull String line) {}
+    default @NotNull String getRarity() { return "COMMON"; }
+    default boolean hasGlint() { return false; }
+    default int getMaxStackSize() { return 64; }
+    default int getBurnTime() { return 0; }
+    default boolean isFood() { return false; }
+    default int getNutrition() { return 0; }
+    default float getSaturation() { return 0.0f; }
+    default boolean isEmpty() { return false; }
+    default @NotNull IInteractableItem copy() { return this; }
 
     @NotNull
     Object getRawItemStack();

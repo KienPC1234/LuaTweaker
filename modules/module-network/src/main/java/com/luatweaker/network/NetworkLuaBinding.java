@@ -62,7 +62,7 @@ public final class NetworkLuaBinding {
             }
             String name = args[off].asString();
             ILuaValue[] passArgs = args[off + 1].isTable()
-                    ? RemoteRegistry.unpackTable(args[off + 1].asTable())
+                    ? RemoteServiceTables.unpackTable(args[off + 1].asTable())
                     : new ILuaValue[0];
             return engine.wrapString(networkService.RpcInvokeServer(name, passArgs));
         });
@@ -75,7 +75,7 @@ public final class NetworkLuaBinding {
             String name = args[off].asString();
             String uuid = args[off + 1].asString();
             ILuaValue[] passArgs = args[off + 2].isTable()
-                    ? RemoteRegistry.unpackTable(args[off + 2].asTable())
+                    ? RemoteServiceTables.unpackTable(args[off + 2].asTable())
                     : new ILuaValue[0];
             return engine.wrapString(networkService.RpcInvokeClient(name, uuid, passArgs));
         });

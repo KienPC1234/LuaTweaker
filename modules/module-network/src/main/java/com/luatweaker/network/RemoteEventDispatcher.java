@@ -9,13 +9,8 @@ import com.luatweaker.api.vm.ILuaValue;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Map;
-import java.util.Optional;
 
-/**
- * RemoteEvent delivery: outbound sends plus inbound dispatch to the Lua
- * {@code OnServerEvent}/{@code OnClientEvent} listeners through a synchronous
- * signal fire.
- */
+/** Inbound RemoteEvent dispatch to Lua {@code OnServerEvent}/{@code OnClientEvent} listeners. */
 final class RemoteEventDispatcher {
 
     private final ILuaEngine engine;
@@ -23,51 +18,26 @@ final class RemoteEventDispatcher {
     private final RateLimiter rateLimiter;
     private final double eventBurst;
     private final double eventRefillPerSecond;
-    private final String localClientBudgetKey;
+    private final double channelBurst;
+    private final double channelRefillPerSecond;
+    private final InboundPolicy inboundPolicy;
 
     RemoteEventDispatcher(ILuaEngine engine, Map<String, ILuaTable> remoteEvents,
                           RateLimiter rateLimiter, double eventBurst, double eventRefillPerSecond,
-                          String localClientBudgetKey) {
+                          double channelBurst, double channelRefillPerSecond,
+                          InboundPolicy inboundPolicy) {
         this.engine = engine;
         this.remoteEvents = remoteEvents;
         this.rateLimiter = rateLimiter;
         this.eventBurst = eventBurst;
         this.eventRefillPerSecond = eventRefillPerSecond;
-        this.localClientBudgetKey = localClientBudgetKey;
-    }
-
-    void fireClient(String channelName, String playerUuid, ILuaValue... args) {
-        Platform.getNetwork().sendPayloadBytes(playerUuid, channelName,
-                LuaPayloadCodec.encodeArgs(args == null ? new ILuaValue[0] : args));
-    }
-
-    void fireAllClients(String channelName, ILuaValue... args) {
-        Platform.getNetwork().broadcastPayloadBytes(channelName,
-                LuaPayloadCodec.encodeArgs(args == null ? new ILuaValue[0] : args));
-    }
-
-    void fireServer(String channelName, ILuaValue... args) {
-        // Client-side budget: a runaway loop should not fill the socket with packets the
-        // server is going to drop anyway. Same numbers as the server-side check.
-        if (!rateLimiter.tryConsumeEvent(localClientBudgetKey, eventBurst, eventRefillPerSecond)) {
-            LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                    "[Network] Rate-limited outbound RemoteEvent '" + channelName + "'");
-            return;
-        }
-        Platform.getNetwork().sendPayloadBytesToServer(channelName,
-                LuaPayloadCodec.encodeArgs(args == null ? new ILuaValue[0] : args));
+        this.channelBurst = channelBurst;
+        this.channelRefillPerSecond = channelRefillPerSecond;
+        this.inboundPolicy = inboundPolicy;
     }
 
     void onClientFired(String channelName, String playerUuid, byte[] data) {
-        if (playerUuid == null || playerUuid.isBlank()) {
-            LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                    "[Network] Dropped serverbound RemoteEvent '" + channelName + "': no player identity");
-            return;
-        }
-        // Budget before decode: an unknown channel must not turn into free parsing work.
-        if (!rateLimiter.tryConsumeEvent(playerUuid, eventBurst, eventRefillPerSecond)) {
-            LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                    "[Network] Rate-limited RemoteEvent '" + channelName + "' from player " + playerUuid);
+        if (!isServerboundAllowed(channelName, playerUuid)) {
             return;
         }
         ILuaValue onServerEvent = lookupServerListener(channelName);
@@ -82,19 +52,69 @@ final class RemoteEventDispatcher {
         if (player == null) {
             return;
         }
-        ILuaValue[] args = decodeFireArgs(channelName, data).orElse(null);
+        ILuaValue[] args = decodeFireArgs(channelName, data);
         if (args == null) {
             return;
         }
-
         LuaTweakerLog.get().debug(LogStage.SYSTEM,
                 "[Network] OnClientFired firing RemoteEvent '" + channelName
                         + "' for player: " + playerUuid);
-
         ILuaValue[] fireArgs = new ILuaValue[args.length + 1];
         fireArgs[0] = player;
         System.arraycopy(args, 0, fireArgs, 1, args.length);
         engine.callFunction(fireFn, appendThis(onServerEvent, fireArgs));
+    }
+
+    private boolean isServerboundAllowed(String channelName, String playerUuid) {
+        if (playerUuid == null || playerUuid.isBlank()) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[Network] Dropped serverbound RemoteEvent '" + channelName + "': no player identity");
+            return false;
+        }
+        if (inboundPolicy.isBlocked(channelName)) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[Network] Dropped serverbound RemoteEvent '" + channelName
+                            + "': inbound blocked by the owning mod");
+            return false;
+        }
+        if (!tryConsumeChannelBudget(playerUuid, channelName)) {
+            return false;
+        }
+        if (!rateLimiter.tryConsumeEvent(playerUuid, eventBurst, eventRefillPerSecond)) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[Network] Rate-limited RemoteEvent '" + channelName + "' from player " + playerUuid);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Per-channel budget, checked before the shared per-player budget so one
+     * chatty mod throttles itself instead of starving the player's other mods.
+     * Unknown channel names skip this (they must not mint unlimited buckets)
+     * and still pay the per-player budget below.
+     */
+    private boolean tryConsumeChannelBudget(String playerUuid, String channelName) {
+        if (channelName == null || !remoteEvents.containsKey(channelName)) {
+            return true;
+        }
+        if (rateLimiter.tryConsumeEvent(channelKey(playerUuid, channelName),
+                channelBurst, channelRefillPerSecond)) {
+            return true;
+        }
+        LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                "[Network] Rate-limited RemoteEvent '" + channelName
+                        + "' on its own channel budget; other channels are unaffected");
+        return false;
+    }
+
+    /**
+     * Bucket key joining player and channel with a separator that cannot occur
+     * in a player UUID (canonical UUIDs never contain NUL), so distinct
+     * (player, channel) pairs can never alias the same bucket.
+     */
+    private static String channelKey(String playerUuid, String channelName) {
+        return playerUuid + '\0' + channelName;
     }
 
     private @Nullable ILuaValue lookupServerListener(String channelName) {
@@ -129,14 +149,14 @@ final class RemoteEventDispatcher {
         return resolved;
     }
 
-    private Optional<ILuaValue[]> decodeFireArgs(String channelName, byte[] data) {
+    private @Nullable ILuaValue[] decodeFireArgs(String channelName, byte[] data) {
         try {
-            return Optional.of(LuaPayloadCodec.decodeArgsOrEmpty(engine, data));
+            return LuaPayloadCodec.decodeArgsOrEmpty(engine, data);
         } catch (IllegalArgumentException e) {
             LuaTweakerLog.get().error(LogStage.SYSTEM,
                     "[Network] Dropped RemoteEvent '" + channelName + "' with malformed payload: "
                             + e.getMessage());
-            return Optional.empty();
+            return null;
         }
     }
 
@@ -157,22 +177,13 @@ final class RemoteEventDispatcher {
         if (fireFn == null) {
             return;
         }
-        ILuaValue[] args;
-        try {
-            args = LuaPayloadCodec.decodeArgsOrEmpty(engine, data);
-        } catch (IllegalArgumentException e) {
-            LuaTweakerLog.get().error(LogStage.SYSTEM,
-                    "[Network] Dropped RemoteEvent '" + channelName + "' with malformed payload: "
-                            + e.getMessage());
+        ILuaValue[] args = decodeFireArgs(channelName, data);
+        if (args == null) {
             return;
         }
         engine.callFunction(fireFn, appendThis(onClientEvent, args));
     }
 
-    /**
-     * Network handlers mutate world/player state and must run synchronously on the calling
-     * (main) thread, never on a deferred coroutine virtual thread.
-     */
     private @Nullable ILuaValue resolveFireSync() {
         ILuaValue signalClass = engine.getGlobalEnvironment().rawget("Signal");
         if (signalClass == null || !signalClass.isTable()) {

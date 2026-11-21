@@ -197,7 +197,8 @@ public class LuaChunkGenerator extends ChunkGenerator {
         Map<Integer, String> strataOverrides = fill.usePickers
                 ? fill.service.computeStrataOverrides(dimensionId, worldX, worldZ, height)
                 : Map.of();
-        for (int y = fill.minY; y <= height; y++) {
+        int solidLimit = Math.min(height, fill.maxY - 1);
+        for (int y = fill.minY; y <= solidLimit; y++) {
             String blockId = solidBlockIdAt(columns, fill.config, x, y, z, height, fill.minY,
                     overrides, strataOverrides);
             if (blockId == null) {
@@ -301,7 +302,7 @@ public class LuaChunkGenerator extends ChunkGenerator {
     private void spawnOriginalEntry(WorldGenRegion region, DimensionConfig config,
                                     DimensionConfig.SpawnEntry entry, ChunkPos center, Random random) {
         java.util.Optional<EntityType<?>> type =
-                com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(entry.entity());
+                com.luatweaker.platform.interaction.EntitySpawner.resolveEntityType(entry.entity());
         if (type.isEmpty()) {
             LuaTweakerLog.get().error(LogStage.SYSTEM,
                     "spawnEntities for dimension '" + dimensionId + "' references unknown entity '"
@@ -383,7 +384,7 @@ public class LuaChunkGenerator extends ChunkGenerator {
         List<MobSpawnSettings.SpawnerData> spawners = new ArrayList<>();
         for (DimensionConfig.SpawnEntry entry : config.spawnEntities()) {
             java.util.Optional<EntityType<?>> type =
-                    com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(entry.entity());
+                    com.luatweaker.platform.interaction.EntitySpawner.resolveEntityType(entry.entity());
             if (type.isEmpty() || type.get().getCategory() != category) { continue; }
             spawners.add(new MobSpawnSettings.SpawnerData(type.get(), entry.weight(),
                     entry.minGroup(), entry.maxGroup()));
@@ -476,12 +477,13 @@ public class LuaChunkGenerator extends ChunkGenerator {
         boolean fillWater = data.sampler == null || data.sampler.waterEnabled();
         int localX = Math.floorMod(x, 16);
         int localZ = Math.floorMod(z, 16);
-        for (int y = minY; y <= height; y++) {
+        int solidLimit = Math.min(height, maxY - 1);
+        for (int y = minY; y <= solidLimit; y++) {
             String blockId = solidBlockIdAt(data, config, localX, y, localZ, height, minY,
                     overrides, Map.of());
             states[y - minY] = blockId == null ? airState : resolveBlock(blockId);
         }
-        for (int y = height + 1; y < maxY; y++) {
+        for (int y = Math.max(height + 1, minY); y < maxY; y++) {
             states[y - minY] = openBlockState(overrides, y, fillWater, seaLevel, waterState);
         }
         return new NoiseColumn(minY, states);

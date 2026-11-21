@@ -24,6 +24,8 @@ do not implement from them.
 | [RECIPES](RECIPES.md) | `Recipe` builders: shaped/shapeless, smelting, smithing, anvil, brewing, trades. |
 | [DATA_DRIVEN_RECIPES_AND_CAPABILITIES](DATA_DRIVEN_RECIPES_AND_CAPABILITIES.md) | Generic data-driven recipes (Mekanism/Create) and OOP block capability transfer API. |
 | [WORLDGEN](WORLDGEN.md) | `Worldgen` (ore/vegetation/biome mods), `Biomes:Define`, structures, mixed veins. |
+| [TEXT_ENCHANT_EFFECT_PARTICLE_API](TEXT_ENCHANT_EFFECT_PARTICLE_API.md) | Rich text components, data-driven enchantments, custom mob effects/potions, particle shapes, anti-cheat primitives. |
+| [CLAIM_TOOL_EXAMPLE](CLAIM_TOOL_EXAMPLE.md) | Claim tool composed from primitives: `Region3` boxes, `Storage` claims, break/place/interact/explosion protection, `/claim` command. |
 | [MOB_AND_SPAWN](MOB_AND_SPAWN.md) | Spawning, AI goals, loot tables (`Loot`). |
 | [BLOCK_CAPABILITY_API](BLOCK_CAPABILITY_API.md) | RF/FE machines: energy/fluid/item capabilities. |
 
@@ -35,6 +37,7 @@ do not implement from them.
 | [BEHAVIOR_TREES](BEHAVIOR_TREES.md) | Pure-Lua `Brain`: Selector/Sequence/Parallel/Utility, decorators, blackboards, Squad packs. |
 | [SERVICE_AND_SPATIAL_MATH_API](SERVICE_AND_SPATIAL_MATH_API.md) | `Task` (spawn/delay/wait), `TweenService`, `Vector3/Vector2/Color3`, math extensions. |
 | [NETWORK](NETWORK.md) | RemoteEvent/RemoteFunction wire format, budgets, byte contract. |
+| [SERVER_MOD_PACKS](SERVER_MOD_PACKS.md) | Server-advertised LuaMod zips: per-bundle folders, prompt + consent, hash-pinned download (never auto-loaded). |
 
 ## Client, commands, integration
 

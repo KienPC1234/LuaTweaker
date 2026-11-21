@@ -104,19 +104,37 @@ final class ContentBlockRuntimeBinding {
             }
             return table;
         });
+        bindBlockButton(table, builder);
+        bindBlockLabel(table, builder);
+    }
+
+    private static void bindBlockButton(ILuaTable table, IBlockBuilder builder) {
         ContentBindingSupport.bindMethod(table, "button", args -> {
             int off = LuaBinder.getOffset(args);
             if (ContentBindingSupport.hasMinArgs(args, off, 6)) {
+                String anchor = ContentBindingSupport.hasMinArgs(args, off, 7)
+                        ? args[off + 6].asString() : "topleft";
                 builder.button(args[off].asString(), args[off + 1].asInt(), args[off + 2].asInt(),
-                        args[off + 3].asInt(), args[off + 4].asInt(), args[off + 5].asString());
+                        args[off + 3].asInt(), args[off + 4].asInt(), args[off + 5].asString(),
+                        anchor);
             }
             return table;
         });
+    }
+
+    private static void bindBlockLabel(ILuaTable table, IBlockBuilder builder) {
         ContentBindingSupport.bindMethod(table, "label", args -> {
             int off = LuaBinder.getOffset(args);
             if (ContentBindingSupport.hasMinArgs(args, off, 3)) {
                 int color = ContentBindingSupport.hasMinArgs(args, off, 4) ? args[off + 3].asInt() : 0xFFFFFF;
-                builder.label(args[off].asInt(), args[off + 1].asInt(), args[off + 2].asString(), color);
+                String align = ContentBindingSupport.hasMinArgs(args, off, 5)
+                        ? args[off + 4].asString() : "left";
+                double scale = ContentBindingSupport.hasMinArgs(args, off, 6)
+                        ? args[off + 5].asDouble() : 1.0;
+                boolean shadow = ContentBindingSupport.hasMinArgs(args, off, 7)
+                        && args[off + 6].asBoolean();
+                builder.label(args[off].asInt(), args[off + 1].asInt(), args[off + 2].asString(),
+                        color, align, scale, shadow);
             }
             return table;
         });

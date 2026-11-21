@@ -60,10 +60,20 @@ class ChunkAssemblerValidationTest {
     @Test
     void oversizedFrameIsRejected() {
         ChunkAssembler assembler = new ChunkAssembler();
-        byte[] tooBig = new byte[ChunkAssembler.CHUNK_BYTES + 1];
+        byte[] tooBig = new byte[ChunkAssembler.MAX_FRAME_BYTES + 1];
 
         assertThrows(IllegalArgumentException.class,
             () -> assembler.accept(KEY, CHANNEL, 0, 2, tooBig),
-            "a frame larger than the chunk size must be rejected");
+            "a frame larger than the receive cap must be rejected");
+    }
+
+    @Test
+    void legacyLargeFrameIsAccepted() {
+        ChunkAssembler assembler = new ChunkAssembler();
+        byte[] legacy = new byte[ChunkAssembler.CHUNK_BYTES * 2];
+
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+            () -> assembler.accept(KEY, CHANNEL, 0, 2, legacy),
+            "a frame above the send split size but below the receive cap (older peers) must pass bounds");
     }
 }

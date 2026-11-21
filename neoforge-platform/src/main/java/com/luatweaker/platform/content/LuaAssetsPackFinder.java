@@ -1,11 +1,15 @@
 package com.luatweaker.platform.content;
 
 import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
-import com.luatweaker.api.content.*;
+import com.luatweaker.api.content.IBlockBuilder;
+import com.luatweaker.api.content.IContentService;
+import com.luatweaker.api.content.IDatapackService;
+import com.luatweaker.api.content.IEntityBuilder;
+import com.luatweaker.api.content.IFluidBuilder;
+import com.luatweaker.api.content.IItemBuilder;
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
 import net.minecraft.network.chat.Component;
@@ -38,24 +42,23 @@ public class LuaAssetsPackFinder {
     private static final String ASSETS_PREFIX = "assets/";
     private static final String MODELS_ITEM_DIR = "/models/item/";
     private static final String JSON_EXTENSION = ".json";
-    private static final String JSON_TAIL = "\n  }\n}";
+    private static final String JSON_TAIL = "\"\n  }\n}";
     private static final String JSON_PARENT_HEAD = "{\n  \"parent\": \"";
-    private static final String JSON_QUOTE_TAIL = "\n}";
+    private static final String JSON_QUOTE_TAIL = "\"\n}";
     private static final String BLOCKSTATES_DIR = "/blockstates/";
     private static final String BLOCK_MODEL_PREFIX = ":block/";
     private static final String ITEM_MODEL_PREFIX = ":item/";
     private static final String MODELS_BLOCK_DIR = "/models/block/";
     private static final String BUCKET_SUFFIX = "_bucket";
-    private static final String JSON_TOP_ENTRY = ",\n    \"top\": \"";
-    private static final String JSON_SIDE_ENTRY = ",\n    \"side\": \"";
+    private static final String JSON_TOP_ENTRY = "\",\n    \"top\": \"";
+    private static final String JSON_SIDE_ENTRY = "\",\n    \"side\": \"";
     private static final String JSON_MODEL_KEY = "model";
-    private static final String LANG_ITEM_PREFIX = "item.";
     private static final String SHAPE_STAIRS = "STAIRS";
     private static final String SHAPE_SLAB = "SLAB";
     private static final String SHAPE_WALL = "WALL";
 
 
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Gson GSON = new Gson();
 
     private final File luaDir;
     private final IDatapackService datapackService;
@@ -211,7 +214,7 @@ public class LuaAssetsPackFinder {
     // Asset generation (In-Memory RAM — Zero Write to Disk)
     // -----------------------------------------------------------------------
 
-    private void injectVirtualAssetFiles() {
+    void injectVirtualAssetFiles() {
         if (contentService == null || datapackService == null) { return; }
         injectItemModelAssets();
         injectSpawnEggAssets();
@@ -632,89 +635,7 @@ public class LuaAssetsPackFinder {
 
     private void injectLanguageFiles() {
         if (contentService == null || datapackService == null) { return; }
-        JsonObject langJson = new JsonObject();
-        addItemLangEntries(langJson);
-        addBlockLangEntries(langJson);
-        addTabLangEntries(langJson);
-        addFluidLangEntries(langJson);
-        addEntityLangEntries(langJson);
-        datapackService.addData("assets/luatweaker/lang/en_us.json", GSON.toJson(langJson));
-    }
-
-    private void addItemLangEntries(JsonObject langJson) {
-        for (IItemBuilder b : contentService.getRegisteredItems()) {
-            String[] parts = parseId(b.getId());
-            String ns = parts[0];
-            String id = parts[1];
-            String name = b.getDisplayName() != null ? stripEmojis(b.getDisplayName()) : capitalize(id);
-            langJson.addProperty(LANG_ITEM_PREFIX + ns + "." + id, name);
-        }
-    }
-
-    private void addBlockLangEntries(JsonObject langJson) {
-        for (IBlockBuilder b : contentService.getRegisteredBlocks()) {
-            String[] parts = parseId(b.getId());
-            String ns = parts[0];
-            String id = parts[1];
-            String name = capitalize(id);
-            langJson.addProperty("block." + ns + "." + id, name);
-            langJson.addProperty(LANG_ITEM_PREFIX + ns + "." + id, name);
-        }
-    }
-
-    private void addTabLangEntries(JsonObject langJson) {
-        for (ICreativeTabBuilder t : contentService.getRegisteredTabs()) {
-            String[] parts = parseId(t.getId());
-            String ns = parts[0];
-            String id = parts[1];
-            String name = t.getTitle() != null ? stripEmojis(t.getTitle()) : capitalize(id);
-            langJson.addProperty("itemGroup." + ns + "." + id, name);
-        }
-    }
-
-    private void addFluidLangEntries(JsonObject langJson) {
-        for (IFluidBuilder b : contentService.getRegisteredFluids()) {
-            String[] parts = parseId(b.getId());
-            String ns = parts[0];
-            String id = parts[1];
-            String name = b.getDisplayName() != null ? stripEmojis(b.getDisplayName()) : capitalize(id.replace("_fluid", "")) + " Liquid";
-            String bucketName = name.toLowerCase(java.util.Locale.ROOT).contains("bucket") ? name : name + " Bucket";
-            langJson.addProperty("fluid." + ns + "." + id, name);
-            langJson.addProperty("fluid_type." + ns + "." + id, name);
-            langJson.addProperty(LANG_ITEM_PREFIX + ns + "." + id + BUCKET_SUFFIX, bucketName);
-            langJson.addProperty(LANG_ITEM_PREFIX + ns + "." + id.replace("_fluid", "") + BUCKET_SUFFIX, bucketName);
-            langJson.addProperty("block." + ns + "." + id + "_block", name + " Block");
-        }
-    }
-
-    private void addEntityLangEntries(JsonObject langJson) {
-        for (IEntityBuilder e : contentService.getRegisteredEntities()) {
-            String[] parts = parseId(e.getId());
-            String ns = parts[0];
-            String id = parts[1];
-            String name = capitalize(id);
-            langJson.addProperty("entity." + ns + "." + id, name);
-            if (e.hasSpawnEgg()) {
-                langJson.addProperty(LANG_ITEM_PREFIX + ns + "." + id + "_spawn_egg", name + " Spawn Egg");
-            }
-        }
-    }
-
-    private String stripEmojis(String text) {
-        if (text == null) { return ""; }
-        return text.replaceAll("[\uD83C-\uDBFF\uDC00-\uDFFF\u2600-\u27BF]", "").trim();
-    }
-
-    private String capitalize(String str) {
-        if (str == null || str.isBlank()) { return ""; }
-        String[] words = str.replace("_", " ").split(" ");
-        StringBuilder sb = new StringBuilder();
-        for (String w : words) {
-            if (!w.isBlank()) {
-                sb.append(Character.toUpperCase(w.charAt(0))).append(w.substring(1)).append(' ');
-            }
-        }
-        return sb.toString().trim();
+        new LuaAssetsLangGenerator(contentService, datapackService, GSON).injectLanguageFiles();
     }
 
     private boolean isToolType(String type) {

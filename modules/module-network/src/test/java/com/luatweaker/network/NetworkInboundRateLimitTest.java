@@ -90,8 +90,8 @@ class NetworkInboundRateLimitTest {
     void inboundEventFloodIsDelivered() {
         double fired = floodInboundEvents();
 
-        assertTrue(fired >= NetworkServiceImpl.EVENT_BURST,
-            "the burst must be delivered before the limit kicks in, got " + fired);
+        assertTrue(fired >= NetworkServiceImpl.EVENT_CHANNEL_BURST,
+            "the per-channel burst must be delivered before the limit kicks in, got " + fired);
     }
 
     @Test

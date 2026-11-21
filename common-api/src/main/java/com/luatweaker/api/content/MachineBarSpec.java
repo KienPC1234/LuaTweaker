@@ -22,6 +22,9 @@ package com.luatweaker.api.content;
  * @param texture       optional texture path for sprite bars
  * @param u             texture U coordinate
  * @param v             texture V coordinate
+ * @param anchor        panel anchor ("topleft" default, "top", "topright", "left",
+ *                      "center", "right", "bottomleft", "bottom", "bottomright");
+ *                      x/y become offsets from the anchor point
  */
 public record MachineBarSpec(
         String id,
@@ -36,17 +39,18 @@ public record MachineBarSpec(
         int u,
         int v,
         String currentKey,
-        String maxKey
+        String maxKey,
+        String anchor
 ) {
     public MachineBarSpec(String id, int x, int y, int width, int height, String source, int color) {
-        this(id, x, y, width, height, source, color, null, null, 0, 0, null, null);
+        this(id, x, y, width, height, source, color, null, null, 0, 0, null, null, "topleft");
     }
 
     public MachineBarSpec(String id, int x, int y, int width, int height, String source, int color, String tooltipFormat) {
-        this(id, x, y, width, height, source, color, tooltipFormat, null, 0, 0, null, null);
+        this(id, x, y, width, height, source, color, tooltipFormat, null, 0, 0, null, null, "topleft");
     }
 
     public MachineBarSpec(String id, int x, int y, int width, int height, String source, int color, String tooltipFormat, String texture, int u, int v) {
-        this(id, x, y, width, height, source, color, tooltipFormat, texture, u, v, null, null);
+        this(id, x, y, width, height, source, color, tooltipFormat, texture, u, v, null, null, "topleft");
     }
 }

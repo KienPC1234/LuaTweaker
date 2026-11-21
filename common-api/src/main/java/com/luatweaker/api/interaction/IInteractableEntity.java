@@ -44,8 +44,9 @@ public interface IInteractableEntity {
     default double getVz() { return 0.0; }
     default void setVelocity(double vx, double vy, double vz) {}
 
-    default @NotNull String getNbt() { return "{}"; }
-    default void setNbt(@NotNull String nbtJson) {}
+    // NBT snapshot/restore lives on IEntity only: every IInteractableEntity implementation is also
+    // an IEntity, and the unified Lua entity table binds IEntity, so a second copy here would be a
+    // duplicate surface with different semantics (persistent data vs full entity NBT).
     default @org.jetbrains.annotations.Nullable String getAttribute(@NotNull String key) { return null; }
     default void setAttribute(@NotNull String key, @NotNull String value) {}
 

@@ -70,6 +70,8 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
     }
 
     private Button createButton(MachineButtonSpec spec, int originX, int originY) {
+        int buttonX = originX + GuiAnchor.resolveX(spec.anchor(), imageWidth, spec.width(), spec.x());
+        int buttonY = originY + GuiAnchor.resolveY(spec.anchor(), imageHeight, spec.height(), spec.y());
         return Button.builder(Component.literal(spec.label()), clicked -> {
                     if (menu.getBlockPos() != null) {
                         net.neoforged.neoforge.network.PacketDistributor.sendToServer(
@@ -77,7 +79,7 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
                                         menu.getBlockPos(), spec.id()));
                     }
                 })
-                .bounds(originX + spec.x(), originY + spec.y(), spec.width(), spec.height())
+                .bounds(buttonX, buttonY, spec.width(), spec.height())
                 .build();
     }
 
@@ -168,7 +170,7 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
         if (bars == null) {
             return;
         }
-        ContainerScreenDecor.renderBarTooltip(guiGraphics, this.font, menu, bars, mouseX, mouseY,
+        ContainerBarTooltip.render(guiGraphics, this.font, menu, bars, mouseX, mouseY,
                 (width - imageWidth) / 2, (height - imageHeight) / 2);
     }
 }

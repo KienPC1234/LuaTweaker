@@ -210,7 +210,7 @@ public final class MobGoalHelper {
             }
             default -> {
                 java.util.Optional<net.minecraft.world.entity.EntityType<?>> optType =
-                        com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(targetTypeStr);
+                        com.luatweaker.platform.interaction.EntitySpawner.resolveEntityType(targetTypeStr);
                 if (optType.isPresent()) {
                     com.luatweaker.api.log.LuaTweakerLog.get().info(com.luatweaker.api.log.LogStage.SYSTEM,
                             "Target type '" + targetTypeStr + "' matches a custom entity: "
@@ -278,7 +278,7 @@ public final class MobGoalHelper {
             return;
         }
         java.util.Optional<net.minecraft.world.entity.EntityType<?>> optType =
-                com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(targetTypeStr);
+                com.luatweaker.platform.interaction.EntitySpawner.resolveEntityType(targetTypeStr);
         if (optType.isEmpty()) {
             com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
                     "Cannot add NearestAttackableTargetGoal: Unknown target type '" + targetTypeStr + "' for entity " + entity);

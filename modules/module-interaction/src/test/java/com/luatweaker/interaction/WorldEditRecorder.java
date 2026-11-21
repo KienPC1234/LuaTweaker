@@ -1,5 +1,7 @@
 package com.luatweaker.interaction;
 
+import com.luatweaker.api.particle.ParticleOptionsSpec;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +20,7 @@ final class WorldEditRecorder implements MockPlatformInteraction {
     final List<ReplaceCall> replaceCalls = new ArrayList<>();
     final List<PlaceCall> placeCalls = new ArrayList<>();
     final List<ParticleCall> particleCalls = new ArrayList<>();
+    final List<ParticleOptionsCall> particleOptionCalls = new ArrayList<>();
     final List<SoundCall> soundCalls = new ArrayList<>();
     final List<StopCall> stopCalls = new ArrayList<>();
 
@@ -50,6 +53,13 @@ final class WorldEditRecorder implements MockPlatformInteraction {
     }
 
     @Override
+    public void spawnParticleOptions(String dimension, String particleId,
+                                     com.luatweaker.api.particle.ParticleSpawn spawn,
+                                     ParticleOptionsSpec options) {
+        particleOptionCalls.add(new ParticleOptionsCall(dimension, particleId, spawn, options));
+    }
+
+    @Override
     public void playSound(String dimension, String soundId, double x, double y, double z,
                           float volume, float pitch, String source) {
         soundCalls.add(new SoundCall(dimension, soundId, List.of(x, y, z), volume, pitch, source));
@@ -73,6 +83,11 @@ final class WorldEditRecorder implements MockPlatformInteraction {
 
     record ParticleCall(String dimension, String particleId, List<Double> position,
                         List<Double> velocity, int count, double speed) {
+    }
+
+    record ParticleOptionsCall(String dimension, String particleId,
+                               com.luatweaker.api.particle.ParticleSpawn spawn,
+                               ParticleOptionsSpec options) {
     }
 
     record SoundCall(String dimension, String soundId, List<Double> position, float volume,

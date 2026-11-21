@@ -27,6 +27,8 @@ final class ContentStartupBinding {
         ContentBlockStartupBinding.bindBlockCreators(engine, startupTable, contentService, datapackService);
         ContentBlockStartupBinding.bindSimpleCreators(engine, startupTable, contentService, datapackService);
         ContentTabStartupBinding.bindTabAndMaterialCreators(engine, startupTable, contentService);
+        ContentEnchantmentBinding.bindEnchantmentCreator(engine, startupTable, datapackService);
+        ContentEffectBinding.bindEffectCreators(engine, startupTable);
         bindShortcuts(engine, startupTable);
         ContentKeyMappingBinding.bindKeyMappingCreator(engine, startupTable);
         return startupTable;

@@ -2,23 +2,15 @@ package com.luatweaker.platform.command.core;
 
 import com.luatweaker.api.command.ICommandSender;
 import com.luatweaker.api.command.ILuaTweakerCommand;
-import com.luatweaker.api.log.LogStage;
-import com.luatweaker.api.log.LuaTweakerLog;
-import com.luatweaker.api.vm.ILuaEngine;
-import com.luatweaker.api.vm.ILuaTable;
-import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.command.CommandDefinition;
 import com.luatweaker.command.CommandServiceImpl;
 import com.luatweaker.core.mod.LuaMod;
 import com.luatweaker.core.mod.LuaModManager;
 import com.luatweaker.core.service.LuaServiceRegistry;
 import com.luatweaker.platform.LuaTweakerMod;
-import com.luatweaker.tasks.TaskServiceImpl;
 import com.luatweaker.update.UpdateServiceImpl;
 import com.luatweaker.update.UpdateStatus;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.luava.runtime.LuaException;
 
 import java.util.Collection;
 import java.util.Map;
@@ -49,8 +41,9 @@ public class DoctorCommand implements ILuaTweakerCommand {
         reportMods(sender);
         reportUpdates(sender);
         reportServices(sender);
-        reportTaskQueue(sender);
+        DoctorDiagnostics.reportTaskQueue(sender);
         reportLuaCommands(sender);
+        DoctorDiagnostics.reportNetwork(sender);
         return 1;
     }
 
@@ -91,19 +84,6 @@ public class DoctorCommand implements ILuaTweakerCommand {
         sender.sendMessage("§7Registered services: §e" + LuaServiceRegistry.size());
     }
 
-    private void reportTaskQueue(@NotNull ICommandSender sender) {
-        int luaQueued = readSchedulerQueueSize();
-        Object taskService = LuaServiceRegistry.get("TaskServiceImpl");
-        if (taskService instanceof TaskServiceImpl tasks) {
-            sender.sendMessage("§7Lua tasks: §e" + luaQueued + " queued§7 (scheduler), §e"
-                    + tasks.getExecutedTaskCount() + " executed§7, §c"
-                    + tasks.getDroppedTaskCount() + " dropped, §6"
-                    + tasks.getSlowTaskCount() + " slow callbacks");
-            return;
-        }
-        sender.sendMessage("§7Lua tasks: §e" + luaQueued + " queued§7 (scheduler)");
-    }
-
     private void reportLuaCommands(@NotNull ICommandSender sender) {
         Object cmdService = LuaServiceRegistry.get("CommandServiceImpl");
         if (!(cmdService instanceof CommandServiceImpl commandService)) {
@@ -119,42 +99,5 @@ public class DoctorCommand implements ILuaTweakerCommand {
                     + (def.aliases().isEmpty() ? "" : "§7, aliases:§f " + String.join(", ", def.aliases()))
                     + "§7)");
         }
-    }
-
-    /** Number of deferred + delayed callbacks in the active engine's bootstrap scheduler. */
-    private static int readSchedulerQueueSize() {
-        ILuaEngine engine = LuaTweakerMod.getActiveEngine();
-        if (engine == null) {
-            return 0;
-        }
-        try {
-            ILuaTable stats = readStatsTable(engine);
-            if (stats == null) {
-                return 0;
-            }
-            ILuaValue queued = stats.rawget("queued");
-            return queued == null || queued.isNil() ? 0 : queued.asInt();
-        } catch (LuaException | IllegalStateException e) {
-            logQueueReadFailure(e);
-            return 0;
-        }
-    }
-
-    private static @Nullable ILuaTable readStatsTable(@NotNull ILuaEngine engine) {
-        ILuaValue taskValue = engine.getGlobalEnvironment().rawget("task");
-        if (taskValue == null || !taskValue.isTable()) {
-            return null;
-        }
-        ILuaValue statsFn = taskValue.asTable().rawget("_stats");
-        if (statsFn == null || !statsFn.isFunction()) {
-            return null;
-        }
-        ILuaValue stats = engine.callFunction(statsFn, taskValue);
-        return stats != null && stats.isTable() ? stats.asTable() : null;
-    }
-
-    private static void logQueueReadFailure(@NotNull RuntimeException e) {
-        LuaTweakerLog.get().debug(LogStage.SYSTEM,
-                "/lt doctor could not read the Lua scheduler queue: " + e.getMessage());
     }
 }

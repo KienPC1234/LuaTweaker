@@ -53,7 +53,7 @@ public final class ExperimentalWarningHandler {
 
     @SubscribeEvent
     public static void onScreenInit(ScreenEvent.Init.Post event) {
-        if (!LuaTweakerConfig.SUPPRESS_EXPERIMENTAL_WARNING.get()) { return; }
+        if (!LuaTweakerConfig.COMMON_SPEC.isLoaded() || !LuaTweakerConfig.SUPPRESS_EXPERIMENTAL_WARNING.get()) { return; }
 
         Screen screen = event.getScreen();
         Component confirmLabel = confirmLabelFor(screen);

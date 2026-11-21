@@ -19,6 +19,8 @@ public class NeoForgeClientPlatform implements IPlatformClient {
     private static final String SYNC_TYPE_BOOL = "bool";
     private static final String SYNC_TYPE_NUMBER = "num";
     private static final long NO_SOUND_HANDLE = 0L;
+    private static final float MIN_PROGRESS_BAR_EXPLICIT_WIDTH = 0.0f;
+    private static final float AUTO_PROGRESS_BAR_WIDTH = -1.0f;
 
 
     /**
@@ -885,12 +887,19 @@ public class NeoForgeClientPlatform implements IPlatformClient {
 
     @Override
     public void imguiProgressBar(double fraction, String label) {
+        imguiProgressBar(fraction, label, 0.0, 0.0);
+    }
+
+    @Override
+    public void imguiProgressBar(double fraction, String label, double width, double height) {
         requireImGuiFrame("ProgressBar");
-        if (label == null || label.isEmpty()) {
-            imgui.ImGui.progressBar((float) fraction);
-        } else {
-            imgui.ImGui.progressBar((float) fraction, label);
+        float w = (float) width;
+        float h = (float) height;
+        if (w <= MIN_PROGRESS_BAR_EXPLICIT_WIDTH) {
+            w = AUTO_PROGRESS_BAR_WIDTH;
         }
+        String overlay = label == null ? "" : label;
+        imgui.ImGui.progressBar((float) fraction, w, h, overlay);
     }
 
     @Override
@@ -1690,15 +1699,107 @@ public class NeoForgeClientPlatform implements IPlatformClient {
             throw new IllegalArgumentException(
                     "ImGui:ArrowButton needs a direction: Left,Right,Up,Down.");
         }
-        return switch (name.strip()) {
-            case "Left" -> imgui.flag.ImGuiDir.Left;
-            case "Right" -> imgui.flag.ImGuiDir.Right;
-            case "Up" -> imgui.flag.ImGuiDir.Up;
-            case "Down" -> imgui.flag.ImGuiDir.Down;
+        return switch (name.strip().toLowerCase(java.util.Locale.ROOT)) {
+            case "left" -> imgui.flag.ImGuiDir.Left;
+            case "right" -> imgui.flag.ImGuiDir.Right;
+            case "up" -> imgui.flag.ImGuiDir.Up;
+            case "down" -> imgui.flag.ImGuiDir.Down;
             default -> throw new IllegalArgumentException(
                     "ImGui:ArrowButton unknown direction '" + name + "'."
                     + " Valid: Left,Right,Up,Down.");
         };
+    }
+
+    @Override
+    public void imguiSetScreen(boolean open) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null) {
+            return;
+        }
+        mc.execute(() -> {
+            if (open) {
+                if (!(mc.screen instanceof com.luatweaker.platform.client.gui.imgui.ImGuiOverlayScreen)) {
+                    mc.setScreen(new com.luatweaker.platform.client.gui.imgui.ImGuiOverlayScreen());
+                }
+            } else {
+                if (mc.screen instanceof com.luatweaker.platform.client.gui.imgui.ImGuiOverlayScreen) {
+                    mc.setScreen(null);
+                }
+            }
+        });
+    }
+
+    @Override
+    public boolean imguiIsScreenOpen() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc != null && mc.screen instanceof com.luatweaker.platform.client.gui.imgui.ImGuiOverlayScreen;
+    }
+
+    @Override
+    public boolean imguiToggleScreen() {
+        boolean nextState = !imguiIsScreenOpen();
+        imguiSetScreen(nextState);
+        return nextState;
+    }
+
+    @Override
+    public boolean imguiInvisibleButton(String id, double width, double height) {
+        requireImGuiFrame("InvisibleButton");
+        return imgui.ImGui.invisibleButton(id == null ? "" : id, (float) width, (float) height);
+    }
+
+    @Override
+    public double imguiGetMousePosX() {
+        requireImGuiFrame("GetMousePosX");
+        return imgui.ImGui.getMousePosX();
+    }
+
+    @Override
+    public double imguiGetMousePosY() {
+        requireImGuiFrame("GetMousePosY");
+        return imgui.ImGui.getMousePosY();
+    }
+
+    @Override
+    public double imguiGetCursorPosX() {
+        requireImGuiFrame("GetCursorPosX");
+        return imgui.ImGui.getCursorPosX();
+    }
+
+    @Override
+    public double imguiGetCursorPosY() {
+        requireImGuiFrame("GetCursorPosY");
+        return imgui.ImGui.getCursorPosY();
+    }
+
+    @Override
+    public void imguiSetCursorPos(double x, double y) {
+        requireImGuiFrame("SetCursorPos");
+        imgui.ImGui.setCursorPos((float) x, (float) y);
+    }
+
+    @Override
+    public double imguiGetWindowPosX() {
+        requireImGuiFrame("GetWindowPosX");
+        return imgui.ImGui.getWindowPosX();
+    }
+
+    @Override
+    public double imguiGetWindowPosY() {
+        requireImGuiFrame("GetWindowPosY");
+        return imgui.ImGui.getWindowPosY();
+    }
+
+    @Override
+    public double imguiGetWindowWidth() {
+        requireImGuiFrame("GetWindowWidth");
+        return imgui.ImGui.getWindowWidth();
+    }
+
+    @Override
+    public double imguiGetWindowHeight() {
+        requireImGuiFrame("GetWindowHeight");
+        return imgui.ImGui.getWindowHeight();
     }
 
     /**

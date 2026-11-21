@@ -22,6 +22,7 @@ import net.neoforged.neoforge.common.util.TriState;
 import net.neoforged.neoforge.event.entity.EntityEvent;
 import net.neoforged.neoforge.event.entity.living.FinalizeSpawnEvent;
 import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.ExplosionEvent;
@@ -125,10 +126,29 @@ public final class UniversalEventForwarder {
             dispatchRightClickBlock(engine, alias, eventService, rightClick);
             return;
         }
-        ILuaValue wrapped = engine.wrapDynamicJavaObject(event);
-        if (!eventService.fireRawEvent(alias, wrapped)) {
-            cancelEvent(event);
+        if (event instanceof net.neoforged.neoforge.event.tick.PlayerTickEvent.Post playerTick) {
+            dispatchPlayerTick(engine, alias, eventService, playerTick);
+            return;
         }
+        ILuaValue payload = EventPayloadBuilder.buildPayload(engine, event);
+        if (payload == null) {
+            payload = engine.wrapDynamicJavaObject(event);
+        }
+        if (!eventService.fireRawEvent(alias, payload)) {
+            applyVeto(event);
+        }
+    }
+
+    /**
+     * Cancels the event, or — for events where cancellation means something different to vanilla —
+     * applies the documented denial value instead ({@code BreakSpeed} -> 0 dig speed).
+     */
+    private static void applyVeto(@NotNull Event event) {
+        if (event instanceof PlayerEvent.BreakSpeed breakSpeed) {
+            breakSpeed.setNewSpeed(0.0F);
+            return;
+        }
+        cancelEvent(event);
     }
 
     private static void dispatchRightClickBlock(@NotNull ILuaEngine engine, @NotNull String alias,
@@ -138,6 +158,25 @@ public final class UniversalEventForwarder {
         if (!eventService.fireRawEvent(alias, table)) {
             rightClick.setCanceled(true);
         }
+    }
+
+    private static void dispatchPlayerTick(@NotNull ILuaEngine engine, @NotNull String alias,
+                                           @NotNull EventServiceImpl eventService,
+                                           @NotNull net.neoforged.neoforge.event.tick.PlayerTickEvent.Post tick) {
+        ILuaTable table = engine.createTable();
+        table.rawset("rawEvent", engine.wrapDynamicJavaObject(tick));
+        NeoForgePlayerWrapper wrapper = new NeoForgePlayerWrapper(tick.getEntity());
+        ILuaTable playerTable = EntitiesLuaBinding.createPlayerLuaTable(engine, wrapper);
+        table.rawset("player", playerTable);
+        table.rawset("Player", playerTable);
+        table.rawset("entity", playerTable);
+        table.rawset("Entity", playerTable);
+        table.rawset("entityId", engine.wrapString(tick.getEntity().getUUID().toString()));
+        table.rawset("EntityId", engine.wrapString(tick.getEntity().getUUID().toString()));
+        ILuaValue movement = InteractionLuaBinding.wrapValue(engine, wrapper.getMovementData());
+        table.rawset("movement", movement);
+        table.rawset("Movement", movement);
+        eventService.fireRawEvent(alias, table);
     }
 
     /**

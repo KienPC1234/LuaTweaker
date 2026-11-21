@@ -308,6 +308,68 @@ class JsonServiceImplTest {
     }
 
     @Nested
+    class IsValid {
+
+        private static final String JSON_NUMBER = "42";
+        private static final String JSON_BLANK = "   ";
+        private static final String JSON_EMPTY = "";
+
+        @Test
+        void testIsValidAcceptsObjectsArraysAndPrimitivesObject() {
+            assertTrue(jsonService.isValid(RUBY_ORE_JSON),
+                    "a valid JSON object must be accepted");
+        }
+
+        @Test
+        void testIsValidAcceptsObjectsArraysAndPrimitivesArray() {
+            assertTrue(jsonService.isValid(ARRAY_JSON),
+                    "a valid JSON array must be accepted");
+        }
+
+        @Test
+        void testIsValidAcceptsObjectsArraysAndPrimitivesNumber() {
+            assertTrue(jsonService.isValid(JSON_NUMBER),
+                    "a valid JSON number must be accepted");
+        }
+
+        @Test
+        void testIsValidRejectsMalformedJson() {
+            assertFalse(jsonService.isValid(BAD_JSON),
+                    "unbalanced JSON must be rejected without throwing");
+        }
+
+        @Test
+        void testIsValidRejectsNullBlankInputsNull() {
+            assertFalse(jsonService.isValid(null),
+                    "a null document must be rejected without throwing");
+        }
+
+        @Test
+        void testIsValidRejectsNullBlankInputsEmpty() {
+            assertFalse(jsonService.isValid(JSON_EMPTY),
+                    "an empty document must be rejected without throwing");
+        }
+
+        @Test
+        void testIsValidRejectsNullBlankInputsBlank() {
+            assertFalse(jsonService.isValid(JSON_BLANK),
+                    "a whitespace-only document must be rejected without throwing");
+        }
+
+        @Test
+        void testIsValidAvailableFromLua() {
+            engine.executeString("""
+                    assert(Json.IsValid('{"x": 1}') == true, 'valid object')
+                    assert(Json.IsValid('[1, 2]') == true, 'valid array')
+                    assert(Json.IsValid('{broken') == false, 'malformed is false, no throw')
+                    assert(Json:IsValid('{broken') == false, 'colon call works')
+                    """, "json-isvalid-test");
+            assertNull(engine.getAndClearLastExecutionError(),
+                    "Json.IsValid must be callable from Lua for objects, arrays and malformed input");
+        }
+    }
+
+    @Nested
     class LuaApi {
 
         @Test

@@ -1,9 +1,12 @@
 package com.luatweaker.api.mod;
 
+import com.luatweaker.api.annotation.LuaDefault;
 import com.luatweaker.api.annotation.LuaDoc;
 import com.luatweaker.api.doc.LuaDocFragments;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Read-only view of the files shipped inside the owning LuaMod (folder or .zip).
@@ -36,7 +39,16 @@ public interface IModFiles {
                     + "Throws when the file is missing, invalid UTF-8, or malformed JSON.",
             params = {LuaDocFragments.Common.PATH_STRING},
             returnType = "any")
-    ILuaValue readJson(String path);
+    ILuaValue readJson(@NotNull String path);
+
+    @LuaDoc(
+            description = "Reads a JSON file, returning the fallback when the file is missing, "
+                    + "not valid UTF-8, or malformed JSON. "
+                    + "Path-security violations, directories, oversized files and I/O failures still throw. "
+                    + "Use for optional config: local cfg = files:ReadJsonOr('data/config.json', {}).",
+            params = {LuaDocFragments.Common.PATH_STRING, "fallback: any"},
+            returnType = "any")
+    ILuaValue readJsonOr(@NotNull String path, @LuaDefault("nil") @Nullable ILuaValue fallback);
 
     @LuaDoc(
             description = "Returns true when the file or directory exists inside the mod folder.",

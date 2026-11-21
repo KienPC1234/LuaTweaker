@@ -21,9 +21,11 @@ public final class MixedVeinRegistrar {
 
     /** Called from the mod event bus; registers the mixed-vein feature type. */
     public static void registerFeatures(RegisterEvent event) {
-        event.register(Registries.FEATURE, ResourceLocation.parse(VEIN_TYPE),
-                () -> new MixedVeinFeature(MixedVeinConfiguration.CODEC));
-        LuaTweakerLog.get().info(LogStage.SYSTEM,
-                "[Worldgen] Registered custom feature type '" + VEIN_TYPE + "'");
+        if (event.getRegistryKey().equals(Registries.FEATURE)) {
+            event.register(Registries.FEATURE, ResourceLocation.parse(VEIN_TYPE),
+                    () -> new MixedVeinFeature(MixedVeinConfiguration.CODEC));
+            LuaTweakerLog.get().info(LogStage.SYSTEM,
+                    "[Worldgen] Registered custom feature type '" + VEIN_TYPE + "'");
+        }
     }
 }

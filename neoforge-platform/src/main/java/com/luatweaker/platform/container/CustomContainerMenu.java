@@ -32,7 +32,7 @@ public final class CustomContainerMenu extends AbstractContainerMenu {
     private final Container container;
     private final int containerRows;
     private final int containerCols;
-    private final int startX;
+    private final int containerSlotCount;
     /** Progress is synced as fixed-point (0..1000) through the vanilla data-slot pipeline.
      * Intentionally fixed protocol constant: menu and screen must agree, not per-mod config. */
     private static final int PROGRESS_SCALE = 1000;
@@ -53,40 +53,31 @@ public final class CustomContainerMenu extends AbstractContainerMenu {
 
     public CustomContainerMenu(@Nullable MenuType<?> menuType, int containerId, @NotNull Inventory playerInventory,
                                @NotNull Container container, int containerRows, int containerCols) {
-        this(menuType, containerId, playerInventory, container, containerRows, containerCols, null, null);
+        this(menuType, containerId, playerInventory, container, containerRows, containerCols,
+                null, null, false);
     }
 
     public CustomContainerMenu(@Nullable MenuType<?> menuType, int containerId, @NotNull Inventory playerInventory,
                                @NotNull Container container, int containerRows, int containerCols,
                                @Nullable Map<Integer, int[]> slotPositions,
-                               @Nullable Set<Integer> lockedSlots) {
+                               @Nullable Set<Integer> lockedSlots, boolean manualSlots) {
         super(menuType, containerId);
         this.container = container;
         this.containerRows = containerRows;
         this.containerCols = containerCols;
-        this.startX = ContainerLayout.containerStartX(containerCols);
-        addContainerSlots(container, containerRows, containerCols, slotPositions, lockedSlots);
+        List<ContainerSlotPlanner.PlacedSlot> planned = ContainerSlotPlanner.plan(
+                containerRows, containerCols, slotPositions, lockedSlots, manualSlots);
+        this.containerSlotCount = planned.size();
+        addContainerSlots(container, planned);
         addPlayerSlots(playerInventory);
         CustomContainerBlockEntity machine = container instanceof CustomContainerBlockEntity be ? be : null;
         addMachineDataSlots(machine, menuType);
     }
 
-    private void addContainerSlots(Container container, int rows, int cols,
-                                    @Nullable Map<Integer, int[]> slotPositions,
-                                    @Nullable Set<Integer> lockedSlots) {
-        for (int row = 0; row < rows; row++) {
-            for (int col = 0; col < cols; col++) {
-                int index = row * cols + col;
-                int x = startX + col * ContainerLayout.CELL;
-                int y = ContainerLayout.containerY(row);
-                int[] custom = slotPositions != null ? slotPositions.get(index) : null;
-                if (custom != null && custom.length >= 2) {
-                    x = custom[0];
-                    y = custom[1];
-                }
-                boolean locked = lockedSlots != null && lockedSlots.contains(index);
-                addSlot(containerSlot(container, index, x, y, locked));
-            }
+    private void addContainerSlots(Container container,
+                                     List<ContainerSlotPlanner.PlacedSlot> planned) {
+        for (ContainerSlotPlanner.PlacedSlot slot : planned) {
+            addSlot(containerSlot(container, slot.index(), slot.x(), slot.y(), slot.locked()));
         }
     }
 
@@ -133,6 +124,11 @@ public final class CustomContainerMenu extends AbstractContainerMenu {
 
     public int getCustomValue(@Nullable String key) {
         return key != null ? customValues.getOrDefault(key, 0) : 0;
+    }
+
+    /** A synced data-slot value, or null when the key was never synced. */
+    @Nullable Integer getCustomValueOrNull(@Nullable String key) {
+        return key == null ? null : customValues.get(key);
     }
 
     /**
@@ -224,10 +220,9 @@ public final class CustomContainerMenu extends AbstractContainerMenu {
         }
         ItemStack stack = slot.getItem();
         ItemStack moved = stack.copy();
-        int containerSize = container.getContainerSize();
-        boolean movedToInventory = index < containerSize
-                ? moveItemStackTo(stack, containerSize, this.slots.size(), true)
-                : moveItemStackTo(stack, 0, containerSize, false);
+        boolean movedToInventory = index < containerSlotCount
+                ? moveItemStackTo(stack, containerSlotCount, this.slots.size(), true)
+                : moveItemStackTo(stack, 0, containerSlotCount, false);
         if (!movedToInventory) {
             return ItemStack.EMPTY;
         }

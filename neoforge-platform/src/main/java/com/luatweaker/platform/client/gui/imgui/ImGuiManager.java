@@ -15,6 +15,7 @@ import java.util.concurrent.locks.ReentrantLock;
 public final class ImGuiManager {
 
     private static boolean initialized;
+    private static final imgui.ImVec2 TEMP_MOUSE_POS = new imgui.ImVec2();
     private static ImGuiImplGlfw imGuiGlfw;
     private static ImGuiImplGl3 imGuiGl3;
 
@@ -116,6 +117,14 @@ public final class ImGuiManager {
 
         imGuiGl3.newFrame();
         imGuiGlfw.newFrame();
+
+        if (framebufferScaleX > 0 && framebufferScaleY > 0 && (framebufferScaleX != 1.0f || framebufferScaleY != 1.0f)) {
+            io.getMousePos(TEMP_MOUSE_POS);
+            if (TEMP_MOUSE_POS.x >= 0 && TEMP_MOUSE_POS.y >= 0) {
+                io.setMousePos(TEMP_MOUSE_POS.x / framebufferScaleX, TEMP_MOUSE_POS.y / framebufferScaleY);
+            }
+        }
+
         ImGui.newFrame();
     }
 

@@ -41,9 +41,15 @@ public record LuaModManifest(
         @Nullable VersionConstraint luatweaker,
         @Nullable VersionConstraint minecraft,
         @NotNull List<String> permissions,
-        @Nullable String updateUrl
+        @Nullable String updateUrl,
+        @NotNull String sync
 ) {
     private static final Gson GSON = new Gson();
+    private static final String ENV_CLIENT = "client";
+    private static final String ENV_SERVER = "server";
+    private static final String ENV_UNIVERSAL = "universal";
+    private static final String SYNC_REQUIRED = "required";
+    private static final String SYNC_OPTIONAL = "optional";
 
     public LuaModManifest {
         id = LuaModPathSecurity.validateModId(id);
@@ -52,7 +58,8 @@ public record LuaModManifest(
         if (version == null) { version = "1.0.0"; }
         main = LuaModPathSecurity.validateEntryPoint(main == null || main.isBlank() ? "main.lua" : main);
         if (environment == null || environment.isBlank()) { throw new IllegalArgumentException("LuaMod manifest requires non-empty 'environment' (must be 'client', 'server', or 'universal')"); }
-        if (!"client".equals(environment) && !"server".equals(environment) && !"universal".equals(environment)) {
+        if (!ENV_CLIENT.equals(environment) && !ENV_SERVER.equals(environment)
+                && !ENV_UNIVERSAL.equals(environment)) {
             throw new IllegalArgumentException("LuaMod manifest 'environment' must be 'client', 'server', or 'universal', found: " + environment);
         }
         if (dependencies == null) { dependencies = Collections.emptyList(); }
@@ -61,6 +68,14 @@ public record LuaModManifest(
         if (integrations == null) { integrations = Collections.emptyMap(); }
         if (permissions == null) { permissions = Collections.emptyList(); }
         updateUrl = blankToNull(updateUrl);
+        if (sync == null || sync.isBlank()) {
+            sync = ENV_UNIVERSAL.equals(environment) ? SYNC_REQUIRED : SYNC_OPTIONAL;
+        }
+        sync = sync.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!SYNC_REQUIRED.equals(sync) && !SYNC_OPTIONAL.equals(sync)) {
+            throw new IllegalArgumentException(
+                    "LuaMod manifest 'sync' must be 'required' or 'optional', found: " + sync);
+        }
     }
 
     /** @return the value, or {@code null} for blank input. */
@@ -81,7 +96,8 @@ public record LuaModManifest(
                           @Nullable String updateUrl) {
         this(id, name, author, version, main, environment,
                 toRequired(dependencies), toOptional(optionalDependencies),
-                Collections.emptyList(), Collections.emptyMap(), null, null, permissions, updateUrl);
+                Collections.emptyList(), Collections.emptyMap(), null, null, permissions, updateUrl,
+                ENV_UNIVERSAL.equals(environment) ? SYNC_REQUIRED : SYNC_OPTIONAL);
     }
 
     private static @NotNull List<ModDependency> toRequired(@Nullable List<String> ids) {
@@ -138,9 +154,13 @@ public record LuaModManifest(
         if (environment == null) {
             throw new IllegalArgumentException("LuaMod manifest requires an 'environment'");
         }
+        String sync = stringOr(json, "sync", null);
+        if (sync == null || sync.isBlank()) {
+            sync = "universal".equals(environment) ? "required" : "optional";
+        }
         return new LuaModManifest(id, name, author, version, main, environment,
                 deps, optionalDeps, modDeps, integrations,
-                engineConstraint, minecraftConstraint, perms, updateUrl);
+                engineConstraint, minecraftConstraint, perms, updateUrl, sync);
     }
 
     /** @return the parsed object, or {@code null} for malformed JSON. */

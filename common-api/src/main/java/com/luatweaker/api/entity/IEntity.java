@@ -71,7 +71,7 @@ public interface IEntity {
         return Math.cos(Math.toRadians(getYaw())) * Math.cos(Math.toRadians(getPitch()));
     }
 
-    @LuaDoc(description = "Raycasts from eye position forward along look vector.", params = {"[maxDistance: number]", "[ignoreLiquids: boolean]"}, returnType = "table")
+    @LuaDoc(description = "Raycasts from eye position forward along look vector.", params = {"[maxDistance: number]", "[ignoreLiquids: boolean]"}, returnType = LuaDocFragments.Types.TABLE)
     default com.luatweaker.api.spatial.RaycastResult raycast(@LuaDefault("64.0") double maxDistance, @LuaDefault("true") boolean ignoreLiquids) {
         return com.luatweaker.api.spatial.RaycastResult.miss(getX(), getY(), getZ());
     }
@@ -137,7 +137,7 @@ public interface IEntity {
     @LuaDoc(description = "Spawns particle effect at entity location.", params = {"particleId: string", "count: integer", "speed: number"})
     default void spawnParticle(String particleId, @LuaDefault("1") int count, @LuaDefault(LuaDocFragments.Defaults.ZERO) double speed) {}
 
-    @LuaDoc(description = "Spawns an entity relative to this entity's position.", params = {"entityId: string", "offsetX: number", "offsetY: number", "offsetZ: number"}, returnType = "table")
+    @LuaDoc(description = "Spawns an entity relative to this entity's position.", params = {"entityId: string", "offsetX: number", "offsetY: number", "offsetZ: number"}, returnType = LuaDocFragments.Types.TABLE)
     default IEntity spawnEntity(String entityId, @LuaDefault(LuaDocFragments.Defaults.ZERO) double offsetX, @LuaDefault(LuaDocFragments.Defaults.ZERO) double offsetY, @LuaDefault(LuaDocFragments.Defaults.ZERO) double offsetZ) { return null; }
 
     @LuaDoc(description = "Fires a projectile from this entity's eye position toward where it is looking.", params = {"projectileType: string (e.g. 'luatweaker:ruby_orb', 'minecraft:small_fireball')", LuaDocFragments.Common.SPEED_OPTIONAL, "[inaccuracy: number]"})
@@ -222,6 +222,127 @@ public interface IEntity {
     default double getMotionX() { return 0; }
     default double getMotionY() { return 0; }
     default double getMotionZ() { return 0; }
+
+    @LuaDoc(description = "Actual X displacement since the previous tick (X - xOld).",
+            returnType = LuaDocFragments.Types.NUMBER)
+    default double getDeltaX() { return 0; }
+
+    @LuaDoc(description = "Actual Y displacement since the previous tick (Y - yOld).",
+            returnType = LuaDocFragments.Types.NUMBER)
+    default double getDeltaY() { return 0; }
+
+    @LuaDoc(description = "Actual Z displacement since the previous tick (Z - zOld).",
+            returnType = LuaDocFragments.Types.NUMBER)
+    default double getDeltaZ() { return 0; }
+
+    @LuaDoc(description = "Horizontal distance moved this tick (sqrt(deltaX^2 + deltaZ^2)).",
+            returnType = LuaDocFragments.Types.NUMBER)
+    default double getHorizontalSpeed() { return 0; }
+
+    @LuaDoc(description = "Vertical distance moved this tick (deltaY).",
+            returnType = LuaDocFragments.Types.NUMBER)
+    default double getVerticalSpeed() { return 0; }
+
+    @LuaDoc(description = "Total distance moved this tick.",
+            returnType = LuaDocFragments.Types.NUMBER)
+    default double getSpeed() { return 0; }
+
+    @LuaDoc(description = "Distance fallen since the entity last touched the ground.",
+            returnType = LuaDocFragments.Types.NUMBER)
+    default float getFallDistance() { return 0; }
+
+    @LuaDoc(description = "Whether a player is in flight mode (abilities.flying).",
+            returnType = LuaDocFragments.Types.BOOLEAN)
+    default boolean isFlying() { return false; }
+
+    @LuaDoc(description = "Whether the entity is elytra gliding.",
+            returnType = LuaDocFragments.Types.BOOLEAN)
+    default boolean isFallFlying() { return false; }
+
+    @LuaDoc(description = "Eye height above the entity's feet.",
+            returnType = LuaDocFragments.Types.NUMBER)
+    default float getEyeHeight() { return 0; }
+
+    @LuaDoc(description = "Game tick when the entity was last hurt by a mob (0 when never).",
+            returnType = LuaDocFragments.Types.INTEGER)
+    default int getLastHurtByMobTimestamp() { return 0; }
+
+    @LuaDoc(description = "Game tick when the entity last hurt a mob (0 when never).",
+            returnType = LuaDocFragments.Types.INTEGER)
+    default int getLastHurtMobTimestamp() { return 0; }
+
+    @LuaDoc(description = "Message id of the last damage source (e.g. 'player_attack'), or an empty string.",
+            returnType = LuaDocFragments.Types.STRING)
+    default String getLastDamageType() { return ""; }
+
+    @LuaDoc(description = "Whether the entity is currently using an item.",
+            returnType = LuaDocFragments.Types.BOOLEAN)
+    default boolean isUsingItem() { return false; }
+
+    @LuaDoc(description = "Whether a living entity is swinging its arm this tick.",
+            returnType = LuaDocFragments.Types.BOOLEAN)
+    default boolean isSwinging() { return false; }
+
+    @LuaDoc(description = "Swing animation timer of a living entity.",
+            returnType = LuaDocFragments.Types.INTEGER)
+    default int getSwingTime() { return 0; }
+
+    @LuaDoc(description = "Entity interaction range for a player (reach), or 0 for non-players.",
+            returnType = LuaDocFragments.Types.NUMBER)
+    default double getEntityInteractionRange() { return 0; }
+
+    @LuaDoc(description = "Block interaction range for a player (reach), or 0 for non-players.",
+            returnType = LuaDocFragments.Types.NUMBER)
+    default double getBlockInteractionRange() { return 0; }
+
+    @LuaDoc(description = "Whether the entity is swimming.",
+            returnType = LuaDocFragments.Types.BOOLEAN)
+    default boolean isSwimming() { return false; }
+
+    @LuaDoc(description = "Yaw the entity had at the end of the previous tick.",
+            returnType = LuaDocFragments.Types.NUMBER)
+    default float getPreviousYaw() { return 0; }
+
+    @LuaDoc(description = "Pitch the entity had at the end of the previous tick.",
+            returnType = LuaDocFragments.Types.NUMBER)
+    default float getPreviousPitch() { return 0; }
+
+    @LuaDoc(description = "Yaw change since the previous tick, wrapped to -180..180 degrees.",
+            returnType = LuaDocFragments.Types.NUMBER)
+    default float getYawDelta() { return 0; }
+
+    @LuaDoc(description = "Pitch change since the previous tick.",
+            returnType = LuaDocFragments.Types.NUMBER)
+    default float getPitchDelta() { return 0; }
+
+    @LuaDoc(description = "Head yaw (separate from body yaw), or the entity yaw for non-living entities.",
+            returnType = LuaDocFragments.Types.NUMBER)
+    default float getHeadYaw() { return 0; }
+
+    @LuaDoc(description = "Remaining use ticks for the active item (0 when not using one).",
+            returnType = LuaDocFragments.Types.INTEGER)
+    default int getUseItemRemainingTicks() { return 0; }
+
+    @LuaDoc(description = "Armor value of a living entity.",
+            returnType = LuaDocFragments.Types.INTEGER)
+    default int getArmorValue() { return 0; }
+
+    @LuaDoc(description = "Attack cooldown scale (0..1) for a player at the given partial tick.",
+            params = {"[partialTick: number]"}, returnType = LuaDocFragments.Types.NUMBER)
+    default float getAttackStrengthScale(@LuaDefault("1.0") float partialTick) { return 1.0F; }
+
+    @LuaDoc(
+        description = "One-call movement/state snapshot for server-side checks. Keys: X, Y, Z, "
+                    + "DeltaX, DeltaY, DeltaZ, HorizontalSpeed, VerticalSpeed, Speed, Yaw, Pitch, "
+                    + "PreviousYaw, PreviousPitch, YawDelta, PitchDelta, HeadYaw, "
+                    + "OnGround, InWater, InLava, FallFlying, Flying, FallDistance, EyeHeight, "
+                    + "Sprinting, Sneaking, UsingItem, UseItemTicks, Armor, AttackStrength, "
+                    + "Swinging, SwingTime, Swimming, Pose, EntityReach, BlockReach, "
+                    + "Invulnerable, NoAi, Invisible, NoGravity, "
+                    + "LastHurtByMobAt, LastHurtMobAt, LastDamageType; players also get GameMode and Ping.",
+        returnType = LuaDocFragments.Types.TABLE
+    )
+    default java.util.Map<String, Object> getMovementData() { return java.util.Map.of(); }
 
     @LuaDoc(description = "Teleports the entity to coordinates.", params = {"x: number", "y: number", "z: number"})
     default void teleport(double x, double y, double z) {}
@@ -389,6 +510,111 @@ public interface IEntity {
     default boolean stopAnimation(@NotNull String animName, @LuaDefault("controller") String controllerName) {
         return com.luatweaker.api.pal.Platform.getInteraction().stopGeoAnimation(this, controllerName, animName);
     }
+
+    @LuaDoc(description = "Returns whether the entity has gravity disabled.", returnType = LuaDocFragments.Types.BOOLEAN)
+    default boolean isNoGravity() { return false; }
+
+    @LuaDoc(description = "Sets whether the entity has gravity disabled.", params = {"noGravity: boolean"})
+    default void setNoGravity(boolean noGravity) {}
+
+    @LuaDoc(
+        description = "Whether a mob's AI is disabled (true = it keeps its goals but does not tick them).",
+        returnType = LuaDocFragments.Types.BOOLEAN
+    )
+    default boolean isNoAi() { return false; }
+
+    @LuaDoc(
+        description = "Disables or re-enables a mob's AI. Combined with SetMotion(0,0,0) this freezes the mob "
+                    + "in place; non-mob entities ignore it.",
+        params = {"noAi: boolean"}
+    )
+    default void setNoAi(boolean noAi) {}
+
+    @LuaDoc(description = "Whether the entity is rendered invisible.", returnType = LuaDocFragments.Types.BOOLEAN)
+    default boolean isInvisible() { return false; }
+
+    @LuaDoc(description = "Sets the entity invisible (it still exists, collides and can be damaged).",
+            params = {"invisible: boolean"})
+    default void setInvisible(boolean invisible) {}
+
+    @LuaDoc(description = "Returns whether the entity is silent (produces no sound).", returnType = LuaDocFragments.Types.BOOLEAN)
+    default boolean isSilent() { return false; }
+
+    @LuaDoc(description = "Sets whether the entity is silent.", params = {"silent: boolean"})
+    default void setSilent(boolean silent) {}
+
+    @LuaDoc(description = "Returns the entity's remaining air supply in ticks.", returnType = LuaDocFragments.Types.INTEGER)
+    default int getAirSupply() { return 300; }
+
+    @LuaDoc(description = "Sets the entity's air supply in ticks.", params = {"air: integer"})
+    default void setAirSupply(int air) {}
+
+    @LuaDoc(description = "Returns the maximum air supply of the entity in ticks.", returnType = LuaDocFragments.Types.INTEGER)
+    default int getMaxAirSupply() { return 300; }
+
+    @LuaDoc(description = "Returns remaining ticks before the fire is extinguished.", returnType = LuaDocFragments.Types.INTEGER)
+    default int getRemainingFireTicks() { return 0; }
+
+    @LuaDoc(description = "Returns whether the entity is currently burning.", returnType = LuaDocFragments.Types.BOOLEAN)
+    default boolean isOnFire() { return false; }
+
+    @LuaDoc(description = "Sets distance fallen since entity last touched ground.", params = {"distance: number"})
+    default void setFallDistance(float distance) {}
+
+    @LuaDoc(description = "Returns bounding box width of entity.", returnType = LuaDocFragments.Types.NUMBER)
+    default float getWidth() { return 0.6f; }
+
+    @LuaDoc(description = "Returns bounding box height of entity.", returnType = LuaDocFragments.Types.NUMBER)
+    default float getHeight() { return 1.8f; }
+
+    @LuaDoc(description = "Mounts another entity as vehicle.", params = {"vehicle: table (entity)"}, returnType = LuaDocFragments.Types.BOOLEAN)
+    default boolean mount(@NotNull IEntity vehicle) { return false; }
+
+    @LuaDoc(description = "Dismounts current vehicle if riding one.")
+    default void dismount() {}
+
+    @LuaDoc(description = "Returns current vehicle entity, or nil.", returnType = "table | nil")
+    default @Nullable IEntity getVehicle() { return null; }
+
+    @LuaDoc(description = "Returns list of passenger entities.", returnType = LuaDocFragments.Types.TABLE)
+    default @NotNull java.util.List<IEntity> getPassengers() { return java.util.List.of(); }
+
+    @LuaDoc(description = "Checks whether entity is currently riding a vehicle.", returnType = LuaDocFragments.Types.BOOLEAN)
+    default boolean isPassenger() { return false; }
+
+    @LuaDoc(description = "Checks whether entity has passengers.", returnType = LuaDocFragments.Types.BOOLEAN)
+    default boolean hasPassengers() { return false; }
+
+    @LuaDoc(description = "Returns absorption shield health.", returnType = LuaDocFragments.Types.NUMBER)
+    default float getAbsorption() { return 0.0f; }
+
+    @LuaDoc(description = "Sets absorption shield health.", params = {"amount: number"})
+    default void setAbsorption(float amount) {}
+
+    @LuaDoc(description = "Returns dimension ID string the entity is in.", returnType = LuaDocFragments.Types.STRING)
+    default @NotNull String getDimension() { return "minecraft:overworld"; }
+
+    @LuaDoc(description = "Strikes lightning at the entity's position.")
+    default void strikeLightning() {}
+
+    @LuaDoc(description = "Creates an explosion centered on the entity.", params = {"[power: number]", "[causesFire: boolean]", "[breakBlocks: boolean]"})
+    default void createExplosion(@LuaDefault("3.0") float power, @LuaDefault("false") boolean causesFire, @LuaDefault("true") boolean breakBlocks) {}
+
+    @LuaDoc(
+        description = "Full snapshot of this entity as NBT-JSON: type id, position, rotation, health, "
+                    + "inventory/equipment (including item NBT), active effects, attributes, custom name, "
+                    + "owner/trade data. Capture it before the entity dies, then restore it with "
+                    + "Entities:SpawnFromNbt or Entity:SetNbt.",
+        returnType = LuaDocFragments.Types.STRING
+    )
+    default String getNbt() { return "{}"; }
+
+    @LuaDoc(
+        description = "Restores this entity's state from a GetNbt() snapshot. Returns false when the JSON "
+                    + "is malformed, the entity is gone, or it is a player (players are restored by the server).",
+        params = {"nbtJson: string"}, returnType = LuaDocFragments.Types.BOOLEAN
+    )
+    default boolean setNbt(@NotNull String nbtJson) { return false; }
 
     Object getRawEntity();
 }

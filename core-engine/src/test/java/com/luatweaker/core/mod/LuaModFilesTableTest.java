@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class LuaModFilesTableTest {
 
     private static final String DEMO_ID = "demo";
+    private static final String SIDE = "server";
     private static final String MOD_DIR_PATH = "luamods/demo";
     private static final String EXPORT_DIR_PATH = "luatweaker/exports/demo";
     private static final String CUSTOM_JSON =
@@ -68,9 +69,9 @@ class LuaModFilesTableTest {
         Path modDir = Files.createDirectories(luamods.resolve(DEMO_ID));
         writeModFixture(modDir);
         LuaModManifest manifest = new LuaModManifest(DEMO_ID, "Demo", "tester", "1.0.0",
-                "main.lua", "server", List.of(), List.of(), List.of(), null);
+                "main.lua", SIDE, List.of(), List.of(), List.of(), null);
         ILuaEngine engine = new LuavaEngine(false);
-        LuaMod mod = new LuaMod(manifest, modDir.toFile(), "server", Map.of(), luamods.toFile());
+        LuaMod mod = new LuaMod(manifest, modDir.toFile(), SIDE, Map.of(), luamods.toFile());
         ILuaTable modTable = mod.createModTable(engine);
         engine.getGlobalEnvironment().rawset("mod", modTable);
         engine.executeString(MOD_FILES_SCRIPT, "mod-files-test");
@@ -121,6 +122,33 @@ class LuaModFilesTableTest {
         runModFilesScript();
         assertFalse(Files.exists(temp.resolve(MOD_DIR_PATH).resolve("reports")),
                 "exports must never be written inside the read-only mod directory");
+    }
+
+    @Test
+    void readJsonOrFallsBackThroughTheRealBinder() throws IOException {
+        Path luamods = Files.createDirectories(temp.resolve("luamods"));
+        Path modDir = Files.createDirectories(luamods.resolve(DEMO_ID));
+        writeModFixture(modDir);
+        Files.writeString(modDir.resolve("data/bad.json"), "{broken", StandardCharsets.UTF_8);
+        LuaModManifest manifest = new LuaModManifest(DEMO_ID, "Demo", "tester", "1.0.0",
+                "main.lua", SIDE, List.of(), List.of(), List.of(), null);
+        ILuaEngine engine = new LuavaEngine(false);
+        LuaMod mod = new LuaMod(manifest, modDir.toFile(), SIDE, Map.of(), luamods.toFile());
+        engine.getGlobalEnvironment().rawset("mod", mod.createModTable(engine));
+        engine.executeString("""
+                local files = mod:Files()
+                local fallback = { mode = "default" }
+                local missing = files:ReadJsonOr('data/nope.json', fallback)
+                assert(missing.mode == 'default', 'missing file yields fallback')
+                local broken = files:ReadJsonOr('data/bad.json', fallback)
+                assert(broken.mode == 'default', 'malformed file yields fallback')
+                local omitted = files:ReadJsonOr('data/nope.json')
+                assert(omitted == nil, 'omitted fallback yields nil')
+                local ok, err = pcall(function() files:ReadJsonOr('../outside.json', fallback) end)
+                assert(not ok, 'traversal with fallback must still fail')
+                """, "mod-files-readjsonor-test");
+        assertNull(engine.getAndClearLastExecutionError(),
+                "ReadJsonOr must work through the real binder with, without and against fallback");
     }
 
     private static void writeModFixture(Path modDir) throws IOException {

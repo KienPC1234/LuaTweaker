@@ -24,6 +24,8 @@ public final class MathLuaBinding {
         registerInstance(engine);
         registerMathExtensions(engine);
         registerStringExtensions(engine);
+        CurveLuaBinding.register(engine);
+        Region3LuaBinding.register(engine);
 
         // Register bootstrapped Roblox task and Signal as services
         ILuaValue taskService = engine.getGlobalEnvironment().rawget("task");

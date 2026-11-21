@@ -46,8 +46,8 @@ class NetworkOutboundRateLimitTest {
     void outboundFloodSendsAtLeastTheBurst() {
         floodOutboundEvents();
 
-        assertTrue(network.payloads.size() >= NetworkServiceImpl.EVENT_BURST,
-            "the burst must go out before the limit, sent " + network.payloads.size());
+        assertTrue(network.payloads.size() >= NetworkServiceImpl.EVENT_CHANNEL_BURST,
+            "the per-channel burst must go out before the limit, sent " + network.payloads.size());
     }
 
     @Test

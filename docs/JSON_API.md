@@ -42,6 +42,17 @@ local pretty  = Json.Encode(data, true)
   - Floating point numbers become standard floats.
   - `null` maps to `nil`.
   - Malformed JSON raises a descriptive Lua error (can be caught via `pcall`).
+- Use `Json.IsValid(s)` below as a cheap pre-check when you only need a boolean.
+
+### `Json.IsValid(jsonString)`
+- **Parameters**: `jsonString: string`
+- **Returns**: `boolean` (never throws)
+- **Aliases**: `isValid`, `Isvalid` via the PascalCase binder
+- **Behavior**:
+  - `true` for any valid JSON document (object, array, string, number, `true`/`false`/`null`).
+  - `false` for `nil`, blank strings and malformed JSON — no error, no log line.
+  - A pre-check only: if you need the value, still `Decode` inside `pcall`
+    (the file can change between the check and the read).
 
 ### `Json.Encode(value [, pretty])` / `Json.Stringify(value [, pretty])`
 - **Parameters**: `value: any`, `pretty: boolean` (optional, default `false`)
@@ -103,6 +114,30 @@ if exports:Exists("saves/player_data.json") then
     print("Player level: " .. loaded.playerLevel)
 end
 ```
+
+### Optional config without `Exists` + `pcall` (`ReadJsonOr`)
+
+`ReadJson` throws on a missing file, invalid UTF-8 and malformed JSON. When the
+file is genuinely optional (default config, player cache), use `ReadJsonOr`
+instead of an `Exists` + `ReadJson` pair (which races: the file can vanish in
+between):
+
+```lua
+local files = mod:Files()
+local exports = mod:Exports()
+
+-- Missing / non-UTF8 / malformed -> fallback, no throw, no pcall needed.
+local cfg = files:ReadJsonOr("data/config.json", { difficulty = "normal" })
+local cache = exports:ReadJsonOr("saves/cache.json", {})
+
+-- Omitted fallback yields nil (same as an explicit nil).
+local maybe = files:ReadJsonOr("data/optional.json")
+```
+
+The fallback covers **only** those three data cases. These still throw, by design:
+path-security violations (`..`, absolute paths, escapes), directories, files over
+the 8 MiB cap, and real I/O failures. Fail-loud beats fail-silent for programming
+errors; the fallback is for absent/optional data, not for ignoring broken code.
 
 ---
 

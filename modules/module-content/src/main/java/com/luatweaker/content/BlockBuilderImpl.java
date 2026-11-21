@@ -300,6 +300,13 @@ public class BlockBuilderImpl implements IBlockBuilder {
     private final java.util.Map<Integer, int[]> slotPositions = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Set<Integer> lockedSlots = new java.util.LinkedHashSet<>();
     private String slotTexturePath;
+    private boolean manualSlotsEnabled;
+
+    @Override
+    public IBlockBuilder manualSlots() {
+        this.manualSlotsEnabled = true;
+        return this;
+    }
 
     @Override
     public IBlockBuilder slotPosition(int slotIndex, int x, int y) {
@@ -350,18 +357,29 @@ public class BlockBuilderImpl implements IBlockBuilder {
 
     @Override
     public IBlockBuilder guiBar(String id, int x, int y, int width, int height, String source, int color) {
+        return guiBar(id, x, y, width, height, source, color, "topleft");
+    }
+
+    @Override
+    public IBlockBuilder guiBar(String id, int x, int y, int width, int height, String source, int color, String anchor) {
         if (id != null && source != null && width > 0 && height > 0) {
             this.guiBars.add(new com.luatweaker.api.content.MachineBarSpec(
-                    id, x, y, width, height, source.toLowerCase(Locale.ROOT), color));
+                    id, x, y, width, height, source.toLowerCase(Locale.ROOT), color,
+                    null, null, 0, 0, null, null, anchor));
         }
         return this;
     }
 
     @Override
     public IBlockBuilder customBar(String id, int x, int y, int width, int height, String currentKey, String maxKey, int color, @Nullable String tooltip) {
+        return customBar(id, x, y, width, height, currentKey, maxKey, color, tooltip, "topleft");
+    }
+
+    @Override
+    public IBlockBuilder customBar(String id, int x, int y, int width, int height, String currentKey, String maxKey, int color, @Nullable String tooltip, String anchor) {
         if (id != null && currentKey != null && maxKey != null && width > 0 && height > 0) {
             this.guiBars.add(new com.luatweaker.api.content.MachineBarSpec(
-                    id, x, y, width, height, "custom", color, tooltip, null, 0, 0, currentKey, maxKey));
+                    id, x, y, width, height, "custom", color, tooltip, null, 0, 0, currentKey, maxKey, anchor));
         }
         return this;
     }
@@ -418,16 +436,27 @@ public class BlockBuilderImpl implements IBlockBuilder {
 
     @Override
     public IBlockBuilder button(String id, int x, int y, int width, int height, String label) {
+        return button(id, x, y, width, height, label, "topleft");
+    }
+
+    @Override
+    public IBlockBuilder button(String id, int x, int y, int width, int height, String label, String anchor) {
         if (id != null && label != null) {
-            this.buttons.add(new com.luatweaker.api.content.MachineButtonSpec(id, x, y, width, height, label));
+            this.buttons.add(new com.luatweaker.api.content.MachineButtonSpec(id, x, y, width, height, label, anchor));
         }
         return this;
     }
 
     @Override
     public IBlockBuilder label(int x, int y, String textOrVar, int color) {
+        return label(x, y, textOrVar, color, "left", 1.0, false);
+    }
+
+    @Override
+    public IBlockBuilder label(int x, int y, String textOrVar, int color, String align, double scale, boolean shadow) {
         if (textOrVar != null) {
-            this.labels.add(new com.luatweaker.api.content.MachineLabelSpec(x, y, textOrVar, color));
+            this.labels.add(new com.luatweaker.api.content.MachineLabelSpec(x, y, textOrVar, color,
+                    align, (float) Math.min(3.0, Math.max(0.5, scale)), shadow));
         }
         return this;
     }
@@ -503,6 +532,7 @@ public class BlockBuilderImpl implements IBlockBuilder {
     @Override public java.util.Map<Integer, int[]> getSlotPositions() { return java.util.Map.copyOf(slotPositions); }
     @Override public java.util.Set<Integer> getLockedSlots() { return java.util.Set.copyOf(lockedSlots); }
     @Override public String getSlotTexture() { return slotTexturePath; }
+    @Override public boolean isManualSlots() { return manualSlotsEnabled; }
     @Override public int getEnergyCapacity() { return energyCapacity; }
     @Override public int getEnergyMaxReceive() { return energyMaxReceive; }
     @Override public int getEnergyMaxExtract() { return energyMaxExtract; }

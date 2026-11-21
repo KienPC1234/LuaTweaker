@@ -112,6 +112,12 @@ final class BlockTableBinding {
                     return engine.wrapBoolean(block.isSolid());
                 case "isliquid":
                     return engine.wrapBoolean(block.isLiquid());
+                case "redstonesignal":
+                    return engine.wrapNumber(block.getRedstoneSignal());
+                case "biome":
+                    return engine.wrapString(block.getBiome());
+                case "properties":
+                    return InteractionLuaBinding.wrapValue(engine, block.getProperties());
                 default:
                     return resolveBlockMember(engine, block, methods, key);
             }

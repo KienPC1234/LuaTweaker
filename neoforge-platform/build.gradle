@@ -29,7 +29,8 @@ def ltModuleProjects = [
         ':modules:module-spawnrules',
         ':modules:module-structures',
         ':modules:module-update',
-        ':modules:module-integration-api'
+        ':modules:module-integration-api',
+        ':modules:module-text'
 ]
 ltModuleProjects.each { evaluationDependsOn(it) }
 
@@ -147,6 +148,15 @@ dependencies {
     // FML runtime classpath overrides for dev environment
     additionalRuntimeClasspath "io.github.kienpc1234:luava:${luava_version}"
     additionalRuntimeClasspath "org.mongodb:bson:${project.bson_version}"
+    additionalRuntimeClasspath "io.github.spair:imgui-java-binding:${imguiVersion}"
+    additionalRuntimeClasspath("io.github.spair:imgui-java-lwjgl3:${imguiVersion}") {
+        exclude group: 'org.lwjgl'
+    }
+    additionalRuntimeClasspath "io.github.spair:imgui-java-natives-windows:${imguiVersion}"
+    additionalRuntimeClasspath "io.github.spair:imgui-java-natives-linux:${imguiVersion}"
+    additionalRuntimeClasspath "io.github.spair:imgui-java-natives-macos:${imguiVersion}"
+    additionalRuntimeClasspath "org.lwjgl:lwjgl-spvc:${lwjglVersion}"
+    additionalRuntimeClasspath "org.lwjgl:lwjgl-spvc:${lwjglVersion}:natives-windows"
 
     testImplementation "io.github.kienpc1234:luava:${luava_version}"
     testImplementation "org.mongodb:bson:${project.bson_version}"

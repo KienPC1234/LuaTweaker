@@ -61,7 +61,7 @@ public final class SpawnRuleEvaluator {
         List<Resolved> resolved = new ArrayList<>(rules.size());
         for (SpawnRule rule : rules) {
             Optional<EntityType<?>> type =
-                    com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(rule.entity());
+                    com.luatweaker.platform.interaction.EntitySpawner.resolveEntityType(rule.entity());
             if (type.isEmpty()) {
                 LuaTweakerLog.get().error(LogStage.SYSTEM,
                         "Spawn rule for '" + dimensionId + "' references unknown entity '"

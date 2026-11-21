@@ -2,7 +2,7 @@ package com.luatweaker.api.interaction;
 
 import org.jetbrains.annotations.NotNull;
 
-public interface IInteractableBlock {
+public interface IInteractableBlock extends IBlockStateExtras {
     @NotNull
     String getId();
 

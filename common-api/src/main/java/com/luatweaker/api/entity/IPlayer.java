@@ -3,9 +3,10 @@ package com.luatweaker.api.entity;
 import com.luatweaker.api.annotation.LuaDoc;
 import com.luatweaker.api.doc.LuaDocFragments;
 import com.luatweaker.api.annotation.LuaDefault;
+import org.jetbrains.annotations.NotNull;
 
 @LuaDoc(description = "Represents a Minecraft player entity wrapper with messaging, inventory, and stats interaction.")
-public interface IPlayer extends IEntity {
+public interface IPlayer extends IEntity, IPlayerExtras {
     @LuaDoc(description = "Sends a chat message to the player.", params = {"message: string"})
     @Override
     void sendMessage(String message);
@@ -47,6 +48,7 @@ public interface IPlayer extends IEntity {
     default String getMainHandItem() { return "minecraft:air"; }
 
     @LuaDoc(description = "Returns the dimension ID the player is currently in (e.g. 'minecraft:overworld').", returnType = LuaDocFragments.Types.STRING)
+    @Override
     default String getDimension() { return "minecraft:overworld"; }
 
     @LuaDoc(description = "Returns item ID held in off hand.", returnType = LuaDocFragments.Types.STRING)
@@ -67,21 +69,21 @@ public interface IPlayer extends IEntity {
     @LuaDoc(
         description = "Counts how many of the item the player carries (all inventory slots, including armor and offhand).",
         params = {LuaDocFragments.Content.ITEM_ID},
-        returnType = "integer"
+        returnType = LuaDocFragments.Types.INTEGER
     )
     default int countItem(String itemId) { return 0; }
 
     @LuaDoc(
         description = "Removes up to count of the item from the inventory and returns how many were actually removed.",
         params = {LuaDocFragments.Content.ITEM_ID, LuaDocFragments.Content.COUNT_INTEGER},
-        returnType = "integer"
+        returnType = LuaDocFragments.Types.INTEGER
     )
     default int removeItem(String itemId, @LuaDefault("1") int count) { return 0; }
 
     @LuaDoc(description = "Drops specified item from the player.", params = {LuaDocFragments.Content.ITEM_ID, LuaDocFragments.Content.COUNT_INTEGER})
     default void dropItem(String itemId, @LuaDefault("1") int count) {}
 
-    @LuaDoc(description = "Returns current hunger / food level.", returnType = "integer")
+    @LuaDoc(description = "Returns current hunger / food level.", returnType = LuaDocFragments.Types.INTEGER)
     default int getFoodLevel() { return 20; }
 
     @LuaDoc(description = "Sets hunger / food level.", params = {"level: integer"})
@@ -110,4 +112,10 @@ public interface IPlayer extends IEntity {
 
     @LuaDoc(description = "Closes any custom canvas screen on the player's client.")
     default void closeScreen() {}
+
+    @LuaDoc(description = "Returns item stack data at inventory slot (0-based) as table {Slot, Id, Count, Name?, Damage?} or nil.", params = {"slot: integer"}, returnType = "table | nil")
+    default @org.jetbrains.annotations.Nullable java.util.Map<String, Object> getInventorySlot(int slot) { return null; }
+
+    @LuaDoc(description = "Sets item stack in player inventory slot (0-based).", params = {"slot: integer", LuaDocFragments.Content.ITEM_ID, "[count: integer]"})
+    default void setInventorySlot(int slot, @NotNull String itemId, @LuaDefault("1") int count) {}
 }

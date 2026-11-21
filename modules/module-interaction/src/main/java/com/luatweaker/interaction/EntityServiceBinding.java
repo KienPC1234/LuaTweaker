@@ -4,15 +4,17 @@ import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.core.bind.LuaBinder;
+import org.jetbrains.annotations.Nullable;
 
-/** Registers the EntityService table (spawnEntity plus shared GetEntity lookup). */
+/** Registers the EntityService table (spawn, spawn-from-NBT, shared GetEntity lookup). */
 final class EntityServiceBinding {
+
+    private static final String SPAWN_FROM_NBT = "SpawnFromNbt";
 
     private EntityServiceBinding() {
     }
 
     static ILuaTable bindEntityService(ILuaEngine engine, ILuaTable workspaceTable) {
-        // 2. EntityService Service
         ILuaTable entityServiceTable = engine.createTable();
         ILuaValue sigClass = engine.getGlobalEnvironment().rawget("Signal");
         ILuaValue entitySpawnedSignal = engine.nilValue();
@@ -21,7 +23,7 @@ final class EntityServiceBinding {
             entitySpawnedSignal = engine.callFunction(sigNew, sigClass);
             entityServiceTable.rawset("EntitySpawned", entitySpawnedSignal);
         }
-        final ILuaValue finalSpawnedSignal = entitySpawnedSignal;
+        final ILuaValue spawnedSignal = entitySpawnedSignal;
         entityServiceTable.rawset("spawnEntity", args -> {
             int off = LuaBinder.getOffset(args);
             if (!InteractionBindingSupport.hasMinArgs(args, off, 4)) {
@@ -32,20 +34,40 @@ final class EntityServiceBinding {
             double y = args[off + 2].asDouble();
             double z = args[off + 3].asDouble();
             Object spawned = com.luatweaker.api.pal.Platform.getEntity().spawnEntity(type, x, y, z);
-            if (spawned == null) {
+            return wrapAndFire(engine, spawned, spawnedSignal);
+        });
+        entityServiceTable.rawset(SPAWN_FROM_NBT, args -> {
+            int off = LuaBinder.getOffset(args);
+            if (!InteractionBindingSupport.hasMinArgs(args, off, 5)) {
                 return engine.nilValue();
             }
-            ILuaValue wrapped = InteractionLuaBinding.getWrappedEntity(engine, spawned);
-            if (finalSpawnedSignal != null && !finalSpawnedSignal.isNil()) {
-                ILuaValue fireFn = finalSpawnedSignal.asTable().rawget("Fire");
-                if (fireFn != null && !fireFn.isNil()) {
-                    engine.callFunction(fireFn, finalSpawnedSignal, wrapped);
-                }
-            }
-            return wrapped;
+            String dimension = args[off].asString();
+            double x = args[off + 1].asDouble();
+            double y = args[off + 2].asDouble();
+            double z = args[off + 3].asDouble();
+            String nbtJson = args[off + 4].asString();
+            Object spawned = com.luatweaker.api.pal.Platform.getEntity()
+                    .spawnEntityFromNbt(dimension, x, y, z, nbtJson);
+            return wrapAndFire(engine, spawned, spawnedSignal);
         });
+        entityServiceTable.rawset("spawnFromNbt", entityServiceTable.rawget(SPAWN_FROM_NBT));
         entityServiceTable.rawset("GetEntity", workspaceTable.rawget(InteractionBindingSupport.METHOD_GET_ENTITY));
         entityServiceTable.rawset("getEntity", workspaceTable.rawget(InteractionBindingSupport.METHOD_GET_ENTITY));
         return entityServiceTable;
+    }
+
+    private static ILuaValue wrapAndFire(ILuaEngine engine, @Nullable Object spawned,
+                                         @Nullable ILuaValue signal) {
+        if (spawned == null) {
+            return engine.nilValue();
+        }
+        ILuaValue wrapped = InteractionLuaBinding.getWrappedEntity(engine, spawned);
+        if (signal != null && !signal.isNil()) {
+            ILuaValue fireFn = signal.asTable().rawget("Fire");
+            if (fireFn != null && !fireFn.isNil()) {
+                engine.callFunction(fireFn, signal, wrapped);
+            }
+        }
+        return wrapped;
     }
 }

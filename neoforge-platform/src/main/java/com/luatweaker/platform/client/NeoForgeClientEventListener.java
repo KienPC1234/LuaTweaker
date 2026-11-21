@@ -149,7 +149,9 @@ public final class NeoForgeClientEventListener {
             NeoForgeGuiService.clearGraphics();
         }
         drawScreenFlash(event.getGuiGraphics());
-        runImGuiFrame(engine, event.getGuiGraphics());
+        if (!(net.minecraft.client.Minecraft.getInstance().screen instanceof com.luatweaker.platform.client.gui.imgui.ImGuiOverlayScreen)) {
+            runImGuiFrame(engine, event.getGuiGraphics());
+        }
     }
 
     /** Screen flash overlay draws above everything, so it is applied after the Lua HUD. */
@@ -185,6 +187,10 @@ public final class NeoForgeClientEventListener {
             engine.callFunction(fireFn, signal,
                     engine.wrapNumber(event.getPartialTick().getGameTimeDeltaTicks()));
         }
+    }
+
+    public static void renderImGuiFrameFromScreen(@NotNull ILuaEngine engine, @NotNull GuiGraphics graphics) {
+        runImGuiFrame(engine, graphics);
     }
 
     /**

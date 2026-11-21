@@ -238,5 +238,89 @@ public class NeoForgeInteractableBlock implements IInteractableBlock {
         var blockEntity = level.getBlockEntity(pos);
         return blockEntity == null ? null : blockEntity.saveWithFullMetadata(level.registryAccess());
     }
+
+    @Override
+    public int getRedstoneSignal() {
+        return readOr(0, net.minecraft.world.level.SignalGetter::getBestNeighborSignal);
+    }
+
+    @Override
+    public int getDirectSignal(@NotNull String side) {
+        net.minecraft.core.Direction dir = net.minecraft.core.Direction.byName(side.toLowerCase(java.util.Locale.ROOT));
+        return readOr(0, (level, pos) -> dir != null ? level.getDirectSignal(pos, dir) : 0);
+    }
+
+    @Override
+    public @Nullable String getProperty(@NotNull String name) {
+        return readOr(null, (level, pos) -> {
+            BlockState state = level.getBlockState(pos);
+            for (net.minecraft.world.level.block.state.properties.Property<?> prop : state.getProperties()) {
+                if (prop.getName().equalsIgnoreCase(name)) {
+                    return propValueToString(state, prop);
+                }
+            }
+            return null;
+        });
+    }
+
+    @Override
+    public boolean applyProperty(@NotNull String name, @NotNull String value) {
+        return Boolean.TRUE.equals(readOr(false, (level, pos) -> {
+            BlockState state = level.getBlockState(pos);
+            for (net.minecraft.world.level.block.state.properties.Property<?> prop : state.getProperties()) {
+                if (prop.getName().equalsIgnoreCase(name)) {
+                    BlockState updated = applyPropertyValue(state, prop, value);
+                    if (updated != null) {
+                        level.setBlockAndUpdate(pos, updated);
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }));
+    }
+
+    @Override
+    public @NotNull java.util.Map<String, String> getProperties() {
+        return readOr(java.util.Map.of(), (level, pos) -> {
+            BlockState state = level.getBlockState(pos);
+            return state.getValues().entrySet().stream()
+                    .collect(java.util.stream.Collectors.toUnmodifiableMap(
+                            entry -> entry.getKey().getName(),
+                            entry -> propValueToString(state, entry.getKey())));
+        });
+    }
+
+    @Override
+    public @NotNull String getBiome() {
+        return readOr("minecraft:plains", (level, pos) -> level.getBiome(pos).unwrapKey()
+                .map(k -> k.location().toString()).orElse("minecraft:plains"));
+    }
+
+    @Override
+    public void explode(float power, boolean causesFire, boolean breakBlocks) {
+        ServerLevels.run(getLevel(), level -> {
+            BlockPos pos = new BlockPos(x, y, z);
+            level.explode(null, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, power, causesFire,
+                    breakBlocks ? net.minecraft.world.level.Level.ExplosionInteraction.BLOCK
+                            : net.minecraft.world.level.Level.ExplosionInteraction.NONE);
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Comparable<T>> String propValueToString(
+            BlockState state, net.minecraft.world.level.block.state.properties.Property<?> prop) {
+        return ((net.minecraft.world.level.block.state.properties.Property<T>) prop)
+                .getName(state.getValue((net.minecraft.world.level.block.state.properties.Property<T>) prop));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Comparable<T>> BlockState applyPropertyValue(
+            BlockState state, net.minecraft.world.level.block.state.properties.Property<?> rawProp, String valStr) {
+        net.minecraft.world.level.block.state.properties.Property<T> prop =
+                (net.minecraft.world.level.block.state.properties.Property<T>) rawProp;
+        java.util.Optional<T> opt = prop.getValue(valStr);
+        return opt.map(val -> state.setValue(prop, val)).orElse(null);
+    }
 }
 

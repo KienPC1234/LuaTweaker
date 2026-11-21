@@ -12,6 +12,8 @@ import com.luatweaker.content.StorageServiceImpl;
 import com.luatweaker.entities.AIGoalLuaBinding;
 import com.luatweaker.events.EventLuaBinding;
 import com.luatweaker.interaction.InteractionLuaBinding;
+import com.luatweaker.interaction.ParticleLuaBinding;
+import com.luatweaker.interaction.ParticleServiceImpl;
 import com.luatweaker.interception.InterceptionLuaBinding;
 import com.luatweaker.interception.InterceptionServiceImpl;
 import com.luatweaker.math.MathLuaBinding;
@@ -27,6 +29,19 @@ import org.jetbrains.annotations.NotNull;
 public final class LuaServiceBootstrap {
 
     private LuaServiceBootstrap() {}
+
+    /**
+     * Server-side control surfaces: status/kick primitives plus the LuaMod
+     * sync handshake (required mods, client reports, enforcement mode).
+     */
+    private static void registerServerControlServices(@NotNull ILuaEngine engine) {
+        com.luatweaker.core.bind.LuaBinder.bind(engine, "Server",
+                new com.luatweaker.platform.server.ServerServiceImpl(),
+                com.luatweaker.api.server.IServerService.class, "ServerService");
+        com.luatweaker.core.bind.LuaBinder.bind(engine, "ModSync",
+                new com.luatweaker.platform.modsync.ModSyncServiceImpl(),
+                com.luatweaker.api.modsync.IModSyncService.class, "ModSyncService");
+    }
 
     /**
      * Registers all standard services into the provided Lua engine.
@@ -50,11 +65,18 @@ public final class LuaServiceBootstrap {
         // 3. Interaction & Workspace
         InteractionLuaBinding.registerBindings(engine);
 
+        // 3a. Low-level particle primitives (shapes + Bezier paths)
+        ParticleLuaBinding.registerBindings(engine, new ParticleServiceImpl());
+
         // 4. Events System
         EventLuaBinding.registerBindings(engine);
 
         // 5. Roblox Spatial Math & Utilities
         MathLuaBinding.registerBindings(engine);
+
+        // 5a. Minecraft text components (literal/translate/keybind/score + styles)
+        com.luatweaker.text.TextLuaBinding.registerBindings(
+                engine, new com.luatweaker.text.TextServiceImpl());
 
         // 6. Roblox BSON Storage (World, Player, Session)
         StorageLuaBinding.registerBindings(engine, new com.luatweaker.storage.StorageServiceImpl(engine));
@@ -112,6 +134,10 @@ public final class LuaServiceBootstrap {
 
         // 9b. Server-side command registration (Commands:Register for /lt sub-commands)
         com.luatweaker.command.CommandLuaBinding.registerBindings(engine);
+
+        // 9b1. Server status/control primitives (players, TPS/MSPT, broadcast, kick)
+        // plus mod-sync primitives (required mods, client reports, enforcement).
+        registerServerControlServices(engine);
 
         // 9c. Update Checker (declarative, default for every mod) + Web Service
         // (HTTP GET locked behind the 'net.http' manifest permission).

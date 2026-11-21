@@ -120,6 +120,43 @@ final class ItemTableBinding {
             return engine.wrapBoolean(item.stopAnimation(animName, ctrl));
         });
         methods.rawset("stopAnimation", methods.rawget(InteractionBindingSupport.METHOD_STOP_ANIMATION));
+
+        bindItemEnchantments(methods, engine, item);
+    }
+
+    private static void bindItemEnchantments(ILuaTable methods, ILuaEngine engine,
+            IInteractableItem item) {
+        methods.rawset("GetEnchantments", args ->
+                InteractionLuaBinding.wrapValue(engine, item.getEnchantments()));
+        methods.rawset("getEnchantments", methods.rawget("GetEnchantments"));
+
+        methods.rawset("GetEnchantmentLevel", args -> {
+            int off = LuaBinder.getOffset(args);
+            if (!InteractionBindingSupport.hasMinArgs(args, off, 1)) {
+                throw new IllegalArgumentException("Item:GetEnchantmentLevel requires an enchantment id");
+            }
+            return engine.wrapNumber(item.getEnchantmentLevel(args[off].asString()));
+        });
+        methods.rawset("getEnchantmentLevel", methods.rawget("GetEnchantmentLevel"));
+
+        methods.rawset("SetEnchantment", args -> {
+            int off = LuaBinder.getOffset(args);
+            if (!InteractionBindingSupport.hasMinArgs(args, off, 2)) {
+                throw new IllegalArgumentException("Item:SetEnchantment requires (id, level)");
+            }
+            return engine.wrapBoolean(
+                    item.applyEnchantment(args[off].asString(), args[off + 1].asInt()));
+        });
+        methods.rawset("setEnchantment", methods.rawget("SetEnchantment"));
+
+        methods.rawset("RemoveEnchantment", args -> {
+            int off = LuaBinder.getOffset(args);
+            if (!InteractionBindingSupport.hasMinArgs(args, off, 1)) {
+                throw new IllegalArgumentException("Item:RemoveEnchantment requires an enchantment id");
+            }
+            return engine.wrapBoolean(item.removeEnchantment(args[off].asString()));
+        });
+        methods.rawset("removeEnchantment", methods.rawget("RemoveEnchantment"));
     }
 
     static void bindItemIndex(ILuaEngine engine, ILuaTable meta, ILuaTable methods,
@@ -149,6 +186,24 @@ final class ItemTableBinding {
                     return engine.wrapBoolean(item.isDamageable());
                 case "isenchanted":
                     return engine.wrapBoolean(item.isEnchanted());
+                case "rarity":
+                    return engine.wrapString(item.getRarity());
+                case "hasglint":
+                    return engine.wrapBoolean(item.hasGlint());
+                case "maxstacksize":
+                    return engine.wrapNumber(item.getMaxStackSize());
+                case "burntime":
+                    return engine.wrapNumber(item.getBurnTime());
+                case "isfood":
+                    return engine.wrapBoolean(item.isFood());
+                case "nutrition":
+                    return engine.wrapNumber(item.getNutrition());
+                case "saturation":
+                    return engine.wrapNumber(item.getSaturation());
+                case "isempty":
+                    return engine.wrapBoolean(item.isEmpty());
+                case "lore":
+                    return InteractionLuaBinding.wrapValue(engine, item.getLore());
                 default:
                     return resolveItemMember(engine, item, methods, key);
             }

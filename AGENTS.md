@@ -1,27 +1,27 @@
-# LuaTweaker ⚠️ READ THIS FIRST (LỆNH TỐI CAO - KHÔNG LÀM HỘ USER)
+# LuaTweaker READ THIS FIRST (SUPREME DIRECTIVE - DO NOT DO THE WORK FOR THE USER)
 
 Minecraft 1.21.1 NeoForge mod — Lua scripting engine with runtime recipe/content patching.
 
-> **🛑 CẢNH BÁO ĐỎ CẤP ĐỘ 0: TRIẾT LÝ LOW-LEVEL API (CHỐNG LÁCH LUẬT)**
-> **Nhiệm vụ của bạn là CUNG CẤP CÔNG CỤ (Tool) chứ không phải LÀM HỘ (Do it for them).**
-> - **TUYỆT ĐỐI CẤM:** Xây dựng các wrapper/class high-level trên Java bọc hết mọi logic hoặc tạo các DSL khổng lồ che giấu sự phức tạp (Tư duy KubeJS).
-> - **CẤU TRÚC BẮT BUỘC:** Phải export **NHIỀU HÀM LOW-LEVEL, NGUYÊN THỦY** (ví dụ: `Raycast()`, `ApplyDamage()`, `SpawnParticle()`, `GetLookVec()`, v.v.) ra môi trường Lua. 
-> - **MỤC ĐÍCH:** Để người dùng (Lua Mod) tự do viết script, tự lắp ráp và tùy biến logic gameplay của riêng họ (Kiểu GMod / Roblox / WoW).
-> - **NẾU BẠN LÁCH LUẬT:** Việc bạn nhóm/gộp logic thành một hàm high-level to đùng trên Java (ví dụ: tạo Java method `castMagicSpell()` thay vì cấp các hàm rời rạc như `getCustomData()` / `setCustomData()` + `fireProjectile()` cho Lua) bị coi là **PHÁ HOẠI KIẾN TRÚC**.
+> **LEVEL 0 RED ALERT: LOW-LEVEL API PHILOSOPHY (ANTI-LOOPHOLING)**
+> **Your mission is to PROVIDE TOOLS, NOT TO DO THE WORK FOR THEM.**
+> - **STRICTLY FORBIDDEN:** Building high-level wrapper classes in Java encapsulating all logic or creating massive DSLs hiding complexity (KubeJS mindset).
+> - **MANDATORY STRUCTURE:** Must export **NUMEROUS LOW-LEVEL, PRIMITIVE FUNCTIONS** (e.g. `Raycast()`, `ApplyDamage()`, `SpawnParticle()`, `GetLookVec()`, etc.) to the Lua environment.
+> - **PURPOSE:** To empower users (Lua modders) to freely write scripts, assemble, and customize their own gameplay logic (GMod / Roblox / WoW style).
+> - **LOOPHOLING VIOLATION:** Grouping logic into a monolithic high-level Java method (e.g. creating a Java `castMagicSpell()` method instead of separate low-level primitives like `getCustomData()` / `setCustomData()` + `fireProjectile()` for Lua) is classified as **ARCHITECTURAL SABOTAGE**.
 
-> **🚨 CRITICAL: Every AI agent MUST strictly follow ALL rules below. Violations cause bugs, broken builds, and SOLID violations.**
-
----
-
-# ⚠️ CRITICAL SECTION 0 — Code Honesty & Delivery Integrity (Strictest — Zero Tolerance)
-
-❌ **No hidden code. No sloppy code. No broken code. No silent stubs. No hallucinations. No fake tests. No leaked secrets. No inaccurate docs. No hardcoded values. Every delivered change MUST be complete, correct, and verified before submission. ANY violation below = instant rejection.**
+> **CRITICAL: Every AI agent MUST strictly follow ALL rules below. Violations cause bugs, broken builds, and SOLID violations.**
 
 ---
 
-## 0.1 — NO Hidden Code (Giấu Code) — Absolute Ban
+# CRITICAL SECTION 0 — Code Honesty & Delivery Integrity (Strictest — Zero Tolerance)
 
-| ❌ Forbidden | ✅ Required |
+No hidden code. No sloppy code. No broken code. No silent stubs. No hallucinations. No fake tests. No leaked secrets. No inaccurate docs. No hardcoded values. Every delivered change MUST be complete, correct, and verified before submission. ANY violation below = instant rejection.
+
+---
+
+## 0.1 — NO Hidden Code — Absolute Ban
+
+| Forbidden | Required |
 |---|---|
 | Silently omitting logic while pretending the task is finished | Deliver the full, real implementation |
 | Writing empty or no-op method bodies presented as "working" | Every method contains its actual business logic |
@@ -33,7 +33,7 @@ Minecraft 1.21.1 NeoForge mod — Lua scripting engine with runtime recipe/conte
 
 > **Lesson from the codebase**: `registerProjectile` was once a log-only stub — the `damage`/`explosionPower` config was thrown away. It is now a real registry (`ProjectileRegistry`) consumed by the firing layer. Any "registration" API must have a consumer.
 
-## 0.2 — NO Sloppy / Careless Code (Code Cẩu Thả) — Absolute Ban
+## 0.2 — NO Sloppy / Careless Code — Absolute Ban
 
 - **No dead code**: unused imports, unused fields, unused methods, unused local variables, unused parameters.
 - **No placeholder values**: returning `0`, `null`, `""`, `false`, or hardcoded constants as if they were real results.
@@ -59,7 +59,7 @@ Minecraft 1.21.1 NeoForge mod — Lua scripting engine with runtime recipe/conte
 2. The stub is loudly marked in code (`throw new UnsupportedOperationException("STUB <reason>")`, `assert false : "STUB ..."`, or `log.warn("STUB ...")`).
 3. A follow-up task is recorded, and the user is told it remains unfinished.
 
-| ❌ Forbidden | ✅ Required |
+| Forbidden | Required |
 |---|---|
 | Returning a stub silently as if the feature were done | Disclose it clearly + mark it + log the follow-up |
 | `Mock*` classes used in production code paths | Mocks exist only in tests — never in runtime |
@@ -68,7 +68,7 @@ Minecraft 1.21.1 NeoForge mod — Lua scripting engine with runtime recipe/conte
 
 ## 0.5 — NO Hallucinations / Fabricated Code — Absolute Ban
 
-- **Verify every symbol exists** in the exact library/project version (read the real source — e.g. `javap` the NeoForge jar — before calling a Minecraft API).
+- **Verify every symbol exists** in the exact library/project version. MANDATORY to use repo inspection tool `tools/mc_inspect.py` (or wrapper `tools/mc` / `tools/mc.bat`) to directly inspect Mojang-mapped sources from `sources.jar` or run `javap` on `merged.jar` before invoking any Minecraft/NeoForge API (details in Section 0.17).
 - **No invented signatures**, phantom return types, or imagined registry entries.
 - **State uncertainty, do not guess**: if you are not 100% sure a symbol/behavior exists, SAY SO.
 
@@ -151,7 +151,8 @@ PMD is the machine enforcer of Sections 0.1–0.3. It is wired into the build, n
   - adding a type name to the audited carve-out list in `config/pmd/ruleset.xml` to silence a finding that is not an interface-shape/API-contract issue;
   - deleting, neutering, or splitting code/tests just to silence a rule;
   - fake assertion messages in tests (`"check"`, `"ok"`, `"test"` - messages must describe WHAT is verified);
-  - shrinking rule scope (e.g. excluding a file) without explicit user approval.
+  - shrinking rule scope (e.g. excluding a file) without explicit user approval;
+  - **Telescoping Inheritance to cheat PMD metrics** (e.g. `Base1 -> Base2 -> ... -> BaseN` chains for `TooManyMethods`, `ExcessivePublicCount`, `GodClass`, `NcssCount`): slicing a large class into a ladder of artificial base classes purely to stay under per-file thresholds is strictly forbidden. If a wide class is an immutable Lua facade or SPI implementation (e.g. `ImGuiServiceImpl`), keep it in ONE cohesive class and request an audited carve-out in `config/pmd/ruleset.xml`. If it has multiple domain responsibilities, refactor via **Composition** (independent collaborators/handlers), never inheritance chaining.
 - **Audited architectural carve-outs:** the only carve-outs are the `AUDITED ARCHITECTURAL CARVE-OUTS` block in `config/pmd/ruleset.xml`. Each entry suppresses ONE rule on a named type whose method names/arities/member count are the Lua-facing contract (LuaBinder, stub generator, platform registration) or a 25-100 method PAL facade it implements. The same rule stays active for every other type; a new 12-method class still fails, verified. Remove a name when the type is split; adding one is an architecture change that needs user approval, exactly like a public signature change.
 - **Fix ladder (in order, stop at the first that applies):**
   1. Fix the code properly (braces, constants, specific catches, try-with-resources, real asserts).
@@ -159,64 +160,95 @@ PMD is the machine enforcer of Sections 0.1–0.3. It is wired into the build, n
   3. If genuinely unfixable without behavior damage, report exact `file:line` + reason to the user and WAIT. Never hide.
 - **Ruleset changes** require explicit user approval AND an inline XML comment explaining why the rule is a false positive on this codebase. The bar is "rule is wrong for us", never "code is too dirty to fix".
 
+## 0.17 — Mandatory Tool: `tools/mc_inspect.py` (Multi-Platform Mojmap & Bytecode Inspector)
+
+To strictly adhere to Section 0.5 (zero hallucinated symbols or APIs), the repository provides the `tools/mc_inspect.py` CLI toolkit (with wrappers `tools/mc` and `tools/mc.bat`). The tool automatically discovers classpaths across platforms (NeoForge, Fabric, Forge, Vanilla), dynamically adapts across Minecraft upgrades (1.21.1, 1.21.2+, 1.22+), and discovers libraries in Gradle caches (GeckoLib, JEI, etc.) without manual configuration. Supports `--platform <name>`, `--sources <path>`, `--jar <path>` flags and fuzzy command suggestions.
+
+**All AI agents interacting with Minecraft/NeoForge APIs are MANDATED to use this tool:**
+
+| Command | Description | Practical Example |
+|---|---|---|
+| `status` / `platform` | View active platform, Minecraft version, sources JAR, and merged JAR | `tools\mc status` |
+| `search <query>` | Search classes by name or regex | `python tools/mc_inspect.py search MobEffect` |
+| `source <class> [-m fn]` | View Mojmap Java source from `sources.jar` (supports short class names) | `python tools/mc_inspect.py source MobEffect -m applyEffectTick` |
+| `disasm <class> [-c] [-m]` | Disassemble bytecode via javap with auto-resolved classpath | `python tools/mc_inspect.py disasm 'Util$OS' -m openFile -c` |
+| `effects [query]` | Inspect MobEffects (speed, slowness, category, color) | `python tools/mc_inspect.py effects speed` |
+| `potions [query]` | Inspect vanilla Potions (healing, swiftness, invisibility...) | `python tools/mc_inspect.py potions healing` |
+| `sounds [query]` | Inspect 1,580+ vanilla SoundEvents | `python tools/mc_inspect.py sounds anvil` |
+| `particles [query]` | Inspect 100+ vanilla ParticleTypes (flame, smoke, crit...) | `python tools/mc_inspect.py particles flame` |
+| `entities [query]` | Inspect 130+ vanilla EntityTypes with Java class and category | `python tools/mc_inspect.py entities zombie` |
+| `capabilities [query]` | Inspect multi-platform Capabilities (NeoForge/Fabric Transfer API) | `python tools/mc_inspect.py capabilities item` |
+| `components [query]` | Inspect 54+ DataComponents 1.21.1+ (NBT replacement) | `python tools/mc_inspect.py components food` |
+| `attributes [query]` | Inspect 29+ Attributes 1.21.1+ (default, min, max) | `python tools/mc_inspect.py attributes health` |
+| `properties [query]` | Inspect 112+ BlockStateProperties | `python tools/mc_inspect.py properties facing` |
+| `packets [query]` | Inspect 158+ network packets (Clientbound/Serverbound) | `python tools/mc_inspect.py packets block` |
+| `events [query]` | Inspect multi-platform Events (with @Cancelable flags, getters) | `python tools/mc_inspect.py events damage` |
+| `extensions [query]` | Inspect NeoForge Extension Interfaces (IItemExtension...) | `python tools/mc_inspect.py extensions item` |
+| `registries [query]` | Inspect Minecraft BuiltInRegistries | `python tools/mc_inspect.py registries` |
+| `tags [category]` | Inspect built-in TagKeys (item, block, enchantment, entity) | `python tools/mc_inspect.py tags enchantment` |
+| `usages <symbol>` | Search symbol references across all Minecraft sources | `python tools/mc_inspect.py usages IClientMobEffectExtensions --limit 5` |
+| `tree <class>` | Display inheritance tree (superclasses and interfaces) | `python tools/mc_inspect.py tree Zombie` |
+| `fields <class>` | List fields and enum constants | `python tools/mc_inspect.py fields InteractionResult` |
+| `methods <class> [-q]` | List declared methods and signatures | `python tools/mc_inspect.py methods ItemStack -q get` |
+
 ---
 
-# ⚠️ CRITICAL SECTION 1 — Triết Lý Thiết Kế Cốt Lõi & Bản Sắc LuaTweaker
+# CRITICAL SECTION 1 — Core Design Philosophy & LuaTweaker Identity
 
-> **🚨 TRIẾT LÝ CỐT LÕI: CUNG CẤP CÔNG CỤ (GMOD / ROBLOX / WOW STYLE) — KHÔNG LÀM HỘ (ANTI-KUBEJS)**
-> **Tầm nhìn xa:** Không viết code lởm/hacky chỉ để hoàn thành tính năng ngắn hạn. Xây dựng API nền tảng vững chắc, linh hoạt để user tự do sáng tạo.
+> **CORE PHILOSOPHY: PROVIDE TOOLS (GMOD / ROBLOX / WOW STYLE) — DO NOT DO THE WORK FOR THEM (ANTI-KUBEJS)**
+> **Long-Term Vision:** Never write low-quality/hacky workarounds just to pass tests or complete tasks quickly. Build solid, extensible foundational APIs so users have maximum creative freedom.
 
-## 1.1 Triết Lý API (BẮT BUỘC ĐỌC)
+## 1.1 API Philosophy (MANDATORY READ)
 
-1. **Cung cấp "Nguyên liệu" (Low-level), KHÔNG cung cấp "Thành phẩm" (High-level):**
-   - **✅ Chuẩn GMod / Roblox / WoW:** Cung cấp các API cơ bản, nguyên thủy, đa dụng (vd: `Raycast`, `ApplyImpulse`, `PlaySound`, `Timer`, `Events`). Trao quyền để user tự dùng Lua lắp ráp thành các cơ chế phức tạp (skills, súng, phép thuật, mini-games).
-   - **❌ Anti-KubeJS Pattern (CẤM):** KHÔNG tạo ra các abstraction/wrapper khổng lồ làm thay mọi thứ cho user (vd: cấm làm `MagicSpellBuilder` tự lo trừ mana, tính cooldown, spawn particle). Việc "làm hộ" quá nhiều sẽ tạo ra hệ thống cứng nhắc, cực kỳ khó maintain, hạn chế sự sáng tạo và "rất dễ toang" khi scale lên.
+1. **Provide "Raw Ingredients" (Low-Level), DO NOT Provide "Finished Dishes" (High-Level):**
+   - **GMod / Roblox / WoW Standard:** Provide raw, primitive, versatile APIs (e.g. `Raycast`, `ApplyImpulse`, `PlaySound`, `Timer`, `Events`). Empower users to script and assemble their own complex mechanics (skills, guns, magic, minigames).
+   - **Anti-KubeJS Pattern (BANNED):** DO NOT build massive abstractions or wrappers doing everything for the user (e.g. strictly forbidden to build a `MagicSpellBuilder` that auto-deducts mana, calculates cooldowns, and spawns particles). Doing too much makes the system rigid, hard to maintain, stifles creativity, and breaks easily at scale.
 
-2. **Chất Lượng Code & Tầm Nhìn Dài Hạn Đặt Lên Hàng Đầu:**
-   - Tuyệt đối không viết code lởm, code kém chất lượng (hacky workarounds) chỉ để qua bài test hoặc xong task nhanh. Phải có tư duy dài hạn.
-   - Java layer chỉ làm nhiệm vụ CẦU NỐI (bridge) nhanh, an toàn và tối ưu xuống NeoForge. Phần não bộ (logic trò chơi) phải nằm trọn ở Lua.
+2. **Code Quality & Long-Term Vision First:**
+   - Zero low-quality code or hacky workarounds. Always think long-term.
+   - The Java layer serves ONLY as a fast, safe, and optimized BRIDGE down to NeoForge/Minecraft. The game logic brain must remain entirely in Lua.
 
-## 1.2 Bản Sắc Thiết Kế LuaTweaker Style (Pattern & Cú Pháp)
+## 1.2 LuaTweaker Design Identity (Patterns & Conventions)
 
-1. **Content & Recipe Definitions (Đăng ký tĩnh):**
-   - Chainable Builder Pattern theo Namespace: `Content.NewItem("id")`, `Content.NewBlock("id")`, `Content.createEntity("id", fn)`, `Recipe.Shaped("id"):Pattern(...):Register()`.
-   - Các Builder này chỉ làm nhiệm vụ **khai báo** dữ liệu cơ bản. **CẤM** hàm global trôi nổi `item()`, `ingredient()` làm API chính (chúng chỉ là helper trong recipes).
+1. **Content & Recipe Definitions (Static Registration):**
+   - Chainable Builder Pattern by Namespace: `Content.NewItem("id")`, `Content.NewBlock("id")`, `Content.createEntity("id", fn)`, `Recipe.Shaped("id"):Pattern(...):Register()`.
+   - Builders serve ONLY to declare basic data. Floating global functions `item()`, `ingredient()` are BANNED from being primary APIs (they are only helpers in recipes).
 
 2. **Runtime Services & AI Logic:**
    - Service/Signal PascalCase: `Events:Listen(...)`, `Task:delay(...)`, `World:StrikeLightning(...)`, `Vector3.new(...)`.
-   - Entity API **thống nhất**: một bảng entity duy nhất hỗ trợ CẢ method style (`entity:setHealth(50)`) lẫn property style (`entity.Health = 50`) — xem Section 5.
+   - Unified Entity API: A single entity table supporting BOTH method style (`entity:setHealth(50)`) and property style (`entity.Health = 50`) — see Section 5.
 
-3. **Nạp Thư Viện Tường Minh:**
-   - Mọi script nạp thư viện bằng `require("LuaTweaker.ModuleName")`.
-   - **CẤM** magic globals trôi nổi (trừ `mod`, `Mod`, `Events`/`Content`/... do engine cung cấp).
+3. **Explicit Library Loading:**
+   - All scripts load libraries via `require("LuaTweaker.ModuleName")`.
+   - Floating magic globals are BANNED (except `mod`, `Mod`, `Events`/`Content`/... injected by the engine).
 
-4. **Cấu trúc 1 LuaMod:**
-   - `luamods/<mod_id>/manifest.json` + `main.lua` (entrypoint duy nhất) + `src/startup`, `src/server`, `src/client` + `default_config.json` + `assets/`, `data/`.
+4. **LuaMod Package Structure:**
+   - `luamods/<mod_id>/manifest.json` + `main.lua` (single entrypoint) + `src/startup`, `src/server`, `src/client` + `default_config.json` + `assets/`, `data/`.
 
 ---
 
-## 1.3 Quy Trình 5 Bước Tạo 1 Module Mới Chuẩn OOP
+## 1.3 5-Step OOP Procedure to Create a New Module
 
-### Bước 1: Khai báo Java Interface trong `common-api` với `@LuaDoc` (+ `@LuaDefault` cho tham số tùy chọn)
+### Step 1: Declare Java Interface in `common-api` with `@LuaDoc` (+ `@LuaDefault` for optional parameters)
 ```java
 package com.luatweaker.api.example;
 
 import com.luatweaker.api.annotation.LuaDoc;
 import com.luatweaker.api.annotation.LuaDefault;
 
-@LuaDoc(description = "Dịch vụ quản lý mô-đun ví dụ.")
+@LuaDoc(description = "Example module management service.")
 public interface IExampleModuleService {
     @LuaDoc(
-        description = "Thực hiện chức năng ví dụ.",
+        description = "Executes an example feature.",
         params = {"id: string", "power: number"},
         returnType = "void"
     )
     void executeFeature(String id, @LuaDefault("1.0") double power);
 }
 ```
-> Interface là **single source of truth**: binding + EmmyLua stubs + docs đều sinh từ nó. KHÔNG viết binding tay.
+> The interface is the **single source of truth**: bindings, EmmyLua stubs, and documentation are all generated from it. DO NOT write manual bindings.
 
-### Bước 2: Viết Implementation độc lập trong `modules/module-<feature>`
+### Step 2: Implement Independently in `modules/module-<feature>`
 ```java
 public class ExampleModuleServiceImpl implements IExampleModuleService {
     @Override
@@ -226,7 +258,7 @@ public class ExampleModuleServiceImpl implements IExampleModuleService {
 }
 ```
 
-### Bước 3: Đăng ký binding bằng **LuaBinder** — KHÔNG viết glue tay
+### Step 3: Register Binding via **LuaBinder** — DO NOT Write Manual Glue
 ```java
 public class ExampleModuleLuaBinding {
     public static void registerBindings(ILuaEngine engine, IExampleModuleService service) {
@@ -234,16 +266,16 @@ public class ExampleModuleLuaBinding {
     }
 }
 ```
-`LuaBinder` (core-engine) tự động: convert tham số (String/int/double/boolean/table/IEntity), bỏ self của colon-call, sinh alias PascalCase, áp dụng `@LuaDefault`, ném lỗi rõ khi thiếu tham số bắt buộc, convert giá trị trả về. **CẤM viết tay `getOffset` + `args[i].asInt()` + delegate** trong binding mới.
+`LuaBinder` (core-engine) automatically: converts parameters (String/int/double/boolean/table/IEntity), strips `self` from colon calls, generates PascalCase aliases, applies `@LuaDefault`, throws clear errors when required arguments are missing, and converts return values. Writing manual glue (`getOffset` + `args[i].asInt()` + delegate) in new bindings is STRICTLY BANNED.
 
-### Bước 4: Đăng ký trong `LuaServiceBootstrap` (+ stub trong `LuaTweakerMod.generateStubs`)
+### Step 4: Register in `LuaServiceBootstrap` (+ stub in `LuaTweakerMod.generateStubs`)
 ```java
 ExampleModuleLuaBinding.registerBindings(engine, exampleService);
 stubGen.registerService("ExampleModule", IExampleModuleService.class);
 ```
-> Entity/player wrapper classes: `stubGen.registerClassStub(IEntity.class, "Entity")` — sinh class stub có inheritance (`---@class Player: Entity`).
+> Entity/player wrapper classes: `stubGen.registerClassStub(IEntity.class, "Entity")` — generates class stubs with inheritance (`---@class Player: Entity`).
 
-### Bước 5: Sử dụng trong Lua Script chuẩn LuaTweaker Style
+### Step 5: Use in Lua Scripts with Standard LuaTweaker Style
 ```lua
 local ExampleModule = require("LuaTweaker.ExampleModule")
 ExampleModule:ExecuteFeature("custom_id", 100)
@@ -251,131 +283,131 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 
 ---
 
-# ⚠️ CRITICAL SECTION 2 — SOLID Principles (Absolute Compliance Required)
+# CRITICAL SECTION 2 — SOLID Principles (Absolute Compliance Required)
 
 | Principle | Enforcement |
 |---|---|
-| **S**ingle Responsibility | Mỗi class/module/method có ĐÚNG MỘT lý do thay đổi. `common-api` = abstraction thuần; `core-engine` = VM wrapper + LuaBinder + logger + stubs; `modules/*` = đúng một domain; `neoforge-platform` = bootstrap + PAL impl. |
-| **O**pen/Closed | Thêm tính năng = thêm code (binding mới, service mới), KHÔNG sửa code đang chạy. `InterceptionHelper` closed; `LuaServiceRegistry` mở rộng qua `register()`. |
-| **L**iskov | Mọi PAL impl thay thế được cho base type. Test với `Mock*` phải xanh CÙNG impl thật. |
-| **I**nterface Segregation | Interface nhỏ, đúng nhu cầu từng client. Nếu một impl phải stub method → TÁCH interface ngay. |
-| **D**ependency Inversion | Chỉ `neoforge-platform` import NeoForge/Minecraft. `common-api` zero-dependency. Module graph là DAG. |
+| **S**ingle Responsibility | Every class/module/method has EXACTLY ONE reason to change. `common-api` = pure abstraction; `core-engine` = VM wrapper + LuaBinder + logger + stubs; `modules/*` = exactly one domain; `neoforge-platform` = bootstrap + PAL implementation. |
+| **O**pen/Closed | Adding features = adding code (new bindings, new services), NOT modifying running code. `InterceptionHelper` is closed; `LuaServiceRegistry` is extended via `register()`. |
+| **L**iskov Substitution | Every PAL implementation is substitutable for its base type. Tests with `Mock*` MUST pass alongside the real implementation. |
+| **I**nterface Segregation | Small, focused interfaces tailored to client needs. If an implementation has to stub a method → SPLIT the interface immediately. |
+| **D**ependency Inversion | Only `neoforge-platform` imports NeoForge/Minecraft. `common-api` has zero dependencies. The module graph is a strict DAG. |
 
 ---
 
-# ⚠️ CRITICAL SECTION 3 — Java Coding Conventions
+# CRITICAL SECTION 3 — Java Coding Conventions
 
-- **Java 21**: `record` cho DTO bất biến, sealed hierarchy, pattern matching switch, TextBlock, `Optional` CHỈ cho return nullable.
-- **@NotNull/@Nullable trên MỌI tham số và return.**
-- **Naming**: packages `com.luatweaker.<module>.<feature>` (không plural), class PascalCase, method camelCase (một verb), constants `UPPER_SNAKE_CASE`, boolean `is*/has*/can*`.
-- **Encapsulation**: fields `private final`, collection getters trả `List.copyOf()`/unmodifiable, builder cho 3+ params, **KHÔNG mutable statics** (trừ registry có chủ đích như `LuaServiceRegistry`, `EventServiceImpl`, `ProjectileRegistry` — phải có lý do + comment).
-- **Exceptions**: catch specific, KHÔNG blanket `catch (Exception e)`; try-with-resources; error path phải test.
-- **Braces K&R, 4 spaces, không tab, max 120 chars, imports không wildcard, `@Override` bắt buộc.**
-
----
-
-# ⚠️ CRITICAL SECTION 4 — Cross-Platform Architecture (PAL)
-
-- `core-engine` + `modules/*` **CẤM** import `net.minecraft.*`, `net.neoforged.*` — REJECTED.
-- Mọi platform call → `Platform.getInstance().<method>()` / `Platform.getX()`.
-- Capability mới → thêm vào `Platform` interface + impl trong `NeoForgePlatform` — zero change cho consumers.
-- Test không cần Minecraft (mock qua interface).
+- **Java 21**: `record` for immutable DTOs, sealed hierarchies, pattern matching switch, TextBlocks, `Optional` ONLY for nullable returns.
+- **@NotNull/@Nullable on EVERY parameter and return value.**
+- **Naming**: packages `com.luatweaker.<module>.<feature>` (singular), class PascalCase, method camelCase (one verb), constants `UPPER_SNAKE_CASE`, boolean `is*/has*/can*`.
+- **Encapsulation**: fields `private final`, collection getters return `List.copyOf()` or unmodifiable views, builder pattern for 3+ parameters, **NO mutable statics** (except intentional registries like `LuaServiceRegistry`, `EventServiceImpl`, `ProjectileRegistry` — must have explicit documentation and comment).
+- **Exceptions**: catch specific exceptions, NEVER blanket `catch (Exception e)`; use try-with-resources; all error paths must have unit tests.
+- **Formatting**: K&R braces, 4 spaces, no tabs, max 120 chars, no wildcard imports, `@Override` mandatory.
 
 ---
 
-# ⚠️ CRITICAL SECTION 5 — Anti-Boilerplate & Runtime Architecture Rules (MỚI — Bắt Buộc)
+# CRITICAL SECTION 4 — Cross-Platform Architecture (PAL)
 
-> Những luật này được rút ra từ các bug thực tế đã sửa. Vi phạm = tái sinh bug cũ.
+- `core-engine` + `modules/*` **MUST NOT** import `net.minecraft.*` or `net.neoforged.*` — violations are REJECTED.
+- All platform calls route through `Platform.getInstance().<method>()` or `Platform.getX()`.
+- Adding a capability → add to `Platform` interface + implement in `NeoForgePlatform` — zero changes for consumers.
+- Tests do not require a Minecraft runtime (mock through interfaces).
 
-## 5.1 — Binding bắt buộc qua LuaBinder (CẤM glue tay)
+---
 
-- Mọi service binding MỚI: `LuaBinder.bind(engine, name, impl, apiClass, aliases...)` hoặc `LuaBinder.bindTable(...)` cho wrapper tables.
-- Tham số tùy chọn → `@LuaDefault` trên interface — KHÔNG tự viết default logic trong binding.
-- **CẤM** copy pattern cũ: `int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;` + `args[off].asInt()` + delegate.
-- Ngoại lệ (có lý do hợp lệ): builder DSL (`ContentLuaBinding`), parsing phức tạp (`RecipesLuaBinding`), wrapper có logic riêng (`StorageLuaBinding`, `NetworkLuaBinding`).
+# CRITICAL SECTION 5 — Anti-Boilerplate & Runtime Architecture Rules (Mandatory)
 
-## 5.2 — MỘT Entity API duy nhất (CẤM 2 wrapper song song)
+> These rules are derived from real fixed bugs. Violations resurrect old defects.
 
-- `IEntity` là wrapper duy nhất. `NeoForgeEntityWrapper` + `NeoForgePlayerWrapper` là impl; `NeoForgeInteractableEntity implements IEntity` (không có view thứ 2).
-- Lua table entity/player: `EntitiesLuaBinding.createEntityLuaTable` / `createPlayerLuaTable` — method style + property aliases (Health, MaxHealth, Type, CustomName, Velocity, Position) qua metatable.
-- **CẤM** tạo API entity thứ 2 (kiểu `wrapEntity` cũ với method khác tên: `ShootProjectile` vs `shootProjectile`).
-- Projectile: **MỘT nơi duy nhất** bắn — `EntityInteractionHelper.shootProjectile/shootProjectileAt` + `NeoForgeInteractableEntity` override delegate về helper. **CẤM** 2 bảng switch tạo projectile độc lập.
+## 5.1 — Bindings Mandatory via LuaBinder (Manual Glue BANNED)
 
-## 5.3 — Event Bus: shared + replace semantics
+- Every NEW service binding: `LuaBinder.bind(engine, name, impl, apiClass, aliases...)` or `LuaBinder.bindTable(...)` for wrapper tables.
+- Optional parameters → `@LuaDefault` on interface — DO NOT write manual fallback logic in bindings.
+- Copying old patterns (`int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;` + `args[off].asInt()` + delegate) is STRICTLY BANNED.
+- Exceptions (with valid rationale): builder DSL (`ContentLuaBinding`), complex parsing (`RecipesLuaBinding`), wrappers with custom lifecycle (`StorageLuaBinding`, `NetworkLuaBinding`).
 
-- `EventServiceImpl` dùng **một map dùng chung mọi engine**; `Listen` **THAY THẾ** listener cũ (engine mới nhất thắng) — không tích lũy.
-- Lý do: item handler closure bị pin vào startup engine — dispatch qua bus shared để tới listener của runtime engine hiện tại.
-- **CẤM** đưa listener map về per-instance tích lũy (gây double-fire) hoặc clear sai thời điểm.
+## 5.2 — ONE Unified Entity API (Dual Parallel Wrappers BANNED)
 
-## 5.4 — Item/Block handler CHỈ dispatch server-side
+- `IEntity` is the sole wrapper. `NeoForgeEntityWrapper` + `NeoForgePlayerWrapper` are implementations; `NeoForgeInteractableEntity implements IEntity` (no secondary view).
+- Lua entity/player tables: `EntitiesLuaBinding.createEntityLuaTable` / `createPlayerLuaTable` — method style + property aliases (Health, MaxHealth, Type, CustomName, Velocity, Position) via metatable.
+- Creating a second entity API (like the old `wrapEntity` with mismatched method names: `ShootProjectile` vs `shootProjectile`) is STRICTLY BANNED.
+- Projectiles: **EXACTLY ONE place** to fire — `EntityInteractionHelper.shootProjectile/shootProjectileAt` + `NeoForgeInteractableEntity` overrides delegating to the helper. Dual independent switch tables are BANNED.
 
-- `ItemRegistrar` / `BlockRegistrar`: Lua handler chỉ chạy khi `!level.isClientSide()` — client chỉ consume click (`sidedSuccess`).
-- **CẤM** dispatch Lua event ở cả 2 phía — client-side cast sẽ trừ mana/đặt cooldown sai + không thể bắn projectile (`ClientLevel`).
+## 5.3 — Event Bus: Shared + Replace Semantics
 
-## 5.5 — Thread Safety: VM entry points synchronized
+- `EventServiceImpl` uses **a single map shared across all engines**; `Listen` **REPLACES** old listeners (newest engine wins) — no listener accumulation.
+- Rationale: item handler closures are pinned to the startup engine — dispatching through the shared bus forwards to the active runtime engine.
+- Making listener maps per-instance (causing double-firing) or clearing listeners at the wrong lifecycle stage is BANNED.
 
-- `LuavaEngine` dùng **execution gate** (`Semaphore`) thay cho `synchronized`: `executeString/executeScript/callFunctionMulti/registerGlobal` lấy gate khi gọi từ thread ngoài (server/render/reload).
-- Coroutine thread (do `task._run_deferred` tạo) **không lấy gate** — nó thuộc operation đã resume nó, và thread resume đang park chờ nó. Nhờ vậy binding Java gọi lại engine (vd `task.getTimeClock` → `engine.wrapNumber`) không deadlock.
-- **CẤM** đổi `wrapString/wrapNumber/wrapBoolean/nilValue/createTable` thành có gate/synchronized: đây là pure factory, gọi từ coroutine thread; thêm lock sẽ tái sinh deadlock.
-- Render callbacks (OnRenderHUD) phải dùng `Signal:FireSync` (đồng bộ, đúng render thread với GuiGraphics context) — **CẤM** async Fire cho render.
-- Coroutine/deferred: chạy qua `task._run_deferred` (Java, tạo `LuaCoroutine` trên virtual thread, resume đồng bộ tới khi yield/chết) — **CẤM** `coroutine.resume` trực tiếp trong `task._tick`.
-- `ILuaEngine.shutdown()` dừng các coroutine đang treo trước khi thay engine khi reload.
+## 5.4 — Item/Block Handlers Dispatch ONLY Server-Side
 
-## 5.6 — Network: clientbound → network service của ACTIVE engine
+- `ItemRegistrar` / `BlockRegistrar`: Lua handlers execute ONLY when `!level.isClientSide()` — the client only consumes clicks (`sidedSuccess`).
+- Dispatching Lua events on both sides is BANNED — client-side casting erroneously deducts mana, sets invalid cooldowns, and fails to fire projectiles (`ClientLevel`).
 
-- Clientbound packet → `LuaServiceRegistry.get("NetworkServiceImpl")` (engine active, nơi mods load + listener connect) — KHÔNG dùng service của client engine (không bao giờ load mods → remoteEvents rỗng → HUD/effects chết).
+## 5.5 — Thread Safety: Synchronized VM Entry Points
 
-## 5.7 — Stub Generator: inheritance + class cho wrapper
+- `LuavaEngine` uses an **execution gate** (`Semaphore`) instead of `synchronized`: `executeString/executeScript/callFunctionMulti/registerGlobal` acquire the gate when called from external threads (server/render/reload).
+- Coroutine threads (created by `task._run_deferred`) **do not acquire the gate** — they belong to the operation that resumed them, and the resuming thread is parked waiting for them. This prevents deadlocks when Java callbacks call back into the engine (e.g. `task.getTimeClock` → `engine.wrapNumber`).
+- Adding gate/synchronization to `wrapString/wrapNumber/wrapBoolean/nilValue/createTable` is BANNED: these are pure factories called from coroutine threads; adding locks will cause deadlocks.
+- Render callbacks (`OnRenderHUD`) MUST use `Signal:FireSync` (synchronous, on the render thread with GuiGraphics context) — async Fire for render is BANNED.
+- Coroutines/deferred tasks: execute via `task._run_deferred` (Java virtual thread, resumes synchronously until yield/termination) — calling `coroutine.resume` directly inside `task._tick` is BANNED.
+- `ILuaEngine.shutdown()` cancels pending coroutines before replacing the engine during reloads.
 
-- `generateClassStub` phải emit `---@class X: Parent` cho interface kế thừa; transitive scan dùng `classNameByType`.
-- Entity/player: `registerClassStub(IEntity.class, "Entity")`, `registerClassStub(IPlayer.class, "Player")`.
+## 5.6 — Network: Clientbound → Network Service of ACTIVE Engine
 
-## 5.8 — Config-driven mọi tunable
+- Clientbound packets route to `LuaServiceRegistry.get("NetworkServiceImpl")` (the active engine where mods are loaded and listeners connected) — NEVER use the client engine service (which never loads mods, causing empty remoteEvents and broken HUD/effects).
 
-- Skill cost/cooldown/regen, boss health, spawn offsets, GUI geometry → `default_config.json` → `mod:GetConfig()` với fallback hợp lý.
-- **CẤM** hardcode trong Lua script (AGENTS.md 0.14).
+## 5.7 — Stub Generator: Inheritance + Class Stubs for Wrappers
 
-## 5.9 — Log ASCII thuần
+- `generateClassStub` MUST emit `---@class X: Parent` for inherited interfaces; transitive scans use `classNameByType`.
+- Entity/player wrappers: `registerClassStub(IEntity.class, "Entity")`, `registerClassStub(IPlayer.class, "Player")`.
 
-- Log output (log file + console) dùng ASCII: `=== BEGIN RELOAD ===`, `->`, `-`. **CẤM** box-drawing/em-dash/arrow unicode trong log strings.
+## 5.8 — Config-Driven Tunables
+
+- Skill costs, cooldowns, regen rates, boss health, spawn offsets, GUI geometries → `default_config.json` → `mod:GetConfig()` with sensible fallbacks.
+- Hardcoding values in Lua scripts is BANNED (Section 0.14).
+
+## 5.9 — Pure ASCII Logs
+
+- Log output (log files and console) MUST use ASCII: `=== BEGIN RELOAD ===`, `->`, `-`. Box-drawing, em-dashes, and unicode arrow characters in log strings are BANNED.
 
 ## 5.10 — Dynamic Bridge Architecture (Hybrid Proxy Pattern)
 
-- **DynamicJavaProxy** (`core-engine/src/main/java/com/luatweaker/core/bind/DynamicJavaProxy.java`) cung cấp automatic property/method access cho Java objects trong Lua.
-- **Cơ chế:**
-  - `__index`: `obj.Health` → tự động gọi `getHealth()` hoặc `isHealth()`
-  - `__newindex`: `obj.Health = 20` → tự động gọi `setHealth(20)`
+- **DynamicJavaProxy** (`core-engine/src/main/java/com/luatweaker/core/bind/DynamicJavaProxy.java`) provides automatic property and method access for Java objects in Lua.
+- **Mechanism:**
+  - `__index`: `obj.Health` → automatically calls `getHealth()` or `isHealth()`
+  - `__newindex`: `obj.Health = 20` → automatically calls `setHealth(20)`
   - Method call: `obj:teleport(0, 100, 0)` → exact method name match
-- **Security model - Smart Package Blacklist (CRITICAL):**
-  - **3 Bức Tường Phòng Ngự:**
-    1. **Luava VM Isolation:** Tước bỏ `os.*`, `io.*`, `package.loadlib` khỏi Lua VM.
+- **Security Model - Smart Package Blacklist (CRITICAL):**
+  - **3 Defense Walls:**
+    1. **Luava VM Isolation:** Strip `os.*`, `io.*`, `package.loadlib` from the Lua VM.
     2. **Method Blacklist:** Block `getClass`, `wait`, `notify`, `notifyAll`, `clone`, `finalize`, `hashCode`.
     3. **Smart Package Blacklist:** Block `java.lang.Runtime`, `java.lang.Process`, `java.lang.ProcessBuilder`, `java.lang.System`, `java.lang.Thread`, `java.lang.Class`, `java.lang.ClassLoader`, `java.lang.reflect.*`, `java.lang.invoke.*`, `java.io.*`, `java.nio.*`, `java.net.*`, `javax.net.*`, `sun.*`, `com.sun.*`, `jdk.*`.
-  - **Cross-mod interop:** Mọi package KHÔNG nằm trong blacklist đều được phép (GregTech, Create, Mekanism...).
-  - Check thứ tự: package blacklist → method blacklist → cache → reflection → remapper.
+  - **Cross-Mod Interop:** All packages NOT in the blacklist are permitted (GregTech, Create, Mekanism, etc.).
+  - Check order: package blacklist → method blacklist → cache → reflection → remapper.
 - **Runtime Remapper (`core-engine/src/main/java/com/luatweaker/core/remap/RuntimeRemapper.java`):**
-  - Giải quyết obfuscation trong production (Mojmap → SRG: `getHealth` → `m_21223_`).
-  - **3 tầng fallback:**
-    1. **Exact match:** Tìm method đúng tên (hoạt động trong dev).
-    2. **Heuristic match:** Case-insensitive + contains pattern (tìm methods tương tự).
-    3. **Signature match:** Tìm theo param types + return type (fallback cuối cùng).
-  - **Cache:** `ConcurrentHashMap` cho cả exact và signature results.
-  - **Obfuscation detection:** Tự động detect dev vs production environment.
-  - Tích hợp vào `DynamicJavaProxy.findMethodCached()` - gọi khi exact match thất bại.
-- **Integration points:**
+  - Solves production obfuscation (Mojmap → SRG: `getHealth` → `m_21223_`).
+  - **3 Fallback Tiers:**
+    1. **Exact match:** Find method by exact name (development environment).
+    2. **Heuristic match:** Case-insensitive + substring search (similar methods).
+    3. **Signature match:** Match by parameter types + return type (last resort).
+  - **Cache:** `ConcurrentHashMap` for both exact and signature results.
+  - **Obfuscation Detection:** Automatically detects dev vs production environment.
+  - Integrated into `DynamicJavaProxy.findMethodCached()` called when exact match fails.
+- **Integration Points:**
   - `UniversalEventForwarder`: wrap NeoForge events → Lua (auto proxy)
-  - `EntitiesLuaBinding`: fallback proxy cho unknown entity properties
-  - `InteractionLuaBinding`: fallback proxy cho unknown block/item properties
-- **Khi nào dùng:**
-  - ✅ Event objects (raw NeoForge events)
-  - ✅ Modded properties không có trong manual wrapper
-  - ✅ Arbitrary Java objects từ interop (cross-mod: GregTech, Create, Mekanism)
-  - ❌ KHÔNG dùng cho core APIs đã có manual wrapper (Entity/Player/Block/Item hot paths)
-- **Performance:** Cache `ConcurrentHashMap<Class<?>, Map<String, Method>>` cho method lookup. Benchmark target: < 2x manual wrapper.
+  - `EntitiesLuaBinding`: fallback proxy for unknown entity properties
+  - `InteractionLuaBinding`: fallback proxy for unknown block/item properties
+- **When to Use:**
+  - Raw NeoForge event objects
+  - Modded properties not covered by manual wrappers
+  - Arbitrary Java objects from cross-mod interop (GregTech, Create, Mekanism)
+  - NOT for core APIs with manual wrappers (Entity/Player/Block/Item hot paths)
+- **Performance:** Cached via `ConcurrentHashMap<Class<?>, Map<String, Method>>`. Target benchmark: < 2x manual wrapper overhead.
 
 ---
 
-# Project Structure (Hiện Tại)
+# Project Structure (Current)
 
 | Module | Role | Depends On |
 |---|---|---|
@@ -391,7 +423,8 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 | `modules/module-client/` | GuiService, ClientEffects, keybinds, RunService | `common-api`, `core-engine` |
 | `modules/module-storage/` | World/player/session data stores | `common-api`, `core-engine` |
 | `modules/module-tasks/` | Task scheduler bridge | `common-api`, `core-engine` |
-| `modules/module-math/` | Vector3/Vector2/Color3, math/string extensions | `common-api`, `core-engine` |
+| `modules/module-math/` | Vector3/Vector2/Color3, math/string extensions, `Curve` path samplers | `common-api`, `core-engine` |
+| `modules/module-text/` | Minecraft text component builder (literal/translate/keybind/score, styles, JSON/legacy) | `common-api`, `core-engine` |
 | `modules/module-interception/` | Anvil/brewing/trade interception | `common-api`, `core-engine` |
 | `modules/module-loot/` | Loot table manipulation (mob drops, chest loot, block drops, fishing) | `common-api`, `core-engine` |
 | `modules/module-update/` | Declarative update checker (https-only feeds) + permission-gated `Net:HttpGet` (`net.http`) | `common-api`, `core-engine` |
@@ -442,17 +475,17 @@ Dev workspace: `neoforge-platform/luamods/` → synced to `run/luamods/` by `syn
 
 # Lua Script Style — Roblox (Luau) Convention
 
-- `local` mọi biến; **CẤM** implicit globals (trừ API engine cung cấp).
-- Colon method: `object:method()`, chain tối đa ~3.
-- Banner `-- ==== SECTION ====`, 4 spaces indent, max 120 chars, break trước operator.
-- EmmyLua annotations cho hàm public: `---@param player Player`, `---@return boolean` (dùng class stub `Player`/`Entity`).
+- `local` on all variables; implicit globals are STRICTLY BANNED (except engine-injected APIs).
+- Colon method call: `object:method()`, chain up to ~3 calls max.
+- Banner `-- ==== SECTION ====`, 4 spaces indent, max 120 chars, line break before operators.
+- EmmyLua annotations for public functions: `---@param player Player`, `---@return boolean` (use class stubs `Player`/`Entity`).
 - Naming: local `camelCase`, API export `PascalCase`, constants `UPPER_SNAKE_CASE`, boolean `is*/has*/can*`, callback `on*`.
-- **CẤM**: `goto`, biến 1 ký tự (trừ `i`), concat chuỗi lớn (dùng `[[ ]]` / `table.concat`).
-- Thứ tự script: banner → `require` → config (`mod:GetConfig()`) → constants → private functions → public API → final `print()`.
+- BANNED: `goto`, single-letter variables (except `i`), massive string concatenation (use `[[ ]]` / `table.concat`).
+- Script order: banner → `require` → config (`mod:GetConfig()`) → constants → private functions → public API → final `print()`.
 
 ---
 
-# In-Game Commands (Thực Tế)
+# In-Game Commands
 
 - `/lt reload` — hot-reload Lua, regenerate stubs, re-apply recipes
 - `/lt doctor` — health diagnostics: mods + per-mod load errors + engine/service status
@@ -463,23 +496,23 @@ Dev workspace: `neoforge-platform/luamods/` → synced to `run/luamods/` by `syn
 
 ---
 
-# Runtime Architecture Notes (Bắt Buộc Nắm)
+# Runtime Architecture Notes
 
-- **PAL** (`Platform`) — singleton abstraction, set một lần tại mod init.
-- **LuaBinder** — auto-binding từ interface; interface là single source of truth (binding + stubs + docs).
+- **PAL** (`Platform`) — singleton abstraction, set once at mod initialization.
+- **LuaBinder** — auto-binding from interfaces; interface is the single source of truth (bindings + stubs + docs).
 - **Event bus** — shared map, replace semantics, cross-engine dispatch.
 - **Item/Block handlers** — server-side only dispatch.
-- **`LuavaEngine`** — luava 0.2.7 (Lua 5.4) implementation của `ILuaEngine`; synchronized VM entry points; `getAndClearLastExecutionError()` cho per-mod load error tracking; `task._run_deferred` tạo `LuaCoroutine` trên virtual thread và chờ bounded (2s) để không treo tick.
-- **`Signal:FireSync`** — đồng bộ, dùng cho render; `Signal:Fire` — async qua task.
-- **Clientbound network** — dispatch qua network service của active engine.
-- **ProjectileRegistry** — custom projectile definitions thật (damage/explosionPower được áp dụng).
-- **Lua execution stages**: `startup` (content registration) → `server` (runtime) → `client` (HUD/keybind) — tất cả qua `main.lua` require; reload dựng engine mới + re-load mods.
+- **`LuavaEngine`** — luava 0.2.7 (Lua 5.4) implementation of `ILuaEngine`; synchronized VM entry points; `getAndClearLastExecutionError()` for per-mod load error tracking; `task._run_deferred` creates `LuaCoroutine` on virtual threads and waits bounded (2s) to avoid tick stalling.
+- **`Signal:FireSync`** — synchronous, for render; `Signal:Fire` — asynchronous via task scheduler.
+- **Clientbound network** — dispatched through the network service of the active engine.
+- **ProjectileRegistry** — real custom projectile definitions (damage/explosionPower applied).
+- **Lua execution stages**: `startup` (content registration) → `server` (runtime) → `client` (HUD/keybind) — all required via `main.lua`; reload instantiates a fresh engine + re-loads mods.
 
 ---
 
 # Test Quirks
 
-- Tests dùng `Mock*` interface — không cần Minecraft runtime.
-- `AsyncFileLogger` shutdown trong `@AfterAll`.
-- `EngineTest.findScriptFile()` — relative path + fallback `../../` cho IDE vs CLI.
-- Mỗi module có `build.gradle` riêng với junit deps; module mới cần thêm test deps nếu chưa có.
+- Tests use `Mock*` interfaces — no Minecraft runtime required.
+- `AsyncFileLogger` shuts down in `@AfterAll`.
+- `EngineTest.findScriptFile()` — relative path + fallback `../../` for IDE vs CLI parity.
+- Every module has its own `build.gradle` with JUnit dependencies; new modules must add test dependencies if needed.

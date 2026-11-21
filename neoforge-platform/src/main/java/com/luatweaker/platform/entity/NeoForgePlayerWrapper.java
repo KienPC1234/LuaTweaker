@@ -1,6 +1,8 @@
 package com.luatweaker.platform.entity;
 
 import com.luatweaker.api.entity.IPlayer;
+import com.luatweaker.api.text.TextSpec;
+import com.luatweaker.platform.text.TextComponentConverter;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -10,6 +12,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import org.jetbrains.annotations.NotNull;
 
 public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPlayer {
     private static final String AIR_ITEM_ID = "minecraft:air";
@@ -37,6 +40,53 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
     }
 
     @Override
+    public void sendText(TextSpec text) {
+        if (player != null && text != null) {
+            player.sendSystemMessage(TextComponentConverter.toComponent(text));
+        }
+    }
+
+    @Override
+    public void sendActionBarText(TextSpec text) {
+        if (player != null && text != null) {
+            player.displayClientMessage(TextComponentConverter.toComponent(text), true);
+        }
+    }
+
+    @Override
+    public void sendTitleText(TextSpec title, TextSpec subtitle, int fadeInTicks,
+                              int stayTicks, int fadeOutTicks) {
+        if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            serverPlayer.connection.send(new net.minecraft.network.protocol.game
+                    .ClientboundSetTitlesAnimationPacket(fadeInTicks, stayTicks, fadeOutTicks));
+            if (subtitle != null) {
+                serverPlayer.connection.send(new net.minecraft.network.protocol.game
+                        .ClientboundSetSubtitleTextPacket(TextComponentConverter.toComponent(subtitle)));
+            }
+            if (title != null) {
+                serverPlayer.connection.send(new net.minecraft.network.protocol.game
+                        .ClientboundSetTitleTextPacket(TextComponentConverter.toComponent(title)));
+            }
+        }
+    }
+
+    @Override
+    public int getPing() {
+        return player instanceof net.minecraft.server.level.ServerPlayer serverPlayer
+                ? serverPlayer.connection.latency() : 0;
+    }
+
+    @Override
+    public boolean kick(String reason) {
+        if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            String message = reason == null || reason.isBlank() ? "Disconnected" : reason;
+            serverPlayer.connection.disconnect(Component.literal(message));
+            return true;
+        }
+        return false;
+    }
+
+    @Override
     public String getName() {
         return player != null ? player.getName().getString() : "Unknown";
     }
@@ -54,6 +104,35 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
     @Override
     public boolean isCreative() {
         return player != null && player.isCreative();
+    }
+
+    @Override
+    public boolean hasPermissionLevel(int level) {
+        if (!(player instanceof net.minecraft.server.level.ServerPlayer serverPlayer)) {
+            return false;
+        }
+        net.minecraft.server.MinecraftServer server = serverPlayer.server;
+        if (server == null) {
+            return false;
+        }
+        net.minecraft.server.players.ServerOpListEntry entry =
+                server.getPlayerList().getOps().get(serverPlayer.getGameProfile());
+        int granted = entry == null ? 0 : entry.getLevel();
+        return granted >= level;
+    }
+
+    @Override
+    public String getGameMode() {
+        if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            return serverPlayer.gameMode.getGameModeForPlayer().getName();
+        }
+        if (player == null) {
+            return "SURVIVAL";
+        }
+        if (player.isSpectator()) {
+            return "SPECTATOR";
+        }
+        return player.isCreative() ? "CREATIVE" : "SURVIVAL";
     }
 
     private static ResourceLocation parseItemLocation(String itemId) {
@@ -352,6 +431,125 @@ public class NeoForgePlayerWrapper extends NeoForgeEntityWrapper implements IPla
                     "LuaTweaker:CloseScreen",
                     "{}"
             );
+        }
+    }
+
+    @Override
+    public void setGameMode(@NotNull String gameMode) {
+        if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            net.minecraft.world.level.GameType type = switch (gameMode.toUpperCase(java.util.Locale.ROOT)) {
+                case "CREATIVE" -> net.minecraft.world.level.GameType.CREATIVE;
+                case "ADVENTURE" -> net.minecraft.world.level.GameType.ADVENTURE;
+                case "SPECTATOR" -> net.minecraft.world.level.GameType.SPECTATOR;
+                default -> net.minecraft.world.level.GameType.SURVIVAL;
+            };
+            serverPlayer.setGameMode(type);
+        }
+    }
+
+    @Override
+    public boolean canFly() {
+        return player != null && player.getAbilities().mayfly;
+    }
+
+    @Override
+    public void setCanFly(boolean canFly) {
+        if (player != null) {
+            player.getAbilities().mayfly = canFly;
+            player.onUpdateAbilities();
+        }
+    }
+
+    @Override
+    public void setFlying(boolean flying) {
+        if (player != null) {
+            player.getAbilities().flying = flying;
+            player.onUpdateAbilities();
+        }
+    }
+
+    @Override
+    public int getLevel() {
+        return player != null ? player.experienceLevel : 0;
+    }
+
+    @Override
+    public void setLevel(int level) {
+        if (player != null) {
+            player.experienceLevel = level;
+        }
+    }
+
+    @Override
+    public float getExperienceProgress() {
+        return player != null ? player.experienceProgress : 0.0f;
+    }
+
+    @Override
+    public void setExperienceProgress(float progress) {
+        if (player != null) {
+            player.experienceProgress = progress;
+        }
+    }
+
+    @Override
+    public int getTotalExperience() {
+        return player != null ? player.totalExperience : 0;
+    }
+
+    @Override
+    public int getSelectedSlot() {
+        return player != null ? player.getInventory().selected : 0;
+    }
+
+    @Override
+    public void setSelectedSlot(int slot) {
+        if (player != null && slot >= 0 && slot < 9) {
+            player.getInventory().selected = slot;
+        }
+    }
+
+    @Override
+    public boolean hasItemCooldown(@NotNull String itemId) {
+        if (player != null) {
+            ResourceLocation rl = ResourceLocation.tryParse(itemId);
+            if (rl != null && BuiltInRegistries.ITEM.containsKey(rl)) {
+                return player.getCooldowns().isOnCooldown(BuiltInRegistries.ITEM.get(rl));
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public void setItemCooldown(@NotNull String itemId, int ticks) {
+        if (player != null) {
+            ResourceLocation rl = ResourceLocation.tryParse(itemId);
+            if (rl != null && BuiltInRegistries.ITEM.containsKey(rl)) {
+                player.getCooldowns().addCooldown(BuiltInRegistries.ITEM.get(rl), ticks);
+            }
+        }
+    }
+
+    @Override
+    public @org.jetbrains.annotations.Nullable java.util.Map<String, Object> getInventorySlot(int slot) {
+        if (player != null && slot >= 0 && slot < player.getInventory().getContainerSize()) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            return stack.isEmpty() ? null : describeStack(stack);
+        }
+        return null;
+    }
+
+    @Override
+    public void setInventorySlot(int slot, @NotNull String itemId, int count) {
+        if (player != null && slot >= 0 && slot < player.getInventory().getContainerSize()) {
+            if (itemId.isBlank() || AIR_ITEM_ID.equalsIgnoreCase(itemId)) {
+                player.getInventory().setItem(slot, ItemStack.EMPTY);
+                return;
+            }
+            ResourceLocation rl = ResourceLocation.tryParse(itemId);
+            if (rl != null && BuiltInRegistries.ITEM.containsKey(rl)) {
+                player.getInventory().setItem(slot, new ItemStack(BuiltInRegistries.ITEM.get(rl), Math.max(1, count)));
+            }
         }
     }
 }

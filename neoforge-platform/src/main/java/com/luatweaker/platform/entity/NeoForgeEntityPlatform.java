@@ -138,6 +138,14 @@ public class NeoForgeEntityPlatform implements IPlatformEntity {
     @Override
     @Nullable
     public Object spawnEntity(@NotNull String entityId, double x, double y, double z) {
-        return com.luatweaker.platform.interaction.EntityInteractionHelper.spawnEntity(entityId, x, y, z);
+        return com.luatweaker.platform.interaction.EntitySpawner.spawnEntity(entityId, x, y, z);
+    }
+
+    @Override
+    @Nullable
+    public Object spawnEntityFromNbt(@NotNull String dimension, double x, double y, double z,
+                                     @NotNull String nbtJson) {
+        return com.luatweaker.platform.interaction.EntitySpawner.spawnFromNbt(
+                dimension, x, y, z, nbtJson);
     }
 }

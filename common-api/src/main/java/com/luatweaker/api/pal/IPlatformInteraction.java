@@ -115,6 +115,17 @@ public interface IPlatformInteraction {
                                int count, double speed) {}
 
     /**
+     * Spawns a particle that requires options (dust/block/item). Platforms that do not
+     * implement option particles fail loudly instead of silently dropping the request.
+     */
+    default void spawnParticleOptions(@NotNull String dimension, @NotNull String particleId,
+                                      @NotNull com.luatweaker.api.particle.ParticleSpawn spawn,
+                                      @NotNull com.luatweaker.api.particle.ParticleOptionsSpec options) {
+        throw new UnsupportedOperationException(
+                "This platform does not support particle options (requested '" + particleId + "')");
+    }
+
+    /**
      * Plays a sound for every player in the dimension.
      *
      * <p>Default is a no-op for platforms/test doubles without audio; the NeoForge

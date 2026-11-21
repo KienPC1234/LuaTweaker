@@ -33,10 +33,12 @@ if demoCfg.enabled == false then
     return true
 end
 
-local showPanel = demoCfg.open_by_default
-if showPanel == nil then
+-- Do not show by default; triggered via item or /arcane command
+local showPanel = false
+if demoCfg.open_by_default == true then
     showPanel = true
 end
+
 local flow = tonumber(demoCfg.default_flow) or 50.0
 local label = "arcane"
 local mode = 1
@@ -50,27 +52,76 @@ if demoCfg.locked == true then
     PANEL_FLAGS = "NoCollapse,MenuBar,NoResize,NoMove"
 end
 
+local function togglePanel()
+    showPanel = not showPanel
+    ImGui:SetScreen(showPanel)
+    print("[LuaTweakerTest] Arcane Panel: " .. (showPanel and "Opened" or "Closed"))
+end
+
+-- Network trigger from item right-click or server command
+local Network = require("LuaTweaker.Network")
+if Network then
+    local toggleEvent = Network:GetOrCreateRemoteEvent("ToggleArcanePanel")
+    if toggleEvent and toggleEvent.OnClientEvent then
+        toggleEvent.OnClientEvent:Connect(function()
+            togglePanel()
+        end)
+    end
+end
+
+-- Client-side item use trigger
+local Events = require("LuaTweaker.Events")
+if Events and Events.Listen then
+    Events:Listen("ItemRightClick", function(event)
+        local id = event.itemId or event.item or (event.itemStack and event.itemStack.id)
+        if id == "luatweaker_test:arcane_device" then
+            togglePanel()
+        end
+    end)
+end
+
 ImGui.OnFrame:Connect(function()
+    if not showPanel then
+        return
+    end
+
     showPanel = ImGui:Begin("Arcane Panel", showPanel, PANEL_FLAGS)
     if not showPanel then
+        ImGui:SetScreen(false)
         ImGui:End()
         return
     end
+
     if ImGui:BeginTabBar("PanelTabs") then
         if ImGui:BeginTabItem("Controls") then
             ImGui:Text("Advanced controls served fresh every frame.")
             ImGui:Separator()
+
+            -- Arrow buttons to step flow
+            if ImGui:ArrowButton("flow_down", "Left") then
+                flow = math.max(0.0, flow - 5.0)
+            end
+            ImGui:SameLine()
+            if ImGui:ArrowButton("flow_up", "Right") then
+                flow = math.min(100.0, flow + 5.0)
+            end
+            ImGui:SameLine()
+            ImGui:Text("Step Flow: " .. string.format("%.1f", flow))
+
             flow = ImGui:SliderFloat("Mana flow", flow, 0.0, 100.0)
-            ImGui:ProgressBar(flow / 100.0, MODES[mode] or "")
+            ImGui:ProgressBar(flow / 100.0, (MODES[mode] or "") .. " (" .. string.format("%.1f", flow) .. "%)", 220.0, 20.0)
+
             if ImGui:CollapsingHeader("Tuning") then
                 label = ImGui:InputText("Label", label)
                 mode = ImGui:ListBox("Mode", mode, MODES)
             end
+
             flowHistory[#flowHistory + 1] = flow
             if #flowHistory > 60 then
                 table.remove(flowHistory, 1)
             end
             ImGui:PlotLines("Flow history", flowHistory)
+
             ImGui:BeginDisabled(flow <= 0)
             if ImGui:Button("Pulse!") then
                 presses = presses + 1
@@ -81,8 +132,15 @@ ImGui.OnFrame:Connect(function()
             end
             ImGui:SameLine()
             ImGui:Text("pulses: " .. presses)
+
+            ImGui:Separator()
+            if ImGui:Button("Close Panel (Return to Game)") then
+                showPanel = false
+                ImGui:SetScreen(false)
+            end
             ImGui:EndTabItem()
         end
+
         if ImGui:BeginTabItem("Kit") then
             if ImGui:BeginTable("KitTable", 2, "RowBg,Borders") then
                 ImGui:TableSetupColumn("Icon")
@@ -92,6 +150,7 @@ ImGui.OnFrame:Connect(function()
                     { icon = "luatweaker_test:crystal_sword", name = "Crystal Sword x1" },
                     { icon = "luatweaker_test:mana_potion", name = "Mana Potion x3" },
                     { icon = "luatweaker_test:crystal_detector", name = "Crystal Detector x1" },
+                    { icon = "luatweaker_test:arcane_device", name = "Arcane Device x1" }
                 }
                 for i = 1, #kit do
                     ImGui:TableNextRow()
@@ -123,6 +182,7 @@ ImGui.OnFrame:Connect(function()
             ImGui:Text("Picked: " .. pickedItem)
             ImGui:EndTabItem()
         end
+
         if ImGui:BeginTabItem("FX") then
             ImGui:Text("Live atlas sprite (animates itself):")
             local uv = ImGui:GetSpriteUv("minecraft:textures/atlas/blocks.png", "minecraft:block/fire_0")
@@ -136,8 +196,10 @@ ImGui.OnFrame:Connect(function()
             ImGui:Text("Left: blocks atlas, right: static GUI texture.")
             ImGui:EndTabItem()
         end
+
         ImGui:EndTabBar()
     end
+
     if ImGui:BeginMenuBar() then
         if ImGui:BeginMenu("Panel") then
             ImGui:MenuItem("Version: " .. ImGui:GetVersion(), "", false, false)
@@ -145,7 +207,8 @@ ImGui.OnFrame:Connect(function()
         end
         ImGui:EndMenuBar()
     end
+
     ImGui:End()
 end)
 
-print("[LuaTweakerTest] ImGui demo loaded: Arcane Panel renders every frame")
+print("[LuaTweakerTest] ImGui demo loaded: use /arcane, /imgui or right-click Arcane Device to open")

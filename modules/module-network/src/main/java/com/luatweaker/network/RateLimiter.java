@@ -11,8 +11,12 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 final class RateLimiter {
 
-    /** Number of per-player buckets kept before idle ones are evicted. */
-    private static final int MAX_BUDGET_ENTRIES = 4_096;
+    /**
+     * Number of per-key buckets kept before idle ones are evicted. Keys are
+     * per player and per (player, channel), so the cap covers players times
+     * channels; overflow clears (a blunt memory backstop, never a signal).
+     */
+    private static final int MAX_BUDGET_ENTRIES = 16_384;
     private static final double TOKENS_PER_REQUEST = 1.0;
 
     private final Map<String, TokenBucket> rpcBudgets = new ConcurrentHashMap<>();
@@ -32,6 +36,30 @@ final class RateLimiter {
             budgets.clear();
         }
         return budgets.computeIfAbsent(key, ignored -> new TokenBucket(burst, refillPerSecond)).tryConsume();
+    }
+
+    /**
+     * Drops every bucket attributed to a player: their bare UUID keys, their
+     * per-channel keys, and their server-to-client keys. Called on logout so
+     * offline UUIDs never pin buckets (and a rejoin starts from full budgets
+     * instead of inheriting a drained one). Global keys
+     * ({@code srv-broadcast}, {@code local-client}) are shared and stay.
+     */
+    void evictPlayer(String playerUuid) {
+        if (playerUuid == null || playerUuid.isBlank()) {
+            return;
+        }
+        evictMatching(rpcBudgets, playerUuid);
+        evictMatching(eventBudgets, playerUuid);
+    }
+
+    private static void evictMatching(Map<String, TokenBucket> budgets, String playerUuid) {
+        String channelPrefix = playerUuid + '\0';
+        String outboundPrefix = "srv->" + playerUuid;
+        budgets.keySet().removeIf(key -> key.equals(playerUuid)
+                || key.startsWith(channelPrefix)
+                || key.equals(outboundPrefix)
+                || key.startsWith(outboundPrefix + '\0'));
     }
 
     private static final class TokenBucket {

@@ -302,6 +302,10 @@ Machine blocks can define container layouts with slots, FE/fluid bars, interacti
 |---|---|---|
 | `:Container(rows, cols, dropMode)` | `rows: int, cols: int, dropMode: "spill"|"packed"|"none"` | Turns block into a container |
 | `:SlotPosition(slot, x, y)` | `slot: int, x: int, y: int` | Positions a slot on the screen |
+| `:ManualSlots()` | — | Skips the automatic grid: only slots with an explicit `:SlotPosition` join the menu (machine GUIs with a few hand-placed slots); storage and panel size stay unchanged |
+| `:GuiBar(id, x, y, w, h, source, color[, anchor])` | `anchor: "topleft"|"top"|"topright"|"left"|"center"|"right"|"bottomleft"|"bottom"|"bottomright" (default "topleft")` | Adds a fill bar widget (x/y become offsets from the anchor) |
+| `:Button(id, x, y, w, h, text[, anchor])` | `anchor: same set (default "topleft")` | Adds a clickable button (x/y become offsets from the anchor) |
+| `:Label(x, y, text[, color, align, scale, shadow])` | `align: "left"|"center"|"right" (default "left")`, `scale: 0.5..3.0 (default 1.0)`, `shadow: boolean`; `\n` = multi-line, `{Key}` = synced value placeholder | Adds a text label |
 | `:GuiBar(id, x, y, w, h, source, color)` | `id: str, x: int, y: int, w: int, h: int, source: "energy"|"fluid"|"progress", color: int` | Adds a fill bar widget |
 | `:Button(id, x, y, w, h, text)` | `id: str, x: int, y: int, w: int, h: int, text: str` | Adds a clickable button |
 | `:Label(x, y, text, [color])` | `x: int, y: int, text: str, color: int` | Adds text label |
@@ -314,12 +318,13 @@ local Content = require("LuaTweaker.Content")
 local Infuser = Content.NewBlock("mymod:infuser")
     :DisplayName("Arcane Infuser")
     :Container(3, 9, "spill")
+    :ManualSlots()
     :ContainerTitle("Arcane Infuser")
     :SlotPosition(0, 44, 30)
     :SlotPosition(1, 116, 30)
     :GuiBar("energy_bar", 8, 20, 16, 50, "energy", 0xAA0000)
     :Button("start_btn", 68, 30, 40, 20, "Start")
-    :Label(68, 55, "Ready", 0x44FF44)
+    :Label(0, 54, "Ready", 0x44FF44, "center")
     :OnButtonClick(function(blockPos, buttonId)
         if buttonId == "start_btn" then
             print("Process started at " .. blockPos.X .. ", " .. blockPos.Y .. ", " .. blockPos.Z)
@@ -431,6 +436,7 @@ Define proprietary resource meters (Heat, Pressure, Mana, Flux, Steam) in Contai
 local Machine = Content.NewBlock("arcane_reactor")
     :DisplayName("Arcane Reactor")
     :Container(3, 9, "spill")
+    :ManualSlots()
     :SlotPosition(0, 44, 30)
     :SlotPosition(1, 116, 30)
     -- Custom resource bar synchronized automatically via Container DataSlots

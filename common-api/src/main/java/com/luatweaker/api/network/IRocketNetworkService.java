@@ -4,6 +4,7 @@ import com.luatweaker.api.annotation.LuaDoc;
 import com.luatweaker.api.doc.LuaDocFragments;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
+import org.jetbrains.annotations.NotNull;
 
 @LuaDoc(description = "Rocket Network Service for managing client-server packet channels, RemoteEvents, and RemoteFunctions.")
 public interface IRocketNetworkService {
@@ -19,6 +20,14 @@ public interface IRocketNetworkService {
 
     @LuaDoc(description = "Fires a remote event from server to all players.", params = {LuaDocFragments.Network.CHANNEL_NAME, LuaDocFragments.Network.ARGS_TABLE})
     void FireAllClients(String channelName, ILuaValue... args);
+
+    @LuaDoc(description = "Fires a remote event from server to a player list (one encode, fan-out).",
+            params = {LuaDocFragments.Network.CHANNEL_NAME, "playerUuids: table", LuaDocFragments.Network.ARGS_TABLE})
+    void FireClients(String channelName, java.util.@NotNull List<String> playerUuids, ILuaValue... args);
+
+    @LuaDoc(description = "Fires a remote event from server to all players except one.",
+            params = {LuaDocFragments.Network.CHANNEL_NAME, LuaDocFragments.Network.PLAYER_UUID, LuaDocFragments.Network.ARGS_TABLE})
+    void FireAllClientsExcept(String channelName, String excludedPlayerUuid, ILuaValue... args);
 
     @LuaDoc(description = "Fires a remote event from client to server.", params = {LuaDocFragments.Network.CHANNEL_NAME, LuaDocFragments.Network.ARGS_TABLE})
     void FireServer(String channelName, ILuaValue... args);

@@ -66,6 +66,11 @@ class ItemLuaBindingTest {
                 assert(testItem.Id == "minecraft:arrow", "item id mismatch")
                 assert(testItem.Count == 64, "item count mismatch")
                 assert(testItem.Slot == 5, "item slot mismatch")
+                assert(testItem:getId() == "minecraft:arrow", "item:getId method mismatch")
+                assert(testItem:GetId() == "minecraft:arrow", "item:GetId method mismatch")
+                assert(testItem.Rarity == "COMMON", "rarity mismatch")
+                assert(testItem.MaxStackSize == 64, "max stack size mismatch")
+                assert(testItem.IsEmpty == false, "isEmpty mismatch")
                 """, "test_item_props"),
                 "a wrapped item must expose its id, count and slot as Lua properties");
     }

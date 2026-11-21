@@ -7,10 +7,13 @@ import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Map;
+
 public class NeoForgeInteractableItem implements IInteractableItem {
     private final Object owner;
     private int slot;
     private final ItemStack directStack;
+    private final ItemEnchantmentOps enchantmentOps;
 
     public NeoForgeInteractableItem(@NotNull Object owner, int slot) {
         this(owner, slot, null);
@@ -20,6 +23,7 @@ public class NeoForgeInteractableItem implements IInteractableItem {
         this.owner = owner;
         this.slot = slot;
         this.directStack = directStack;
+        this.enchantmentOps = new ItemEnchantmentOps(owner);
     }
 
     public NeoForgeInteractableItem(@NotNull ItemStack directStack) {
@@ -167,6 +171,26 @@ public class NeoForgeInteractableItem implements IInteractableItem {
     }
 
     @Override
+    public @NotNull Map<String, Integer> getEnchantments() {
+        return enchantmentOps.all(getItemStack());
+    }
+
+    @Override
+    public int getEnchantmentLevel(@NotNull String enchantmentId) {
+        return enchantmentOps.level(getItemStack(), enchantmentId);
+    }
+
+    @Override
+    public boolean applyEnchantment(@NotNull String enchantmentId, int level) {
+        return enchantmentOps.apply(getItemStack(), enchantmentId, level);
+    }
+
+    @Override
+    public boolean removeEnchantment(@NotNull String enchantmentId) {
+        return enchantmentOps.remove(getItemStack(), enchantmentId);
+    }
+
+    @Override
     @NotNull
     public String getNbt() {
         ItemStack stack = getItemStack();
@@ -205,6 +229,104 @@ public class NeoForgeInteractableItem implements IInteractableItem {
     public void setAttribute(@NotNull String key, @NotNull String value) {
         ItemStackAccess.setAttribute(getItemStack(), key, value);
     }
+
+    @Override
+    public @NotNull java.util.List<String> getLore() {
+        ItemStack stack = getItemStack();
+        var itemLore = stack.get(net.minecraft.core.component.DataComponents.LORE);
+        if (itemLore == null) {
+            return java.util.List.of();
+        }
+        java.util.List<String> res = new java.util.ArrayList<>();
+        for (net.minecraft.network.chat.Component comp : itemLore.lines()) {
+            res.add(comp.getString());
+        }
+        return res;
+    }
+
+    @Override
+    public void setLore(@NotNull java.util.List<String> lore) {
+        ItemStack stack = getItemStack();
+        if (!stack.isEmpty()) {
+            java.util.List<net.minecraft.network.chat.Component> components = new java.util.ArrayList<>();
+            for (String line : lore) {
+                components.add(net.minecraft.network.chat.Component.literal(line));
+            }
+            stack.set(net.minecraft.core.component.DataComponents.LORE,
+                    new net.minecraft.world.item.component.ItemLore(components));
+        }
+    }
+
+    @Override
+    public void addLore(@NotNull String line) {
+        java.util.List<String> list = new java.util.ArrayList<>(getLore());
+        list.add(line);
+        setLore(list);
+    }
+
+    @Override
+    public @NotNull String getRarity() {
+        ItemStack stack = getItemStack();
+        return stack.isEmpty() ? "COMMON" : stack.getRarity().name();
+    }
+
+    @Override
+    public boolean hasGlint() {
+        ItemStack stack = getItemStack();
+        return !stack.isEmpty() && stack.hasFoil();
+    }
+
+    @Override
+    public int getMaxStackSize() {
+        ItemStack stack = getItemStack();
+        return stack.isEmpty() ? 64 : stack.getMaxStackSize();
+    }
+
+    @Override
+    public int getBurnTime() {
+        ItemStack stack = getItemStack();
+        if (stack.isEmpty()) {
+            return 0;
+        }
+        var fuelData = stack.getItemHolder().getData(
+                net.neoforged.neoforge.registries.datamaps.builtin.NeoForgeDataMaps.FURNACE_FUELS);
+        if (fuelData != null) {
+            return fuelData.burnTime();
+        }
+        return net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity.getFuel()
+                .getOrDefault(stack.getItem(), 0);
+    }
+
+    @Override
+    public boolean isFood() {
+        ItemStack stack = getItemStack();
+        return !stack.isEmpty() && stack.has(net.minecraft.core.component.DataComponents.FOOD);
+    }
+
+    @Override
+    public int getNutrition() {
+        ItemStack stack = getItemStack();
+        var food = stack.get(net.minecraft.core.component.DataComponents.FOOD);
+        return food != null ? food.nutrition() : 0;
+    }
+
+    @Override
+    public float getSaturation() {
+        ItemStack stack = getItemStack();
+        var food = stack.get(net.minecraft.core.component.DataComponents.FOOD);
+        return food != null ? food.saturation() : 0.0f;
+    }
+
+    @Override
+    public boolean isEmpty() {
+        return getItemStack().isEmpty();
+    }
+
+    @Override
+    public @NotNull IInteractableItem copy() {
+        return new NeoForgeInteractableItem(getItemStack().copy());
+    }
+
     @Override
     @NotNull
     public Object getRawItemStack() {

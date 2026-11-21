@@ -37,4 +37,13 @@ public interface IPlatformEntity {
 
     @Nullable
     Object spawnEntity(@NotNull String entityId, double x, double y, double z);
+
+    /**
+     * Restores an entity from a full NBT-JSON snapshot (see {@code IEntity.getNbt()}) at the given
+     * position and dimension. Returns the spawned raw entity, or {@code null} when no server is
+     * running, the dimension is unknown, or the snapshot is malformed.
+     */
+    @Nullable
+    Object spawnEntityFromNbt(@NotNull String dimension, double x, double y, double z,
+                              @NotNull String nbtJson);
 }

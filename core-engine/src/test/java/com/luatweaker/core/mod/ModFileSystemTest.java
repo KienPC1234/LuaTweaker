@@ -41,6 +41,9 @@ class ModFileSystemTest {
     private static final String RECIPE_PAYLOAD = "{\"target\":\"ruby_sword\",\"damage\":8}";
     private static final String RESULT_JSON = "output/result.json";    private static final String RAW_BIN = "data/raw.bin";
     private static final String BAD_JSON = "data/bad.json";
+    private static final String BROKEN_JSON_TEXT = "{broken json";
+    private static final String BAD_BIN = "data/bad.bin";
+    private static final String FALLBACK_KEY = "fallback";
     private static final String DIRECTORY_KEY = "directory";
     private static final String BIG_TXT = "big.txt";
     private static final String OUT_TXT = "out.txt";
@@ -61,7 +64,7 @@ class ModFileSystemTest {
 
         private IModFiles filesWithBinaries() throws IOException {
             scenarios.writeModBytes(RAW_BIN, BINARY_PAYLOAD);
-            scenarios.writeModBytes("data/bad.bin", INVALID_UTF8);
+            scenarios.writeModBytes(BAD_BIN, INVALID_UTF8);
             return scenarios.readHandle();
         }
 
@@ -99,7 +102,7 @@ class ModFileSystemTest {
             IModFiles files = filesWithBinaries();
             Base64.getDecoder().decode(files.readBase64(RAW_BIN));
             assertThrows(IllegalArgumentException.class,
-                    () -> files.readText("data/bad.bin"),
+                    () -> files.readText(BAD_BIN),
                     "invalid UTF-8 bytes must be rejected by readText");
         }
 
@@ -109,7 +112,7 @@ class ModFileSystemTest {
             Base64.getDecoder().decode(files.readBase64(RAW_BIN));
             IllegalArgumentException invalid;
             try {
-                files.readText("data/bad.bin");
+                files.readText(BAD_BIN);
 
                 throw new AssertionError(NOTHING_THROWN);
             } catch (IllegalArgumentException expectedFailure) {
@@ -681,7 +684,7 @@ class ModFileSystemTest {
 
         @Test
         void readJsonMalformedFailsLoudlyRejectsDataBadJson() throws IOException {
-            scenarios.writeModFile(BAD_JSON, "{broken json");
+            scenarios.writeModFile(BAD_JSON, BROKEN_JSON_TEXT);
             IModFiles files = scenarios.readHandle();
             assertThrows(IllegalArgumentException.class,
                     () -> files.readJson(BAD_JSON),
@@ -690,7 +693,7 @@ class ModFileSystemTest {
 
         @Test
         void readJsonMalformedFailsLoudlyReadJson() throws IOException {
-            scenarios.writeModFile(BAD_JSON, "{broken json");
+            scenarios.writeModFile(BAD_JSON, BROKEN_JSON_TEXT);
             IModFiles files = scenarios.readHandle();
             IllegalArgumentException ex;
             try {
@@ -701,6 +704,105 @@ class ModFileSystemTest {
                 ex = expectedFailure;
             }
             assertTrue(ex.getMessage().contains("readJson"), ex.getMessage());
+        }
+    }
+
+    private ILuaTable fallbackTable(String marker) {
+        ILuaTable fallback = scenarios.engine.createTable();
+        fallback.rawset(FALLBACK_KEY, marker);
+        return fallback;
+    }
+
+    @Nested
+    class ReadJsonOrFiles {
+
+        @Test
+        void missingFileReturnsFallback() {
+            IModFiles files = scenarios.readHandle();
+            ILuaValue fallback = fallbackTable("shipped-default");
+            ILuaValue result = files.readJsonOr("data/nope.json", fallback);
+            assertEquals("shipped-default", result.asTable().rawget(FALLBACK_KEY).asString(),
+                    "a missing shipped file must yield the fallback instead of throwing");
+        }
+
+        @Test
+        void missingFileWithNullFallbackReturnsNil() {
+            IModFiles files = scenarios.readHandle();
+            assertTrue(files.readJsonOr("data/nope.json", null).isNil(),
+                    "a missing file with a nil fallback must yield nil instead of throwing");
+        }
+
+        @Test
+        void malformedJsonReturnsFallback() throws IOException {
+            scenarios.writeModFile(BAD_JSON, BROKEN_JSON_TEXT);
+            IModFiles files = scenarios.readHandle();
+            ILuaValue result = files.readJsonOr(BAD_JSON, fallbackTable("bad-default"));
+            assertEquals("bad-default", result.asTable().rawget(FALLBACK_KEY).asString(),
+                    "malformed JSON must yield the fallback instead of throwing");
+        }
+
+        @Test
+        void invalidUtf8ReturnsFallback() throws IOException {
+            scenarios.writeModBytes(BAD_BIN, INVALID_UTF8);
+            IModFiles files = scenarios.readHandle();
+            ILuaValue result = files.readJsonOr(BAD_BIN, fallbackTable("binary-default"));
+            assertEquals("binary-default", result.asTable().rawget(FALLBACK_KEY).asString(),
+                    "invalid UTF-8 bytes must yield the fallback instead of throwing");
+        }
+
+        @Test
+        void validJsonIgnoresFallback() throws IOException {
+            scenarios.writeModFile(RECIPES_JSON, RECIPE_PAYLOAD);
+            IModFiles files = scenarios.readHandle();
+            ILuaValue result = files.readJsonOr(RECIPES_JSON, fallbackTable("unused"));
+            assertEquals("ruby_sword", result.asTable().rawget("target").asString(),
+                    "a valid JSON file must decode normally and ignore the fallback");
+        }
+
+        @Test
+        void traversalStillThrowsWithFallback() {
+            IModFiles files = scenarios.readHandle();
+            assertThrows(IllegalArgumentException.class,
+                    () -> files.readJsonOr("../outside.json", fallbackTable("must-not-apply")),
+                    "a path-security violation must still throw even when a fallback is given");
+        }
+
+        @Test
+        void directoryStillThrowsWithFallback() throws IOException {
+            scenarios.writeModFile(DATA_A_TXT, "hello");
+            IModFiles files = scenarios.readHandle();
+            assertThrows(IllegalArgumentException.class,
+                    () -> files.readJsonOr(DATA_DIR, fallbackTable("must-not-apply")),
+                    "a directory path must still throw instead of yielding the fallback");
+        }
+    }
+
+    @Nested
+    class ReadJsonOrExports {
+
+        @Test
+        void exportsMissingReturnsFallback() {
+            IModExports exports = scenarios.exportHandle();
+            ILuaValue missing = exports.readJsonOr("saves/nope.json", fallbackTable("export-default"));
+            assertEquals("export-default", missing.asTable().rawget(FALLBACK_KEY).asString(),
+                    "a missing export file must yield the fallback instead of throwing");
+        }
+
+        @Test
+        void exportsMalformedReturnsFallback() throws IOException {
+            IModExports exports = scenarios.exportHandle();
+            exports.writeText(BAD_JSON, BROKEN_JSON_TEXT);
+            ILuaValue broken = exports.readJsonOr(BAD_JSON, fallbackTable("export-bad-default"));
+            assertEquals("export-bad-default", broken.asTable().rawget(FALLBACK_KEY).asString(),
+                    "a malformed export file must yield the fallback instead of throwing");
+        }
+
+        @Test
+        void exportsTraversalStillThrowsWithFallback() {
+            IModExports exports = scenarios.exportHandle();
+            assertThrows(IllegalArgumentException.class,
+                    () -> exports.readJsonOr("../../escape.json", fallbackTable("must-not-apply")),
+                    "an export path-security violation must still throw even with a fallback");
         }
     }
 

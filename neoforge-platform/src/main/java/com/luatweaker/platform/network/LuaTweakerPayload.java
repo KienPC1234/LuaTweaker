@@ -23,8 +23,8 @@ public record LuaTweakerPayload(String channelName, int index, int total, byte[]
 
     /** Longest accepted channel name; Lua event names are plain identifiers in practice. */
     public static final int MAX_CHANNEL_CHARS = 128;
-    /** Defensive bound on the declared frame size, matching the sender's chunk size. */
-    public static final int MAX_FRAME_BYTES = ChunkAssembler.CHUNK_BYTES;
+    /** Defensive bound on the declared frame size, tolerant of older 256 KiB senders. */
+    public static final int MAX_FRAME_BYTES = ChunkAssembler.MAX_FRAME_BYTES;
     public static final int MIN_FRAME_TOTAL = 1;
 
 

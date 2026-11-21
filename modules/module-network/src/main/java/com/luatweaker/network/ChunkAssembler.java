@@ -26,18 +26,34 @@ import java.util.function.LongSupplier;
  */
 public final class ChunkAssembler {
 
-    /** Bytes per frame. Kept well below the vanilla packet limit. */
-    public static final int CHUNK_BYTES = 262_144;
-    /** A message is at most this many frames. */
-    public static final int MAX_CHUNKS = 16;
+    /**
+     * Bytes per outbound frame. Conservative on purpose: small frames stay clear of
+     * the custom-payload ceilings enforced by vanilla, NeoForge and third-party
+     * Netty pipeline mods on every supported version, so a frame can never tear
+     * the connection down before {@link #accept} sees it.
+     */
+    public static final int CHUNK_BYTES = 32 * 1024;
+    /** Largest single frame the receiver accepts (older 256 KiB senders stay compatible). */
+    public static final int MAX_FRAME_BYTES = 256 * 1024;
+    /** A message is at most this many frames (32 KiB * 128 = 4 MiB, unchanged). */
+    public static final int MAX_CHUNKS = 128;
     /** Largest message that can be reassembled. */
     public static final int MAX_MESSAGE_BYTES = CHUNK_BYTES * MAX_CHUNKS;
-    /** Concurrent in-flight messages across every connection. */
-    public static final int MAX_ASSEMBLIES = 128;
+    /**
+     * Concurrent in-flight messages across every connection. Sized so a full
+     * server (100+ players each bursting their per-connection budget) never
+     * starves: 2048 slots of at most one 32 KiB parked chunk bound the
+     * slot-squatting cost while honest bursts always fit.
+     */
+    public static final int MAX_ASSEMBLIES = 2_048;
     /** Concurrent in-flight messages per connection. */
-    public static final int MAX_ASSEMBLIES_PER_KEY = 2;
-    /** An assembly nobody finishes is dropped after this long. */
-    public static final long TTL_NANOS = TimeUnit.SECONDS.toNanos(15);
+    public static final int MAX_ASSEMBLIES_PER_KEY = 4;
+    /**
+     * An assembly nobody finishes is dropped after this long. Chunks of one
+     * message travel back-to-back, so 5 s is plenty for honest lag and short
+     * enough that parked single-chunk assemblies cannot hold slots hostage.
+     */
+    public static final long TTL_NANOS = TimeUnit.SECONDS.toNanos(5);
     /** A message delivered in a single frame skips assembly entirely. */
     private static final int SINGLE_FRAME_CHUNKS = 1;
 
@@ -116,9 +132,9 @@ public final class ChunkAssembler {
         if (index < 0 || index >= total) {
             throw new IllegalArgumentException("Invalid chunk index " + index + " of " + total);
         }
-        if (data.length > CHUNK_BYTES) {
+        if (data.length > MAX_FRAME_BYTES) {
             throw new IllegalArgumentException(
-                    "Chunk is " + data.length + " bytes (max " + CHUNK_BYTES + ")");
+                    "Chunk is " + data.length + " bytes (max " + MAX_FRAME_BYTES + ")");
         }
     }
 

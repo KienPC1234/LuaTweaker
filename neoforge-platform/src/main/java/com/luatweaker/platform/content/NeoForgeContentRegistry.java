@@ -8,6 +8,7 @@ import com.luatweaker.platform.content.registrar.EntityLootDispatcher;
 import com.luatweaker.platform.content.registrar.EntityRegistrar;
 import com.luatweaker.platform.content.registrar.FluidRegistrar;
 import com.luatweaker.platform.content.registrar.ItemRegistrar;
+import com.luatweaker.platform.content.registrar.MobEffectRegistrar;
 import com.luatweaker.platform.content.registrar.TabRegistrar;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
@@ -49,6 +50,10 @@ public class NeoForgeContentRegistry {
     private final FluidRegistrar fluidRegistrar;
     private final EntityRegistrar entityRegistrar;
     private final TabRegistrar tabRegistrar;
+    private final MobEffectRegistrar mobEffectRegistrar = new MobEffectRegistrar();
+    private final Map<net.minecraft.resources.ResourceKey<?>,
+            java.util.function.Consumer<RegisterEvent>> registerHandlers =
+            new ConcurrentHashMap<>();
 
     public NeoForgeContentRegistry(IContentService contentService) {
         this.contentService = contentService;
@@ -61,6 +66,27 @@ public class NeoForgeContentRegistry {
                 NeoForgeContentRegistry::parseLocation);
         this.tabRegistrar = new TabRegistrar(contentService, createdItems, createdCustomTabs,
                 NeoForgeContentRegistry::parseLocation);
+
+        registerHandlers.put(Registries.ITEM, event -> {
+            itemRegistrar.registerItems(event);
+            blockRegistrar.registerBlockItems(event);
+            fluidRegistrar.registerFluidItems(event);
+            entityRegistrar.registerEntitySpawnEggs(event);
+        });
+        registerHandlers.put(Registries.BLOCK, event -> {
+            blockRegistrar.registerBlocks(event);
+            fluidRegistrar.registerFluidBlocks(event);
+        });
+        registerHandlers.put(Registries.FLUID, fluidRegistrar::registerFluids);
+        registerHandlers.put(Registries.ENTITY_TYPE, entityRegistrar::registerEntityTypes);
+        registerHandlers.put(Registries.BLOCK_ENTITY_TYPE,
+                blockRegistrar::registerContainerBlockEntities);
+        registerHandlers.put(Registries.MENU, blockRegistrar::registerContainerMenus);
+        registerHandlers.put(NeoForgeRegistries.Keys.FLUID_TYPES,
+                fluidRegistrar::registerFluidTypes);
+        registerHandlers.put(Registries.CREATIVE_MODE_TAB, tabRegistrar::registerCreativeTab);
+        registerHandlers.put(Registries.MOB_EFFECT, mobEffectRegistrar::registerMobEffects);
+        registerHandlers.put(Registries.POTION, mobEffectRegistrar::registerPotions);
 
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.register(new ContentGameBusListener(contentService));
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.register(
@@ -83,26 +109,10 @@ public class NeoForgeContentRegistry {
 
     @SubscribeEvent
     public void onRegister(RegisterEvent event) {
-        if (event.getRegistryKey().equals(Registries.ITEM)) {
-            itemRegistrar.registerItems(event);
-            blockRegistrar.registerBlockItems(event);
-            fluidRegistrar.registerFluidItems(event);
-            entityRegistrar.registerEntitySpawnEggs(event);
-        } else if (event.getRegistryKey().equals(Registries.BLOCK)) {
-            blockRegistrar.registerBlocks(event);
-            fluidRegistrar.registerFluidBlocks(event);
-        } else if (event.getRegistryKey().equals(Registries.FLUID)) {
-            fluidRegistrar.registerFluids(event);
-        } else if (event.getRegistryKey().equals(Registries.ENTITY_TYPE)) {
-            entityRegistrar.registerEntityTypes(event);
-        } else if (event.getRegistryKey().equals(Registries.BLOCK_ENTITY_TYPE)) {
-            blockRegistrar.registerContainerBlockEntities(event);
-        } else if (event.getRegistryKey().equals(Registries.MENU)) {
-            blockRegistrar.registerContainerMenus(event);
-        } else if (event.getRegistryKey().equals(NeoForgeRegistries.Keys.FLUID_TYPES)) {
-            fluidRegistrar.registerFluidTypes(event);
-        } else if (event.getRegistryKey().equals(Registries.CREATIVE_MODE_TAB)) {
-            tabRegistrar.registerCreativeTab(event);
+        java.util.function.Consumer<RegisterEvent> handler =
+                registerHandlers.get(event.getRegistryKey());
+        if (handler != null) {
+            handler.accept(event);
         }
     }
 

@@ -160,6 +160,9 @@ public final class FakePlatform {
             @Override public IPlayer getPlayer(String uuid) { return null; }
             @Override public List<IPlayer> getAllPlayers() { return List.of(); }
             @Override public Object spawnEntity(String entityId, double x, double y, double z) { return null; }
+
+            @Override public Object spawnEntityFromNbt(String dimension, double x, double y, double z,
+                                                       String nbtJson) { return null; }
         });
     }
 }

@@ -191,7 +191,7 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
         // energy/fluid). Real values always come from the Lua Container()/ContainerUseDistance()
         // builder via BlockBuilderImpl -> ContainerSpec -> CustomContainerBlock.
         return new ContainerSpec(DEFAULT_ROWS, DEFAULT_COLS, "packed", null, DEFAULT_USE_DISTANCE,
-                null, null, null, 0, 0, 0, 0, List.of(), null, false, null);
+                null, null, null, 0, 0, 0, 0, List.of(), null, false, null, false);
     }
 
     // ===== Machine state accessors (Lua + GUI DataSlots + capabilities) =====
@@ -653,17 +653,19 @@ public class CustomContainerBlockEntity extends BlockEntity implements Container
         int cols = DEFAULT_COLS;
         java.util.Map<Integer, int[]> slotPositions = null;
         java.util.Set<Integer> lockedSlots = null;
+        boolean manualSlots = false;
         if (level != null && level.getBlockState(worldPosition).getBlock() instanceof CustomContainerBlock container) {
             rows = container.getRows();
             cols = container.getCols();
             slotPositions = container.getSpec().slotPositions();
             lockedSlots = container.getSpec().lockedSlots();
+            manualSlots = container.getSpec().manualSlots();
             net.minecraft.resources.ResourceLocation id = net.minecraft.resources.ResourceLocation.tryParse(container.getContainerId());
             if (id != null) {
                 type = CustomContainerRegistry.CONTAINER_MENUS.get(id);
             }
         }
-        return new CustomContainerMenu(type, containerId, playerInventory, this, rows, cols, slotPositions, lockedSlots);
+        return new CustomContainerMenu(type, containerId, playerInventory, this, rows, cols, slotPositions, lockedSlots, manualSlots);
     }
 }
 

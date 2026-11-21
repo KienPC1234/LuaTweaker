@@ -147,7 +147,7 @@ public final class DimensionMobSpawner {
 
     private static void spawnGroup(ServerLevel level, String dimensionId, SpawnRequest request) {
         Optional<EntityType<?>> resolved =
-                com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(request.entity());
+                com.luatweaker.platform.interaction.EntitySpawner.resolveEntityType(request.entity());
         if (resolved.isEmpty()) {
             LuaTweakerLog.get().warn(LogStage.SYSTEM,
                     "Spawn handler for '" + dimensionId + "' references unknown entity '"
@@ -193,7 +193,7 @@ public final class DimensionMobSpawner {
     public static boolean spawnEntity(@NotNull ServerLevel level, @NotNull String dimensionId,
                                       @NotNull String entityId, @NotNull BlockPos pos) {
         Optional<EntityType<?>> resolved =
-                com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(entityId);
+                com.luatweaker.platform.interaction.EntitySpawner.resolveEntityType(entityId);
         if (resolved.isEmpty()) {
             LuaTweakerLog.get().warn(LogStage.SYSTEM,
                     "Cannot spawn unknown entity '" + entityId + "' in '" + dimensionId + "'");

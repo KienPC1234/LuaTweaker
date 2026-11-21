@@ -39,6 +39,11 @@ public final class JsonServiceImpl implements IJsonService {
     }
 
     @Override
+    public boolean isValid(@Nullable String json) {
+        return isValidJson(json);
+    }
+
+    @Override
     public @NotNull String encode(ILuaValue value, boolean pretty) {
         return encodeJson(value, pretty);
     }
@@ -60,6 +65,24 @@ public final class JsonServiceImpl implements IJsonService {
             return JsonToLuaDecoder.jsonToLua(engine, element);
         } catch (JsonSyntaxException e) {
             throw new IllegalArgumentException("Json.Decode failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Predicate version of {@link #decodeJson}: true when the string parses as JSON.
+     *
+     * @param json raw JSON string
+     * @return true for any valid JSON document, false for null, blank or malformed input
+     */
+    public static boolean isValidJson(@Nullable String json) {
+        if (json == null || json.isBlank()) {
+            return false;
+        }
+        try {
+            JsonParser.parseString(json);
+            return true;
+        } catch (JsonSyntaxException | IllegalStateException e) {
+            return false;
         }
     }
 

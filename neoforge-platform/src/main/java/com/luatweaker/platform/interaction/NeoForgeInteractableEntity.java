@@ -106,27 +106,8 @@ public class NeoForgeInteractableEntity extends NeoForgeEntityWrapper implements
     }
 
     @Override
-    @NotNull
-    public String getNbt() {
-        return entity.getPersistentData().toString();
-    }
-
-    @Override
-    public void setNbt(@NotNull String nbtJson) {
-        try {
-            net.minecraft.nbt.CompoundTag tag = net.minecraft.nbt.TagParser.parseTag(nbtJson);
-            entity.getPersistentData().merge(tag);
-        } catch (com.mojang.brigadier.exceptions.CommandSyntaxException e) {
-            com.luatweaker.api.log.LuaTweakerLog.get().error(
-                com.luatweaker.api.log.LogStage.SYSTEM,
-                "Failed to parse NBT JSON for entity " + entity.getUUID() + ": " + e.getMessage()
-            );
-        }
-    }
-
-    @Override
     public void PlayAnimation(@NotNull String animationName, double speed, double transitionLength) {
-        EntityInteractionHelper.playAnimation(this, animationName, speed, transitionLength);
+        EntityAnimationHelper.playAnimation(this, animationName, speed, transitionLength);
     }
 
     @Override

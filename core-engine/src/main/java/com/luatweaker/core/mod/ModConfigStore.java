@@ -45,7 +45,7 @@ final class ModConfigStore {
         File live = configFileFor(luamodsDir, modId);
         try {
             if (live.isFile()) {
-                return Files.readString(live.toPath(), StandardCharsets.UTF_8);
+                return normalizeLineEndings(Files.readString(live.toPath(), StandardCharsets.UTF_8));
             }
         } catch (IOException e) {
             LuaTweakerLog.get().warn(LogStage.SYSTEM,
@@ -54,7 +54,8 @@ final class ModConfigStore {
         }
         for (DiscoveredMod found : ModDiscovery.discoverMods(luamodsDir)) {
             if (found.manifest().id().equals(modId)) {
-                return found.defaultConfig();
+                String def = found.defaultConfig();
+                return def != null ? normalizeLineEndings(def) : null;
             }
         }
         return null;
@@ -88,11 +89,16 @@ final class ModConfigStore {
                 Files.copy(live.toPath(), live.toPath().resolveSibling(live.getName() + ".bak"),
                         StandardCopyOption.REPLACE_EXISTING);
             }
-            Files.writeString(live.toPath(), PRETTY_GSON.toJson(parsed), StandardCharsets.UTF_8);
+            Files.writeString(live.toPath(),
+                    normalizeLineEndings(PRETTY_GSON.toJson(parsed)), StandardCharsets.UTF_8);
         } catch (IOException e) {
             return "Failed to save config: " + e.getMessage();
         }
         LuaTweakerLog.get().info(LogStage.SYSTEM, "[LuaModManager] Saved config for '" + modId + "'.");
         return null;
+    }
+
+    private static String normalizeLineEndings(String text) {
+        return text.replace("\r\n", "\n").replace('\r', '\n');
     }
 }

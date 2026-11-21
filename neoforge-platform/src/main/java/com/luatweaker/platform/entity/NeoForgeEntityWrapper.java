@@ -3,13 +3,12 @@ package com.luatweaker.platform.entity;
 import com.luatweaker.api.entity.IEntity;
 import com.luatweaker.platform.interaction.NeoForgeSpatialHelper;
 import net.minecraft.core.Holder;
-import net.minecraft.core.particles.ParticleType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.sounds.SoundEvent;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffect;
@@ -21,7 +20,13 @@ import net.minecraft.world.entity.player.Player;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 public class NeoForgeEntityWrapper implements IEntity {
+
+    private static final float DEGREES_FULL_TURN = 360.0F;
+    private static final float DEGREES_HALF_TURN = 180.0F;
 
     protected final Entity entity;
 
@@ -129,7 +134,7 @@ public class NeoForgeEntityWrapper implements IEntity {
         if (entity != null) {
             entity.push(vx, vy, vz);
             entity.hasImpulse = true;
-            if (entity instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            if (entity instanceof ServerPlayer serverPlayer) {
                 serverPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket(serverPlayer));
             }
         }
@@ -177,7 +182,7 @@ public class NeoForgeEntityWrapper implements IEntity {
     }
 
     @Override
-    public @Nullable java.util.Map<String, Object> getEquipmentData(String slot) {
+    public @Nullable Map<String, Object> getEquipmentData(String slot) {
         if (!(entity instanceof LivingEntity living) || slot == null) {
             return null;
         }
@@ -193,8 +198,8 @@ public class NeoForgeEntityWrapper implements IEntity {
     }
 
     /** Shared shape for inventory and equipment reads. */
-    static java.util.Map<String, Object> describeStack(net.minecraft.world.item.ItemStack stack) {
-        java.util.Map<String, Object> entry = new java.util.LinkedHashMap<>();
+    static Map<String, Object> describeStack(net.minecraft.world.item.ItemStack stack) {
+        Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("Id", BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
         entry.put("Count", stack.getCount());
         if (stack.has(net.minecraft.core.component.DataComponents.CUSTOM_NAME)) {
@@ -309,7 +314,7 @@ public class NeoForgeEntityWrapper implements IEntity {
             return;
         }
         ResourceLocation location = com.luatweaker.platform.sound.SoundHelper.parseId(soundId);
-        SoundEvent sound = com.luatweaker.platform.sound.SoundHelper.registered(location, "entity " + getType());
+        var sound = com.luatweaker.platform.sound.SoundHelper.registered(location, "entity " + getType());
         if (sound == null) {
             return;
         }
@@ -323,7 +328,7 @@ public class NeoForgeEntityWrapper implements IEntity {
     public void spawnParticle(String particleId, int count, double speed) {
         if (entity != null && entity.level() instanceof ServerLevel serverLevel && particleId != null) {
             ResourceLocation rl = particleId.contains(":") ? ResourceLocation.parse(particleId) : ResourceLocation.fromNamespaceAndPath(ResourceLocation.DEFAULT_NAMESPACE, particleId);
-            ParticleType<?> pType = BuiltInRegistries.PARTICLE_TYPE.get(rl);
+            var pType = BuiltInRegistries.PARTICLE_TYPE.get(rl);
             if (pType instanceof net.minecraft.core.particles.SimpleParticleType simple) {
                 serverLevel.sendParticles(simple, entity.getX(), entity.getY() + 1.0, entity.getZ(), Math.max(1, count), 0.2, 0.2, 0.2, speed);
             }
@@ -334,7 +339,7 @@ public class NeoForgeEntityWrapper implements IEntity {
     public IEntity spawnEntity(String entityId, double offsetX, double offsetY, double offsetZ) {
         if (entity != null && entity.level() instanceof ServerLevel serverLevel && entityId != null) {
             java.util.Optional<net.minecraft.world.entity.EntityType<?>> optType =
-                    com.luatweaker.platform.interaction.EntityInteractionHelper.resolveEntityType(entityId);
+                    com.luatweaker.platform.interaction.EntitySpawner.resolveEntityType(entityId);
             if (optType.isPresent()) {
                 Entity newEntity = optType.get().create(serverLevel);
                 if (newEntity != null) {
@@ -529,7 +534,7 @@ public class NeoForgeEntityWrapper implements IEntity {
 
     @Override
     public void playAnimation(String animName, double speed, double transition) {
-        com.luatweaker.platform.interaction.EntityInteractionHelper.playAnimation(this, animName, speed, transition);
+        com.luatweaker.platform.interaction.EntityAnimationHelper.playAnimation(this, animName, speed, transition);
     }
 
     // ==== Minecraft attributes (generic RPG stats) ====
@@ -741,6 +746,348 @@ public class NeoForgeEntityWrapper implements IEntity {
     @Override
     public double getMotionZ() {
         return entity != null ? entity.getDeltaMovement().z : 0;
+    }
+
+    @Override
+    public double getDeltaX() {
+        return entity != null ? entity.getX() - entity.xOld : 0;
+    }
+
+    @Override
+    public double getDeltaY() {
+        return entity != null ? entity.getY() - entity.yOld : 0;
+    }
+
+    @Override
+    public double getDeltaZ() {
+        return entity != null ? entity.getZ() - entity.zOld : 0;
+    }
+
+    @Override
+    public double getHorizontalSpeed() {
+        double dx = getDeltaX();
+        double dz = getDeltaZ();
+        return Math.sqrt(dx * dx + dz * dz);
+    }
+
+    @Override
+    public double getVerticalSpeed() {
+        return getDeltaY();
+    }
+
+    @Override
+    public double getSpeed() {
+        return Math.sqrt(getDeltaX() * getDeltaX() + getDeltaY() * getDeltaY()
+                + getDeltaZ() * getDeltaZ());
+    }
+
+    @Override
+    public float getFallDistance() {
+        return entity != null ? entity.fallDistance : 0.0F;
+    }
+
+    @Override
+    public boolean isFlying() {
+        return entity instanceof Player player && player.getAbilities().flying;
+    }
+
+    @Override
+    public boolean isFallFlying() {
+        return entity instanceof LivingEntity living && living.isFallFlying();
+    }
+
+    @Override
+    public float getEyeHeight() {
+        return entity != null ? entity.getEyeHeight() : 0.0F;
+    }
+
+    @Override
+    public int getLastHurtByMobTimestamp() {
+        return entity instanceof LivingEntity living ? living.getLastHurtByMobTimestamp() : 0;
+    }
+
+    @Override
+    public int getLastHurtMobTimestamp() {
+        return entity instanceof LivingEntity living ? living.getLastHurtMobTimestamp() : 0;
+    }
+
+    @Override
+    public String getLastDamageType() {
+        if (!(entity instanceof LivingEntity living) || living.getLastDamageSource() == null) {
+            return "";
+        }
+        return living.getLastDamageSource().getMsgId();
+    }
+
+    @Override
+    public boolean isUsingItem() {
+        return entity instanceof LivingEntity living && living.isUsingItem();
+    }
+
+    @Override
+    public boolean isSwinging() {
+        return entity instanceof LivingEntity living && living.swinging;
+    }
+
+    @Override
+    public int getSwingTime() {
+        return entity instanceof LivingEntity living ? living.swingTime : 0;
+    }
+
+    @Override
+    public double getEntityInteractionRange() {
+        return entity instanceof Player player ? player.entityInteractionRange() : 0.0;
+    }
+
+    @Override
+    public double getBlockInteractionRange() {
+        return entity instanceof Player player ? player.blockInteractionRange() : 0.0;
+    }
+
+    @Override
+    public boolean isSwimming() {
+        return entity != null && entity.isSwimming();
+    }
+
+    @Override
+    public float getPreviousYaw() {
+        return entity != null ? entity.yRotO : 0.0F;
+    }
+
+    @Override
+    public float getPreviousPitch() {
+        return entity != null ? entity.xRotO : 0.0F;
+    }
+
+    @Override
+    public float getYawDelta() {
+        return entity != null ? wrapDegrees(entity.getYRot() - entity.yRotO) : 0.0F;
+    }
+
+    @Override
+    public float getPitchDelta() {
+        return entity != null ? entity.getXRot() - entity.xRotO : 0.0F;
+    }
+
+    @Override
+    public float getHeadYaw() {
+        if (entity instanceof LivingEntity living) {
+            return living.getYHeadRot();
+        }
+        return entity != null ? entity.getYRot() : 0.0F;
+    }
+
+    private static float wrapDegrees(float degrees) {
+        float wrapped = degrees % DEGREES_FULL_TURN;
+        if (wrapped >= DEGREES_HALF_TURN) {
+            wrapped -= DEGREES_FULL_TURN;
+        } else if (wrapped < -DEGREES_HALF_TURN) {
+            wrapped += DEGREES_FULL_TURN;
+        }
+        return wrapped;
+    }
+
+    @Override
+    public int getUseItemRemainingTicks() {
+        return entity instanceof LivingEntity living ? living.getUseItemRemainingTicks() : 0;
+    }
+
+    @Override
+    public int getArmorValue() {
+        return entity instanceof LivingEntity living ? living.getArmorValue() : 0;
+    }
+
+    @Override
+    public float getAttackStrengthScale(float partialTick) {
+        return entity instanceof Player player ? player.getAttackStrengthScale(partialTick) : 1.0F;
+    }
+
+    @Override
+    public Map<String, Object> getMovementData() {
+        return EntitySnapshot.capture(entity, this);
+    }
+
+    @Override
+    public String getNbt() {
+        return EntitySnapshot.toNbt(entity);
+    }
+
+    @Override
+    public boolean setNbt(@NotNull String nbtJson) {
+        return EntitySnapshot.loadNbt(entity, nbtJson);
+    }
+
+    @Override
+    public boolean isNoGravity() {
+        return entity != null && entity.isNoGravity();
+    }
+
+    @Override
+    public void setNoGravity(boolean noGravity) {
+        if (entity != null) {
+            entity.setNoGravity(noGravity);
+        }
+    }
+
+    @Override
+    public boolean isNoAi() {
+        return entity instanceof Mob mob && mob.isNoAi();
+    }
+
+    @Override
+    public void setNoAi(boolean noAi) {
+        if (entity instanceof Mob mob) {
+            mob.setNoAi(noAi);
+        }
+    }
+
+    @Override
+    public boolean isInvisible() {
+        return entity != null && entity.isInvisible();
+    }
+
+    @Override
+    public void setInvisible(boolean invisible) {
+        if (entity != null) {
+            entity.setInvisible(invisible);
+        }
+    }
+
+    @Override
+    public boolean isSilent() {
+        return entity != null && entity.isSilent();
+    }
+
+    @Override
+    public void setSilent(boolean silent) {
+        if (entity != null) {
+            entity.setSilent(silent);
+        }
+    }
+
+    @Override
+    public int getAirSupply() {
+        return entity != null ? entity.getAirSupply() : 300;
+    }
+
+    @Override
+    public void setAirSupply(int air) {
+        if (entity != null) {
+            entity.setAirSupply(air);
+        }
+    }
+
+    @Override
+    public int getMaxAirSupply() {
+        return entity != null ? entity.getMaxAirSupply() : 300;
+    }
+
+    @Override
+    public int getRemainingFireTicks() {
+        return entity != null ? entity.getRemainingFireTicks() : 0;
+    }
+
+    @Override
+    public boolean isOnFire() {
+        return entity != null && entity.isOnFire();
+    }
+
+    @Override
+    public void setFallDistance(float distance) {
+        if (entity != null) {
+            entity.fallDistance = distance;
+        }
+    }
+
+    @Override
+    public float getWidth() {
+        return entity != null ? entity.getBbWidth() : 0.6f;
+    }
+
+    @Override
+    public float getHeight() {
+        return entity != null ? entity.getBbHeight() : 1.8f;
+    }
+
+    @Override
+    public boolean mount(@NotNull IEntity vehicle) {
+        if (entity != null && vehicle.getRawEntity() instanceof Entity v) {
+            return entity.startRiding(v, true);
+        }
+        return false;
+    }
+
+    @Override
+    public void dismount() {
+        if (entity != null) {
+            entity.stopRiding();
+        }
+    }
+
+    @Override
+    public @Nullable IEntity getVehicle() {
+        if (entity != null && entity.getVehicle() != null) {
+            Entity v = entity.getVehicle();
+            return v instanceof Player p ? new NeoForgePlayerWrapper(p) : new NeoForgeEntityWrapper(v);
+        }
+        return null;
+    }
+
+    @Override
+    public @NotNull java.util.List<IEntity> getPassengers() {
+        if (entity == null) {
+            return java.util.List.of();
+        }
+        java.util.List<IEntity> list = new java.util.ArrayList<>();
+        for (Entity p : entity.getPassengers()) {
+            list.add(p instanceof Player pl ? new NeoForgePlayerWrapper(pl) : new NeoForgeEntityWrapper(p));
+        }
+        return list;
+    }
+
+    @Override
+    public boolean isPassenger() {
+        return entity != null && entity.isPassenger();
+    }
+
+    @Override
+    public boolean hasPassengers() {
+        return entity != null && !entity.getPassengers().isEmpty();
+    }
+
+    @Override
+    public float getAbsorption() {
+        return entity instanceof LivingEntity living ? living.getAbsorptionAmount() : 0.0f;
+    }
+
+    @Override
+    public void setAbsorption(float amount) {
+        if (entity instanceof LivingEntity living) {
+            living.setAbsorptionAmount(amount);
+        }
+    }
+
+    @Override
+    public @NotNull String getDimension() {
+        return entity != null ? entity.level().dimension().location().toString() : "minecraft:overworld";
+    }
+
+    @Override
+    public void strikeLightning() {
+        if (entity != null && entity.level() instanceof ServerLevel sl) {
+            net.minecraft.world.entity.EntityType.LIGHTNING_BOLT.spawn(
+                    sl, net.minecraft.core.BlockPos.containing(entity.position()),
+                    net.minecraft.world.entity.MobSpawnType.TRIGGERED);
+        }
+    }
+
+    @Override
+    public void createExplosion(float power, boolean causesFire, boolean breakBlocks) {
+        if (entity != null && entity.level() instanceof ServerLevel sl) {
+            sl.explode(entity, entity.getX(), entity.getY(), entity.getZ(), power, causesFire,
+                    breakBlocks ? net.minecraft.world.level.Level.ExplosionInteraction.MOB
+                            : net.minecraft.world.level.Level.ExplosionInteraction.NONE);
+        }
     }
 
     @Override

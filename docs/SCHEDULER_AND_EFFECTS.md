@@ -49,33 +49,12 @@ end)
 
 ---
 
-## Particle API (`particles`)
+## Particle API
 
-Spawn visual particle effects at world positions.
-
-### Basic Spawn
-```lua
--- spawn(type, x, y, z, count, offsetX, offsetY, offsetZ, speed)
-particles:spawn("minecraft:flame", 100.5, 65.0, 200.5, 10, 0.2, 0.3, 0.1, 0.01)
-```
-
-### Quick Burst
-```lua
--- burst(type, x, y, z, count) — uses default offsets
-particles:burst("minecraft:heart", 50, 70, 50, 30)
-```
-
-### Line Effect
-```lua
--- line(type, x1,y1,z1, x2,y2,z2, particlesPerBlock, speed)
-particles:line("minecraft:end_rod", 0, 65, 0, 10, 65, 10, 20, 0.01)
-```
-
-### Circle / Ring Effect
-```lua
--- circle(type, centerX, centerY, centerZ, radius, count, speed)
-particles:circle("minecraft:enchant", 0, 70, 0, 3.0, 32, 0.02)
-```
+> ⚠️ **SUPERSEDED:** the `particles` global described in older drafts does not exist.
+> Use `World:SpawnParticle` (simple worlds), and the `Particle` shape service
+> (`Particle:Line/Circle/Helix/Sphere/Bezier`) documented in
+> [TEXT_ENCHANT_EFFECT_PARTICLE_API.md](TEXT_ENCHANT_EFFECT_PARTICLE_API.md).
 
 ---
 
@@ -143,46 +122,13 @@ end
 
 ---
 
-## Enchantment Builder (`startup:createEnchantment`)
+## Enchantments, Mob Effects & Potions
 
-Register custom enchantments with full configuration.
-
-```lua
-startup:createEnchantment("ruby_fortune", function(e)
-    e:maxLevel(5)
-    e:rarity("RARE")             -- COMMON, UNCOMMON, RARE, VERY_RARE
-    e:addSlot("mainhand")
-    e:treasure(false)
-    e:curse(false)
-    e:cost(10, 50)               -- Enchanting cost range
-end)
-```
-
----
-
-## Mob Effect Builder (`startup:createMobEffect`)
-
-Register custom status effects with attribute modifiers.
-
-```lua
-startup:createMobEffect("ruby_speed", function(e)
-    e:color(0xFF0000)
-    e:beneficial(true)
-    e:category("BENEFICIAL")     -- BENEFICIAL, HARMFUL, NEUTRAL
-    e:attribute("generic.movement_speed", 0.4, "ADD_MULTIPLIED_TOTAL")
-    e:particle("minecraft:happy_villager")
-end)
-```
-
----
-
-## Potion Builder (`startup:createPotion`)
-
-Register custom potions combining a mob effect with duration and amplifier.
-
-```lua
-startup:createPotion("ruby_swiftness", "luatweaker:ruby_speed", 3600, 1)
-```
+> ⚠️ **SUPERSEDED:** the `startup:createEnchantment`, `startup:createMobEffect` and
+> `startup:createPotion` examples in older drafts do not exist. The real APIs are
+> `Content.NewEnchantment` / `Content:createEnchantment`, `Content.NewMobEffect` and
+> `Content.NewPotion` documented in
+> [TEXT_ENCHANT_EFFECT_PARTICLE_API.md](TEXT_ENCHANT_EFFECT_PARTICLE_API.md).
 
 ---
 

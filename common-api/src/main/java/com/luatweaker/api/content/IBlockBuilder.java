@@ -154,6 +154,9 @@ public interface IBlockBuilder {
     @LuaDoc(description = "Moves a container slot to an absolute GUI position (x, y in the 176-wide panel). Useful for custom layouts; slots without an override keep the automatic centered grid.", params = {"slotIndex: integer (0-based)", LuaDocFragments.Geometry.X_INTEGER, LuaDocFragments.Geometry.Y_INTEGER}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
     IBlockBuilder slotPosition(int slotIndex, int x, int y);
 
+    @LuaDoc(description = "Skips the automatic grid: only slots with an explicit :SlotPosition are added to the menu (machine GUIs with a few hand-placed slots). Storage indices, panel size and player inventory are unchanged; unpositioned indices stay accessible to Lua but have no clickable cell.", params = {}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
+    IBlockBuilder manualSlots();
+
     @LuaDoc(description = "Sets a custom slot cell texture for every slot of this container (e.g. 'luatweaker_test:textures/gui/my_slot.png', 18x18 cell).", params = {LuaDocFragments.Content.TEXTURE_PATH}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
     IBlockBuilder slotTexture(String texturePath);
 
@@ -166,13 +169,21 @@ public interface IBlockBuilder {
     @LuaDoc(description = "Adds a single fluid tank (in millibuckets) to this block and gives it a block entity. Exposed to other mods through the fluid capability on every face and to Lua via World:SetBlockEntityData/GetBlockEntityData (keys 'FluidId', 'FluidAmount') or World:GetFluid/FillFluid/DrainFluid.", params = {"capacityMB: integer"}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
     IBlockBuilder fluidStorage(int capacityMB);
 
-    @LuaDoc(description = "Adds a bar element to the container GUI. source: 'energy' (FE fill), 'fluid' (tank fill) or 'progress' (Lua progress 0..1). Color is ARGB, e.g. 0xFF00E676; 0 = source default.", params = {"id: string", LuaDocFragments.Geometry.X_INTEGER, LuaDocFragments.Geometry.Y_INTEGER, "width: integer", "height: integer", "source: string", "color: integer"}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
+    @LuaDoc(description = "Adds a bar element to the container GUI. source: 'energy' (FE fill), 'fluid' (tank fill) or 'progress' (Lua progress 0..1). Color is ARGB, e.g. 0xFF00E676; 0 = source default.", params = {LuaDocFragments.Common.ID_STRING, LuaDocFragments.Geometry.X_INTEGER, LuaDocFragments.Geometry.Y_INTEGER, LuaDocFragments.Geometry.WIDTH_INTEGER, LuaDocFragments.Geometry.HEIGHT_INTEGER, "source: string", LuaDocFragments.Geometry.COLOR_INTEGER}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
     IBlockBuilder guiBar(String id, int x, int y, int width, int height, String source, int color);
 
+    @LuaDoc(description = "Adds a bar element pinned to a panel anchor (topleft/top/topright/left/center/right/bottomleft/bottom/bottomright, default topleft); x/y become offsets from the anchor point.", params = {LuaDocFragments.Common.ID_STRING, LuaDocFragments.Geometry.X_INTEGER, LuaDocFragments.Geometry.Y_INTEGER, LuaDocFragments.Geometry.WIDTH_INTEGER, LuaDocFragments.Geometry.HEIGHT_INTEGER, "source: string", LuaDocFragments.Geometry.COLOR_INTEGER, "anchor: string"}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
+    IBlockBuilder guiBar(String id, int x, int y, int width, int height, String source, int color, String anchor);
+
     @LuaDoc(description = "Adds a custom proprietary resource bar (e.g. Heat, Pressure, Mana, Radiation) synced from custom BlockEntity data keys.",
-            params = {"id: string", LuaDocFragments.Geometry.X_INTEGER, LuaDocFragments.Geometry.Y_INTEGER, "width: integer", "height: integer", "currentKey: string", "maxKey: string", "color: integer", "tooltip: string"},
+            params = {LuaDocFragments.Common.ID_STRING, LuaDocFragments.Geometry.X_INTEGER, LuaDocFragments.Geometry.Y_INTEGER, LuaDocFragments.Geometry.WIDTH_INTEGER, LuaDocFragments.Geometry.HEIGHT_INTEGER, "currentKey: string", "maxKey: string", LuaDocFragments.Geometry.COLOR_INTEGER, "tooltip: string"},
             returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
     IBlockBuilder customBar(String id, int x, int y, int width, int height, String currentKey, String maxKey, int color, @org.jetbrains.annotations.Nullable String tooltip);
+
+    @LuaDoc(description = "Adds a custom bar pinned to a panel anchor (topleft/top/topright/left/center/right/bottomleft/bottom/bottomright, default topleft); x/y become offsets from the anchor point.",
+            params = {LuaDocFragments.Common.ID_STRING, LuaDocFragments.Geometry.X_INTEGER, LuaDocFragments.Geometry.Y_INTEGER, LuaDocFragments.Geometry.WIDTH_INTEGER, LuaDocFragments.Geometry.HEIGHT_INTEGER, "currentKey: string", "maxKey: string", LuaDocFragments.Geometry.COLOR_INTEGER, "tooltip: string", "anchor: string"},
+            returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
+    IBlockBuilder customBar(String id, int x, int y, int width, int height, String currentKey, String maxKey, int color, @org.jetbrains.annotations.Nullable String tooltip, String anchor);
 
     @LuaDoc(description = "Adds a boolean block-state pair (e.g. running/off). The blockstate JSON and both cube-all models are generated automatically from the two textures - no JSON files needed. Toggle it from Lua: World:SetBlockState(x, y, z, 'ns:id', { running = true }).", params = {"property: string (e.g. 'running')", "offTexture: string", "onTexture: string"}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
     IBlockBuilder booleanState(String property, String offTexture, String onTexture);
@@ -195,11 +206,17 @@ public interface IBlockBuilder {
     @LuaDoc(description = "Registers a client-side BlockEntityRenderer (BER) callback for dynamic rendering and animation.", params = {"handler: function(renderer, data)"}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
     IBlockBuilder onRender(BiConsumer<Object, Object> handler);
 
-    @LuaDoc(description = "Adds an interactive button widget to this container screen.", params = {"id: string", LuaDocFragments.Geometry.X_INTEGER, LuaDocFragments.Geometry.Y_INTEGER, "width: integer", "height: integer", "label: string"}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
+    @LuaDoc(description = "Adds an interactive button widget to this container screen.", params = {LuaDocFragments.Common.ID_STRING, LuaDocFragments.Geometry.X_INTEGER, LuaDocFragments.Geometry.Y_INTEGER, LuaDocFragments.Geometry.WIDTH_INTEGER, LuaDocFragments.Geometry.HEIGHT_INTEGER, "label: string"}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
     IBlockBuilder button(String id, int x, int y, int width, int height, String label);
 
-    @LuaDoc(description = "Adds a dynamic text label widget to this container screen (supports '{Key}' placeholders from extra NBT).", params = {LuaDocFragments.Geometry.X_INTEGER, LuaDocFragments.Geometry.Y_INTEGER, "textOrVar: string", "color: integer"}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
+    @LuaDoc(description = "Adds an interactive button pinned to a panel anchor (topleft/top/topright/left/center/right/bottomleft/bottom/bottomright, default topleft); x/y become offsets from the anchor point.", params = {LuaDocFragments.Common.ID_STRING, LuaDocFragments.Geometry.X_INTEGER, LuaDocFragments.Geometry.Y_INTEGER, LuaDocFragments.Geometry.WIDTH_INTEGER, LuaDocFragments.Geometry.HEIGHT_INTEGER, "label: string", "anchor: string"}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
+    IBlockBuilder button(String id, int x, int y, int width, int height, String label, String anchor);
+
+    @LuaDoc(description = "Adds a dynamic text label widget to this container screen (supports '{Key}' placeholders from synced values and \\n line breaks).", params = {LuaDocFragments.Geometry.X_INTEGER, LuaDocFragments.Geometry.Y_INTEGER, "textOrVar: string", LuaDocFragments.Geometry.COLOR_INTEGER}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
     IBlockBuilder label(int x, int y, String textOrVar, int color);
+
+    @LuaDoc(description = "Adds a text label with alignment (left/center/right against the 176-wide panel), scale (1.0 = vanilla, 0.5..3.0) and optional drop shadow for readability.", params = {LuaDocFragments.Geometry.X_INTEGER, LuaDocFragments.Geometry.Y_INTEGER, "textOrVar: string", LuaDocFragments.Geometry.COLOR_INTEGER, "align: string", "scale: number", "shadow: boolean"}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
+    IBlockBuilder label(int x, int y, String textOrVar, int color, String align, double scale, boolean shadow);
 
     @LuaDoc(description = "Registers a callback invoked on the server when a player clicks a container button.", params = {"handler: function(pos, buttonId, player)"}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
     IBlockBuilder onButtonClick(BiConsumer<Object, String> handler);
@@ -257,6 +274,7 @@ public interface IBlockBuilder {
     java.util.Map<Integer, int[]> getSlotPositions();
     java.util.Set<Integer> getLockedSlots();
     String getSlotTexture();
+    boolean isManualSlots();
     int getEnergyCapacity();
     int getEnergyMaxReceive();
     int getEnergyMaxExtract();

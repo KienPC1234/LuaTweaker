@@ -116,11 +116,6 @@ public final class EntityInteractionHelper {
         return new NeoForgeInteractableEntity(projectile);
     }
 
-    public static void playAnimation(@NotNull IEntity entity, @NotNull String animName, double speed,
-                                     double transition) {
-        EntityAnimationHelper.playAnimation(entity, animName, speed, transition);
-    }
-
     public static java.util.Optional<net.minecraft.world.entity.EntityType<?>> resolveEntityType(String entityId) {
         return EntitySpawner.resolveEntityType(entityId);
     }

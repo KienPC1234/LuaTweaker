@@ -26,6 +26,7 @@ import java.util.stream.IntStream;
  */
 public class NeoForgeNetworkPlatform implements IPlatformNetwork {
     private static final int CHUNKED_FRAME_THRESHOLD = 1;
+    private static final String DROP_PREFIX = "[Network] Dropped '";
 
     @Override
     public void sendPayloadBytes(String playerUuid, String channelName, byte[] data) {
@@ -43,6 +44,66 @@ public class NeoForgeNetworkPlatform implements IPlatformNetwork {
         LuaTweakerLog.get().debug(LogStage.SYSTEM,
                 "[Network] [SERVER -> ALL CLIENTS] '" + channelName + "'");
         sendFrames(channelName, data, PacketDistributor::sendToAllPlayers);
+    }
+
+    @Override
+    public void sendPayloadBytesToPlayers(List<String> playerUuids, String channelName, byte[] data) {
+        if (playerUuids == null || playerUuids.isEmpty()) {
+            return;
+        }
+        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        if (server == null) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "[Network] Dropped server packet '" + channelName + "': no server running");
+            return;
+        }
+        List<LuaTweakerPayload> frames = splitFrames(channelName, data);
+        if (frames.isEmpty()) {
+            return;
+        }
+        int sent = sendFramesToPlayers(server, playerUuids, channelName, frames);
+        LuaTweakerLog.get().debug(LogStage.SYSTEM,
+                "[Network] [SERVER -> " + sent + " CLIENTS] '" + channelName + "'");
+    }
+
+    private static List<LuaTweakerPayload> splitFrames(@NotNull String channelName, byte @Nullable [] data) {
+        if (data == null) {
+            LuaTweakerLog.get().error(LogStage.SYSTEM,
+                    DROP_PREFIX + channelName + "': null payload");
+            return List.of();
+        }
+        try {
+            List<byte[]> chunks = ChunkAssembler.split(data);
+            int total = chunks.size();
+            return IntStream.range(0, total)
+                    .mapToObj(index -> new LuaTweakerPayload(channelName, index, total, chunks.get(index)))
+                    .toList();
+        } catch (IllegalArgumentException e) {
+            LuaTweakerLog.get().error(LogStage.SYSTEM,
+                    DROP_PREFIX + channelName + "': " + e.getMessage());
+            return List.of();
+        }
+    }
+
+    private static int sendFramesToPlayers(@NotNull MinecraftServer server,
+                                           @NotNull List<String> playerUuids,
+                                           @NotNull String channelName,
+                                           @NotNull List<LuaTweakerPayload> frames) {
+        int sent = 0;
+        for (String uuid : playerUuids) {
+            if (uuid == null || uuid.isBlank()) {
+                continue;
+            }
+            ServerPlayer player = resolvePlayerOn(server, uuid, channelName);
+            if (player == null) {
+                continue;
+            }
+            for (LuaTweakerPayload frame : frames) {
+                PacketDistributor.sendToPlayer(player, frame);
+            }
+            sent++;
+        }
+        return sent;
     }
 
     @Override

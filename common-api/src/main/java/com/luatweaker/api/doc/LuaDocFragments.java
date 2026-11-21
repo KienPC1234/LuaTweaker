@@ -42,6 +42,7 @@ public interface LuaDocFragments {
         public static final String I_ENTITY_BUILDER = "IEntityBuilder";
         public static final String I_FLUID_BUILDER = "IFluidBuilder";
         public static final String I_ARMOR_MATERIAL_BUILDER = "IArmorMaterialBuilder";
+        public static final String I_MOB_EFFECT_BUILDER = "IMobEffectBuilder";
 
         private Builder() {}
     }
@@ -55,6 +56,9 @@ public interface LuaDocFragments {
         public static final String Y_INTEGER = "y: integer";
         public static final String WIDTH_NUMBER = "width: number";
         public static final String HEIGHT_NUMBER = "height: number";
+        public static final String WIDTH_INTEGER = "width: integer";
+        public static final String HEIGHT_INTEGER = "height: integer";
+        public static final String COLOR_INTEGER = "color: integer";
         public static final String MIN_NUMBER = "min: number";
         public static final String MAX_NUMBER = "max: number";
         public static final String COLOR_NUMBER = "color: number";
