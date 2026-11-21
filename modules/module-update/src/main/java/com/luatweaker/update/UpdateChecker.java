@@ -133,20 +133,21 @@ public final class UpdateChecker {
 
     /** Reads up to {@code maxBytes} from the stream, aborting when the cap is exceeded. */
     public static byte[] readBounded(@NotNull InputStream is, int maxBytes) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        byte[] buf = new byte[4096];
-        int total = 0;
-        while (true) {
-            int n = is.read(buf);
-            if (n == -1) {
-                break;
+        try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buf = new byte[4096];
+            int total = 0;
+            while (true) {
+                int n = is.read(buf);
+                if (n == -1) {
+                    break;
+                }
+                total += n;
+                if (total > maxBytes) {
+                    throw new IOException("response body exceeds " + maxBytes + " bytes limit");
+                }
+                out.write(buf, 0, n);
             }
-            total += n;
-            if (total > maxBytes) {
-                throw new IOException("response body exceeds " + maxBytes + " bytes limit");
-            }
-            out.write(buf, 0, n);
+            return out.toByteArray();
         }
-        return out.toByteArray();
     }
 }

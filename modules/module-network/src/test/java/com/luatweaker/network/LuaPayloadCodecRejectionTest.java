@@ -6,7 +6,6 @@ import com.luatweaker.core.vm.LuavaEngine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.io.ByteArrayOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -59,15 +58,7 @@ class LuaPayloadCodecRejectionTest {
 
     @Test
     void overlyDeepDecodingIsRejected() {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        out.write(LuaPayloadCodec.VERSION);
-        out.write(1);
-        for (int level = 0; level < LuaPayloadCodec.MAX_NESTING + 5; level++) {
-            out.write(6);
-            out.write(1);
-        }
-        out.write(0);
-        byte[] payload = out.toByteArray();
+        byte[] payload = LuaPayloadFixtures.nestingPayload();
 
         assertThrows(IllegalArgumentException.class, () -> LuaPayloadCodec.decodeArgs(engine, payload),
             "decoding past the nesting limit must fail before the stack overflows");
@@ -75,15 +66,7 @@ class LuaPayloadCodecRejectionTest {
 
     @Test
     void nestingErrorNamesDepth() {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        out.write(LuaPayloadCodec.VERSION);
-        out.write(1);
-        for (int level = 0; level < LuaPayloadCodec.MAX_NESTING + 5; level++) {
-            out.write(6);
-            out.write(1);
-        }
-        out.write(0);
-        byte[] payload = out.toByteArray();
+        byte[] payload = LuaPayloadFixtures.nestingPayload();
 
         String message = NetworkTestFixture.errorMessage(() -> LuaPayloadCodec.decodeArgs(engine, payload));
 
@@ -112,12 +95,7 @@ class LuaPayloadCodecRejectionTest {
 
     @Test
     void absentElementCountIsRejected() {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        out.write(LuaPayloadCodec.VERSION);
-        out.write(0x81);
-        out.write(0x80);
-        out.write(0x04);
-        byte[] payload = out.toByteArray();
+        byte[] payload = LuaPayloadFixtures.absurdCountPayload();
 
         assertThrows(IllegalArgumentException.class, () -> LuaPayloadCodec.decodeArgs(engine, payload),
             "an absurd declared element count must be rejected");
@@ -125,12 +103,7 @@ class LuaPayloadCodecRejectionTest {
 
     @Test
     void absurdElementCountErrorNamesLimit() {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        out.write(LuaPayloadCodec.VERSION);
-        out.write(0x81);
-        out.write(0x80);
-        out.write(0x04);
-        byte[] payload = out.toByteArray();
+        byte[] payload = LuaPayloadFixtures.absurdCountPayload();
 
         String message = NetworkTestFixture.errorMessage(() -> LuaPayloadCodec.decodeArgs(engine, payload));
 

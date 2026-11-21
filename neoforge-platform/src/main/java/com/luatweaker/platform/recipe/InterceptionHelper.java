@@ -376,9 +376,9 @@ public final class InterceptionHelper {
 
     private static void logStack(ReflectiveOperationException failure) {
         StringWriter writer = new StringWriter();
-        PrintWriter printer = new PrintWriter(writer);
-        failure.printStackTrace(printer);
-        printer.flush();
+        try (PrintWriter printer = new PrintWriter(writer)) {
+            failure.printStackTrace(printer);
+        }
         String separator = System.lineSeparator();
         String escaped = separator.replace("\\", "\\\\").replace(".", "\\.").replace("|", "\\|");
         for (String line : writer.toString().split(escaped)) {

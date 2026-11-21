@@ -86,22 +86,23 @@ final class ModFileSystem {
     }
 
     static byte[] readCapped(InputStream in, ModFileErrors errors, String op, String rel) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream(COPY_BUFFER_BYTES);
-        byte[] buffer = new byte[COPY_BUFFER_BYTES];
-        long total = 0L;
-        for (;;) {
-            int read = in.read(buffer);
-            if (read == -1) {
-                break;
+        try (ByteArrayOutputStream out = new ByteArrayOutputStream(COPY_BUFFER_BYTES)) {
+            byte[] buffer = new byte[COPY_BUFFER_BYTES];
+            long total = 0L;
+            for (;;) {
+                int read = in.read(buffer);
+                if (read == -1) {
+                    break;
+                }
+                total += read;
+                if (total > MAX_FILE_BYTES) {
+                    throw new IllegalArgumentException(errors.label(op, rel) + ": file exceeds "
+                            + MAX_FILE_BYTES + BYTES_SUFFIX);
+                }
+                out.write(buffer, 0, read);
             }
-            total += read;
-            if (total > MAX_FILE_BYTES) {
-                throw new IllegalArgumentException(errors.label(op, rel) + ": file exceeds "
-                        + MAX_FILE_BYTES + BYTES_SUFFIX);
-            }
-            out.write(buffer, 0, read);
+            return out.toByteArray();
         }
-        return out.toByteArray();
     }
 
     private static String decodeUtf8(byte[] bytes, String op, String rel) {

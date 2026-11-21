@@ -1,5 +1,21 @@
 plugins {
     id 'idea'
+    // The root only exists to host the PMD canary; `java` gives the Pmd task the
+    // source-set plumbing it needs and produces no artifact (jar is disabled).
+    id 'java'
+    id 'pmd'
+}
+
+tasks.named('jar') {
+    enabled = false
+}
+
+pmd {
+    toolVersion = pmd_version
+    ruleSetFiles = files(rootProject.file('config/pmd/ruleset.xml'))
+    ruleSets = []
+    ignoreFailures = true
+    consoleOutput = true
 }
 
 allprojects {
@@ -27,7 +43,38 @@ allprojects {
 
 // PMD static analysis (dirty-code scan, see config/pmd/ruleset.xml).
 // Run: ./gradlew pmdMain pmdTest   (reports: <module>/build/reports/pmd/)
-// Flip ignoreFailures to false once the baseline is clean so CI rejects new dirt.
+// Both are enforced (ignoreFailures = false): a new finding fails the build.
+// The Gradle PMD task swallows "Cannot load ruleset" and reports ZERO violations,
+// which would silently disable the entire gate (verified with a broken rule ref).
+// This canary analysis runs the same ruleset over one file that intentionally
+// trips exactly one rule. If the ruleset stops loading (or the rule disappears),
+// the report comes back empty and the build fails with a clear message instead
+// of passing with a green but meaningless result.
+tasks.register('pmdCanary', org.gradle.api.plugins.quality.Pmd) {
+    group = 'verification'
+    description = 'Proves config/pmd/ruleset.xml really loads and runs (fails otherwise).'
+    source = fileTree(rootProject.file('config/pmd/probe')) { include '**/*.java' }
+    ruleSetFiles = files(rootProject.file('config/pmd/ruleset.xml'))
+    ruleSets = []
+    ignoreFailures = true
+    reports {
+        xml.required.set(true)
+        html.required.set(false)
+    }
+    doLast {
+        def reportFile = reports.xml.outputLocation.get().asFile
+        def found = new groovy.xml.XmlSlurper(false, false).parse(reportFile)
+                .file.violation.collect { it.'@rule'.text() }
+        if (found != ['SystemPrintln']) {
+            throw new GradleException(
+                    "PMD canary failed: expected exactly one SystemPrintln finding in " +
+                    "config/pmd/probe/Probe.java but got ${found}. " +
+                    "config/pmd/ruleset.xml probably failed to load (PMD reports zero " +
+                    "violations in that case) or the canary rule was removed.")
+        }
+    }
+}
+
 subprojects {
     apply plugin: 'pmd'
 
@@ -35,11 +82,12 @@ subprojects {
         toolVersion = pmd_version
         ruleSetFiles = files(rootProject.file('config/pmd/ruleset.xml'))
         ruleSets = []
-        ignoreFailures = true
+        ignoreFailures = false
         consoleOutput = true
     }
 
     tasks.withType(org.gradle.api.plugins.quality.Pmd).configureEach {
+        dependsOn rootProject.tasks.named('pmdCanary')
         reports {
             xml.required.set(true)
             html.required.set(true)

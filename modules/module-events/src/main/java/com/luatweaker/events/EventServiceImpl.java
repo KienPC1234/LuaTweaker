@@ -166,7 +166,9 @@ public class EventServiceImpl implements IEventService {
 
     private static void logListenerError(@NotNull String eventName, @NotNull LuaException e) {
         StringWriter sw = new StringWriter();
-        e.printStackTrace(new PrintWriter(sw));
+        try (PrintWriter printer = new PrintWriter(sw)) {
+            e.printStackTrace(printer);
+        }
         LuaTweakerLog.get().error(
             LogStage.RUNTIME_ERROR,
             "Error invoking event listener for " + eventName + ": " + e.getMessage() + "\n" + sw.toString()

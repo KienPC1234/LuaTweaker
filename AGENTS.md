@@ -141,15 +141,18 @@ The SPIRIT of each rule is as binding as its LETTER. No technical bypasses, no p
 
 PMD is the machine enforcer of Sections 0.1–0.3. It is wired into the build, not optional advice.
 
-- **Integration (single source of truth):** root `build.gradle` applies the `pmd` plugin to every subproject; ruleset = `config/pmd/ruleset.xml`; tool version = `pmd_version` in `gradle.properties`. `pmdMain`/`pmdTest` run as part of `check`. Reports: `<module>/build/reports/pmd/`.
+- **Integration (single source of truth):** root `build.gradle` applies the `pmd` plugin to every subproject; ruleset = `config/pmd/ruleset.xml`; tool version = `pmd_version` in `gradle.properties`. `pmdMain`/`pmdTest` run as part of `check` with `ignoreFailures = false`, so any finding fails the build. Reports: `<module>/build/reports/pmd/`.
+- **Analysis self-test (`:pmdCanary`):** a broken ruleset makes PMD report ZERO violations and exit successfully (verified). `pmdCanary` therefore runs the real ruleset over `config/pmd/probe/Probe.java`, which intentionally trips exactly one `SystemPrintln`; every `pmdMain`/`pmdTest` depends on it. If the ruleset stops loading, the canary fails loudly instead of the gate silently passing.
 - **Commands:** `./gradlew pmdMain pmdTest` (full scan) or `./gradlew :<module>:pmdMain` (touched module only — MANDATORY after every Java change).
 - **Zero-tolerance:** no change is "done" while PMD reports violations in touched code. New code MUST NOT introduce new violations.
 - **Hiding a violation = instant rejection** (same severity as a silent stub, Section 0.4). ABSOLUTELY BANNED:
   - `@SuppressWarnings("PMD...")`, `// NOPMD`, or any suppression comment;
   - adding `<exclude>` to the ruleset to dodge a finding;
+  - adding a type name to the audited carve-out list in `config/pmd/ruleset.xml` to silence a finding that is not an interface-shape/API-contract issue;
   - deleting, neutering, or splitting code/tests just to silence a rule;
-  - fake assertion messages in tests (`"check"`, `"ok"`, `"test"` — messages must describe WHAT is verified);
+  - fake assertion messages in tests (`"check"`, `"ok"`, `"test"` - messages must describe WHAT is verified);
   - shrinking rule scope (e.g. excluding a file) without explicit user approval.
+- **Audited architectural carve-outs:** the only carve-outs are the `AUDITED ARCHITECTURAL CARVE-OUTS` block in `config/pmd/ruleset.xml`. Each entry suppresses ONE rule on a named type whose method names/arities/member count are the Lua-facing contract (LuaBinder, stub generator, platform registration) or a 25-100 method PAL facade it implements. The same rule stays active for every other type; a new 12-method class still fails, verified. Remove a name when the type is split; adding one is an architecture change that needs user approval, exactly like a public signature change.
 - **Fix ladder (in order, stop at the first that applies):**
   1. Fix the code properly (braces, constants, specific catches, try-with-resources, real asserts).
   2. If the finding reflects INTENTIONAL design (e.g. a broad `catch` as a Lua-callback firewall), centralize it into ONE documented helper with a comment stating WHY broad — do not scatter.
