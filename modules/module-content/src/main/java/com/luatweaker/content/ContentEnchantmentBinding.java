@@ -59,51 +59,71 @@ final class ContentEnchantmentBinding {
         EnchantmentConfig config = builder.config();
 
         ContentBindingSupport.bindMethod(table, "description", args -> {
-            config.descriptionText = args[LuaBinder.getOffset(args)].asString();
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "enchantment:description");
+            config.descriptionText = args[off].asString();
             config.usesTranslation = false;
             return table;
         });
         ContentBindingSupport.bindMethod(table, "descriptionTranslate", args -> {
-            config.descriptionKey = args[LuaBinder.getOffset(args)].asString();
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "enchantment:descriptionTranslate");
+            config.descriptionKey = args[off].asString();
             config.usesTranslation = true;
             return table;
         });
         ContentBindingSupport.bindMethod(table, "supportedItems", args -> {
-            config.supportedItems = args[LuaBinder.getOffset(args)].asString();
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "enchantment:supportedItems");
+            config.supportedItems = args[off].asString();
             return table;
         });
         ContentBindingSupport.bindMethod(table, "primaryItems", args -> {
-            config.primaryItems = args[LuaBinder.getOffset(args)].asString();
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "enchantment:primaryItems");
+            config.primaryItems = args[off].asString();
             return table;
         });
         ContentBindingSupport.bindMethod(table, "weight", args -> {
-            config.weight = args[LuaBinder.getOffset(args)].asInt();
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "enchantment:weight");
+            config.weight = args[off].asInt();
             return table;
         });
         ContentBindingSupport.bindMethod(table, "maxLevel", args -> {
-            config.maxLevel = args[LuaBinder.getOffset(args)].asInt();
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "enchantment:maxLevel");
+            config.maxLevel = args[off].asInt();
             return table;
         });
         ContentBindingSupport.bindMethod(table, "minCost", args -> {
             int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 2, "enchantment:minCost");
             config.minCost = new EnchantmentJson.Cost(args[off].asInt(), args[off + 1].asInt());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "maxCost", args -> {
             int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 2, "enchantment:maxCost");
             config.maxCost = new EnchantmentJson.Cost(args[off].asInt(), args[off + 1].asInt());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "anvilCost", args -> {
-            config.anvilCost = args[LuaBinder.getOffset(args)].asInt();
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "enchantment:anvilCost");
+            config.anvilCost = args[off].asInt();
             return table;
         });
         ContentBindingSupport.bindMethod(table, "slots", args -> {
-            config.slots = readSlots(args[LuaBinder.getOffset(args)]);
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "enchantment:slots");
+            config.slots = readSlots(args[off]);
             return table;
         });
         ContentBindingSupport.bindMethod(table, "exclusiveSet", args -> {
-            config.exclusiveSet = args[LuaBinder.getOffset(args)].asString();
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "enchantment:exclusiveSet");
+            config.exclusiveSet = args[off].asString();
             return table;
         });
         ContentBindingSupport.bindMethod(table, "damage", args -> {

@@ -13,6 +13,7 @@ public final class Platform {
     private static IPlatformStructures structures;
     private static IPlatformCapability capability;
     private static IPlatformWorldgen worldgen;
+    private static IPlatformDatapack datapack;
 
     public static void setNetwork(IPlatformNetwork instance) { network = instance; }
     public static void setEntity(IPlatformEntity instance) { entity = instance; }
@@ -24,6 +25,7 @@ public final class Platform {
     public static void setStructures(IPlatformStructures instance) { structures = instance; }
     public static void setCapability(IPlatformCapability instance) { capability = instance; }
     public static void setWorldgen(IPlatformWorldgen instance) { worldgen = instance; }
+    public static void setDatapack(IPlatformDatapack instance) { datapack = instance; }
 
     public static IPlatformNetwork getNetwork() {
         if (network == null) { throw new IllegalStateException("Platform network helper is not initialized!"); }
@@ -89,6 +91,16 @@ public final class Platform {
     public static IPlatformWorldgen getWorldgen() {
         if (worldgen == null) { throw new IllegalStateException("Platform worldgen helper is not initialized!"); }
         return worldgen;
+    }
+
+    public static IPlatformDatapack getDatapack() {
+        if (datapack == null) { throw new IllegalStateException("Platform datapack helper is not initialized!"); }
+        return datapack;
+    }
+
+    /** Nullable accessor: unit tests and early startup may have no loaded packs. */
+    public static IPlatformDatapack getDatapackOrNull() {
+        return datapack;
     }
 
     public static boolean isInitialized() {

@@ -64,6 +64,15 @@ public interface IGuiService {
     void drawTexture(String textureId, int x, int y, int width, int height);
 
     @LuaDoc(
+        description = "Draws a textured rectangle from a texture sheet specifying UV coordinates.",
+        params = {"textureId: string", "x: number", "y: number", "u: number", "v: number", "width: number", "height: number",
+                  "[textureWidth: number = 256]", "[textureHeight: number = 256]"}
+    )
+    void drawTextureRegion(String textureId, int x, int y, int u, int v, int width, int height,
+                           @com.luatweaker.api.annotation.LuaDefault("256") int textureWidth,
+                           @com.luatweaker.api.annotation.LuaDefault("256") int textureHeight);
+
+    @LuaDoc(
         description = "Restricts drawing to a rectangle until popClip(). Calls nest; an unclosed clip is reset at the end of the frame.",
         params = {LuaDocFragments.Geometry.X_INTEGER, LuaDocFragments.Geometry.Y_INTEGER, "width: integer", "height: integer"}
     )

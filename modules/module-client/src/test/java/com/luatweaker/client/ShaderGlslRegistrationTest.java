@@ -109,7 +109,7 @@ class ShaderGlslRegistrationTest extends ShaderTestFixture {
         service.registerGlslPass(WARP, BODY);
         File[] markers = Objects.requireNonNull(cacheMarkers(),
                 "re-registering identical source must keep the cache marker");
-        assertEquals(List.of(1, 3), List.of(markers.length, datapack.files.size()),
+        assertEquals(List.of(1, 3), List.of(markers.length, datapack.getVirtualFiles().size()),
                 "a cache hit must not duplicate markers and must keep the three virtual files");
     }
 

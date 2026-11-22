@@ -7,7 +7,7 @@ import org.jetbrains.annotations.Nullable;
 
 @LuaDoc(description = "Builder interface for defining custom Entity types, attributes, models, spawn eggs, sounds, drops and lifecycle hooks.")
 public interface IEntityBuilder {
-    @LuaDoc(description = "Sets entity classification category ('CREATURE', 'MONSTER', 'AMBIENT', 'WATER_CREATURE', 'MISC').", params = {"category: string"}, returnType = LuaDocFragments.Builder.I_ENTITY_BUILDER)
+    @LuaDoc(description = "Sets entity classification category ('CREATURE', 'MONSTER', 'AMBIENT', 'WATER_CREATURE', 'MISC'). Unknown values throw.", params = {"category: string"}, returnType = LuaDocFragments.Builder.I_ENTITY_BUILDER)
     IEntityBuilder category(String category);
 
     @LuaDoc(description = "Sets the hitbox bounding box size (width and height in blocks).", params = {"width: number", "height: number"}, returnType = LuaDocFragments.Builder.I_ENTITY_BUILDER)
@@ -75,7 +75,7 @@ public interface IEntityBuilder {
     @LuaDoc(description = "Render scale multiplier applied to the entity model (1.0 = true to hitbox size).", params = {"scale: number"}, returnType = LuaDocFragments.Builder.I_ENTITY_BUILDER)
     IEntityBuilder renderScale(double scale);
 
-    @LuaDoc(description = "Makes the entity immune to fire/lava damage.", params = {"immune: boolean"}, returnType = LuaDocFragments.Builder.I_ENTITY_BUILDER)
+    @LuaDoc(description = "Makes the entity immune to fire/lava damage (defaults to true when called without arguments).", params = {"[immune: boolean]"}, returnType = LuaDocFragments.Builder.I_ENTITY_BUILDER)
     IEntityBuilder fireImmune(boolean immune);
 
     @LuaDoc(
@@ -97,7 +97,7 @@ public interface IEntityBuilder {
 
     @LuaDoc(
         description = "Appends an item drop (each :drop call adds one entry; all entries roll independently). "
-                    + "Replaces vanilla drops for this entity type.",
+                    + "Replaces vanilla drops for this entity type. Blank item ids throw.",
         params = {"itemId: string", "minCount: integer", "maxCount: integer"},
         returnType = LuaDocFragments.Builder.I_ENTITY_BUILDER
     )
@@ -109,8 +109,12 @@ public interface IEntityBuilder {
     @LuaDoc(description = "Sets creative tab for the entity spawn egg.", params = {"tabId: string"}, returnType = LuaDocFragments.Builder.I_ENTITY_BUILDER)
     IEntityBuilder creativeTab(String tabId);
 
-    @LuaDoc(description = "Sets the GeckoLib skeletal model and animation specs for this entity.", params = {"modelPath: string", "texturePath: string", "animationPath: string", "defaultAnimation: string?"}, returnType = LuaDocFragments.Builder.I_ENTITY_BUILDER)
-    IEntityBuilder geoModel(String modelPath, String texturePath, String animationPath, @Nullable String defaultAnimation);
+    @LuaDoc(description = "Sets the GeckoLib skeletal model and animation specs for this entity. Only the model path is required; texture/animation derive from it when omitted.", params = {"modelPath: string", "[texturePath: string]", "[animationPath: string]", "[defaultAnimation: string]"}, returnType = LuaDocFragments.Builder.I_ENTITY_BUILDER)
+    IEntityBuilder geoModel(String modelPath, @Nullable String texturePath, @Nullable String animationPath, @Nullable String defaultAnimation);
+
+    default IEntityBuilder geoModel(String modelPath) {
+        return geoModel(modelPath, null, null, null);
+    }
 
     default IEntityBuilder geoModel(String modelPath, String texturePath, String animationPath) {
         return geoModel(modelPath, texturePath, animationPath, null);
@@ -133,7 +137,7 @@ public interface IEntityBuilder {
     @LuaDoc(description = "Sets a custom item texture path for the entity spawn egg.", params = {"texturePath: string"}, returnType = LuaDocFragments.Builder.I_ENTITY_BUILDER)
     IEntityBuilder spawnEggTexture(String texturePath);
 
-    @LuaDoc(description = "Configures a Boss Health Bar for this entity.", params = {"title: string", "[color: string]", "[overlay: string]"}, returnType = LuaDocFragments.Builder.I_ENTITY_BUILDER)
+    @LuaDoc(description = "Configures a Boss Health Bar for this entity (color: PINK/BLUE/RED/GREEN/YELLOW/PURPLE/WHITE; overlay: PROGRESS/NOTCHED_6/NOTCHED_10/NOTCHED_12/NOTCHED_20; unknown values throw).", params = {"title: string", "[color: string]", "[overlay: string]"}, returnType = LuaDocFragments.Builder.I_ENTITY_BUILDER)
     IEntityBuilder bossBar(String title, String color, String overlay);
 
     @LuaDoc(
@@ -153,7 +157,8 @@ public interface IEntityBuilder {
     IEntityBuilder onHurt(EntityHurtHandler handler);
 
     @LuaDoc(
-        description = "Server-side death hook. fn(entity, killerOrNil) returning true cancels the death.",
+        description = "Server-side death hook. fn(entity, killerOrNil) returning true cancels the death "
+                    + "and restores the entity to at least 1 HP.",
         params = {LuaDocFragments.Content.FN_FUNCTION},
         returnType = LuaDocFragments.Builder.I_ENTITY_BUILDER
     )
@@ -176,11 +181,17 @@ public interface IEntityBuilder {
     float getWidth();
     float getHeight();
     double getMaxHealth();
+    boolean hasExplicitMaxHealth();
     double getMovementSpeed();
+    boolean hasExplicitMovementSpeed();
     double getAttackDamage();
+    boolean hasExplicitAttackDamage();
     double getFollowRange();
+    boolean hasExplicitFollowRange();
     double getArmor();
+    boolean hasExplicitArmor();
     double getKnockbackResistance();
+    boolean hasExplicitKnockbackResistance();
     boolean hasSpawnEgg();
     int getPrimaryColor();
     int getSecondaryColor();

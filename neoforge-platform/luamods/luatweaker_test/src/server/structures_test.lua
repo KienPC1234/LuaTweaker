@@ -28,7 +28,7 @@ check("ClearAll baseline (structures=0)", count() == 0)
 
 -- ==== REGISTER: full config ====
 Structures:Register("luatweaker_test:ancient_temple", {
-    template = "luatweaker_test:structures/temple",
+    template = "luatweaker_test:structures/crystal_outpost",
     spawnBiomes = { "minecraft:desert", "minecraft:badlands" },
     spacing = 32,
     separation = 16,
@@ -39,7 +39,7 @@ check("Register increments structures", count() == 1)
 
 -- ==== REGISTER: minimal config (vanilla desert_pyramid defaults) ====
 Structures:Register("luatweaker_test:ruin", {
-    template = "luatweaker_test:structures/ruin",
+    template = "luatweaker_test:structures/sky_monolith",
     spawnBiomes = { "minecraft:plains" },
 })
 check("Minimal register increments structures", count() == 2)

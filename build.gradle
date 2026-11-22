@@ -1,4 +1,7 @@
 plugins {
+    id 'architectury-plugin' version "${architectury_plugin_version}" apply false
+    id 'dev.architectury.loom' version "${loom_version}" apply false
+    id 'com.github.johnrengelman.shadow' version "${shadow_version}" apply false
     id 'idea'
     // The root only exists to host the PMD canary; `java` gives the Pmd task the
     // source-set plumbing it needs and produces no artifact (jar is disabled).
@@ -24,6 +27,8 @@ allprojects {
 
     repositories {
         mavenCentral()
+        maven { url = 'https://maven.fabricmc.net/' }
+        maven { url = 'https://maven.architectury.dev/' }
         maven { url = 'https://maven.neoforged.net/releases' }
         maven { url = 'https://modmaven.dev' }
         maven { url = 'https://maven.blamejared.com/' }
@@ -126,12 +131,15 @@ subprojects {
 // Ensure all subproject jars exist before the IDE sync task runs.
 // This prevents "archive does not exist" classpath errors after a clean build.
 gradle.projectsEvaluated {
-    def ideSync = project(':neoforge-platform').tasks.findByName('neoForgeIdeSync')
-    if (ideSync != null) {
-        subprojects.each { sub ->
-            def jarTask = sub.tasks.findByName('jar')
-            if (jarTask != null) {
-                ideSync.dependsOn(jarTask)
+    def neoforgeProject = findProject(':neoforge')
+    if (neoforgeProject != null) {
+        def ideSync = neoforgeProject.tasks.findByName('neoForgeIdeSync')
+        if (ideSync != null) {
+            subprojects.each { sub ->
+                def jarTask = sub.tasks.findByName('jar')
+                if (jarTask != null) {
+                    ideSync.dependsOn(jarTask)
+                }
             }
         }
     }

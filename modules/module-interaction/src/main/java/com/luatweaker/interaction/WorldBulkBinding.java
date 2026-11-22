@@ -83,7 +83,7 @@ final class WorldBulkBinding {
     private static void bindPlaceStructure(ILuaEngine engine, ILuaTable workspaceTable) {
         // ===== NBT structure placement (PlaceStructure) =====
         // PlaceStructure(templateId, x, y, z, [rotationDegrees]) or with a
-        // dimension prefix. Loads the NBT template (data/<ns>/structures/*.nbt)
+        // dimension prefix. Loads the NBT template (data/<ns>/structure/<path>.nbt)
         // from the datapack and places it; the Lua mod decides when/where.
         workspaceTable.rawset("PlaceStructure", args -> {
             int off = LuaBinder.getOffset(args);

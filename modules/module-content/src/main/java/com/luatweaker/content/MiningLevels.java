@@ -36,6 +36,9 @@ final class MiningLevels {
      *         when the token is unknown
      */
     static int parse(String levelName) {
+        if (levelName == null || levelName.isBlank()) {
+            return UNKNOWN_TIER_FALLBACK;
+        }
         Integer named = NAMED_TIERS.get(levelName.toUpperCase(Locale.ROOT));
         if (named != null) {
             return named;

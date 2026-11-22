@@ -224,8 +224,12 @@ public interface IBlockBuilder {
     @LuaDoc(description = "Registers a callback invoked when a neighbor block changes or redstone signal updates.", params = {"handler: function(pos, neighborPos)"}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
     IBlockBuilder onNeighborChanged(BiConsumer<Object, Object> handler);
 
-    @LuaDoc(description = "Sets the GeckoLib skeletal model and animation specs for this block.", params = {"modelPath: string", LuaDocFragments.Content.TEXTURE_PATH, "animationPath: string", "defaultAnimation: string?"}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
-    IBlockBuilder geoModel(String modelPath, String texturePath, String animationPath, @org.jetbrains.annotations.Nullable String defaultAnimation);
+    @LuaDoc(description = "Sets the GeckoLib skeletal model and animation specs for this block. Only the model path is required; texture/animation derive from it when omitted.", params = {"modelPath: string", "[texturePath: string]", "[animationPath: string]", "[defaultAnimation: string]"}, returnType = LuaDocFragments.Builder.I_BLOCK_BUILDER)
+    IBlockBuilder geoModel(String modelPath, @org.jetbrains.annotations.Nullable String texturePath, @org.jetbrains.annotations.Nullable String animationPath, @org.jetbrains.annotations.Nullable String defaultAnimation);
+
+    default IBlockBuilder geoModel(String modelPath) {
+        return geoModel(modelPath, null, null, null);
+    }
 
     default IBlockBuilder geoModel(String modelPath, String texturePath, String animationPath) {
         return geoModel(modelPath, texturePath, animationPath, null);

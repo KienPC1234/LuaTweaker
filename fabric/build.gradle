@@ -1,0 +1,163 @@
+plugins {
+    id 'architectury-plugin'
+    id 'dev.architectury.loom'
+    id 'com.github.johnrengelman.shadow'
+}
+
+architectury {
+    platformSetupLoomIde()
+    fabric()
+}
+
+loom {
+    runs {
+        client {
+            client()
+            setConfigName("Fabric Client")
+            ideConfigGenerated(true)
+            runDir "run"
+        }
+        server {
+            server()
+            setConfigName("Fabric Server")
+            ideConfigGenerated(true)
+            runDir "run"
+        }
+    }
+}
+
+def pureJavaModules = [
+    ':common-api',
+    ':core-engine',
+    ':modules:module-recipes',
+    ':modules:module-content',
+    ':modules:module-entities',
+    ':modules:module-interaction',
+    ':modules:module-events',
+    ':modules:module-math',
+    ':modules:module-storage',
+    ':modules:module-network',
+    ':modules:module-client',
+    ':modules:module-interception',
+    ':modules:module-command',
+    ':modules:module-tasks',
+    ':modules:module-loot',
+    ':modules:module-worldgen',
+    ':modules:module-noise',
+    ':modules:module-dimensions',
+    ':modules:module-spawnrules',
+    ':modules:module-structures',
+    ':modules:module-update',
+    ':modules:module-integration-api',
+    ':modules:module-text'
+]
+
+configurations {
+    common {
+        canBeResolved = true
+        canBeConsumed = false
+    }
+    compileClasspath.extendsFrom common
+    runtimeClasspath.extendsFrom common
+    developmentFabric.extendsFrom common
+
+    shadowBundle {
+        canBeResolved = true
+        canBeConsumed = false
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
+    mappings loom.layered() {
+        officialMojangMappings()
+        parchment("org.parchmentmc.data:parchment-${rootProject.parchment_minecraft_version}:${rootProject.parchment_mappings_version}@zip")
+    }
+
+    modImplementation "net.fabricmc:fabric-loader:${rootProject.fabric_loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${rootProject.fabric_api_version}"
+    modImplementation "dev.architectury:architectury-fabric:${rootProject.architectury_version}"
+
+    common(project(path: ':common', configuration: 'namedElements')) { transitive false }
+    shadowBundle(project(path: ':common', configuration: 'transformProductionFabric')) { transitive false }
+
+    pureJavaModules.each { dep ->
+        implementation project(dep)
+        shadowBundle(project(dep)) { transitive false }
+        developmentFabric(project(dep)) { transitive false }
+    }
+
+    developmentFabric "io.github.kienpc1234:luava:${rootProject.luava_version}"
+    developmentFabric "org.mongodb:bson:${rootProject.bson_version}"
+    developmentFabric "io.github.spair:imgui-java-binding:${rootProject.imgui_version}"
+    developmentFabric("io.github.spair:imgui-java-lwjgl3:${rootProject.imgui_version}") { exclude group: 'org.lwjgl' }
+    developmentFabric "io.github.spair:imgui-java-natives-windows:${rootProject.imgui_version}"
+    developmentFabric "io.github.spair:imgui-java-natives-linux:${rootProject.imgui_version}"
+    developmentFabric "io.github.spair:imgui-java-natives-macos:${rootProject.imgui_version}"
+    developmentFabric("org.lwjgl:lwjgl-spvc:${rootProject.lwjgl_version}") { exclude group: 'org.lwjgl' }
+    developmentFabric "org.lwjgl:lwjgl-spvc:${rootProject.lwjgl_version}:natives-windows"
+    developmentFabric "org.lwjgl:lwjgl-spvc:${rootProject.lwjgl_version}:natives-linux"
+    developmentFabric "org.lwjgl:lwjgl-spvc:${rootProject.lwjgl_version}:natives-macos"
+
+    shadowBundle "io.github.kienpc1234:luava:${rootProject.luava_version}"
+    shadowBundle "org.mongodb:bson:${rootProject.bson_version}"
+    shadowBundle("org.lwjgl:lwjgl-spvc:${rootProject.lwjgl_version}") { exclude group: 'org.lwjgl', module: 'lwjgl' }
+    shadowBundle "org.lwjgl:lwjgl-spvc:${rootProject.lwjgl_version}:natives-windows"
+    shadowBundle "org.lwjgl:lwjgl-spvc:${rootProject.lwjgl_version}:natives-linux"
+    shadowBundle "org.lwjgl:lwjgl-spvc:${rootProject.lwjgl_version}:natives-macos"
+
+    shadowBundle "io.github.spair:imgui-java-binding:${rootProject.imgui_version}"
+    shadowBundle("io.github.spair:imgui-java-lwjgl3:${rootProject.imgui_version}") { exclude group: 'org.lwjgl' }
+    shadowBundle "io.github.spair:imgui-java-natives-windows:${rootProject.imgui_version}"
+    shadowBundle "io.github.spair:imgui-java-natives-linux:${rootProject.imgui_version}"
+    shadowBundle "io.github.spair:imgui-java-natives-macos:${rootProject.imgui_version}"
+
+    modImplementation "software.bernie.geckolib:geckolib-fabric-${rootProject.minecraft_version}:${rootProject.geckolib_version}"
+
+    testImplementation "org.junit.jupiter:junit-jupiter-api:${rootProject.junit_version}"
+    testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:${rootProject.junit_version}"
+}
+
+shadowJar {
+    configurations = [project.configurations.shadowBundle]
+    archiveClassifier = 'dev-shadow'
+}
+
+remapJar {
+    input.set shadowJar.archiveFile
+    dependsOn shadowJar
+    archiveClassifier = null
+}
+
+test {
+    useJUnitPlatform()
+}
+
+// Test-mod sync: the shared Lua test mods live in neoforge-platform/luamods
+// (tracked in git); sync them into this loader's game dir before every run,
+// mirroring the old :neoforge-platform:syncLuaMods workflow.
+def sharedLuaModsDir = rootProject.file('neoforge-platform/luamods')
+def sharedLuaConfigDir = rootProject.file('neoforge-platform/luaconfig')
+
+tasks.register('syncLuaMods', Sync) {
+    from sharedLuaModsDir
+    into file('run/luamods')
+    preserve {
+        include '.luatweaker/**'
+    }
+}
+
+tasks.register('syncLuaConfig', Sync) {
+    from sharedLuaConfigDir
+    into file('run/luaconfig')
+}
+
+tasks.named('runClient') {
+    dependsOn 'syncLuaMods'
+    dependsOn 'syncLuaConfig'
+}
+
+tasks.named('runServer') {
+    dependsOn 'syncLuaMods'
+    dependsOn 'syncLuaConfig'
+}

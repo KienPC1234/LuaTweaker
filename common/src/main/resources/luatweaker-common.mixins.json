@@ -1,0 +1,19 @@
+{
+  "required": true,
+  "package": "com.luatweaker.common.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "PackRepositoryMixin",
+    "EntityDataMixin",
+    "RecipeManagerMixin",
+    "MobAccessor"
+  ],
+  "client": [
+    "ItemInHandRendererMixin",
+    "GameRendererAccessor",
+    "ItemPropertiesAccessor"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

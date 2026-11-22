@@ -36,7 +36,7 @@ class BiomesDefineCoreTest {
 
     private String defineMeadow() {
         service.define(MEADOW_ID, BiomesDefineFixture.defineConfig(engine));
-        return datapack.files.get(MEADOW_PATH);
+        return datapack.getData(MEADOW_PATH);
     }
 
     @Test

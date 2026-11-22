@@ -1,0 +1,15 @@
+{
+  "debug": false,
+  "autoGenerateStubs": true,
+  "suppressExperimentalWarning": true,
+  "modSyncMode": "kick",
+  "modSyncTimeoutSeconds": 10,
+  "serverModBundleUrl": "",
+  "serverModBundleSha256": "",
+  "serverModBundleVersion": "",
+  "serverModBundleName": "",
+  "serverModBundleFile": "",
+  "maxMemoryBytes": 0,
+  "maxCallDepth": 0,
+  "maxCoroutines": 0
+}

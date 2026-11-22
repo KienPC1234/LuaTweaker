@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "luatweaker",
+  "version": "1.0.0",
+  "name": "LuaTweaker",
+  "description": "Ultra-lightweight Minecraft scripting engine.",
+  "authors": [
+    "LuaTweaker Team"
+  ],
+  "license": "Apache-2.0",
+  "icon": "icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.luatweaker.fabric.LuaTweakerFabric"
+    ],
+    "client": [
+      "com.luatweaker.fabric.client.LuaTweakerFabricClient"
+    ]
+  },
+  "mixins": [
+    "luatweaker-common.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*",
+    "architectury": ">=13.0.0"
+  }
+}

@@ -31,6 +31,16 @@ final class ContentBindingSupport {
         return args.length - off >= min;
     }
 
+    /**
+     * Throws a loud usage error when a builder call is missing required arguments,
+     * instead of crashing with an index error.
+     */
+    static void requireArgs(ILuaValue[] args, int off, int min, String usage) {
+        if (!hasMinArgs(args, off, min)) {
+            throw new IllegalArgumentException(usage + " requires " + min + " argument(s)");
+        }
+    }
+
     static void bindMethod(ILuaTable table, String name, ILuaFunction func) {
         table.rawset(name, func);
         if (name != null && !name.isEmpty() && Character.isLowerCase(name.charAt(0))) {

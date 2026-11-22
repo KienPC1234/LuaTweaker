@@ -6,10 +6,16 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.luatweaker.api.content.IDatapackService;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
+
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * In-memory (virtual) DataPack service.
@@ -58,8 +64,7 @@ public class DatapackServiceImpl implements IDatapackService {
 
     @Override
     public void addData(String relPath, String jsonContent) {
-        String key = (relPath.startsWith(DATA_PREFIX) || relPath.startsWith("assets/")) ? relPath : DATA_PREFIX + relPath;
-        virtualFiles.put(key, jsonContent);
+        virtualFiles.put(canonicalKey(relPath), jsonContent);
     }
 
     @Override
@@ -111,8 +116,86 @@ public class DatapackServiceImpl implements IDatapackService {
     }
 
     @Override
+    public boolean hasData(@NotNull String relPath) {
+        return virtualFiles.containsKey(canonicalKey(relPath));
+    }
+
+    @Override
+    @Nullable
+    public String getData(@NotNull String relPath) {
+        return virtualFiles.get(canonicalKey(relPath));
+    }
+
+    @Override
+    public boolean removeData(@NotNull String relPath) {
+        return virtualFiles.remove(canonicalKey(relPath)) != null;
+    }
+
+    @Override
+    @NotNull
+    public List<String> listData(@NotNull String prefix) {
+        String normalized = stripSlashes(prefix == null ? "" : prefix);
+        Set<String> sorted = new TreeSet<>();
+        for (String key : virtualFiles.keySet()) {
+            if (normalized.isEmpty() || key.startsWith(normalized)) {
+                sorted.add(key);
+            }
+        }
+        return new ArrayList<>(sorted);
+    }
+
+    @Override
+    @NotNull
+    public List<String> listNamespaces(@NotNull String packDir) {
+        String dir = stripSlashes(packDir == null ? "" : packDir);
+        while (dir.endsWith("/")) {
+            dir = dir.substring(0, dir.length() - 1);
+        }
+        Set<String> namespaces = new TreeSet<>();
+        if (!"data".equals(dir) && !"assets".equals(dir)) {
+            return new ArrayList<>(namespaces);
+        }
+        String prefix = dir + "/";
+        for (String key : virtualFiles.keySet()) {
+            if (!key.startsWith(prefix)) {
+                continue;
+            }
+            String rest = key.substring(prefix.length());
+            int slash = rest.indexOf('/');
+            if (slash > 0) {
+                namespaces.add(rest.substring(0, slash));
+            }
+        }
+        return new ArrayList<>(namespaces);
+    }
+
+    @Override
     public void clear() {
         virtualFiles.clear();
+    }
+
+    /** Canonical virtual key ({@code data/<ns>/<path>} or {@code assets/<ns>/<path>}). */
+    private static String canonicalKey(String relPath) {
+        if (relPath == null || relPath.isBlank()) {
+            throw new IllegalArgumentException("relPath must not be blank (e.g. 'mymod/recipe/iron.json')");
+        }
+        String normalized = stripSlashes(relPath);
+        if (normalized.isEmpty() || normalized.contains("..")) {
+            throw new IllegalArgumentException("relPath must not contain path traversal, got: " + relPath);
+        }
+        if (normalized.startsWith(DATA_PREFIX) || normalized.startsWith("assets/")) {
+            return normalized;
+        }
+        return DATA_PREFIX + normalized;
+    }
+
+    /** Trims whitespace, normalizes separators, and drops leading slashes. */
+    private static String stripSlashes(String raw) {
+        String normalized = raw.strip().replace('\\', '/');
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        return normalized;
     }
 
     /** Parses "namespace:path" → ["namespace", "path"]; defaults namespace to "luatweaker". */

@@ -66,11 +66,15 @@ final class ContentEffectBinding {
     private static ILuaTable bindMobEffectBuilder(ILuaEngine engine, MobEffectBuilderImpl builder) {
         ILuaTable table = engine.createTable();
         ContentBindingSupport.bindMethod(table, "color", args -> {
-            builder.color(args[LuaBinder.getOffset(args)].asInt());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "effect:color");
+            builder.color(args[off].asInt());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "category", args -> {
-            builder.category(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "effect:category");
+            builder.category(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "attribute", args -> {
@@ -87,19 +91,25 @@ final class ContentEffectBinding {
             return table;
         });
         ContentBindingSupport.bindMethod(table, "texture", args -> {
-            builder.texture(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "effect:texture");
+            builder.texture(args[off].asString());
             return table;
         });
         table.rawset("icon", table.rawget("texture"));
         table.rawset("Icon", table.rawget("texture"));
         ContentBindingSupport.bindMethod(table, "displayName", args -> {
-            builder.displayName(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "effect:displayName");
+            builder.displayName(args[off].asString());
             return table;
         });
         table.rawset("name", table.rawget("displayName"));
         table.rawset("Name", table.rawget("displayName"));
         ContentBindingSupport.bindMethod(table, "instantaneous", args -> {
-            builder.instantaneous(args[LuaBinder.getOffset(args)].asBoolean());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "effect:instantaneous");
+            builder.instantaneous(args[off].asBoolean());
             return table;
         });
         table.rawset("instant", args -> {
@@ -108,11 +118,15 @@ final class ContentEffectBinding {
         });
         table.rawset("Instant", table.rawget("instant"));
         ContentBindingSupport.bindMethod(table, "tickInterval", args -> {
-            builder.tickInterval(args[LuaBinder.getOffset(args)].asInt());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "effect:tickInterval");
+            builder.tickInterval(args[off].asInt());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "curable", args -> {
-            builder.curable(args[LuaBinder.getOffset(args)].asBoolean());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "effect:curable");
+            builder.curable(args[off].asBoolean());
             return table;
         });
         table.rawset("beneficial", args -> {

@@ -46,11 +46,28 @@ public final class DynamicJavaProxy {
         return userdata;
     }
 
+    private static boolean isSelfArgument(LuaValue arg, Object instance) {
+        if (arg instanceof LuaUserdata userdata) {
+            return userdata.getJavaInstance() == instance;
+        }
+        if (arg instanceof LuaTable table) {
+            LuaValue entityVal = table.rawget(LuaValue.valueOf("__entity"));
+            return entityVal instanceof LuaUserdata userdata
+                    && matchesInstance(userdata.getJavaInstance(), instance);
+        }
+        return false;
+    }
+
+    private static boolean matchesInstance(Object javaObj, Object instance) {
+        return javaObj == instance
+                || (javaObj instanceof com.luatweaker.api.entity.IEntity entity
+                && entity.getRawEntity() == instance);
+    }
+
     static LuaFunction wrapMethod(LuaState state, Object instance, String methodName) {
         return LuaFunction.of(args -> {
             int luaArgIndex = 0;
-            if (args.length >= 1 && args[0] instanceof LuaUserdata userdata
-                    && userdata.getJavaInstance() == instance) {
+            if (args.length >= 1 && isSelfArgument(args[0], instance)) {
                 luaArgIndex = 1; // Skip self on colon calls.
             }
             int luaArgCount = args.length - luaArgIndex;

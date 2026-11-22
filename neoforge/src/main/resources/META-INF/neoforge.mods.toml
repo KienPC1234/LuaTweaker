@@ -1,0 +1,16 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="Apache 2.0"
+
+[[mods]]
+modId="luatweaker"
+version="1.0.0"
+displayName="LuaTweaker"
+logoFile="logo.png"
+authors="LuaTweaker Team"
+description='''
+LuaTweaker is an ultra-lightweight, near-instantaneous Minecraft scripting engine.
+'''
+
+[[mixins]]
+config="luatweaker-common.mixins.json"

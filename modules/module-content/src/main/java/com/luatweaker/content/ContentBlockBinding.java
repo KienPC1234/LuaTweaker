@@ -34,19 +34,27 @@ final class ContentBlockBinding {
 
     private static void bindBlockBasics(ILuaTable table, IBlockBuilder builder) {
         ContentBindingSupport.bindMethod(table, "hardness", args -> {
-            builder.hardness((float) args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:hardness");
+            builder.hardness((float) args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "resistance", args -> {
-            builder.resistance((float) args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:resistance");
+            builder.resistance((float) args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "lightLevel", args -> {
-            builder.lightLevel(args[LuaBinder.getOffset(args)].asInt());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:lightLevel");
+            builder.lightLevel(args[off].asInt());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "light", args -> {
-            builder.lightLevel(args[LuaBinder.getOffset(args)].asInt());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:light");
+            builder.lightLevel(args[off].asInt());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "emissive", args -> {
@@ -66,19 +74,27 @@ final class ContentBlockBinding {
             return table;
         });
         ContentBindingSupport.bindMethod(table, "soundType", args -> {
-            builder.soundType(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:soundType");
+            builder.soundType(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "requiresTool", args -> {
-            builder.requiresTool(args[LuaBinder.getOffset(args)].asBoolean());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:requiresTool");
+            builder.requiresTool(args[off].asBoolean());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "mineableWith", args -> {
-            builder.mineableWith(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:mineableWith");
+            builder.mineableWith(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "friction", args -> {
-            builder.friction((float) args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:friction");
+            builder.friction((float) args[off].asDouble());
             return table;
         });
     }
@@ -86,6 +102,7 @@ final class ContentBlockBinding {
     private static void bindBlockMining(ILuaTable table, IBlockBuilder builder) {
         ContentBindingSupport.bindMethod(table, "miningLevel", args -> {
             int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:miningLevel");
             Object obj = args[off].toJavaObject();
             if (obj instanceof Number num) {
                 builder.miningLevel(num.intValue());
@@ -110,51 +127,75 @@ final class ContentBlockBinding {
             return table;
         });
         ContentBindingSupport.bindMethod(table, "jumpFactor", args -> {
-            builder.jumpFactor((float) args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:jumpFactor");
+            builder.jumpFactor((float) args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "speedFactor", args -> {
-            builder.speedFactor((float) args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:speedFactor");
+            builder.speedFactor((float) args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "noCollision", args -> {
-            builder.noCollision(args[LuaBinder.getOffset(args)].asBoolean());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:noCollision");
+            builder.noCollision(args[off].asBoolean());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "noOcclusion", args -> {
-            builder.noOcclusion(args[LuaBinder.getOffset(args)].asBoolean());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:noOcclusion");
+            builder.noOcclusion(args[off].asBoolean());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "pushReaction", args -> {
-            builder.pushReaction(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:pushReaction");
+            builder.pushReaction(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "replaceable", args -> {
-            builder.replaceable(args[LuaBinder.getOffset(args)].asBoolean());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:replaceable");
+            builder.replaceable(args[off].asBoolean());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "ignitedByLava", args -> {
-            builder.ignitedByLava(args[LuaBinder.getOffset(args)].asBoolean());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:ignitedByLava");
+            builder.ignitedByLava(args[off].asBoolean());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "flammable", args -> {
-            builder.ignitedByLava(args[LuaBinder.getOffset(args)].asBoolean());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:flammable");
+            builder.ignitedByLava(args[off].asBoolean());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "liquid", args -> {
-            builder.liquid(args[LuaBinder.getOffset(args)].asBoolean());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:liquid");
+            builder.liquid(args[off].asBoolean());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "offsetType", args -> {
-            builder.offsetType(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:offsetType");
+            builder.offsetType(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "redstoneConductor", args -> {
-            builder.redstoneConductor(args[LuaBinder.getOffset(args)].asBoolean());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:redstoneConductor");
+            builder.redstoneConductor(args[off].asBoolean());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "model", args -> {
-            builder.model(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:model");
+            builder.model(args[off].asString());
             return table;
         });
     }
@@ -164,31 +205,33 @@ final class ContentBlockBinding {
 
     private static void bindBlockMeta(ILuaTable table, IBlockBuilder builder) {
         ContentBindingSupport.bindMethod(table, "texture", args -> {
-            builder.texture(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:texture");
+            builder.texture(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, ContentBindingSupport.METHOD_DISPLAY_NAME, args -> {
-            builder.displayName(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:displayName");
+            builder.displayName(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, ContentBindingSupport.METHOD_CREATIVE_TAB, args -> {
-            builder.creativeTab(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:creativeTab");
+            builder.creativeTab(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "tabGroup", args -> {
-            builder.creativeTab(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "block:tabGroup");
+            builder.creativeTab(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "geoModel", args -> {
             int off = LuaBinder.getOffset(args);
-            if (ContentBindingSupport.hasMinArgs(args, off, 3)) {
-                String modelPath = args[off].asString();
-                String texturePath = args[off + 1].asString();
-                String animPath = args[off + 2].asString();
-                String defaultAnim = ContentBindingSupport.hasMinArgs(args, off, 4) && !args[off + 3].isNil()
-                        ? args[off + 3].asString() : null;
-                builder.geoModel(modelPath, texturePath, animPath, defaultAnim);
-            }
+            String[] geo = GeoModelArgs.parse(args, off, "block:geoModel");
+            builder.geoModel(geo[0], geo[1], geo[2], geo[3]);
             return table;
         });
         ContentBindingSupport.bindMethod(table, "defaultAnimation", args -> {

@@ -37,14 +37,17 @@ final class EntityPropertyAliases {
             Map.entry("Vehicle", "getVehicle"), Map.entry("vehicle", "getVehicle"),
             Map.entry("IsPassenger", "isPassenger"), Map.entry("isPassenger", "isPassenger"),
             Map.entry("HasPassengers", "hasPassengers"), Map.entry("hasPassengers", "hasPassengers"),
+            Map.entry("Flying", "isFlying"), Map.entry("flying", "isFlying")
+    );
+
+    /** Player-only getters (IPlayerExtras): absent from plain entity tables. */
+    private static final Map<String, String> PLAYER_GETTERS = Map.ofEntries(
             Map.entry("GameMode", "getGameMode"), Map.entry("gameMode", "getGameMode"),
             Map.entry("Level", "getLevel"), Map.entry("level", "getLevel"),
             Map.entry("TotalExperience", "getTotalExperience"), Map.entry("totalExperience", "getTotalExperience"),
             Map.entry("ExperienceProgress", "getExperienceProgress"), Map.entry("experienceProgress", "getExperienceProgress"),
             Map.entry("SelectedSlot", "getSelectedSlot"), Map.entry("selectedSlot", "getSelectedSlot"),
-            Map.entry("CanFly", CAN_FLY), Map.entry(CAN_FLY, CAN_FLY),
-            Map.entry("Flying", "isFlying"), Map.entry("flying", "isFlying")
-    );
+            Map.entry("CanFly", CAN_FLY), Map.entry(CAN_FLY, CAN_FLY));
 
     /** Property name (both casings) to the backing setter bound on the table. */
     private static final Map<String, String> DIRECT_SETTERS = Map.ofEntries(
@@ -55,14 +58,16 @@ final class EntityPropertyAliases {
             Map.entry("Silent", "setSilent"), Map.entry("silent", "setSilent"),
             Map.entry("AirSupply", "setAirSupply"), Map.entry("airSupply", "setAirSupply"),
             Map.entry("Absorption", "setAbsorption"), Map.entry("absorption", "setAbsorption"),
-            Map.entry("FallDistance", "setFallDistance"), Map.entry("fallDistance", "setFallDistance"),
+            Map.entry("FallDistance", "setFallDistance"), Map.entry("fallDistance", "setFallDistance"));
+
+    /** Player-only setters (IPlayerExtras): absent from plain entity tables. */
+    private static final Map<String, String> PLAYER_SETTERS = Map.ofEntries(
             Map.entry("GameMode", "setGameMode"), Map.entry("gameMode", "setGameMode"),
             Map.entry("Level", "setLevel"), Map.entry("level", "setLevel"),
             Map.entry("ExperienceProgress", "setExperienceProgress"), Map.entry("experienceProgress", "setExperienceProgress"),
             Map.entry("SelectedSlot", "setSelectedSlot"), Map.entry("selectedSlot", "setSelectedSlot"),
             Map.entry("CanFly", "setCanFly"), Map.entry("canFly", "setCanFly"),
-            Map.entry("Flying", "setFlying"), Map.entry("flying", "setFlying")
-    );
+            Map.entry("Flying", "setFlying"), Map.entry("flying", "setFlying"));
 
     /** Property name (both casings) to the vector-accepting method bound on the table. */
     private static final Map<String, String> VECTOR_SETTERS = Map.of(
@@ -72,19 +77,28 @@ final class EntityPropertyAliases {
     private EntityPropertyAliases() {}
 
     static void addPropertyAliases(ILuaEngine engine, ILuaTable table, IEntity entity) {
+        addPropertyAliases(engine, table, entity, false);
+    }
+
+    static void addPlayerPropertyAliases(ILuaEngine engine, ILuaTable table, IEntity entity) {
+        addPropertyAliases(engine, table, entity, true);
+    }
+
+    private static void addPropertyAliases(ILuaEngine engine, ILuaTable table, IEntity entity,
+                                           boolean isPlayer) {
         ILuaTable meta = engine.createTable();
 
-        meta.rawset("__index", args -> indexProperty(engine, table, entity, args[1].asString()));
+        meta.rawset("__index", args -> indexProperty(engine, table, entity, args[1].asString(), isPlayer));
 
         meta.rawset("__newindex", args -> {
-            assignProperty(engine, table, entity, args[1].asString(), args[2]);
+            assignProperty(engine, table, entity, args[1].asString(), args[2], isPlayer);
             return engine.nilValue();
         });
 
         meta.rawset("__eq", args -> {
             IEntity first = EntitiesLuaBinding.getEntityFromTable(args[1]);
             IEntity second = EntitiesLuaBinding.getEntityFromTable(args[2]);
-            if (first != null && second != null) {
+            if (first != null && second != null && first.getUuid() != null) {
                 return engine.wrapBoolean(first.getUuid().equals(second.getUuid()));
             }
             return engine.wrapBoolean(false);
@@ -93,8 +107,12 @@ final class EntityPropertyAliases {
         table.setMetatable(meta);
     }
 
-    private static ILuaValue indexProperty(ILuaEngine engine, ILuaTable table, IEntity entity, String key) {
+    private static ILuaValue indexProperty(ILuaEngine engine, ILuaTable table, IEntity entity, String key,
+                                           boolean isPlayer) {
         String getter = DIRECT_GETTERS.get(key);
+        if (getter == null && isPlayer) {
+            getter = PLAYER_GETTERS.get(key);
+        }
         if (getter != null) {
             return engine.callFunction(table.rawget(getter), table);
         }
@@ -140,8 +158,11 @@ final class EntityPropertyAliases {
     }
 
     private static void assignProperty(ILuaEngine engine, ILuaTable table, IEntity entity,
-                                       String key, ILuaValue val) {
+                                       String key, ILuaValue val, boolean isPlayer) {
         String setter = DIRECT_SETTERS.get(key);
+        if (setter == null && isPlayer) {
+            setter = PLAYER_SETTERS.get(key);
+        }
         if (setter != null) {
             engine.callFunction(table.rawget(setter), table, val);
             return;

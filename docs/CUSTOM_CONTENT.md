@@ -139,11 +139,31 @@ Inject dynamic JSON recipes, tags, loot tables, advancements, and mcfunctions in
 ```lua
 local Datapack = require("LuaTweaker.Datapack")
 
-Datapack.AddJsonRecipe("custom_crafting", '{"type":"minecraft:crafting_shapeless","result":{"id":"minecraft:diamond"}}')
-Datapack.AddLootTable("blocks/custom_ruby_ore", '{"type":"minecraft:block","pools":[]}')
-Datapack.AddAdvancement("story/ruby_master", '{"display":{"title":"Ruby Master"}}')
-Datapack.AddFunction("utility/heal_all", "effect give @a minecraft:regeneration 10 2")
+Datapack.AddJsonRecipe("mymod:custom_crafting", '{"type":"minecraft:crafting_shapeless","result":{"id":"minecraft:diamond"}}')
+Datapack.AddLootTable("mymod:blocks/custom_ruby_ore", '{"type":"minecraft:block","pools":[]}')
+Datapack.AddAdvancement("mymod:story/ruby_master", '{"display":{"title":"Ruby Master"}}')
+Datapack.AddFunction("mymod:utility/heal_all", "effect give @a minecraft:regeneration 10 2")
+
+-- Read / manage your own virtual files (low-level primitives)
+if Datapack:HasData("mymod/recipe/ruby_gear.json") then
+    local json = Datapack:GetData("mymod/recipe/ruby_gear.json")
+end
+local myFiles = Datapack:ListData("data/mymod/recipe/")  -- { "data/mymod/recipe/ruby_gear.json", ... }
+Datapack:RemoveData("mymod/recipe/old_recipe.json")
+
+-- Read datapacks already loaded by the server (vanilla + other mods, read-only).
+-- Returns nil / false / {} outside a running server.
+local vanillaLoot = Datapack:GetLoaded("minecraft/loot_table/blocks/diamond_ore.json")
+if Datapack:HasLoaded("create/recipe/crushing/obsidian.json") then
+    print("Create crushing obsidian exists")
+end
+local namespaces = Datapack:LoadedNamespaces("data")  -- { "create", "minecraft", ... }
 ```
+
+Prefer dropping static files into `luamods/<mod_id>/data/<namespace>/...`
+(same layout inside `.zip` mods) over `AddData` calls — files need no code,
+hot-reload with `/lt reload data`, and `/lt doctor` validates their layout.
+`AddData` wins over same-path files when both exist (handy for generated content).
 
 ---
 

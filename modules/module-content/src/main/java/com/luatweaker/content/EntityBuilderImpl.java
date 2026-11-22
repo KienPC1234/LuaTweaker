@@ -18,6 +18,16 @@ public class EntityBuilderImpl implements IEntityBuilder {
     private static final double RENDER_SCALE_MAX_INCLUSIVE = 16.0;
     private static final int MIN_TICK_RATE = 1;
 
+    /** Valid classification categories (must match EntityRegistrar.parseCategory). */
+    private static final java.util.Set<String> VALID_CATEGORIES = java.util.Set.of(
+            "CREATURE", "MONSTER", "AMBIENT", "WATER_CREATURE", "MISC");
+    /** Valid boss bar colors (vanilla BossEvent.BossBarColor names). */
+    private static final java.util.Set<String> VALID_BOSS_COLORS = java.util.Set.of(
+            "PINK", "BLUE", "RED", "GREEN", "YELLOW", "PURPLE", "WHITE");
+    /** Valid boss bar overlays (vanilla BossEvent.BossBarOverlay names). */
+    private static final java.util.Set<String> VALID_BOSS_OVERLAYS = java.util.Set.of(
+            "PROGRESS", "NOTCHED_6", "NOTCHED_10", "NOTCHED_12", "NOTCHED_20");
+
     /** DSL defaults applied before any Lua callback runs. */
     private static final String DEFAULT_CATEGORY = "MONSTER";
     private static final String DEFAULT_RIG = "parent";
@@ -55,11 +65,17 @@ public class EntityBuilderImpl implements IEntityBuilder {
     private float width = DEFAULT_WIDTH;
     private float height = DEFAULT_HEIGHT;
     private double maxHealthValue = DEFAULT_MAX_HEALTH;
+    private boolean explicitMaxHealth;
     private double movementSpeedValue = DEFAULT_MOVEMENT_SPEED;
+    private boolean explicitMovementSpeed;
     private double attackDamageValue = DEFAULT_ATTACK_DAMAGE;
+    private boolean explicitAttackDamage;
     private double followRangeValue = DEFAULT_FOLLOW_RANGE;
+    private boolean explicitFollowRange;
     private double armorValue;
+    private boolean explicitArmor;
     private double knockbackResistanceValue;
+    private boolean explicitKnockbackResistance;
     private boolean spawnEggEnabled;
     private int primaryColor = DEFAULT_PRIMARY_COLOR;
     private int secondaryColor = DEFAULT_SECONDARY_COLOR;
@@ -88,9 +104,15 @@ public class EntityBuilderImpl implements IEntityBuilder {
 
     @Override
     public IEntityBuilder category(String category) {
-        if (category != null && !category.isBlank()) {
-            this.categoryName = category.toUpperCase(Locale.ROOT);
+        if (category == null || category.isBlank()) {
+            return this;
         }
+        String clean = category.toUpperCase(Locale.ROOT);
+        if (!VALID_CATEGORIES.contains(clean)) {
+            throw new IllegalArgumentException(ENTITY_MSG_PREFIX + id + "' has unknown category '" + category
+                    + "' (use 'CREATURE', 'MONSTER', 'AMBIENT', 'WATER_CREATURE' or 'MISC')");
+        }
+        this.categoryName = clean;
         return this;
     }
 
@@ -153,45 +175,70 @@ public class EntityBuilderImpl implements IEntityBuilder {
 
     @Override
     public IEntityBuilder dimensions(float width, float height) {
-        this.width = Math.max(MIN_DIMENSION, width);
-        this.height = Math.max(MIN_DIMENSION, height);
+        this.width = Math.max(MIN_DIMENSION, requireFinite("dimensions.width", width));
+        this.height = Math.max(MIN_DIMENSION, requireFinite("dimensions.height", height));
         return this;
     }
 
     @Override
     public IEntityBuilder maxHealth(double health) {
-        this.maxHealthValue = Math.max(MIN_MAX_HEALTH, health);
+        this.maxHealthValue = Math.max(MIN_MAX_HEALTH, requireFinite("maxHealth", health));
+        this.explicitMaxHealth = true;
         return this;
     }
 
     @Override
     public IEntityBuilder movementSpeed(double speed) {
-        this.movementSpeedValue = Math.max(MIN_NON_NEGATIVE, speed);
+        this.movementSpeedValue = Math.max(MIN_NON_NEGATIVE, requireFinite("movementSpeed", speed));
+        this.explicitMovementSpeed = true;
         return this;
     }
 
     @Override
     public IEntityBuilder attackDamage(double damage) {
-        this.attackDamageValue = Math.max(MIN_NON_NEGATIVE, damage);
+        this.attackDamageValue = Math.max(MIN_NON_NEGATIVE, requireFinite("attackDamage", damage));
+        this.explicitAttackDamage = true;
         return this;
     }
 
     @Override
     public IEntityBuilder followRange(double range) {
-        this.followRangeValue = Math.max(MIN_FOLLOW_RANGE, range);
+        this.followRangeValue = Math.max(MIN_FOLLOW_RANGE, requireFinite("followRange", range));
+        this.explicitFollowRange = true;
         return this;
     }
 
     @Override
     public IEntityBuilder armor(double armor) {
-        this.armorValue = Math.max(MIN_NON_NEGATIVE, armor);
+        this.armorValue = Math.max(MIN_NON_NEGATIVE, requireFinite("armor", armor));
+        this.explicitArmor = true;
         return this;
     }
 
     @Override
     public IEntityBuilder knockbackResistance(double resistance) {
-        this.knockbackResistanceValue = Math.max(MIN_NON_NEGATIVE, Math.min(MAX_KNOCKBACK_RESISTANCE, resistance));
+        this.knockbackResistanceValue =
+                Math.max(MIN_NON_NEGATIVE, Math.min(MAX_KNOCKBACK_RESISTANCE, requireFinite("knockbackResistance", resistance)));
+        this.explicitKnockbackResistance = true;
         return this;
+    }
+
+    /** Rejects NaN/infinite stat values that would poison the entity type registration. */
+    private double requireFinite(String field, double value) {
+        if (Double.isNaN(value) || Double.isInfinite(value)) {
+            throw new IllegalArgumentException(ENTITY_MSG_PREFIX + id + "' " + field
+                    + " must be a finite number, got: " + value);
+        }
+        return value;
+    }
+
+    /** Rejects NaN/infinite stat values that would poison the entity type registration. */
+    private float requireFinite(String field, float value) {
+        if (Float.isNaN(value) || Float.isInfinite(value)) {
+            throw new IllegalArgumentException(ENTITY_MSG_PREFIX + id + "' " + field
+                    + " must be a finite number, got: " + value);
+        }
+        return value;
     }
 
     @Override
@@ -240,6 +287,9 @@ public class EntityBuilderImpl implements IEntityBuilder {
 
     @Override
     public IEntityBuilder drop(String itemId, int minCount, int maxCount) {
+        if (itemId == null || itemId.isBlank()) {
+            throw new IllegalArgumentException(ENTITY_MSG_PREFIX + id + "' drop itemId must not be blank");
+        }
         int min = Math.max(MIN_DROP_COUNT, minCount);
         int max = Math.max(min, maxCount);
         this.drops.add(new EntityDrop(itemId, min, max));
@@ -291,10 +341,20 @@ public class EntityBuilderImpl implements IEntityBuilder {
         this.bossBarEnabled = true;
         this.bossBarTitle = title;
         if (color != null && !color.isBlank()) {
-            this.bossBarColor = color.toUpperCase(Locale.ROOT);
+            String clean = color.toUpperCase(Locale.ROOT);
+            if (!VALID_BOSS_COLORS.contains(clean)) {
+                throw new IllegalArgumentException(ENTITY_MSG_PREFIX + id + "' has unknown bossBar color '" + color
+                        + "' (use 'PINK', 'BLUE', 'RED', 'GREEN', 'YELLOW', 'PURPLE' or 'WHITE')");
+            }
+            this.bossBarColor = clean;
         }
         if (overlay != null && !overlay.isBlank()) {
-            this.bossBarOverlay = overlay.toUpperCase(Locale.ROOT);
+            String clean = overlay.toUpperCase(Locale.ROOT);
+            if (!VALID_BOSS_OVERLAYS.contains(clean)) {
+                throw new IllegalArgumentException(ENTITY_MSG_PREFIX + id + "' has unknown bossBar overlay '" + overlay
+                        + "' (use 'PROGRESS', 'NOTCHED_6', 'NOTCHED_10', 'NOTCHED_12' or 'NOTCHED_20')");
+            }
+            this.bossBarOverlay = clean;
         }
         return this;
     }
@@ -333,11 +393,17 @@ public class EntityBuilderImpl implements IEntityBuilder {
     @Override public float getWidth() { return width; }
     @Override public float getHeight() { return height; }
     @Override public double getMaxHealth() { return maxHealthValue; }
+    @Override public boolean hasExplicitMaxHealth() { return explicitMaxHealth; }
     @Override public double getMovementSpeed() { return movementSpeedValue; }
+    @Override public boolean hasExplicitMovementSpeed() { return explicitMovementSpeed; }
     @Override public double getAttackDamage() { return attackDamageValue; }
+    @Override public boolean hasExplicitAttackDamage() { return explicitAttackDamage; }
     @Override public double getFollowRange() { return followRangeValue; }
+    @Override public boolean hasExplicitFollowRange() { return explicitFollowRange; }
     @Override public double getArmor() { return armorValue; }
+    @Override public boolean hasExplicitArmor() { return explicitArmor; }
     @Override public double getKnockbackResistance() { return knockbackResistanceValue; }
+    @Override public boolean hasExplicitKnockbackResistance() { return explicitKnockbackResistance; }
     @Override public boolean hasSpawnEgg() { return spawnEggEnabled; }
     @Override public int getPrimaryColor() { return primaryColor; }
     @Override public int getSecondaryColor() { return secondaryColor; }

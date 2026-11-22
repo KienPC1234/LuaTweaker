@@ -84,7 +84,7 @@ public interface IPlatformInteraction {
 
     /**
      * Loads an NBT structure template (from the datapack, e.g.
-     * {@code data/mymod/structures/shrine.nbt} -> {@code mymod:shrine}) and
+     * {@code data/mymod/structure/shrine.nbt} -> {@code mymod:shrine}) and
      * places it in the world with the given rotation (0/90/180/270). The mod
      * author decides when and where - this is a low-level tool, not a
      * structure placement system.

@@ -10,6 +10,7 @@ class GeoModelSpecTest {
     private static final String TEXTURE_PATH = "luatweaker:textures/item/staff.png";
     private static final String ANIMATION_PATH = "luatweaker:animations/item/staff.animation.json";
     private static final String IDLE_ANIMATION = "idle";
+    private static final String RAW_MODEL = "m.geo.json";
 
     @Test
     void rejectsBlankModelPath() {
@@ -19,17 +20,25 @@ class GeoModelSpecTest {
     }
 
     @Test
-    void rejectsBlankTexturePath() {
-        assertThrows(IllegalArgumentException.class,
-                () -> new GeoModelSpec("m.geo.json", "  ", "a.animation.json", null),
-                "a blank texture path must be rejected");
+    void blankTexturePathDerivesLater() {
+        GeoModelSpec spec = new GeoModelSpec(RAW_MODEL, "  ", "a.animation.json", null);
+
+        assertTrue(spec.texturePath().isBlank(), "blank texture paths must be kept for derivation");
     }
 
     @Test
-    void rejectsNullAnimationPath() {
-        assertThrows(IllegalArgumentException.class,
-                () -> new GeoModelSpec("m.geo.json", "t.png", null, null),
-                "a null animation path must be rejected");
+    void nullAnimationPathDerivesLater() {
+        GeoModelSpec spec = new GeoModelSpec(RAW_MODEL, "t.png", null, null);
+
+        assertNull(spec.animationPath(), "null animation paths must be kept for derivation");
+    }
+
+    @Test
+    void missingTextureAndAnimationAreAllowed() {
+        GeoModelSpec spec = new GeoModelSpec(RAW_MODEL, null, null, null);
+
+        assertEquals("m.geo.json", spec.modelPath(),
+                "model path must round-trip through the spec unchanged");
     }
 
     @Test

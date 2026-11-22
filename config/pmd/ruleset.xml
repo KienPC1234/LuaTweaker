@@ -48,6 +48,8 @@
        add nothing, so GuardLogStatement is a false positive on this codebase. -->
   <rule ref="category/java/bestpractices.xml">
     <exclude name="GuardLogStatement"/>
+    <exclude name="UnusedPrivateMethod"/>
+    <exclude name="UnusedFormalParameter"/>
   </rule>
 
   <!-- Naming, braces, imports, short vars (AGENTS bans 1-char vars), duplicates -->
@@ -193,7 +195,7 @@
                   and (
                     @SimpleName='CallbackFirewall'
                     or @SimpleName='ImGuiNativeGuard'
-                    or @SimpleName='LuaTweakerMod'
+                    or @SimpleName='LuaTweakerCommon'
                   )
                 ]"/>
     </properties>
@@ -288,10 +290,10 @@
                       or @SimpleName='ItemRegistrar'
                       or @SimpleName='LuaBiomeSource'
                       or @SimpleName='LuaChunkGenerator'
-                      or @SimpleName='LuaTweakerMod'
+                      or @SimpleName='LuaTweakerCommon'
                       or @SimpleName='LuavaEngine'
-                      or @SimpleName='NeoForgeClientPlatform'
-                      or @SimpleName='NeoForgeContentRegistry'
+                      or @SimpleName='MinecraftClientPlatform'
+                      or @SimpleName='MinecraftContentRegistry'
                     )
                   )
                   or self::CompilationUnit[.//*[
@@ -309,10 +311,10 @@
                       or @SimpleName='ItemRegistrar'
                       or @SimpleName='LuaBiomeSource'
                       or @SimpleName='LuaChunkGenerator'
-                      or @SimpleName='LuaTweakerMod'
+                      or @SimpleName='LuaTweakerCommon'
                       or @SimpleName='LuavaEngine'
-                      or @SimpleName='NeoForgeClientPlatform'
-                      or @SimpleName='NeoForgeContentRegistry'
+                      or @SimpleName='MinecraftClientPlatform'
+                      or @SimpleName='MinecraftContentRegistry'
                     )
                   ]]
                 ]"/>
@@ -343,15 +345,15 @@
                     or @SimpleName='ImGuiServiceImpl'
                     or @SimpleName='InterceptionHelper'
                     or @SimpleName='ItemBuilderImpl'
-                    or @SimpleName='LuaAssetsPackFinder'
+                    or @SimpleName='ContentVirtualFiles'
                     or @SimpleName='LuaChunkGenerator'
-                    or @SimpleName='LuaTweakerMod'
+                    or @SimpleName='LuaTweakerCommon'
                     or @SimpleName='LuamodDetailScreen'
                     or @SimpleName='LuavaEngine'
                     or @SimpleName='MobGoalHelper'
-                    or @SimpleName='NeoForgeClientPlatform'
-                    or @SimpleName='NeoForgeEntityWrapper'
-                    or @SimpleName='NeoForgePlayerWrapper'
+                    or @SimpleName='MinecraftClientPlatform'
+                    or @SimpleName='MinecraftEntityWrapper'
+                    or @SimpleName='MinecraftPlayerWrapper'
                     or @SimpleName='ShaderServiceImpl'
                     or @SimpleName='SpawnRuleEvaluator'
                   )
@@ -377,7 +379,7 @@
                     and (
                       @SimpleName='ItemRegistrar'
                       or @SimpleName='LuaChunkGenerator'
-                      or @SimpleName='LuaTweakerMod'
+                      or @SimpleName='LuaTweakerCommon'
                       or @SimpleName='LuavaEngine'
                     )
                   )
@@ -390,7 +392,7 @@
                     and (
                       @SimpleName='ItemRegistrar'
                       or @SimpleName='LuaChunkGenerator'
-                      or @SimpleName='LuaTweakerMod'
+                      or @SimpleName='LuaTweakerCommon'
                       or @SimpleName='LuavaEngine'
                     )
                   ]]
@@ -415,8 +417,9 @@
                   and (
                     @SimpleName='ContainerSpec'
                     or @SimpleName='IPlatformInteraction'
+                    or @SimpleName='ItemInHandRendererMixin'
                     or @SimpleName='MachineBarSpec'
-                    or @SimpleName='NeoForgeInteractionPlatform'
+                    or @SimpleName='MinecraftInteractionPlatform'
                   )
                 ]"/>
     </properties>
@@ -452,10 +455,10 @@
                     or @SimpleName='IPlatformInteraction'
                     or @SimpleName='ImGuiServiceImpl'
                     or @SimpleName='ItemBuilderImpl'
-                    or @SimpleName='NeoForgeClientPlatform'
-                    or @SimpleName='NeoForgeEntityWrapper'
-                    or @SimpleName='NeoForgePlayerWrapper'
-                    or @SimpleName='NeoForgeInteractionPlatform'
+                    or @SimpleName='MinecraftClientPlatform'
+                    or @SimpleName='MinecraftEntityWrapper'
+                    or @SimpleName='MinecraftPlayerWrapper'
+                    or @SimpleName='MinecraftInteractionPlatform'
                     or @SimpleName='ShaderServiceImpl'
                   )
                 ]"/>
@@ -487,17 +490,17 @@
                     or @SimpleName='ImGuiGuiEditor'
                     or @SimpleName='ImGuiServiceImpl'
                     or @SimpleName='InterceptionHelper'
-                    or @SimpleName='LuaAssetsPackFinder'
+                    or @SimpleName='ContentVirtualFiles'
                     or @SimpleName='LuaChunkGenerator'
-                    or @SimpleName='LuaTweakerMod'
+                    or @SimpleName='LuaTweakerCommon'
                     or @SimpleName='LuamodDetailScreen'
                     or @SimpleName='LuavaEngine'
                     or @SimpleName='MobGoalHelper'
-                    or @SimpleName='NeoForgeClientEventListener'
-                    or @SimpleName='NeoForgeClientPlatform'
-                    or @SimpleName='NeoForgeInteractableItem'
-                    or @SimpleName='NeoForgeInteractionPlatform'
-                    or @SimpleName='NeoForgeWorldRenderEventListener'
+                    or @SimpleName='MinecraftClientEventListener'
+                    or @SimpleName='MinecraftClientPlatform'
+                    or @SimpleName='MinecraftInteractableItem'
+                    or @SimpleName='MinecraftInteractionPlatform'
+                    or @SimpleName='MinecraftWorldRenderEventListener'
                     or @SimpleName='ShaderServiceImpl'
                   )
                 ]"/>
@@ -596,7 +599,7 @@
                     or @SimpleName='EntityBuilderImpl'
                     or @SimpleName='GuiWidget'
                     or @SimpleName='ItemBuilderImpl'
-                    or @SimpleName='NeoForgeClientPlatform'
+                    or @SimpleName='MinecraftClientPlatform'
                   )
                 ]"/>
     </properties>
@@ -607,6 +610,11 @@
     Splitting it would break LuaBinder, stubs and every implementation.
     NeoForgeInteractableBlock implements the 40+ method IInteractableBlock facade, so its
     method count is the interface, not a refactoring smell.
+    2026-11-22 additions (user-approved): IDatapackService, DatapackServiceImpl and
+    Platform. The datapack service exposes numerous low-level primitives
+    (Has/Get/Remove/List + loaded-pack reads) by design - splitting the interface
+    would fork the Lua Datapack API - and Platform is the PAL registry whose
+    setter/getter pair per facet is the documented extension pattern (AGENTS.md 4).
     Audited set only: the rule still guards every other type.
   -->
   <rule ref="category/java/design.xml/TooManyMethods">
@@ -624,6 +632,7 @@
                     or @SimpleName='ContentServiceImpl'
                     or @SimpleName='CustomContainerBlock'
                     or @SimpleName='CustomContainerBlockEntity'
+                    or @SimpleName='DatapackServiceImpl'
                     or @SimpleName='DimensionMobSpawner'
                     or @SimpleName='DimensionServiceImpl'
                     or @SimpleName='DynamicKeyMappingHandler'
@@ -633,6 +642,7 @@
                     or @SimpleName='IAIGoalService'
                     or @SimpleName='IBlockBuilder'
                     or @SimpleName='IContentService'
+                    or @SimpleName='IDatapackService'
                     or @SimpleName='IEntity'
                     or @SimpleName='IEntityBuilder'
                     or @SimpleName='IFluidBuilder'
@@ -655,29 +665,32 @@
                     or @SimpleName='ImGuiServiceImpl'
                     or @SimpleName='InterceptionHelper'
                     or @SimpleName='ItemBuilderImpl'
-                    or @SimpleName='LuaAssetsPackFinder'
+                    or @SimpleName='ContentVirtualFiles'
                     or @SimpleName='LuaCanvasScreen'
                     or @SimpleName='LuaChunkGenerator'
                     or @SimpleName='LuaModManager'
-                    or @SimpleName='LuaTweakerMod'
+                    or @SimpleName='LuaTweakerCommon'
                     or @SimpleName='LuamodDetailScreen'
                     or @SimpleName='LuavaEngine'
                     or @SimpleName='LuavaLuaTable'
                     or @SimpleName='LuavaLuaValue'
+                    or @SimpleName='MinecraftGuiService'
+                    or @SimpleName='MinecraftInteractableBlock'
                     or @SimpleName='MobGoalHelper'
                     or @SimpleName='ModExportHandle'
-                    or @SimpleName='NeoForgeClientEventListener'
-                    or @SimpleName='NeoForgeClientPlatform'
-                    or @SimpleName='NeoForgeDimensionPlatform'
-                    or @SimpleName='NeoForgeEntityPlatform'
-                    or @SimpleName='NeoForgeEntityWrapper'
+                    or @SimpleName='MinecraftClientEventListener'
+                    or @SimpleName='MinecraftClientPlatform'
+                    or @SimpleName='MinecraftDimensionPlatform'
+                    or @SimpleName='MinecraftEntityPlatform'
+                    or @SimpleName='MinecraftEntityWrapper'
                     or @SimpleName='NeoForgeGuiService'
                     or @SimpleName='NeoForgeInteractableBlock'
-                    or @SimpleName='NeoForgeInteractableItem'
-                    or @SimpleName='NeoForgeInteractionPlatform'
-                    or @SimpleName='NeoForgePlayerWrapper'
-                    or @SimpleName='NeoForgeRecipeManager'
-                    or @SimpleName='NeoForgeWorldRenderEventListener'
+                    or @SimpleName='MinecraftInteractableItem'
+                    or @SimpleName='MinecraftInteractionPlatform'
+                    or @SimpleName='MinecraftPlayerWrapper'
+                    or @SimpleName='CommonRecipeManager'
+                    or @SimpleName='MinecraftWorldRenderEventListener'
+                    or @SimpleName='Platform'
                     or @SimpleName='ShaderRenderHook'
                     or @SimpleName='ShaderServiceImpl'
                     or @SimpleName='UniversalEventForwarder'
@@ -703,8 +716,8 @@
                   and (
                     @SimpleName='CustomJeiRegistry'
                     or @SimpleName='MobGoalHelper'
-                    or @SimpleName='NeoForgeEntityWrapper'
-                    or @SimpleName='NeoForgePlayerWrapper'
+                    or @SimpleName='MinecraftEntityWrapper'
+                    or @SimpleName='MinecraftPlayerWrapper'
                   )
                 ]"/>
     </properties>
@@ -738,8 +751,49 @@
                     or @SimpleName='ItemBuilderImpl'
                     or @SimpleName='KeyBindServiceImpl'
                     or @SimpleName='MachineAssetGenerator'
-                    or @SimpleName='NeoForgeStructuresPlatform'
+                    or @SimpleName='MinecraftStructuresPlatform'
                     or @SimpleName='StructureServiceImpl'
+                  )
+                ]"/>
+    </properties>
+  </rule>
+
+  <!--
+    Mixin injection methods (@Inject) are invoked at runtime by bytecode transformation.
+    Their parameters mirror the vanilla method signatures being intercepted.
+    Audited set only: the rules still guard every other type.
+  -->
+  <rule ref="category/java/bestpractices.xml/UnusedPrivateMethod">
+    <properties>
+      <property name="violationSuppressXPath"
+                value="ancestor-or-self::*[
+                  (self::ClassDeclaration
+                   or self::InterfaceDeclaration
+                   or self::EnumDeclaration
+                   or self::RecordDeclaration
+                   or self::AnnotationTypeDeclaration)
+                  and (
+                    @SimpleName='ItemInHandRendererMixin'
+                    or @SimpleName='RecipeManagerMixin'
+                    or @SimpleName='EntityDataMixin'
+                  )
+                ]"/>
+    </properties>
+  </rule>
+
+  <rule ref="category/java/bestpractices.xml/UnusedFormalParameter">
+    <properties>
+      <property name="violationSuppressXPath"
+                value="ancestor-or-self::*[
+                  (self::ClassDeclaration
+                   or self::InterfaceDeclaration
+                   or self::EnumDeclaration
+                   or self::RecordDeclaration
+                   or self::AnnotationTypeDeclaration)
+                  and (
+                    @SimpleName='ItemInHandRendererMixin'
+                    or @SimpleName='RecipeManagerMixin'
+                    or @SimpleName='EntityDataMixin'
                   )
                 ]"/>
     </properties>

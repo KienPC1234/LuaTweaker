@@ -47,14 +47,14 @@ class ShaderTestFixture {
     }
 
     protected String chainJson(String id) {
-        return datapack.files.get("assets/luatweaker/shaders/post/lt_" + id + ".json");
+        return datapack.getVirtualFiles().get("assets/luatweaker/shaders/post/lt_" + id + ".json");
     }
 
     protected String programJson(String id) {
-        return datapack.files.get("assets/luatweaker/shaders/program/lt_" + id + ".json");
+        return datapack.getVirtualFiles().get("assets/luatweaker/shaders/program/lt_" + id + ".json");
     }
 
     protected String fragmentSource(String id) {
-        return datapack.files.get("assets/luatweaker/shaders/program/lt_" + id + ".fsh");
+        return datapack.getVirtualFiles().get("assets/luatweaker/shaders/program/lt_" + id + ".fsh");
     }
 }

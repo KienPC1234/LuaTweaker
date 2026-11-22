@@ -23,9 +23,9 @@ luamods/
 │   │   ├── abilities.lua
 │   │   └── boss_ai.lua
 │   ├── assets/                  # Virtual ResourcePack (auto-mounted!)
-│   │   └── textures/gui/icon.png
+│   │   └── mod_sieu_nhan/textures/gui/icon.png
 │   └── data/                    # Virtual Datapack (auto-mounted!)
-│       └── loot_tables/zombie.json
+│       └── mod_sieu_nhan/loot_table/entities/zombie.json
 │
 └── mod_economy.zip              # ZIP Package (ready to distribute)
 ```
@@ -40,12 +40,42 @@ mod_economy.zip
 ├── src/
 │   └── shop.lua
 ├── assets/
-│   └── textures/items/coin.png
+│   └── mod_economy/textures/items/coin.png
 └── data/
-    └── recipes/coin_recipe.json
+    └── mod_economy/recipe/coin.json
 ```
 
 > **💡 Core Principle:** LuaTweaker **NEVER** auto-scans or auto-executes files inside `src/` or any subfolder. `main.lua` holds 100% control and actively loads its modules with `require("src.abilities")`.
+
+### `data/` + `assets/` layout (vanilla paths, auto-mounted)
+
+Both folder mods and `.zip` mods serve these trees into the virtual pack —
+no registration call needed, just drop files and run `/lt reload data`:
+
+```
+luamods/my_mod/
+├── assets/my_mod/blockstates/ruby_ore.json
+├── assets/my_mod/models/block/ruby_ore.json
+├── assets/my_mod/textures/block/ruby_ore.png
+├── assets/my_mod/lang/en_us.json
+├── data/my_mod/recipe/ruby_gear.json
+├── data/my_mod/loot_table/blocks/ruby_ore.json
+├── data/my_mod/advancement/story/ruby_master.json
+├── data/my_mod/structure/sky_temple.nbt
+└── data/minecraft/tags/block/mineable/pickaxe.json  # override vanilla
+```
+
+Rules (checked by `/lt doctor`):
+
+- Every file needs a namespace folder: `data/<namespace>/...`, `assets/<namespace>/...`.
+  Use your own mod id for your files; use `minecraft` (or another mod id) to override theirs.
+- Data folders are singular: `recipe`, `loot_table`, `advancement`, `function`,
+  `structure`, `tags`, `worldgen`, `dimension`. Plurals (`recipes`, `loot_tables`,
+  `structures`, ...) are ignored by Minecraft — the doctor warns about them.
+- NBT templates live at `data/<ns>/structure/<path>.nbt` and are referenced as
+  `<ns>:<path>` (e.g. `World:PlaceStructure("my_mod:sky_temple", ...)`).
+- Virtual `Datapack:AddData(...)` calls win over same-path files on disk or in zips.
+- `.zip` mods use the exact same inner layout (`data/...`, `assets/...` at the archive root).
 
 > **💡 Tip:** LuaTweaker reads ZIP archives directly in-memory. No unzipping to disk required!
 
@@ -465,8 +495,8 @@ File rules:
    disk under `luamods/`, so a zip mod must keep its code in `main.lua` (install it
    as a folder when you want split modules). `mod:Files()` can still read data
    files from inside the zip.
-5. Per-mod `assets/**` / `data/**` virtual packs are served from **folder** mods;
-   zip archives are not mounted as resource/datapack roots.
+5. Per-mod `assets/**` / `data/**` virtual packs are served from **folder and `.zip`**
+   mods with the same inner layout; virtual `Datapack:Add*(...)` calls win over both.
 
 ### Safety Checks (Error Prevention)
 

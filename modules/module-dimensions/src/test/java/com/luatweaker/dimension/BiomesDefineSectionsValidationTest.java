@@ -86,7 +86,7 @@ class BiomesDefineSectionsValidationTest {
 
     @Test
     void addSpawnRejectsMalformedExistingJson() {
-        datapack.files.put(MEADOW_PATH, MALFORMED_JSON);
+        datapack.addData(MEADOW_PATH, MALFORMED_JSON);
         assertThrows(IllegalArgumentException.class, () ->
             service.addSpawn(MEADOW_ID, "monster", "minecraft:zombie", 1, 1, 1),
             "malformed stored biome JSON must be rejected loudly");
@@ -94,7 +94,7 @@ class BiomesDefineSectionsValidationTest {
 
     @Test
     void malformedJsonErrorMentionsMalformed() {
-        datapack.files.put(MEADOW_PATH, MALFORMED_JSON);
+        datapack.addData(MEADOW_PATH, MALFORMED_JSON);
         String message = "";
         try {
             service.addSpawn(MEADOW_ID, "monster", "minecraft:zombie", 1, 1, 1);
@@ -106,14 +106,14 @@ class BiomesDefineSectionsValidationTest {
 
     @Test
     void malformedJsonStillReturnsTable() {
-        datapack.files.put(MEADOW_PATH, MALFORMED_JSON);
+        datapack.addData(MEADOW_PATH, MALFORMED_JSON);
         Object result = service.getSpawns(MEADOW_ID);
         assertTrue(result instanceof ILuaTable, "spawn query must still return a table");
     }
 
     @Test
     void malformedJsonYieldsEmptySpawnView() {
-        datapack.files.put(MEADOW_PATH, MALFORMED_JSON);
+        datapack.addData(MEADOW_PATH, MALFORMED_JSON);
         Object result = service.getSpawns(MEADOW_ID);
         assertEquals(0, ((ILuaTable) result).length(), "malformed JSON must yield an empty spawn view");
     }

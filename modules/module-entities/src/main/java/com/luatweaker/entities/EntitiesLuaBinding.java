@@ -34,7 +34,7 @@ public final class EntitiesLuaBinding {
         table.rawset("__entity", engine.wrapUserdata(player));
         table.rawset("actionText", table.rawget("sendActionBar"));
         EntityPositionHelpers.addPositionHelpers(engine, table, player);
-        EntityPropertyAliases.addPropertyAliases(engine, table, player);
+        EntityPropertyAliases.addPlayerPropertyAliases(engine, table, player);
         return table;
     }
 

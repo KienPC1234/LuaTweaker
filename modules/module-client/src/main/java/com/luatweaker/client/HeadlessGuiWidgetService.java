@@ -16,6 +16,12 @@ abstract class HeadlessGuiWidgetService extends HeadlessGuiDrawingService implem
     }
 
     @Override
+    public void drawTextureRegion(String textureId, int x, int y, int u, int v, int width, int height,
+                                  int textureWidth, int textureHeight) {
+        reportIgnored("DrawTextureRegion");
+    }
+
+    @Override
     public void drawSprite(String spriteId, int x, int y, int width, int height) {
         reportIgnored("DrawSprite");
     }

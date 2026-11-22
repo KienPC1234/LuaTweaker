@@ -29,7 +29,12 @@ luamods/<mod_id>/
 ### Path Resolution Rules
 Paths passed to `:GeoModel(...)` accept either:
 1. **Explicit ResourceLocation**: `"luatweaker:geo/item/crystal_scythe.geo.json"`
-2. **Shorthand Path**: `"geo/item/crystal_scythe.geo.json"` (automatically resolved using the default namespace if not prefixed).
+2. **Shorthand Path**: `"geo/item/crystal_scythe.geo.json"` (resolved against the model's own namespace when unprefixed).
+
+Only the model path is required: omit texture/animation paths (or pass `nil`) to derive
+them from the model (`textures/<path>.png`, `animations/<path>.animation.json` in the same namespace).
+Geo blocks render animated in the world via their block-entity renderer; their inventory
+icon stays a plain cube model (handheld geo rendering for blocks is not implemented).
 
 ---
 
@@ -68,7 +73,7 @@ Content.NewItem("crystal_scythe")
     )
     :OnRightClick(function(player, itemStack, hand)
         -- Trigger spin animation on right click
-        player:TriggerAnimation("spin", "base_controller")
+        player:TriggerAnimation("spin", "controller")
         return true
     end)
     :Register()
@@ -92,7 +97,7 @@ Content.NewBlock("crystal_reanimator")
     )
     :OnRightClick(function(world, pos, player, hand)
         -- Trigger reanimate pulse animation on interaction
-        world:PlayAnimation(pos, "pulse", "base_controller")
+        world:PlayAnimation(pos, "pulse", "controller")
         return true
     end)
     :Register()
@@ -135,7 +140,7 @@ LuaTweaker provides low-level primitive functions to trigger and manage animatio
 entity:TriggerAnimation(animName, controllerName)
 
 -- Example: Trigger attack animation during custom combat logic
-entity:TriggerAnimation("attack", "base_controller")
+entity:TriggerAnimation("attack", "controller")
 ```
 
 ### 4.2 Block Animation Primitives
@@ -153,7 +158,7 @@ World:TriggerAnimation(blockPos, animName, controllerName)
 | Parameter | Type | Required | Description | Default |
 |---|---|---|---|---|
 | `animName` | `string` | Yes | Name of animation defined in `.animation.json` | None |
-| `controllerName` | `string` | No | Target controller identifier | `"base_controller"` |
+| `controllerName` | `string` | No | Target controller identifier | `"controller"` |
 
 ---
 

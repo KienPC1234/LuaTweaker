@@ -16,12 +16,6 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-jar {
-    from {
-        configurations.runtimeClasspath.filter { it.name.contains('luava') }.collect { zipTree(it) }
-    }
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
 
 test {
     useJUnitPlatform()

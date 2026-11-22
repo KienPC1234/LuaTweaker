@@ -19,8 +19,9 @@ public interface IItemBuilder {
     @LuaDoc(description = "Sets the maximum durability / damage of tools and armor.", params = {"durability: integer"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
     IItemBuilder durability(int durability);
 
-    @LuaDoc(description = "Sets the tool mining tier level (1='STONE', 2='IRON', 3='DIAMOND', 4='NETHERITE').", params = {"level: string|integer"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
+    @LuaDoc(description = "Sets the tool mining tier (0=WOOD, 1=STONE, 2=IRON, 3=DIAMOND, 4+=NETHERITE) or 'GOLD' for gold-tier stats (negative values throw).", params = {"level: integer"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
     IItemBuilder miningLevel(int level);
+    @LuaDoc(description = "Sets the tool mining tier by name ('WOOD', 'STONE', 'IRON', 'DIAMOND', 'NETHERITE' or 'GOLD' for gold-tier stats; unknown names warn and fall back to STONE).", params = {"levelName: string"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
     IItemBuilder miningLevel(String levelName);
 
     @LuaDoc(description = "Sets the tool mining speed / efficiency multiplier (e.g. 6.0 for iron, 8.0 for diamond).", params = {"speed: number"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
@@ -29,19 +30,19 @@ public interface IItemBuilder {
     @LuaDoc(description = "Sets the attack damage bonus for weapons and tools.", params = {"damage: number"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
     IItemBuilder attackDamage(float damage);
 
-    @LuaDoc(description = "Sets the attack speed for weapons and tools (e.g. -2.4).", params = {"speed: number"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
+    @LuaDoc(description = "Sets the attack speed for weapons and tools (e.g. -2.4). Only applies when attack damage is also set above 0.", params = {"speed: number"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
     IItemBuilder attackSpeed(float speed);
 
-    @LuaDoc(description = "Sets the armor defense / protection value.", params = {"defense: integer"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
+    @LuaDoc(description = "Sets the armor defense / protection value. Armor only: has no effect without a matching startup:createArmorMaterial definition (a warning is logged).", params = {"defense: integer"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
     IItemBuilder defense(int defense);
 
-    @LuaDoc(description = "Sets armor toughness value.", params = {"toughness: number"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
+    @LuaDoc(description = "Sets armor toughness value. Armor only: has no effect without a matching startup:createArmorMaterial definition.", params = {"toughness: number"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
     IItemBuilder toughness(float toughness);
 
-    @LuaDoc(description = "Sets knockback resistance bonus (0.0 to 1.0).", params = {"kbRes: number"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
+    @LuaDoc(description = "Sets knockback resistance bonus (0.0 to 1.0). Armor only: has no effect without a matching startup:createArmorMaterial definition.", params = {"kbRes: number"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
     IItemBuilder knockbackResistance(float kbRes);
 
-    @LuaDoc(description = "Sets enchantability value.", params = {"enchValue: integer"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
+    @LuaDoc(description = "Sets enchantability value (tools use their tier, armor uses its material; generic items fall back to vanilla 1 when unset).", params = {"enchValue: integer"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
     IItemBuilder enchantability(int enchValue);
 
     @LuaDoc(description = "Sets furnace fuel burn time in ticks.", params = {"ticks: integer"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
@@ -118,8 +119,12 @@ public interface IItemBuilder {
     @LuaDoc(description = "Registers a callback invoked when player swings/left-clicks with this item.", params = {LuaDocFragments.Content.HANDLER_FUNCTION}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
     IItemBuilder onSwing(BiConsumer<Object, Object> handler);
 
-    @LuaDoc(description = "Sets the GeckoLib skeletal model and animation specs for this item.", params = {"modelPath: string", "texturePath: string", "animationPath: string", "defaultAnimation: string?"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
-    IItemBuilder geoModel(String modelPath, String texturePath, String animationPath, @org.jetbrains.annotations.Nullable String defaultAnimation);
+    @LuaDoc(description = "Sets the GeckoLib skeletal model and animation specs for this item. Only the model path is required; texture/animation derive from it when omitted.", params = {"modelPath: string", "[texturePath: string]", "[animationPath: string]", "[defaultAnimation: string]"}, returnType = LuaDocFragments.Builder.I_ITEM_BUILDER)
+    IItemBuilder geoModel(String modelPath, @org.jetbrains.annotations.Nullable String texturePath, @org.jetbrains.annotations.Nullable String animationPath, @org.jetbrains.annotations.Nullable String defaultAnimation);
+
+    default IItemBuilder geoModel(String modelPath) {
+        return geoModel(modelPath, null, null, null);
+    }
 
     default IItemBuilder geoModel(String modelPath, String texturePath, String animationPath) {
         return geoModel(modelPath, texturePath, animationPath, null);
@@ -127,6 +132,7 @@ public interface IItemBuilder {
 
     String getId();
     String getType();
+    String getMiningLevelName();
     int getMaxStackSize();
     String getRarity();
     int getDurability();

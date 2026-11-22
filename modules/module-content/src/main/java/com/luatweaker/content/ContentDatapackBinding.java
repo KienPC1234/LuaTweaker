@@ -1,6 +1,8 @@
 package com.luatweaker.content;
 
 import com.luatweaker.api.content.IDatapackService;
+import com.luatweaker.api.pal.IPlatformDatapack;
+import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
@@ -64,6 +66,8 @@ final class ContentDatapackBinding {
         // datapack:addTag("block", "minecraft:beacon_base_blocks", {"luatweaker:ruby_block"})
         bindDatapackTag(datapackTable, datapackService);
 
+        bindDatapackReads(engine, datapackTable, datapackService);
+
         // PascalCase aliases (AddData, AddLootTable, ...) so the Datapack API
         // follows the service naming convention; both styles work in Lua.
         aliasDatapackMethods(datapackTable);
@@ -101,12 +105,113 @@ final class ContentDatapackBinding {
         // PascalCase aliases (AddData, AddLootTable, ...) so the Datapack API
         // follows the service naming convention; both styles work in Lua.
         for (String method : new String[]{"addJsonRecipe", "addLootTable", "addAdvancement",
-                "addFunction", "addData", "addTag"}) {
+                "addFunction", "addData", "addTag",
+                "hasData", "getData", "removeData", "listData", "listNamespaces",
+                "hasLoaded", "getLoaded", "listLoaded", "loadedNamespaces"}) {
             ILuaValue fn = datapackTable.rawget(method);
             if (fn != null && fn.isFunction()) {
                 datapackTable.rawset(Character.toUpperCase(method.charAt(0)) + method.substring(1), fn);
             }
         }
+    }
+
+    /**
+     * Low-level read/remove primitives over virtual files (own registrations) and
+     * loaded packs (vanilla + other mods, read-only, null-safe outside a server).
+     */
+    private static void bindDatapackReads(ILuaEngine engine, ILuaTable datapackTable,
+            IDatapackService datapackService) {
+        bindVirtualReads(engine, datapackTable, datapackService);
+        bindPlatformReads(engine, datapackTable);
+    }
+
+    private static void bindVirtualReads(ILuaEngine engine, ILuaTable datapackTable,
+            IDatapackService datapackService) {
+        datapackTable.rawset("hasData", args -> {
+            int off = LuaBinder.getOffset(args);
+            if (!ContentBindingSupport.hasMinArgs(args, off, 1)) {
+                throw new IllegalArgumentException("datapack:hasData requires (relPath)");
+            }
+            return engine.toLuaValue(datapackService.hasData(args[off].asString()));
+        });
+
+        datapackTable.rawset("getData", args -> {
+            int off = LuaBinder.getOffset(args);
+            if (!ContentBindingSupport.hasMinArgs(args, off, 1)) {
+                throw new IllegalArgumentException("datapack:getData requires (relPath)");
+            }
+            return engine.toLuaValue(datapackService.getData(args[off].asString()));
+        });
+
+        datapackTable.rawset("removeData", args -> {
+            int off = LuaBinder.getOffset(args);
+            if (!ContentBindingSupport.hasMinArgs(args, off, 1)) {
+                throw new IllegalArgumentException("datapack:removeData requires (relPath)");
+            }
+            return engine.toLuaValue(datapackService.removeData(args[off].asString()));
+        });
+
+        datapackTable.rawset("listData", args -> {
+            int off = LuaBinder.getOffset(args);
+            String prefix = ContentBindingSupport.hasMinArgs(args, off, 1) ? args[off].asString() : "";
+            return toLuaList(engine, datapackService.listData(prefix));
+        });
+
+        datapackTable.rawset("listNamespaces", args -> {
+            int off = LuaBinder.getOffset(args);
+            String packDir = ContentBindingSupport.hasMinArgs(args, off, 1) ? args[off].asString() : "data";
+            return toLuaList(engine, datapackService.listNamespaces(packDir));
+        });
+    }
+
+    private static void bindPlatformReads(ILuaEngine engine, ILuaTable datapackTable) {
+        datapackTable.rawset("hasLoaded", args -> {
+            int off = LuaBinder.getOffset(args);
+            if (!ContentBindingSupport.hasMinArgs(args, off, 1)) {
+                throw new IllegalArgumentException("datapack:hasLoaded requires (relPath)");
+            }
+            String relPath = args[off].asString();
+            boolean exists = withLoaded(loaded -> loaded.loadedExists(relPath), false);
+            return engine.toLuaValue(exists);
+        });
+
+        datapackTable.rawset("getLoaded", args -> {
+            int off = LuaBinder.getOffset(args);
+            if (!ContentBindingSupport.hasMinArgs(args, off, 1)) {
+                throw new IllegalArgumentException("datapack:getLoaded requires (relPath)");
+            }
+            String relPath = args[off].asString();
+            return engine.toLuaValue(withLoaded(loaded -> loaded.readLoaded(relPath), null));
+        });
+
+        datapackTable.rawset("listLoaded", args -> {
+            int off = LuaBinder.getOffset(args);
+            String prefix = ContentBindingSupport.hasMinArgs(args, off, 1) ? args[off].asString() : "";
+            return toLuaList(engine, withLoaded(loaded -> loaded.listLoaded(prefix), java.util.List.of()));
+        });
+
+        datapackTable.rawset("loadedNamespaces", args -> {
+            int off = LuaBinder.getOffset(args);
+            String packDir = ContentBindingSupport.hasMinArgs(args, off, 1) ? args[off].asString() : "data";
+            return toLuaList(engine, withLoaded(loaded -> loaded.loadedNamespaces(packDir), java.util.List.of()));
+        });
+    }
+
+    /**
+     * Runs a loaded-pack read against the active platform, or returns the fallback
+     * when no server is running (unit tests, early startup).
+     */
+    private static <T> T withLoaded(java.util.function.Function<IPlatformDatapack, T> action, T fallback) {
+        IPlatformDatapack loaded = Platform.getDatapackOrNull();
+        return loaded == null ? fallback : action.apply(loaded);
+    }
+
+    private static ILuaValue toLuaList(ILuaEngine engine, java.util.List<String> values) {
+        ILuaTable out = engine.createTable();
+        for (int i = 0; i < values.size(); i++) {
+            out.rawset(i + 1, values.get(i));
+        }
+        return out;
     }
 
     static ILuaTable registerTagTable(ILuaEngine engine, IDatapackService datapackService) {

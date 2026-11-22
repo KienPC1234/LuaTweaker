@@ -9,13 +9,25 @@ import java.util.Locale;
 import java.util.function.BiConsumer;
 
 public class ItemBuilderImpl implements IItemBuilder {
+    /** Prefix shared by builder validation errors. */
+    private static final String ITEM_MSG_PREFIX = "Item '";
     /** DSL defaults applied before any Lua callback runs. */
     private static final String DEFAULT_TYPE = "GENERIC";
     private static final int DEFAULT_MAX_STACK_SIZE = 64;
     private static final String DEFAULT_RARITY = "COMMON";
-    private static final float DEFAULT_MINING_SPEED = 4.0f;
-    private static final int DEFAULT_ENCHANTABILITY = 10;
+    /** Unset marker: falls back to the resolved tier's values instead of forcing these. */
+    private static final float UNSET_MINING_SPEED = -1.0f;
+    /** Unset marker: falls back to the resolved tier's values instead of forcing these. */
+    private static final int UNSET_ENCHANTABILITY = -1;
     private static final String DEFAULT_USE_ANIMATION = "NONE";
+
+    /** Valid item types (vanilla tool/armor classes + generic). */
+    private static final java.util.Set<String> VALID_TYPES = java.util.Set.of(
+            "GENERIC", "SIMPLE", "SWORD", "PICKAXE", "AXE", "SHOVEL", "HOE",
+            "HELMET", "CHESTPLATE", "LEGGINGS", "BOOTS");
+    /** Valid vanilla rarities. */
+    private static final java.util.Set<String> VALID_RARITIES = java.util.Set.of(
+            "COMMON", "UNCOMMON", "RARE", "EPIC");
 
     private final String id;
     private String itemType = DEFAULT_TYPE;
@@ -23,13 +35,14 @@ public class ItemBuilderImpl implements IItemBuilder {
     private String rarityName = DEFAULT_RARITY;
     private int durabilityValue;
     private int miningLevelValue;
-    private float miningSpeedValue = DEFAULT_MINING_SPEED;
+    private String miningLevelName = "";
+    private float miningSpeedValue = UNSET_MINING_SPEED;
     private float attackDamageValue;
     private float attackSpeedValue;
     private int defenseValue;
     private float toughnessValue;
     private float knockbackResistanceValue;
-    private int enchantabilityValue = DEFAULT_ENCHANTABILITY;
+    private int enchantabilityValue = UNSET_ENCHANTABILITY;
     private int burnTimeTicks;
     private String displayNameText;
     private String modelPath;
@@ -43,7 +56,12 @@ public class ItemBuilderImpl implements IItemBuilder {
     @Override
     public IItemBuilder type(String type) {
         if (type != null) {
-            this.itemType = type.toUpperCase(Locale.ROOT);
+            String clean = type.toUpperCase(Locale.ROOT);
+            if (!VALID_TYPES.contains(clean)) {
+                throw new IllegalArgumentException(ITEM_MSG_PREFIX + id + "' has unknown type '" + type
+                        + "' (use 'GENERIC', 'SWORD', 'PICKAXE', 'AXE', 'SHOVEL', 'HOE', 'HELMET', 'CHESTPLATE', 'LEGGINGS' or 'BOOTS')");
+            }
+            this.itemType = clean;
         }
         return this;
     }
@@ -57,7 +75,12 @@ public class ItemBuilderImpl implements IItemBuilder {
     @Override
     public IItemBuilder rarity(String rarity) {
         if (rarity != null) {
-            this.rarityName = rarity.toUpperCase(Locale.ROOT);
+            String clean = rarity.toUpperCase(Locale.ROOT);
+            if (!VALID_RARITIES.contains(clean)) {
+                throw new IllegalArgumentException(ITEM_MSG_PREFIX + id + "' has unknown rarity '" + rarity
+                        + "' (use 'COMMON', 'UNCOMMON', 'RARE' or 'EPIC')");
+            }
+            this.rarityName = clean;
         }
         return this;
     }
@@ -70,7 +93,11 @@ public class ItemBuilderImpl implements IItemBuilder {
 
     @Override
     public IItemBuilder miningLevel(int level) {
+        if (level < 0) {
+            throw new IllegalArgumentException(ITEM_MSG_PREFIX + id + "' miningLevel must not be negative, got: " + level);
+        }
         this.miningLevelValue = level;
+        this.miningLevelName = "";
         return this;
     }
 
@@ -78,6 +105,7 @@ public class ItemBuilderImpl implements IItemBuilder {
     public IItemBuilder miningLevel(String levelName) {
         if (levelName != null) {
             this.miningLevelValue = MiningLevels.parse(levelName);
+            this.miningLevelName = levelName;
         }
         return this;
     }
@@ -259,6 +287,9 @@ public class ItemBuilderImpl implements IItemBuilder {
 
     @Override
     public IItemBuilder useDuration(int ticks) {
+        if (ticks < 0) {
+            throw new IllegalArgumentException(ITEM_MSG_PREFIX + id + "' useDuration must not be negative, got: " + ticks);
+        }
         this.useDurationTicks = ticks;
         return this;
     }
@@ -315,6 +346,7 @@ public class ItemBuilderImpl implements IItemBuilder {
 
     @Override public String getId() { return id; }
     @Override public String getType() { return itemType; }
+    @Override public String getMiningLevelName() { return miningLevelName; }
     @Override public int getMaxStackSize() { return maxStackSizeValue; }
     @Override public String getRarity() { return rarityName; }
     @Override public int getDurability() { return durabilityValue; }
@@ -332,7 +364,7 @@ public class ItemBuilderImpl implements IItemBuilder {
     @Override public int getBurnTime() { return burnTimeTicks; }
     @Override public String getModel() { return modelPath; }
     @Override public String getTexture() { return texturePath; }
-    @Override public java.util.List<String> getTags() { return tags; }
+    @Override public java.util.List<String> getTags() { return java.util.List.copyOf(tags); }
     @Override public String getCreativeTab() { return creativeTabId; }
     @Override public BiConsumer<Object, Object> getRightClickHandler() { return rightClickHandler; }
     @Override public java.util.function.BiFunction<Object, Object, Boolean> getOnUseOnBlockHandler() { return onUseOnBlockHandler; }
@@ -343,7 +375,7 @@ public class ItemBuilderImpl implements IItemBuilder {
     @Override public boolean isAlwaysEdible() { return alwaysEdibleEnabled; }
     @Override public BiConsumer<Object, Object> getOnConsumeHandler() { return onConsumeHandler; }
     @Override public boolean isGlow() { return glowEnabled; }
-    @Override public java.util.List<String> getTooltips() { return tooltips; }
+    @Override public java.util.List<String> getTooltips() { return java.util.List.copyOf(tooltips); }
 
     @Override public String getUseAnimation() { return useAnimationName; }
     @Override public int getUseDuration() { return useDurationTicks; }

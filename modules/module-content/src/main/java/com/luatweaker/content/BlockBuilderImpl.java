@@ -48,7 +48,7 @@ public class BlockBuilderImpl implements IBlockBuilder {
 
     @Override
     public IBlockBuilder lightLevel(int level) {
-        this.lightLevelValue = level;
+        this.lightLevelValue = Math.min(15, Math.max(0, level));
         return this;
     }
 
@@ -229,6 +229,9 @@ public class BlockBuilderImpl implements IBlockBuilder {
 
     @Override
     public IBlockBuilder drop(String itemId, int minCount, int maxCount) {
+        if (itemId == null || itemId.isBlank()) {
+            throw new IllegalArgumentException("Block drop itemId must not be blank");
+        }
         this.dropItemId = itemId;
         this.minDropCount = Math.max(MIN_DROP_COUNT, minCount);
         this.maxDropCount = Math.max(this.minDropCount, maxCount);
@@ -255,6 +258,11 @@ public class BlockBuilderImpl implements IBlockBuilder {
     private static final int MIN_DROP_COUNT = 1;
     /** Block-state property names must be lowercase letters/digits/underscores. */
     private static final String VALID_PROPERTY_NAME = "[a-z0-9_]+";
+    /** State property names reserved by facing/connection/wall mechanics; collisions crash registration. */
+    private static final java.util.Set<String> RESERVED_PROPERTY_NAMES = java.util.Set.of(
+            "facing", "half", "shape", "waterlogged", "up", "down",
+            "north", "south", "east", "west", "open", "powered", "lit",
+            "hinge", "layers", "age", "moisture", "snowy");
 
     @Override
     public IBlockBuilder container(int rows, int cols, String dropMode) {
@@ -387,6 +395,10 @@ public class BlockBuilderImpl implements IBlockBuilder {
     @Override
     public IBlockBuilder booleanState(String property, String offTexture, String onTexture) {
         if (property != null && property.matches(VALID_PROPERTY_NAME) && offTexture != null && onTexture != null) {
+            if (RESERVED_PROPERTY_NAMES.contains(property.toLowerCase(Locale.ROOT))) {
+                throw new IllegalArgumentException("Block '" + id + "' booleanState property '" + property
+                        + "' is reserved by facing/connection mechanics and would crash registration");
+            }
             this.booleanStateSpec = new com.luatweaker.api.content.BooleanStateSpec(property, offTexture, onTexture);
         } else {
             com.luatweaker.api.log.LuaTweakerLog.get().warn(com.luatweaker.api.log.LogStage.SYSTEM,
@@ -418,6 +430,16 @@ public class BlockBuilderImpl implements IBlockBuilder {
 
     @Override
     public IBlockBuilder box(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {
+        if (Double.isNaN(minX) || Double.isNaN(minY) || Double.isNaN(minZ)
+                || Double.isNaN(maxX) || Double.isNaN(maxY) || Double.isNaN(maxZ)
+                || Double.isInfinite(minX) || Double.isInfinite(minY) || Double.isInfinite(minZ)
+                || Double.isInfinite(maxX) || Double.isInfinite(maxY) || Double.isInfinite(maxZ)) {
+            throw new IllegalArgumentException("Block box coordinates must be finite numbers");
+        }
+        if (minX > maxX || minY > maxY || minZ > maxZ) {
+            throw new IllegalArgumentException("Block box min must not exceed max, got: ("
+                    + minX + ", " + minY + ", " + minZ + ") to (" + maxX + ", " + maxY + ", " + maxZ + ")");
+        }
         this.boxes.add(new com.luatweaker.api.content.BoxSpec(minX, minY, minZ, maxX, maxY, maxZ));
         return this;
     }
@@ -513,7 +535,7 @@ public class BlockBuilderImpl implements IBlockBuilder {
     @Override public String getBaseBlockId() { return baseBlockRef; }
     @Override public String getModel() { return modelPath; }
     @Override public String getTexture() { return texturePath; }
-    @Override public java.util.List<String> getTags() { return tags; }
+    @Override public java.util.List<String> getTags() { return java.util.List.copyOf(tags); }
     @Override public String getCreativeTab() { return creativeTabId; }
     @Override public BiConsumer<Object, Object> getRightClickHandler() { return rightClickHandler; }
     @Override public String getDropItemId() { return dropItemId; }

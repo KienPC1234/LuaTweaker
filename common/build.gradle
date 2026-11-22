@@ -1,0 +1,82 @@
+plugins {
+    id 'java-library'
+    id 'architectury-plugin'
+    id 'dev.architectury.loom'
+}
+
+architectury {
+    common(rootProject.enabled_platforms.split(','))
+}
+
+loom {
+    accessWidenerPath = file('src/main/resources/luatweaker.accesswidener')
+}
+
+def pureJavaModules = [
+    ':common-api',
+    ':core-engine',
+    ':modules:module-recipes',
+    ':modules:module-content',
+    ':modules:module-entities',
+    ':modules:module-interaction',
+    ':modules:module-events',
+    ':modules:module-math',
+    ':modules:module-storage',
+    ':modules:module-network',
+    ':modules:module-client',
+    ':modules:module-interception',
+    ':modules:module-command',
+    ':modules:module-tasks',
+    ':modules:module-loot',
+    ':modules:module-worldgen',
+    ':modules:module-noise',
+    ':modules:module-dimensions',
+    ':modules:module-spawnrules',
+    ':modules:module-structures',
+    ':modules:module-update',
+    ':modules:module-integration-api',
+    ':modules:module-text'
+]
+
+dependencies {
+    minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
+    mappings loom.layered() {
+        officialMojangMappings()
+        parchment("org.parchmentmc.data:parchment-${rootProject.parchment_minecraft_version}:${rootProject.parchment_mappings_version}@zip")
+    }
+
+    modImplementation "dev.architectury:architectury:${rootProject.architectury_version}"
+
+    // Expose all pure Java modules to platform loaders transitively
+    api project(':common-api')
+    api project(':core-engine')
+    pureJavaModules.each { dep ->
+        if (dep != ':common-api' && dep != ':core-engine') {
+            api project(dep)
+        }
+    }
+
+    compileOnly "io.github.kienpc1234:luava:${rootProject.luava_version}"
+    compileOnly "io.github.spair:imgui-java-binding:${rootProject.imgui_version}"
+    compileOnly "io.github.spair:imgui-java-lwjgl3:${rootProject.imgui_version}"
+    compileOnly "software.bernie.geckolib:geckolib-neoforge-${rootProject.minecraft_version}:${rootProject.geckolib_version}"
+
+    testImplementation "org.junit.jupiter:junit-jupiter-api:${rootProject.junit_version}"
+    testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:${rootProject.junit_version}"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+    testRuntimeOnly "software.bernie.geckolib:geckolib-neoforge-${rootProject.minecraft_version}:${rootProject.geckolib_version}"
+    testRuntimeOnly "io.github.spair:imgui-java-natives-windows:${rootProject.imgui_version}"
+    testRuntimeOnly "io.github.spair:imgui-java-natives-linux:${rootProject.imgui_version}"
+    testRuntimeOnly "io.github.spair:imgui-java-natives-macos:${rootProject.imgui_version}"
+    testImplementation "io.github.kienpc1234:luava:${rootProject.luava_version}"
+    testImplementation "org.mongodb:bson:${rootProject.bson_version}"
+    testImplementation "com.google.code.gson:gson:${rootProject.gson_version}"
+    testImplementation "io.github.spair:imgui-java-binding:${rootProject.imgui_version}"
+    testImplementation("io.github.spair:imgui-java-lwjgl3:${rootProject.imgui_version}") {
+        exclude group: 'org.lwjgl'
+    }
+}
+
+test {
+    useJUnitPlatform()
+}

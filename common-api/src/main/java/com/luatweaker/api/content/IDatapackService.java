@@ -3,7 +3,11 @@ package com.luatweaker.api.content;
 import com.luatweaker.api.annotation.LuaDoc;
 import com.luatweaker.api.doc.LuaDocFragments;
 
+import java.util.List;
 import java.util.Map;
+
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * KubeJS-style Virtual DataPack service.
@@ -48,7 +52,30 @@ public interface IDatapackService {
 
     @LuaDoc(description = "Creates or appends to a tag JSON (item, block, entity, etc.) under any namespace. e.g. datapack:addTag('item', 'luatweaker:ruby_items', {'luatweaker:custom_ruby','luatweaker:ruby_block'}) or datapack:addTag('block', 'minecraft:beacon_base_blocks', {'luatweaker:ruby_block'}).",
             params = {"tagType: string — 'item', 'block', 'entity_type', 'fluid', etc.", "tagId: string — ResourceLocation of the tag e.g. 'luatweaker:ruby_items'", "values: table — list of ResourceLocation strings to include"})
-    void addTag(String tagType, String tagId, java.util.List<String> values);
+    void addTag(String tagType, String tagId, List<String> values);
+
+    @LuaDoc(description = "Returns true when a virtual file exists at relPath (e.g. 'minecraft/recipe/iron.json' or 'data/minecraft/recipe/iron.json').",
+            params = {"relPath: string — path relative to data/ or assets/"}, returnType = "boolean")
+    boolean hasData(@NotNull String relPath);
+
+    @LuaDoc(description = "Reads a virtual file registered by Lua (addData/addJsonRecipe/...). Returns nil when missing. Use getLoaded to read vanilla/other-mod datapacks.",
+            params = {"relPath: string — path relative to data/ or assets/"}, returnType = "string | nil")
+    @Nullable
+    String getData(@NotNull String relPath);
+
+    @LuaDoc(description = "Deletes a virtual file registered by Lua. Returns true when an entry was removed.",
+            params = {"relPath: string — path relative to data/ or assets/"}, returnType = "boolean")
+    boolean removeData(@NotNull String relPath);
+
+    @LuaDoc(description = "Lists virtual file keys starting with prefix ('' lists all). Keys look like 'data/<ns>/<path>' or 'assets/<ns>/<path>'.",
+            params = {"prefix: string — e.g. '', 'data/mymod/', 'data/minecraft/recipe/'"}, returnType = "table")
+    @NotNull
+    List<String> listData(@NotNull String prefix);
+
+    @LuaDoc(description = "Lists namespaces registered in virtual files for a pack dir ('data' or 'assets').",
+            params = {"packDir: string — 'data' or 'assets'"}, returnType = "table")
+    @NotNull
+    List<String> listNamespaces(@NotNull String packDir);
 
     /** Returns a live, unmodifiable view of all registered virtual data paths → content. */
     Map<String, String> getVirtualFiles();

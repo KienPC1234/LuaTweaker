@@ -6,6 +6,7 @@ dependencies {
     api project(':common-api')
     implementation project(':core-engine')
     implementation 'org.lwjgl:lwjgl-spvc:3.3.3'
+    testImplementation project(':modules:module-content')
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

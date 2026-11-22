@@ -26,79 +26,117 @@ final class ContentItemBinding {
     private static void bindItemBasics(ILuaTable table, IItemBuilder builder,
             IDatapackService datapackService) {
         ContentBindingSupport.bindMethod(table, "type", args -> {
-            builder.type(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:type");
+            builder.type(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "maxStackSize", args -> {
-            builder.maxStackSize(args[LuaBinder.getOffset(args)].asInt());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:maxStackSize");
+            builder.maxStackSize(args[off].asInt());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "rarity", args -> {
-            builder.rarity(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:rarity");
+            builder.rarity(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "durability", args -> {
-            builder.durability(args[LuaBinder.getOffset(args)].asInt());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:durability");
+            builder.durability(args[off].asInt());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "maxDamage", args -> {
-            builder.durability(args[LuaBinder.getOffset(args)].asInt());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:maxDamage");
+            builder.durability(args[off].asInt());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "miningSpeed", args -> {
-            builder.miningSpeed((float) args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:miningSpeed");
+            builder.miningSpeed((float) args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "efficiency", args -> {
-            builder.miningSpeed((float) args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:efficiency");
+            builder.miningSpeed((float) args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "attackDamage", args -> {
-            builder.attackDamage((float) args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:attackDamage");
+            builder.attackDamage((float) args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "attackSpeed", args -> {
-            builder.attackSpeed((float) args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:attackSpeed");
+            builder.attackSpeed((float) args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "defense", args -> {
-            builder.defense(args[LuaBinder.getOffset(args)].asInt());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:defense");
+            builder.defense(args[off].asInt());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "toughness", args -> {
-            builder.toughness((float) args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:toughness");
+            builder.toughness((float) args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "knockbackResistance", args -> {
-            builder.knockbackResistance((float) args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:knockbackResistance");
+            builder.knockbackResistance((float) args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "enchantability", args -> {
-            builder.enchantability(args[LuaBinder.getOffset(args)].asInt());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:enchantability");
+            builder.enchantability(args[off].asInt());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "burnTime", args -> {
-            builder.burnTime(args[LuaBinder.getOffset(args)].asInt());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:burnTime");
+            builder.burnTime(args[off].asInt());
             return table;
         });
         ContentBindingSupport.bindMethod(table, ContentBindingSupport.METHOD_DISPLAY_NAME, args -> {
-            builder.displayName(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:displayName");
+            builder.displayName(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "model", args -> {
-            builder.model(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:model");
+            builder.model(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "texture", args -> {
-            builder.texture(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:texture");
+            builder.texture(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "armorMaterial", args -> {
-            builder.armorMaterial(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:armorMaterial");
+            builder.armorMaterial(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "armorTexture", args -> {
-            builder.armorTexture(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:armorTexture");
+            builder.armorTexture(args[off].asString());
             return table;
         });
         bindCreativeTabAndTag(table, builder, datapackService);
@@ -107,11 +145,15 @@ final class ContentItemBinding {
     private static void bindCreativeTabAndTag(ILuaTable table, IItemBuilder builder,
             IDatapackService datapackService) {
         ContentBindingSupport.bindMethod(table, ContentBindingSupport.METHOD_CREATIVE_TAB, args -> {
-            builder.creativeTab(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:creativeTab");
+            builder.creativeTab(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "tabGroup", args -> {
-            builder.creativeTab(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:tabGroup");
+            builder.creativeTab(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "tag", args -> {
@@ -131,6 +173,7 @@ final class ContentItemBinding {
     private static void bindItemMining(ILuaTable table, IItemBuilder builder) {
         ContentBindingSupport.bindMethod(table, "miningLevel", args -> {
             int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:miningLevel");
             Object obj = args[off].toJavaObject();
             if (obj instanceof Number num) {
                 builder.miningLevel(num.intValue());
@@ -141,6 +184,7 @@ final class ContentItemBinding {
         });
         ContentBindingSupport.bindMethod(table, "tier", args -> {
             int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:tier");
             Object obj = args[off].toJavaObject();
             if (obj instanceof Number num) {
                 builder.miningLevel(num.intValue());
@@ -154,6 +198,7 @@ final class ContentItemBinding {
     private static void bindItemFood(ILuaEngine engine, ILuaTable table, IItemBuilder builder) {
         ContentBindingSupport.bindMethod(table, "food", args -> {
             int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 2, "item:food");
             builder.food(args[off].asInt(), (float) args[off + 1].asDouble());
             return table;
         });
@@ -186,11 +231,15 @@ final class ContentItemBinding {
             return table;
         });
         ContentBindingSupport.bindMethod(table, "useAnimation", args -> {
-            builder.useAnimation(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:useAnimation");
+            builder.useAnimation(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "useDuration", args -> {
-            builder.useDuration(args[LuaBinder.getOffset(args)].asInt());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "item:useDuration");
+            builder.useDuration(args[off].asInt());
             return table;
         });
     }
@@ -198,14 +247,8 @@ final class ContentItemBinding {
     private static void bindItemGeo(ILuaTable table, IItemBuilder builder) {
         ContentBindingSupport.bindMethod(table, "geoModel", args -> {
             int off = LuaBinder.getOffset(args);
-            if (ContentBindingSupport.hasMinArgs(args, off, 3)) {
-                String modelPath = args[off].asString();
-                String texturePath = args[off + 1].asString();
-                String animPath = args[off + 2].asString();
-                String defaultAnim = ContentBindingSupport.hasMinArgs(args, off, 4) && !args[off + 3].isNil()
-                        ? args[off + 3].asString() : null;
-                builder.geoModel(modelPath, texturePath, animPath, defaultAnim);
-            }
+            String[] geo = GeoModelArgs.parse(args, off, "item:geoModel");
+            builder.geoModel(geo[0], geo[1], geo[2], geo[3]);
             return table;
         });
         ContentBindingSupport.bindMethod(table, "defaultAnimation", args -> {

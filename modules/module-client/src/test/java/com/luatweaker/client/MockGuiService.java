@@ -44,6 +44,12 @@ abstract class MockGuiServiceBase implements IGuiService {
     }
 
     @Override
+    public void drawTextureRegion(String textureId, int x, int y, int u, int v, int width, int height,
+                                  int textureWidth, int textureHeight) {
+        calls.add("textureRegion " + textureId + " " + x + "," + y + " uv=" + u + "," + v + " " + width + "x" + height);
+    }
+
+    @Override
     public void pushClip(int x, int y, int width, int height) {
         calls.add("clipPush " + x + "," + y + " " + width + "x" + height);
     }

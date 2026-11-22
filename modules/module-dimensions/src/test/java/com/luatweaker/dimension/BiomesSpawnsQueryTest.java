@@ -42,7 +42,7 @@ class BiomesSpawnsQueryTest {
 
     @Test
     void spawnListingIsATable() {
-        datapack.files.put(CRYSTAL_PLAINS_PATH, SPAWNERS_JSON);
+        datapack.addData(CRYSTAL_PLAINS_PATH, SPAWNERS_JSON);
 
         Object spawns = service.getSpawns(CRYSTAL_PLAINS_ID);
 
@@ -52,7 +52,7 @@ class BiomesSpawnsQueryTest {
 
     @Test
     void spawnListingContainsMonsterCategory() {
-        datapack.files.put(CRYSTAL_PLAINS_PATH, SPAWNERS_JSON);
+        datapack.addData(CRYSTAL_PLAINS_PATH, SPAWNERS_JSON);
 
         ILuaValue spawns = (ILuaValue) service.getSpawns(CRYSTAL_PLAINS_ID);
 
@@ -61,7 +61,7 @@ class BiomesSpawnsQueryTest {
 
     @Test
     void spawnListingEntryTypeMatches() {
-        datapack.files.put(CRYSTAL_PLAINS_PATH, SPAWNERS_JSON);
+        datapack.addData(CRYSTAL_PLAINS_PATH, SPAWNERS_JSON);
 
         ILuaValue spawns = (ILuaValue) service.getSpawns(CRYSTAL_PLAINS_ID);
 

@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 """Generate NBT structure templates for the arcane_rpg demo mod.
 
-Creates <name>.nbt files in neoforge-platform/luamods/arcane_rpg/data/arcane_rpg/structures/
+Creates <name>.nbt files in
+neoforge-platform/luamods/arcane_rpg/data/arcane_rpg/structure/structures/
 using the vanilla StructureTemplate NBT format (nbtlib). The templates are loaded
-at runtime by World:PlaceStructure("arcane_rpg:<name>", ...) from the virtual datapack.
+at runtime by World:PlaceStructure("arcane_rpg:structures/<name>", ...) from the
+virtual datapack (vanilla resolves data/<ns>/structure/<path>.nbt).
 
 Usage: python tools/generate_structures.py
 """
+
+import os
+from pathlib import Path
+
+import nbtlib
+
+REPO = Path(__file__).resolve().parent.parent
+OUT = REPO / "neoforge-platform" / "luamods" / "arcane_rpg" / "data" / "arcane_rpg" / "structure" / "structures"
 
 import os
 from pathlib import Path

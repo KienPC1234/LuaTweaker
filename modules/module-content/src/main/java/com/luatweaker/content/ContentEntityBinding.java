@@ -27,7 +27,9 @@ final class ContentEntityBinding {
 
     private static void bindEntityBasics(ILuaTable table, IEntityBuilder builder) {
         ContentBindingSupport.bindMethod(table, "category", args -> {
-            builder.category(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "entity:category");
+            builder.category(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "dimensions", args -> {
@@ -38,31 +40,45 @@ final class ContentEntityBinding {
             return table;
         });
         ContentBindingSupport.bindMethod(table, "maxHealth", args -> {
-            builder.maxHealth(args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "entity:maxHealth");
+            builder.maxHealth(args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "movementSpeed", args -> {
-            builder.movementSpeed(args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "entity:movementSpeed");
+            builder.movementSpeed(args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "speed", args -> {
-            builder.movementSpeed(args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "entity:speed");
+            builder.movementSpeed(args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "attackDamage", args -> {
-            builder.attackDamage(args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "entity:attackDamage");
+            builder.attackDamage(args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "followRange", args -> {
-            builder.followRange(args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "entity:followRange");
+            builder.followRange(args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "armor", args -> {
-            builder.armor(args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "entity:armor");
+            builder.armor(args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "knockbackResistance", args -> {
-            builder.knockbackResistance(args[LuaBinder.getOffset(args)].asDouble());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "entity:knockbackResistance");
+            builder.knockbackResistance(args[off].asDouble());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "spawnEgg", args -> {
@@ -73,11 +89,15 @@ final class ContentEntityBinding {
             return table;
         });
         ContentBindingSupport.bindMethod(table, "model", args -> {
-            builder.model(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "entity:model");
+            builder.model(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "texture", args -> {
-            builder.texture(args[LuaBinder.getOffset(args)].asString());
+            int off = LuaBinder.getOffset(args);
+            ContentBindingSupport.requireArgs(args, off, 1, "entity:texture");
+            builder.texture(args[off].asString());
             return table;
         });
         ContentBindingSupport.bindMethod(table, "bbmodel", args -> {
@@ -274,14 +294,8 @@ final class ContentEntityBinding {
     private static void bindEntityGeo(ILuaTable table, IEntityBuilder builder) {
         ContentBindingSupport.bindMethod(table, "geoModel", args -> {
             int off = LuaBinder.getOffset(args);
-            if (ContentBindingSupport.hasMinArgs(args, off, 3)) {
-                String modelPath = args[off].asString();
-                String texturePath = args[off + 1].asString();
-                String animPath = args[off + 2].asString();
-                String defaultAnim = ContentBindingSupport.hasMinArgs(args, off, 4) && !args[off + 3].isNil()
-                        ? args[off + 3].asString() : null;
-                builder.geoModel(modelPath, texturePath, animPath, defaultAnim);
-            }
+            String[] geo = GeoModelArgs.parse(args, off, "entity:geoModel");
+            builder.geoModel(geo[0], geo[1], geo[2], geo[3]);
             return table;
         });
         ContentBindingSupport.bindMethod(table, "defaultAnimation", args -> {

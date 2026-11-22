@@ -36,7 +36,7 @@ class BiomesDefineMergeTest {
     private String defineThenAddParrot() {
         service.define(MEADOW_ID, engine.createTable());
         service.addSpawn(MEADOW_ID, "creature", "minecraft:parrot", 10, 1, 2);
-        return datapack.files.get(MEADOW_PATH);
+        return datapack.getData(MEADOW_PATH);
     }
 
     @Test
