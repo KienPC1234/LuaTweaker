@@ -4,17 +4,22 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import dev.architectury.event.events.client.ClientTickEvent;
 import net.minecraft.client.Minecraft;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class ClientItemAnimationHandler {
     private static final int FINAL_TICK = 1;
+    private static final int DEFAULT_DURATION = 20;
+    private static final float DEFAULT_SPEED = 1.0f;
 
     private ClientItemAnimationHandler() {
     }
 
-    public record ActiveAnim(String name, int totalTicks, int ticksRemaining, float speed) {}
+    public record ActiveAnim(@NotNull String name, int totalTicks, int ticksRemaining, float speed) {}
 
     private static final Map<Integer, ActiveAnim> ACTIVE_ANIMS = new ConcurrentHashMap<>();
 
@@ -22,26 +27,45 @@ public final class ClientItemAnimationHandler {
         ClientTickEvent.CLIENT_PRE.register(mc -> onClientTick());
     }
 
-    public static void trigger(int entityId, String name, int durationTicks, float speed) {
-        int ticks = durationTicks <= 0 ? 20 : durationTicks;
-        ACTIVE_ANIMS.put(entityId, new ActiveAnim(name.toLowerCase(java.util.Locale.ROOT), ticks, ticks, speed <= 0 ? 1.0f : speed));
+    public static void trigger(int entityId, @NotNull String name, int durationTicks, float speed) {
+        int ticks = durationTicks <= 0 ? DEFAULT_DURATION : durationTicks;
+        float finalSpeed = speed <= 0 ? DEFAULT_SPEED : speed;
+        ACTIVE_ANIMS.put(entityId, new ActiveAnim(name.toLowerCase(Locale.ROOT), ticks, ticks, finalSpeed));
+    }
+
+    public static @Nullable ActiveAnim getAnimation(int entityId) {
+        return ACTIVE_ANIMS.get(entityId);
+    }
+
+    public static void clear() {
+        ACTIVE_ANIMS.clear();
     }
 
     public static void onClientTick() {
-        if (ACTIVE_ANIMS.isEmpty()) { return; }
-        ACTIVE_ANIMS.entrySet().removeIf(entry -> {
-            ActiveAnim a = entry.getValue();
-            if (a.ticksRemaining() <= FINAL_TICK) { return true; }
-            entry.setValue(new ActiveAnim(a.name(), a.totalTicks(), a.ticksRemaining() - 1, a.speed()));
-            return false;
-        });
+        if (ACTIVE_ANIMS.isEmpty()) {
+            return;
+        }
+        for (Integer entityId : ACTIVE_ANIMS.keySet()) {
+            ACTIVE_ANIMS.computeIfPresent(entityId, (ignored, anim) -> advanceAnimation(anim));
+        }
     }
 
-    public static void onRenderHand(PoseStack poseStack, float partialTicks) {
+    private static @Nullable ActiveAnim advanceAnimation(@NotNull ActiveAnim anim) {
+        if (anim.ticksRemaining() <= FINAL_TICK) {
+            return null;
+        }
+        return new ActiveAnim(anim.name(), anim.totalTicks(), anim.ticksRemaining() - 1, anim.speed());
+    }
+
+    public static void onRenderHand(@NotNull PoseStack poseStack, float partialTicks) {
         var mc = Minecraft.getInstance();
-        if (mc.player == null) { return; }
+        if (mc.player == null) {
+            return;
+        }
         ActiveAnim anim = ACTIVE_ANIMS.get(mc.player.getId());
-        if (anim == null) { return; }
+        if (anim == null) {
+            return;
+        }
 
         float progress = 1.0f - (anim.ticksRemaining() - partialTicks) / anim.totalTicks();
         progress = Math.max(0.0f, Math.min(1.0f, progress));

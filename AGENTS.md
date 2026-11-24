@@ -426,11 +426,19 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 | `modules/module-math/` | Vector3/Vector2/Color3, math/string extensions, `Curve` path samplers | `common-api`, `core-engine` |
 | `modules/module-text/` | Minecraft text component builder (literal/translate/keybind/score, styles, JSON/legacy) | `common-api`, `core-engine` |
 | `modules/module-interception/` | Anvil/brewing/trade interception | `common-api`, `core-engine` |
+| `modules/module-command/` | Custom Brigadier top-level Lua command service | `common-api`, `core-engine` |
 | `modules/module-loot/` | Loot table manipulation (mob drops, chest loot, block drops, fishing) | `common-api`, `core-engine` |
+| `modules/module-worldgen/` | Ore, vegetation, mixed vein, and biome modifier planning | `common-api`, `core-engine` |
+| `modules/module-noise/` | Deterministic Simplex, fBm, ridged, Voronoi, domain-warp noise | `common-api`, `core-engine` |
+| `modules/module-dimensions/` | Custom dimensions + custom biomes (`Biomes` + `Dimensions`) | `common-api`, `core-engine` |
+| `modules/module-spawnrules/` | Programmable Lua entity spawn rules per dimension | `common-api`, `core-engine` |
+| `modules/module-structures/` | Single-template NBT structure registration and runtime placement | `common-api`, `core-engine` |
 | `modules/module-update/` | Declarative update checker (https-only feeds) + permission-gated `Net:HttpGet` (`net.http`) | `common-api`, `core-engine` |
-| `neoforge-platform/` | **Only runnable module**. NeoForge launcher, registrars, PAL impl, commands | all of the above + NeoForge |
+| `common/` | Shared Architectury Minecraft PAL implementation, registrars, mixins, commands | `common-api`, `core-engine`, `modules/*` |
+| `neoforge/` | Runnable NeoForge 21.1.242 loader module (capabilities, fluids, JEI, events) | `common`, `modules/*`, NeoForge |
+| `fabric/` | Runnable Fabric 1.21.1 loader module (transfer storage, rendering, loot/events) | `common`, `modules/*`, Fabric API |
 
-Entrypoint: `com.luatweaker.platform.LuaTweakerMod` (`@Mod("luatweaker")`).
+Entrypoints: `com.luatweaker.common.LuaTweakerCommon`, `com.luatweaker.neoforge.LuaTweakerNeoForge` (`@Mod("luatweaker")`), `com.luatweaker.fabric.LuaTweakerFabric`.
 
 ---
 
@@ -441,11 +449,14 @@ Entrypoint: `com.luatweaker.platform.LuaTweakerMod` (`@Mod("luatweaker")`).
 ./gradlew build
 
 # dev build + asset sync (fast iteration)
-./gradlew :neoforge-platform:classes :neoforge-platform:syncLua
+./gradlew :neoforge:classes :neoforge:syncLuaMods
+./gradlew :fabric:classes :fabric:syncLuaMods
 
 # run client or server
-./gradlew :neoforge-platform:runClient
-./gradlew :neoforge-platform:runServer
+./gradlew :neoforge:runClient
+./gradlew :neoforge:runServer
+./gradlew :fabric:runClient
+./gradlew :fabric:runServer
 
 # all tests
 ./gradlew test
@@ -454,7 +465,7 @@ Entrypoint: `com.luatweaker.platform.LuaTweakerMod` (`@Mod("luatweaker")`).
 ./gradlew :modules:module-recipes:test --tests *EngineTest
 ```
 
-Java 21 (Temurin), Gradle wrapper, NeoForge 21.1.242. CI: `.github/workflows/build.yml`.
+Java 21 (Temurin), Gradle wrapper, Architectury Loom (NeoForge 21.1.242 + Fabric Loader 0.16.10). CI: `.github/workflows/build.yml`.
 
 ---
 
@@ -469,7 +480,7 @@ Java 21 (Temurin), Gradle wrapper, NeoForge 21.1.242. CI: `.github/workflows/bui
 
 > **Network security (module-update):** update checks are declarative only — `"update_url": "https://..."` in manifest.json is fetched by the engine on the Java side (https-only) and exposed read-only via `mod:GetUpdateStatus()` / `Update` service. Free HTTP (`Net:HttpGet`) is denied by default; it requires the `"net.http"` manifest permission and triggers red warnings in chat/logs.
 
-Dev workspace: `neoforge-platform/luamods/` → synced to `run/luamods/` by `syncLuaMods`.
+Dev workspace: `luamods/` -> synced to `neoforge/run/luamods/` and `fabric/run/luamods/` by `syncLuaMods`.
 
 ---
 

@@ -3,6 +3,9 @@ package com.luatweaker.common.client;
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.api.pal.IPlatformClient;
+import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.common.LuaTweakerCommon;
+import com.luatweaker.common.client.gui.imgui.ImGuiOverlayScreen;
 import com.luatweaker.common.sound.SoundHelper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.particles.ParticleType;
@@ -176,7 +179,7 @@ public class MinecraftClientPlatform implements IPlatformClient {
     @Override
     public void openScreen(String screenId, String title,
                            @org.jetbrains.annotations.Nullable com.luatweaker.api.vm.ILuaTable screenTable,
-                           @org.jetbrains.annotations.Nullable com.luatweaker.api.vm.ILuaEngine engine,
+                           @org.jetbrains.annotations.Nullable ILuaEngine engine,
                            boolean pauseGame) {
         Minecraft.getInstance().tell(() -> {
             net.minecraft.network.chat.Component titleComp = net.minecraft.network.chat.Component.literal(title != null ? title : "");
@@ -207,18 +210,7 @@ public class MinecraftClientPlatform implements IPlatformClient {
         return null;
     }
 
-    /**
-     * Chain location passed to the last activateShaderPost; uniforms only apply while it is live.
-     * Written from the Lua thread and read on the render thread, hence the atomic holder.
-     */
-    private final java.util.concurrent.atomic.AtomicReference<String> expectedShaderChain =
-            new java.util.concurrent.atomic.AtomicReference<>();
-    /** Own program of the last activated chain, for the vec-uniform mirror (cross-thread, atomic). */
-    private final java.util.concurrent.atomic.AtomicReference<String> expectedShaderProgram =
-            new java.util.concurrent.atomic.AtomicReference<>();
-    /** Chain location -> mirror EffectInstance sharing the chain's GL program. */
-    private final Map<String, net.minecraft.client.renderer.EffectInstance> vecMirrors =
-            new ConcurrentHashMap<>();
+    private final ShaderPostChainController shaderController = new ShaderPostChainController();
 
     @Override
     public String getRendererBackend() {
@@ -228,117 +220,33 @@ public class MinecraftClientPlatform implements IPlatformClient {
 
     @Override
     public void activateShaderPost(String chainLocation, String programName) {
-        ResourceLocation location = ResourceLocation.tryParse(chainLocation);
-        if (location == null) {
-            LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                    "[Shaders] refusing to load malformed chain location '" + chainLocation + "'.");
-            return;
-        }
-        // GameRenderer is render-thread owned; execute() runs inline on that thread
-        // and is queued when Lua runs on the integrated server thread.
-        Minecraft.getInstance().execute(() -> {
-            if (Minecraft.getInstance().gameRenderer == null) {
-                LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                        "[Shaders] game renderer not ready; pass '" + chainLocation + "' not loaded.");
-                return;
-            }
-            // loadEffect closes any previous chain first, then warns (not throws)
-            // when our virtual files are missing — so a failure stays visible.
-            ((com.luatweaker.common.mixin.GameRendererAccessor) Minecraft.getInstance().gameRenderer).loadEffect(location);
-            expectedShaderChain.set(chainLocation);
-            expectedShaderProgram.set(programName);
-            vecMirrors.remove(chainLocation);
-            try {
-                // Mirror sharing the chain's GL program (EffectProgram cache): setting
-                // uniforms on it only marks them dirty; the upload happens when the
-                // chain's own pass renders. Safe to write any time on this thread.
-                vecMirrors.put(chainLocation,
-                        new net.minecraft.client.renderer.EffectInstance(
-                                Minecraft.getInstance().getResourceManager(), programName));
-            } catch (java.io.IOException e) {
-                LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                        "[Shaders] vec-uniform mirror unavailable for '" + chainLocation
-                                + "' (" + e.getMessage() + "); float uniforms still work.");
-            }
-        });
-        // Runs after the load above (same thread, FIFO): the driver reports GLSL
-        // compile errors as IOExceptions that loadEffect swallows into a warn.
-        // This check turns "nothing changed on screen" into a named failure:
-        // which pass died, and where the driver's line numbers live.
-        Minecraft.getInstance().execute(() -> {
-            net.minecraft.client.renderer.PostChain live =
-                    Minecraft.getInstance().gameRenderer != null ? Minecraft.getInstance().gameRenderer.currentEffect() : null;
-            if (live != null && live.getName().equals(chainLocation)) {
-                LuaTweakerLog.get().debug(LogStage.SYSTEM,
-                        "[Shaders] pass '" + chainLocation + "' is live.");
-            } else {
-                LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                        "[Shaders] pass '" + chainLocation + "' failed to activate — the driver"
-                                + " rejected the chain. Look above for \"Couldn't compile\" with the"
-                                + " driver's line numbers, then fix the fragment and re-register.");
-            }
-        });
+        java.util.Objects.requireNonNull(programName);
+        shaderController.activate(chainLocation);
     }
 
     @Override
     public void deactivateShaderPost() {
-        expectedShaderChain.set(null);
-        expectedShaderProgram.set(null);
-        Minecraft.getInstance().execute(() -> {
-            if (Minecraft.getInstance().gameRenderer != null) {
-                Minecraft.getInstance().gameRenderer.shutdownEffect();
-            }
-        });
+        shaderController.deactivate();
     }
 
     @Override
     public void setShaderFloat(String uniformName, float value) {
-        if (uniformName == null || uniformName.isBlank()) {
-            return;
-        }
-        Minecraft.getInstance().execute(() -> {
-            if (Minecraft.getInstance().gameRenderer == null) {
-                return;
-            }
-            net.minecraft.client.renderer.PostChain chain = Minecraft.getInstance().gameRenderer.currentEffect();
-            // Only touch our own chain: vanilla spectator/death shaders own theirs,
-            // and a resource reload may have replaced ours with nothing.
-            if (chain != null && chain.getName().equals(expectedShaderChain.get())) {
-                chain.setUniform(uniformName, value);
-            }
-        });
+        shaderController.setFloat(uniformName, value);
     }
 
     @Override
     public void setShaderFloatVec(String uniformName, float[] values) {
-        if (uniformName == null || uniformName.isBlank() || values == null) {
-            return;
+        shaderController.setFloatVec(uniformName, values);
+    }
+
+    public void updateShaderGlobals() {
+        if (Minecraft.getInstance().gameRenderer != null) {
+            shaderController.prepareChain(Minecraft.getInstance().gameRenderer.currentEffect());
         }
-        float[] copy = values.clone();
-        Minecraft.getInstance().execute(() -> {
-            if (Minecraft.getInstance().gameRenderer == null) {
-                return;
-            }
-            String chainLocation = expectedShaderChain.get();
-            net.minecraft.client.renderer.PostChain chain = Minecraft.getInstance().gameRenderer.currentEffect();
-            if (chain == null || !chain.getName().equals(chainLocation)) {
-                return;
-            }
-            net.minecraft.client.renderer.EffectInstance mirror = vecMirrorFor(chainLocation);
-            if (mirror == null) {
-                return;
-            }
-            try {
-                // Missing names resolve to a dummy uniform (safe no-op); a wrong
-                // arity throws, so guard loudly instead of crashing the tick.
-                mirror.safeGetUniform(uniformName).set(copy);
-            } catch (IllegalArgumentException | IllegalStateException e) {
-                LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                        "[Shaders] setShaderFloatVec('" + uniformName + "') failed"
-                                + " (declare it as vec" + copy.length + " in your fragment): "
-                                + e.getMessage());
-            }
-        });
+    }
+
+    public void prepareShaderPostChain(@org.jetbrains.annotations.NotNull net.minecraft.client.renderer.PostChain chain) {
+        shaderController.prepareChain(chain);
     }
 
     @Override
@@ -523,35 +431,6 @@ public class MinecraftClientPlatform implements IPlatformClient {
             if (!closed) {
                 break;
             }
-        }
-    }
-
-    /**
-     * Mirror {@code EffectInstance} for the live chain, created on first use. Sharing the
-     * chain's GL program means uniform writes only mark it dirty.
-     *
-     * @return the mirror, or {@code null} when the chain/program is unknown or unloadable
-     */
-    private @org.jetbrains.annotations.Nullable net.minecraft.client.renderer.EffectInstance vecMirrorFor(
-            @org.jetbrains.annotations.NotNull String chainLocation) {
-        net.minecraft.client.renderer.EffectInstance existing = vecMirrors.get(chainLocation);
-        if (existing != null) {
-            return existing;
-        }
-        String programName = expectedShaderProgram.get();
-        if (programName == null) {
-            return null;
-        }
-        try {
-            net.minecraft.client.renderer.EffectInstance mirror = new net.minecraft.client.renderer.EffectInstance(
-                    Minecraft.getInstance().getResourceManager(), programName);
-            vecMirrors.put(chainLocation, mirror);
-            return mirror;
-        } catch (java.io.IOException e) {
-            LuaTweakerLog.get().warn(LogStage.SYSTEM,
-                    "[Shaders] vec-uniform mirror unavailable for '" + chainLocation
-                            + "' (" + e.getMessage() + ").");
-            return null;
         }
     }
 
@@ -1721,21 +1600,34 @@ public class MinecraftClientPlatform implements IPlatformClient {
         }
         mc.execute(() -> {
             if (open) {
-                if (!(mc.screen instanceof com.luatweaker.common.client.gui.imgui.ImGuiOverlayScreen)) {
-                    mc.setScreen(new com.luatweaker.common.client.gui.imgui.ImGuiOverlayScreen());
+                if (!(mc.screen instanceof ImGuiOverlayScreen)) {
+                    mc.setScreen(createImGuiOverlay());
                 }
-            } else {
-                if (mc.screen instanceof com.luatweaker.common.client.gui.imgui.ImGuiOverlayScreen) {
-                    mc.setScreen(null);
-                }
+            } else if (mc.screen instanceof ImGuiOverlayScreen overlay) {
+                overlay.setFrameRenderer(null);
+                mc.setScreen(null);
             }
         });
+    }
+
+    private static ImGuiOverlayScreen createImGuiOverlay() {
+        ImGuiOverlayScreen overlay = new ImGuiOverlayScreen();
+        // The HUD path deliberately skips ImGui while this screen is active. Without
+        // a frame renderer the overlay only dims the game; the ImGui window would
+        // appear only after ESC closed the screen.
+        overlay.setFrameRenderer(graphics -> {
+            ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
+            if (engine != null) {
+                MinecraftClientEventListener.renderImGuiFrameFromScreen(engine, graphics);
+            }
+        });
+        return overlay;
     }
 
     @Override
     public boolean imguiIsScreenOpen() {
         Minecraft mc = Minecraft.getInstance();
-        return mc != null && mc.screen instanceof com.luatweaker.common.client.gui.imgui.ImGuiOverlayScreen;
+        return mc != null && mc.screen instanceof ImGuiOverlayScreen;
     }
 
     @Override

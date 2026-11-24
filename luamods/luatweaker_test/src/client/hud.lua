@@ -83,10 +83,10 @@ GuiService.OnRenderHUD:Connect(function(dt)
     end
 
     -- ==== MANA BAR ====
-    local barX = hudCfg.mana_bar_x
-    local barY = hudCfg.mana_bar_y
-    local barW = hudCfg.mana_bar_width
-    local barH = hudCfg.mana_bar_height
+    local barX = math.max(4, math.min(hudCfg.mana_bar_x or 10, screenWidth - 24))
+    local barY = math.max(4, math.min(hudCfg.mana_bar_y or 50, screenHeight - 24))
+    local barW = math.max(40, math.min(hudCfg.mana_bar_width or 120, screenWidth - barX - 6))
+    local barH = hudCfg.mana_bar_height or 10
 
     GuiService:DrawRect(barX - 1, barY - 1, barW + 2, barH + 2, 0x000000)
     GuiService:DrawRect(barX, barY, barW, barH, hudCfg.mana_bar_bg)
@@ -95,7 +95,7 @@ GuiService.OnRenderHUD:Connect(function(dt)
     local cachedMana = sessionStorage:GetAsync("luatweaker_test.client.mana")
     local cachedMax = sessionStorage:GetAsync("luatweaker_test.client.max_mana")
     if cachedMana ~= nil and cachedMax ~= nil and cachedMax > 0 then
-        manaPercent = cachedMana / cachedMax
+        manaPercent = math.max(0.0, math.min(1.0, cachedMana / cachedMax))
     end
 
     local fillWidth = math.floor(barW * manaPercent)
@@ -109,7 +109,7 @@ GuiService.OnRenderHUD:Connect(function(dt)
     else
         manaText = "Mana"
     end
-    GuiService:DrawText(manaText, barX + barW / 2 - (hudCfg.mana_text_half_width or 10), barY + (hudCfg.mana_text_y_offset or 1), 0xFFFFFF, true)
+    GuiService:DrawTextCentered(manaText, math.floor(barX + barW / 2), barY + (hudCfg.mana_text_y_offset or 1), 0xFFFFFF, true)
 
     -- ==== SKILL COOLDOWN ICONS ====
     local iconSize = hudCfg.skill_icon_size

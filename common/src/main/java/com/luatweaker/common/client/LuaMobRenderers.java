@@ -1,18 +1,23 @@
 package com.luatweaker.common.client;
 
+import com.luatweaker.api.log.LogStage;
+import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.common.entity.LuaCustomMob;
 import com.mojang.blaze3d.vertex.PoseStack;
+import dev.architectury.registry.client.level.entity.EntityModelLayerRegistry;
 import net.minecraft.client.model.CowModel;
 import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.model.geom.ModelLayerLocation;
+import net.minecraft.client.model.geom.ModelLayers;
+import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.model.geom.builders.CubeDeformation;
 import net.minecraft.client.model.geom.builders.LayerDefinition;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.entity.HumanoidMobRenderer;
 import net.minecraft.client.renderer.entity.MobRenderer;
-import dev.architectury.registry.client.level.entity.EntityModelLayerRegistry;
 import net.minecraft.resources.ResourceLocation;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 /**
@@ -24,6 +29,8 @@ import java.util.function.Supplier;
  * assets involved.
  */
 public final class LuaMobRenderers {
+    private static final AtomicBoolean LAYER_DEFS_REGISTERED = new AtomicBoolean(false);
+
     private LuaMobRenderers() {}
 
     public static final ModelLayerLocation HUMANOID_LAYER = new ModelLayerLocation(
@@ -32,6 +39,9 @@ public final class LuaMobRenderers {
             ResourceLocation.fromNamespaceAndPath("luatweaker", "custom_quadruped"), "main");
 
     public static void registerLayerDefinitions() {
+        if (!LAYER_DEFS_REGISTERED.compareAndSet(false, true)) {
+            return;
+        }
         Supplier<LayerDefinition> humanoid =
                 () -> LayerDefinition.create(HumanoidModel.createMesh(CubeDeformation.NONE, 0.0F), 64, 64);
         EntityModelLayerRegistry.register(HUMANOID_LAYER, humanoid);
@@ -40,7 +50,7 @@ public final class LuaMobRenderers {
 
     public static HumanoidMobRenderer<LuaCustomMob, HumanoidModel<LuaCustomMob>> createHumanoid(
             EntityRendererProvider.Context ctx, ResourceLocation texture, float shadowRadius, double renderScale) {
-        HumanoidModel<LuaCustomMob> model = new HumanoidModel<>(ctx.bakeLayer(HUMANOID_LAYER));
+        HumanoidModel<LuaCustomMob> model = new HumanoidModel<>(bakeLayerSafe(ctx, HUMANOID_LAYER, ModelLayers.ZOMBIE));
         return new HumanoidMobRenderer<>(ctx, model, shadowRadius) {
             @Override
             public ResourceLocation getTextureLocation(LuaCustomMob entity) {
@@ -57,7 +67,7 @@ public final class LuaMobRenderers {
 
     public static MobRenderer<LuaCustomMob, CowModel<LuaCustomMob>> createQuadruped(
             EntityRendererProvider.Context ctx, ResourceLocation texture, float shadowRadius, double renderScale) {
-        CowModel<LuaCustomMob> model = new CowModel<>(ctx.bakeLayer(QUADRUPED_LAYER));
+        CowModel<LuaCustomMob> model = new CowModel<>(bakeLayerSafe(ctx, QUADRUPED_LAYER, ModelLayers.COW));
         return new MobRenderer<>(ctx, model, shadowRadius) {
             @Override
             public ResourceLocation getTextureLocation(LuaCustomMob entity) {
@@ -70,5 +80,17 @@ public final class LuaMobRenderers {
                 poseStack.scale(s, s, s);
             }
         };
+    }
+
+    private static ModelPart bakeLayerSafe(EntityRendererProvider.Context ctx,
+                                           ModelLayerLocation customLayer,
+                                           ModelLayerLocation fallbackLayer) {
+        try {
+            return ctx.bakeLayer(customLayer);
+        } catch (IllegalArgumentException e) {
+            LuaTweakerLog.get().warn(LogStage.SYSTEM,
+                    "Model layer " + customLayer + " not found, falling back to " + fallbackLayer + ": " + e.getMessage());
+            return ctx.bakeLayer(fallbackLayer);
+        }
     }
 }

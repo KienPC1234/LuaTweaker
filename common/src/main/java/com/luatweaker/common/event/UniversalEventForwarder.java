@@ -10,6 +10,7 @@ import com.luatweaker.common.event.payload.LevelPayloads;
 import com.luatweaker.common.event.payload.MiningPayloads;
 import com.luatweaker.common.event.payload.PayloadEntities;
 import com.luatweaker.common.event.payload.PlayerPayloads;
+import com.luatweaker.common.modsync.ServerModSync;
 import dev.architectury.event.CompoundEventResult;
 import dev.architectury.event.EventResult;
 import dev.architectury.event.events.common.BlockEvent;
@@ -26,7 +27,7 @@ import net.minecraft.world.entity.projectile.Projectile;
 
 /**
  * Universal game bus event forwarder using Architectury API.
- * Bridges Minecraft game events into engine-neutral Lua tables via domain payload builders.
+ * Bridges Minecraft game events into engine-neutral Lua tables and honors Lua cancellation.
  */
 public final class UniversalEventForwarder {
 
@@ -44,36 +45,57 @@ public final class UniversalEventForwarder {
     }
 
     private static void registerBlockEvents() {
+        registerBlockBreakEvent();
+        registerBlockPlaceEvent();
+    }
+
+    private static void registerBlockBreakEvent() {
         BlockEvent.BREAK.register((level, pos, state, player, exp) -> {
-            BlockExpDropper.dropExpIfNeeded(level, pos, state, player);
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && level != null && pos != null) {
                 int xp = exp != null ? exp.get() : 0;
-                EventDispatcher.post("BlockBreak",
-                        MiningPayloads.buildBreak(engine, level, pos, state, player, xp));
+                boolean allowed = EventDispatcher.postCancellable("BlockBreak",
+                        () -> MiningPayloads.buildBreak(engine, level, pos, state, player, xp));
+                if (!allowed) {
+                    return EventResult.interruptFalse();
+                }
             }
+            BlockExpDropper.dropExpIfNeeded(level, pos, state, player);
             return EventResult.pass();
         });
+    }
 
+    private static void registerBlockPlaceEvent() {
         BlockEvent.PLACE.register((level, pos, state, entity) -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && level != null && pos != null) {
-                EventDispatcher.post("BlockPlace",
-                        MiningPayloads.buildPlace(engine, level, pos, state, entity));
+                boolean allowed = EventDispatcher.postCancellable("BlockPlace",
+                        () -> MiningPayloads.buildPlace(engine, level, pos, state, entity));
+                if (!allowed) {
+                    return EventResult.interruptFalse();
+                }
             }
             return EventResult.pass();
         });
     }
 
     private static void registerEntityEvents() {
+        registerEntityCombatEvents();
+        registerEntitySpawnEvent();
+    }
+
+    private static void registerEntityCombatEvents() {
         EntityEvent.LIVING_HURT.register((entity, source, amount) -> {
             if (source.getDirectEntity() instanceof Projectile projectile) {
                 ProjectileHitHandler.handleProjectileHit(projectile, entity);
             }
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && entity instanceof LivingEntity living) {
-                EventDispatcher.post("LivingHurt",
-                        CombatPayloads.buildHurt(engine, living, source, amount));
+                boolean allowed = EventDispatcher.postCancellable("LivingHurt",
+                        () -> CombatPayloads.buildHurt(engine, living, source, amount));
+                if (!allowed) {
+                    return EventResult.interruptFalse();
+                }
             }
             return EventResult.pass();
         });
@@ -81,17 +103,25 @@ public final class UniversalEventForwarder {
         EntityEvent.LIVING_DEATH.register((entity, source) -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && entity instanceof LivingEntity living) {
-                EventDispatcher.post("LivingDeath",
-                        CombatPayloads.buildDeath(engine, living, source));
+                boolean allowed = EventDispatcher.postCancellable("LivingDeath",
+                        () -> CombatPayloads.buildDeath(engine, living, source));
+                if (!allowed) {
+                    return EventResult.interruptFalse();
+                }
             }
             return EventResult.pass();
         });
+    }
 
+    private static void registerEntitySpawnEvent() {
         EntityEvent.ADD.register((entity, level) -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && entity != null && level != null) {
-                EventDispatcher.post("EntitySpawn",
-                        EntityPayloads.buildSpawn(engine, entity, level));
+                boolean allowed = EventDispatcher.postCancellable("EntitySpawn",
+                        () -> EntityPayloads.buildSpawn(engine, entity, level));
+                if (!allowed) {
+                    return EventResult.interruptFalse();
+                }
             }
             return EventResult.pass();
         });
@@ -106,9 +136,10 @@ public final class UniversalEventForwarder {
         PlayerEvent.PLAYER_JOIN.register(player -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && player != null) {
-                EventDispatcher.post("PlayerJoin", PlayerPayloads.buildJoin(engine, player));
+                EventDispatcher.postLazy("PlayerJoin", () -> PlayerPayloads.buildJoin(engine, player));
             }
             if (player != null) {
+                ServerModSync.onPlayerJoin(player);
                 var loadErrors = com.luatweaker.core.mod.LuaModManager.getLoadErrors();
                 for (String line : LuaTweakerCommon.buildLoadWarningLines(loadErrors, 5)) {
                     player.sendSystemMessage(net.minecraft.network.chat.Component.literal(line));
@@ -117,9 +148,12 @@ public final class UniversalEventForwarder {
         });
 
         PlayerEvent.PLAYER_QUIT.register(player -> {
+            if (player != null) {
+                ServerModSync.onPlayerQuit(player);
+            }
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && player != null) {
-                EventDispatcher.post("PlayerQuit", PlayerPayloads.buildLeave(engine, player));
+                EventDispatcher.postLazy("PlayerQuit", () -> PlayerPayloads.buildLeave(engine, player));
             }
         });
     }
@@ -128,24 +162,24 @@ public final class UniversalEventForwarder {
         PlayerEvent.PLAYER_RESPAWN.register((player, conqueredEnd, reason) -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && player != null) {
-                EventDispatcher.post("PlayerRespawn",
-                        PlayerPayloads.buildRespawn(engine, player, conqueredEnd));
+                EventDispatcher.postLazy("PlayerRespawn",
+                        () -> PlayerPayloads.buildRespawn(engine, player, conqueredEnd));
             }
         });
 
         PlayerEvent.CHANGE_DIMENSION.register((player, oldDim, newDim) -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && player != null) {
-                EventDispatcher.post("PlayerChangedDimension",
-                        PlayerPayloads.buildChangeDimension(engine, player, oldDim.location(), newDim.location()));
+                EventDispatcher.postLazy("PlayerChangedDimension",
+                        () -> PlayerPayloads.buildChangeDimension(engine, player, oldDim.location(), newDim.location()));
             }
         });
 
         PlayerEvent.PLAYER_ADVANCEMENT.register((player, advancement) -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && player != null && advancement != null) {
-                EventDispatcher.post("PlayerAdvancement",
-                        PlayerPayloads.buildAdvancement(engine, player, advancement.id()));
+                EventDispatcher.postLazy("PlayerAdvancement",
+                        () -> PlayerPayloads.buildAdvancement(engine, player, advancement.id()));
             }
         });
     }
@@ -160,8 +194,11 @@ public final class UniversalEventForwarder {
         PlayerEvent.ATTACK_ENTITY.register((player, level, target, hand, hitResult) -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && player != null && target != null) {
-                EventDispatcher.post("AttackEntity",
-                        EntityPayloads.buildAttackEntity(engine, player, target));
+                boolean allowed = EventDispatcher.postCancellable("AttackEntity",
+                        () -> EntityPayloads.buildAttackEntity(engine, player, target));
+                if (!allowed) {
+                    return EventResult.interruptFalse();
+                }
             }
             return EventResult.pass();
         });
@@ -171,16 +208,19 @@ public final class UniversalEventForwarder {
         PlayerEvent.PICKUP_ITEM_POST.register((player, itemEntity, stack) -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && player != null && itemEntity != null) {
-                EventDispatcher.post("ItemPickup",
-                        EntityPayloads.buildPickup(engine, player, itemEntity, stack));
+                EventDispatcher.postLazy("ItemPickup",
+                        () -> EntityPayloads.buildPickup(engine, player, itemEntity, stack));
             }
         });
 
         PlayerEvent.DROP_ITEM.register((player, itemEntity) -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && player != null && itemEntity != null) {
-                EventDispatcher.post("ItemToss",
-                        EntityPayloads.buildToss(engine, player, itemEntity));
+                boolean allowed = EventDispatcher.postCancellable("ItemToss",
+                        () -> EntityPayloads.buildToss(engine, player, itemEntity));
+                if (!allowed) {
+                    return EventResult.interruptFalse();
+                }
             }
             return EventResult.pass();
         });
@@ -190,21 +230,26 @@ public final class UniversalEventForwarder {
         PlayerEvent.OPEN_MENU.register((player, menu) -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && player != null && menu != null) {
-                EventDispatcher.post("ContainerOpen",
-                        PlayerPayloads.buildContainer(engine, player, menu, "open"));
+                EventDispatcher.postLazy("ContainerOpen",
+                        () -> PlayerPayloads.buildContainer(engine, player, menu, "open"));
             }
         });
 
         PlayerEvent.CLOSE_MENU.register((player, menu) -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && player != null && menu != null) {
-                EventDispatcher.post("ContainerClose",
-                        PlayerPayloads.buildContainer(engine, player, menu, "close"));
+                EventDispatcher.postLazy("ContainerClose",
+                        () -> PlayerPayloads.buildContainer(engine, player, menu, "close"));
             }
         });
     }
 
     private static void registerInteractionEvents() {
+        registerBlockInteractions();
+        registerItemAndEntityInteractions();
+    }
+
+    private static void registerBlockInteractions() {
         InteractionEvent.LEFT_CLICK_BLOCK.register((player, hand, pos, direction) -> {
             if (player instanceof ServerPlayer sp) {
                 ItemHooks.handleSwing(sp, sp.getMainHandItem());
@@ -215,17 +260,25 @@ public final class UniversalEventForwarder {
         InteractionEvent.RIGHT_CLICK_BLOCK.register((player, hand, pos, direction) -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && player != null && hand == InteractionHand.MAIN_HAND && pos != null) {
-                EventDispatcher.post("RightClickBlock",
-                        MiningPayloads.buildInteractBlock(engine, player, hand, player.level(), pos, direction));
+                boolean allowed = EventDispatcher.postCancellable("RightClickBlock",
+                        () -> MiningPayloads.buildInteractBlock(engine, player, hand, player.level(), pos, direction));
+                if (!allowed) {
+                    return EventResult.interruptFalse();
+                }
             }
             return EventResult.pass();
         });
+    }
 
+    private static void registerItemAndEntityInteractions() {
         InteractionEvent.RIGHT_CLICK_ITEM.register((player, hand) -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && player != null && hand == InteractionHand.MAIN_HAND) {
-                EventDispatcher.post("RightClickItem",
-                        MiningPayloads.buildInteractItem(engine, player, hand, player.getItemInHand(hand)));
+                boolean allowed = EventDispatcher.postCancellable("RightClickItem",
+                        () -> MiningPayloads.buildInteractItem(engine, player, hand, player.getItemInHand(hand)));
+                if (!allowed) {
+                    return CompoundEventResult.interruptFalse(player.getItemInHand(hand));
+                }
             }
             return CompoundEventResult.pass();
         });
@@ -233,8 +286,11 @@ public final class UniversalEventForwarder {
         InteractionEvent.INTERACT_ENTITY.register((player, entity, hand) -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && player != null && entity != null && hand == InteractionHand.MAIN_HAND) {
-                EventDispatcher.post("InteractEntity",
-                        EntityPayloads.buildInteractEntity(engine, player, entity, hand));
+                boolean allowed = EventDispatcher.postCancellable("InteractEntity",
+                        () -> EntityPayloads.buildInteractEntity(engine, player, entity, hand));
+                if (!allowed) {
+                    return EventResult.interruptFalse();
+                }
             }
             return EventResult.pass();
         });
@@ -244,8 +300,11 @@ public final class UniversalEventForwarder {
         ExplosionEvent.PRE.register((level, explosion) -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && level != null && explosion != null) {
-                EventDispatcher.post("Explosion",
-                        ExplosionPayloads.buildStart(engine, level, explosion));
+                boolean allowed = EventDispatcher.postCancellable("Explosion",
+                        () -> ExplosionPayloads.buildStart(engine, level, explosion));
+                if (!allowed) {
+                    return EventResult.interruptFalse();
+                }
             }
             return EventResult.pass();
         });
@@ -253,8 +312,8 @@ public final class UniversalEventForwarder {
         ExplosionEvent.DETONATE.register((level, explosion, affectedEntities) -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && level != null && explosion != null) {
-                EventDispatcher.post("ExplosionDetonate",
-                        ExplosionPayloads.buildDetonate(engine, level, explosion, affectedEntities));
+                EventDispatcher.postLazy("ExplosionDetonate",
+                        () -> ExplosionPayloads.buildDetonate(engine, level, explosion, affectedEntities));
             }
         });
     }
@@ -265,23 +324,25 @@ public final class UniversalEventForwarder {
         TickEvent.PLAYER_POST.register(player -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && player != null) {
-                var payload = engine.createTable();
-                PayloadEntities.putPlayer(engine, payload, player);
-                EventDispatcher.post("PlayerTick", payload);
+                EventDispatcher.postLazy("PlayerTick", () -> {
+                    var payload = engine.createTable();
+                    PayloadEntities.putPlayer(engine, payload, player);
+                    return payload;
+                });
             }
         });
 
         LifecycleEvent.SERVER_LEVEL_LOAD.register(level -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && level != null) {
-                EventDispatcher.post("LevelLoad", LevelPayloads.buildLoad(engine, level));
+                EventDispatcher.postLazy("LevelLoad", () -> LevelPayloads.buildLoad(engine, level));
             }
         });
 
         LifecycleEvent.SERVER_LEVEL_UNLOAD.register(level -> {
             ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
             if (engine != null && level != null) {
-                EventDispatcher.post("LevelUnload", LevelPayloads.buildUnload(engine, level));
+                EventDispatcher.postLazy("LevelUnload", () -> LevelPayloads.buildUnload(engine, level));
             }
         });
     }

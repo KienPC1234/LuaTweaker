@@ -93,7 +93,7 @@ void main() {
 -- while the author is still looking at this file.
 Shaders:registerGlslPass("radar_sweep", RADAR_BODY)
 
-local function getPlayerPos()
+local function getPlayerTransform()
     local player = Players.LocalPlayer
     if player == nil and type(Players.GetLocalPlayer) == "function" then
         player = Players:GetLocalPlayer()
@@ -105,7 +105,11 @@ local function getPlayerPos()
     if pos == nil or pos.X == nil then
         return nil
     end
-    return pos.X, pos.Y, pos.Z
+    local yaw = tonumber(player.Yaw)
+    if yaw == nil and type(player.getYaw) == "function" then
+        yaw = tonumber(player:getYaw())
+    end
+    return pos.X, pos.Y, pos.Z, yaw or 0.0
 end
 
 local highlightEvent = Network:GetOrCreateRemoteEvent("HighlightOres")
@@ -113,7 +117,7 @@ highlightEvent.OnClientEvent:Connect(function(results)
     if type(results) ~= "table" or #results == 0 then
         return
     end
-    local px, _, pz = getPlayerPos()
+    local px, _, pz, yawDeg = getPlayerTransform()
     if px == nil then
         return
     end
@@ -136,23 +140,36 @@ highlightEvent.OnClientEvent:Connect(function(results)
     end
     table.sort(ranked, function(a, b) return a.dist2 < b.dist2 end)
 
+    -- Rotate world XZ offset into player-facing radar coords (+Y forward, +X right).
+    local yawRad = math.rad(yawDeg)
+    local fwdX, fwdZ = -math.sin(yawRad), math.cos(yawRad)
+    local rightX, rightZ = -math.cos(yawRad), -math.sin(yawRad)
+
+    -- Compute everything first: every uniform write requires an ACTIVE pass, so
+    -- the pass must be activated before the first setPassUniformVec call.
     local names = { "BlipA", "BlipB", "BlipC" }
-    local shown = 0
+    local blips = {}
     for i = 1, math.min(3, #ranked) do
         local hit = ranked[i]
         local dist = math.sqrt(hit.dist2)
-        if dist >= 0.5 then
-            local close = 1.0 - math.min(dist / MAX_DIST, 1.0)
-            Shaders:setPassUniformVec(names[i], { hit.dx / dist, hit.dz / dist, close })
-            shown = shown + 1
+        if dist < 0.25 then
+            blips[#blips + 1] = { 0.0, 0.0, 0.0 }
+        else
+            local rx = (hit.dx * rightX + hit.dz * rightZ) / dist
+            local ry = (hit.dx * fwdX + hit.dz * fwdZ) / dist
+            local normDist = math.min(dist / MAX_DIST, 1.0)
+            blips[#blips + 1] = { rx, ry, normDist }
         end
     end
-    if shown == 0 then
+    if #blips == 0 then
         return
     end
-    Shaders:setPassUniform("Count", shown)
-    Shaders:setPassUniform("Strength", STRENGTH)
     Shaders:activatePass("radar_sweep")
+    for i = 1, #blips do
+        Shaders:setPassUniformVec(names[i], blips[i])
+    end
+    Shaders:setPassUniform("Count", #blips)
+    Shaders:setPassUniform("Strength", STRENGTH)
     if type(task) == "table" and type(task.delay) == "function" then
         task.delay(DURATION, function()
             if Shaders:getActivePass() == "radar_sweep" then

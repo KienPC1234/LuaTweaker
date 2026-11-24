@@ -4,6 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
+import com.luatweaker.core.vm.LuaEngineLimits;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -45,10 +47,18 @@ public final class LuaTweakerConfig {
     private LuaTweakerConfig() {
     }
 
+    private static Path resolveConfigPath() {
+        try {
+            return dev.architectury.platform.Platform.getGameFolder().resolve(CONFIG_FILE_PATH);
+        } catch (IllegalStateException | LinkageError | AssertionError e) {
+            return Path.of("build/tmp/luatweaker-config/luatweaker.json");
+        }
+    }
+
     public static void load() {
         LOCK.lock();
         try {
-            Path path = Path.of(CONFIG_FILE_PATH);
+            Path path = resolveConfigPath();
             if (!Files.exists(path)) {
                 save();
                 return;
@@ -69,7 +79,7 @@ public final class LuaTweakerConfig {
     public static void save() {
         LOCK.lock();
         try {
-            Path path = Path.of(CONFIG_FILE_PATH);
+            Path path = resolveConfigPath();
             Path parent = path.getParent();
             if (parent != null && !Files.exists(parent)) {
                 try {
@@ -147,5 +157,13 @@ public final class LuaTweakerConfig {
 
     public static int getMaxCoroutines() {
         return INSTANCE.get().maxCoroutines;
+    }
+
+    public static @NotNull LuaEngineLimits toEngineLimits() {
+        ConfigData data = INSTANCE.get();
+        return new LuaEngineLimits(
+                Math.max(0L, data.maxMemoryBytes),
+                Math.max(0, data.maxCallDepth),
+                Math.max(0, data.maxCoroutines));
     }
 }

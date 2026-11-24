@@ -22,18 +22,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LuaModScriptSyntaxTest {
 
     private static Path findLuaModsDir() {
-        // Test working dir is core-engine/ (IDE: modules/core-engine); walk up
-        // to the repo root and down into neoforge-platform/luamods.
+        // Test working dir is core-engine/ (or repo root in IDE); walk up to locate luamods/.
         Path dir = Path.of(".").toAbsolutePath().normalize();
         for (int i = 0; i < 6; i++) {
-            Path candidate = dir.resolve("neoforge-platform/luamods");
-            if (Files.isDirectory(candidate)) { return candidate; }
-            Path modulesCandidate = dir.resolve("modules/core-engine").resolve("neoforge-platform/luamods");
-            if (Files.isDirectory(modulesCandidate)) { return modulesCandidate; }
+            Path candidate = dir.resolve("luamods");
+            if (Files.isDirectory(candidate) && Files.isDirectory(candidate.resolve("luatweaker_test"))) {
+                return candidate;
+            }
             dir = dir.getParent();
             if (dir == null) { break; }
         }
-        throw new IllegalStateException("Could not locate neoforge-platform/luamods from working dir");
+        throw new IllegalStateException("Could not locate luamods/ from working dir");
     }
 
     private record LuaFileScan(List<Path> files, List<String> failures) {

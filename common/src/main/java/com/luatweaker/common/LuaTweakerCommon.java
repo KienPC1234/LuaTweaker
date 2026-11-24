@@ -4,14 +4,14 @@ import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.vm.ILuaEngine;
-import com.luatweaker.common.bootstrap.LuaServiceBootstrap;
+import com.luatweaker.common.bootstrap.LuaRuntimeReloader;
 import com.luatweaker.common.command.LuaTweakerCommandRegistry;
 import com.luatweaker.common.content.BowItemProperties;
 import com.luatweaker.common.content.ContentRendererRegistrar;
-import com.luatweaker.common.content.ContentVirtualFiles;
 import com.luatweaker.common.content.MinecraftContentPlatform;
 import com.luatweaker.common.content.registrar.BlockRegistrar;
 import com.luatweaker.common.content.registrar.EntityRegistrar;
+import com.luatweaker.common.content.registrar.FluidRegistrar;
 import com.luatweaker.common.content.registrar.ItemRegistrar;
 import com.luatweaker.common.content.registrar.MobEffectRegistrar;
 import com.luatweaker.common.content.registrar.TabRegistrar;
@@ -26,19 +26,12 @@ import com.luatweaker.common.integration.IntegrationManager;
 import com.luatweaker.common.interaction.MinecraftInteractionPlatform;
 import com.luatweaker.common.network.CommonNetworkHandler;
 import com.luatweaker.common.network.MinecraftNetworkPlatform;
-import com.luatweaker.common.recipe.CommonRecipeManager;
 import com.luatweaker.common.storage.MinecraftStoragePlatform;
 import com.luatweaker.common.structures.MinecraftStructuresPlatform;
 import com.luatweaker.common.worldgen.MinecraftWorldgenPlatform;
 import com.luatweaker.content.ContentServiceImpl;
 import com.luatweaker.content.DatapackServiceImpl;
-import com.luatweaker.content.StorageServiceImpl;
 import com.luatweaker.core.logger.AsyncFileLogger;
-import com.luatweaker.core.mod.LuaModLoadObserver;
-import com.luatweaker.core.mod.LuaModManager;
-import com.luatweaker.core.vm.LuaEngineFactory;
-import com.luatweaker.core.vm.LuaEngineLimits;
-import dev.architectury.event.events.client.ClientTickEvent;
 import dev.architectury.event.events.common.CommandRegistrationEvent;
 import dev.architectury.event.events.common.LifecycleEvent;
 import dev.architectury.event.events.common.TickEvent;
@@ -62,11 +55,13 @@ public final class LuaTweakerCommon {
     private static final AtomicReference<ILuaEngine> ACTIVE_ENGINE = new AtomicReference<>();
     private static final AtomicReference<ContentServiceImpl> CONTENT_SERVICE = new AtomicReference<>();
     private static final AtomicReference<DatapackServiceImpl> DATAPACK_SERVICE = new AtomicReference<>();
+    private static final AtomicReference<LuaTweakerCommandRegistry> COMMAND_REGISTRY = new AtomicReference<>();
     private static final AtomicBoolean INITIALIZED = new AtomicBoolean(false);
 
     private static final Map<ResourceLocation, Item> CREATED_ITEMS = new ConcurrentHashMap<>();
     private static final Map<ResourceLocation, Block> CREATED_BLOCKS = new ConcurrentHashMap<>();
     private static final Map<ResourceLocation, EntityType<?>> CREATED_ENTITIES = new ConcurrentHashMap<>();
+    private static final Map<ResourceLocation, java.util.function.Supplier<EntityType<?>>> CREATED_ENTITY_SUPPLIERS = new ConcurrentHashMap<>();
     private static final java.util.Set<ResourceLocation> CREATED_TABS = ConcurrentHashMap.newKeySet();
 
     private LuaTweakerCommon() {
@@ -198,31 +193,42 @@ public final class LuaTweakerCommon {
         VirtualPackSource.setLuaDir(luaDir);
 
         ContentServiceImpl contentService = new ContentServiceImpl();
-        StorageServiceImpl storageService = new StorageServiceImpl(new File(luaDir, "storage.json"));
         DatapackServiceImpl datapackService = new DatapackServiceImpl();
         CONTENT_SERVICE.set(contentService);
         DATAPACK_SERVICE.set(datapackService);
         com.luatweaker.core.service.LuaServiceRegistry.register("ContentServiceImpl", contentService);
         com.luatweaker.core.service.LuaServiceRegistry.register("DatapackServiceImpl", datapackService);
-        CommonRecipeManager recipeManager = new CommonRecipeManager(datapackService);
 
-        ILuaEngine startupEngine = LuaEngineFactory.create(false, LuaEngineLimits.UNLIMITED);
-        startupEngine.setLuaDirectory(luaDir);
-        LuaServiceBootstrap.registerAllServices(startupEngine, contentService, storageService, datapackService, recipeManager);
+        LuaRuntimeReloader.loadOrReload(gameDir, luaDir, isClient, contentService, datapackService, true);
 
-        com.luatweaker.command.CommandServiceImpl.clear();
-        String dist = isClient ? "universal" : "server";
-        LuaModManager.loadLuaMods(luaDir, startupEngine, dist, LuaModLoadObserver.NONE);
-        setActiveEngine(startupEngine);
-        IntegrationManager.initEngine(startupEngine);
-
-        registerContent(contentService, datapackService, luaDir, isClient);
+        registerContent(contentService, datapackService, gameDir, luaDir, isClient);
         registerCommands(luaDir);
         CommonNetworkHandler.init();
         UniversalEventForwarder.registerAll();
-        registerLifecycle(isClient);
+        registerLifecycle();
 
         LuaTweakerLog.get().info(LogStage.SYSTEM, "[LuaTweaker] Common initialization completed successfully.");
+    }
+
+    /**
+     * Hot-reloads all LuaMods, rebuilds virtual datapack/stub files, and registers any
+     * newly declared top-level Lua commands on the running server dispatcher.
+     */
+    public static void reloadLuaRuntime(@Nullable net.minecraft.server.MinecraftServer server) {
+        ContentServiceImpl contentService = CONTENT_SERVICE.get();
+        DatapackServiceImpl datapackService = DATAPACK_SERVICE.get();
+        if (contentService == null || datapackService == null) {
+            return;
+        }
+        File gameDir = dev.architectury.platform.Platform.getGameFolder().toFile();
+        File luaDir = new File(gameDir, "luamods");
+        boolean isClient = dev.architectury.platform.Platform.getEnvironment() == dev.architectury.utils.Env.CLIENT;
+        LuaRuntimeReloader.loadOrReload(gameDir, luaDir, isClient, contentService, datapackService, false);
+        LuaTweakerCommandRegistry registry = COMMAND_REGISTRY.get();
+        if (server != null && registry != null) {
+            registry.registerNewLuaCommands(server.getCommands().getDispatcher());
+            server.getPlayerList().getPlayers().forEach(player -> server.getCommands().sendCommands(player));
+        }
     }
 
     private static void initPlatform(boolean isClient) {
@@ -237,6 +243,7 @@ public final class LuaTweakerCommon {
         Platform.setDatapack(new MinecraftDatapackPlatform());
         com.luatweaker.common.dimension.MinecraftDimensionProvider.registerCodecs();
         com.luatweaker.common.worldgen.MixedVeinRegistrar.registerFeatures();
+        com.luatweaker.common.worldgen.ArchitecturyWorldgenApplier.register();
         if (isClient) {
             Platform.setClient(new com.luatweaker.common.client.MinecraftClientPlatform());
         }
@@ -247,16 +254,8 @@ public final class LuaTweakerCommon {
     }
 
     private static void registerContent(ContentServiceImpl contentService,
-                                          DatapackServiceImpl datapackService, File luaDir, boolean isClient) {
-        java.util.function.Function<String, ResourceLocation> locationParser = id -> {
-            if (id == null || id.isBlank()) {
-                return ResourceLocation.fromNamespaceAndPath(MOD_ID, "empty");
-            }
-            if (id.contains(":")) {
-                return ResourceLocation.parse(id);
-            }
-            return ResourceLocation.fromNamespaceAndPath(MOD_ID, id);
-        };
+                                          DatapackServiceImpl datapackService, File gameDir, File luaDir, boolean isClient) {
+        java.util.function.Function<String, ResourceLocation> locationParser = LuaTweakerCommon::parseLocation;
 
         ItemRegistrar itemRegistrar = new ItemRegistrar(contentService, CREATED_ITEMS, locationParser);
         itemRegistrar.registerItems();
@@ -267,17 +266,20 @@ public final class LuaTweakerCommon {
         blockRegistrar.registerContainerBlockEntities();
         blockRegistrar.registerContainerMenus();
 
+        FluidRegistrar fluidRegistrar = new FluidRegistrar(contentService, CREATED_ITEMS, CREATED_BLOCKS, locationParser);
+        fluidRegistrar.registerFluids();
+
         TabRegistrar tabRegistrar = new TabRegistrar(contentService, CREATED_ITEMS, CREATED_TABS, locationParser);
         tabRegistrar.registerCreativeTabs();
 
-        EntityRegistrar entityRegistrar = new EntityRegistrar(contentService, CREATED_ENTITIES, CREATED_ITEMS, locationParser);
+        EntityRegistrar entityRegistrar = new EntityRegistrar(contentService, CREATED_ENTITIES, CREATED_ENTITY_SUPPLIERS, CREATED_ITEMS, locationParser);
         entityRegistrar.registerEntities();
 
         MobEffectRegistrar effectRegistrar = new MobEffectRegistrar();
         effectRegistrar.registerMobEffects();
         effectRegistrar.registerPotions();
 
-        ContentVirtualFiles.rebuild(luaDir, contentService, datapackService);
+        LuaRuntimeReloader.finalizeDatapackAndStubs(gameDir, luaDir, contentService, datapackService);
 
         if (isClient) {
             registerClientContent(contentService);
@@ -287,7 +289,8 @@ public final class LuaTweakerCommon {
 
     private static void registerClientContent(ContentServiceImpl contentService) {
         BowItemProperties.register(contentService, CREATED_ITEMS);
-        ContentRendererRegistrar.register(contentService, CREATED_ENTITIES);
+        FluidRegistrar.registerClientVisuals();
+        ContentRendererRegistrar.register(contentService, CREATED_ENTITY_SUPPLIERS);
         dev.architectury.event.events.client.ClientLifecycleEvent.CLIENT_SETUP.register(client ->
                 ContentRendererRegistrar.registerPendingBlockRenderers(contentService));
         com.luatweaker.common.client.MinecraftClientEventListener.init();
@@ -301,21 +304,15 @@ public final class LuaTweakerCommon {
 
     private static void registerCommands(File luaDir) {
         LuaTweakerCommandRegistry commandRegistry = new LuaTweakerCommandRegistry(luaDir);
-        commandRegistry.register(new com.luatweaker.common.command.core.DimensionCommand());
-        commandRegistry.register(new com.luatweaker.common.command.core.SpawnCommand());
-        commandRegistry.register(new com.luatweaker.common.command.core.GuiCommand());
-        commandRegistry.register(new com.luatweaker.common.command.core.DebugCommand());
+        COMMAND_REGISTRY.set(commandRegistry);
         CommandRegistrationEvent.EVENT.register((dispatcher, registryAccess, selection) ->
                 commandRegistry.build(dispatcher));
     }
 
-    private static void registerLifecycle(boolean isClient) {
+    private static void registerLifecycle() {
         LifecycleEvent.SERVER_STARTING.register(CommonServerHolder::setServer);
         LifecycleEvent.SERVER_STOPPING.register(server -> CommonServerHolder.setServer(null));
         LifecycleEvent.SERVER_STOPPING.register(server -> IntegrationManager.onServerStopping());
         TickEvent.SERVER_PRE.register(server -> tickActiveEngineTasks());
-        if (isClient) {
-            ClientTickEvent.CLIENT_PRE.register(client -> tickActiveEngineTasks());
-        }
     }
 }

@@ -2,3 +2,8 @@ accessWidener	v1	named
 
 accessible	field	net/minecraft/world/entity/Mob	goalSelector	Lnet/minecraft/world/entity/ai/goal/GoalSelector;
 accessible	field	net/minecraft/world/entity/Mob	targetSelector	Lnet/minecraft/world/entity/ai/goal/GoalSelector;
+accessible	field	net/minecraft/world/item/SpawnEggItem	BY_ID	Ljava/util/Map;
+accessible	field	net/minecraft/core/MappedRegistry	unregisteredIntrusiveHolders	Ljava/util/Map;
+mutable	field	net/minecraft/core/MappedRegistry	frozen	Z
+accessible	field	net/minecraft/core/MappedRegistry	frozen	Z
+accessible	field	net/minecraft/world/inventory/AnvilMenu	cost	Lnet/minecraft/world/inventory/DataSlot;

@@ -88,7 +88,7 @@ public final class FakePlatform {
         });
 
         Platform.setStorage(new IPlatformStorage() {
-            @Override public File getStorageDirectory() { return new File("."); }
+            @Override public File getStorageDirectory() { return new File("build/tmp/fake-platform/storage"); }
         });
 
         Platform.setInteraction(new IPlatformInteraction() {

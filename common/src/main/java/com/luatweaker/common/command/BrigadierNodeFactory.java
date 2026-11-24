@@ -10,6 +10,7 @@ import net.minecraft.commands.Commands;
 import org.jetbrains.annotations.NotNull;
 import org.luava.runtime.LuaException;
 
+import java.util.Arrays;
 import java.util.Set;
 
 /**
@@ -26,7 +27,8 @@ final class BrigadierNodeFactory {
     /** Builds a top-level literal (plus its two execution variants) for a built-in command. */
     static @NotNull LiteralArgumentBuilder<CommandSourceStack> subCommand(@NotNull ILuaTweakerCommand cmd) {
         return Commands.literal(cmd.getName())
-                .requires(src -> src.hasPermission(cmd.getPermissionLevel()))
+                .requires(src -> src.hasPermission(cmd.getPermissionLevel())
+                        && (cmd.isConsoleAllowed() || src.getEntity() != null))
                 // Variant with optional trailing arguments
                 .then(argsNode(cmd))
                 // Variant with no arguments
@@ -73,7 +75,15 @@ final class BrigadierNodeFactory {
                     .then(argsNode(cmd))
                     .executes(ctx -> cmd.executeRaw(new MinecraftCommandSender(ctx.getSource()), ""));
         }
-        return literal.then(luaPathNode(cmd, segments, index + 1));
+        // Parent segments (e.g. /shop for shop/buy) must be executable, otherwise
+        // Brigadier reports "Incorrect argument for command" with no usage hint.
+        return literal
+                .executes(ctx -> {
+                    new MinecraftCommandSender(ctx.getSource()).sendError(
+                            "Usage: /" + String.join(" ", Arrays.copyOf(segments, index + 1)) + " <subcommand>");
+                    return 0;
+                })
+                .then(luaPathNode(cmd, segments, index + 1));
     }
 
     /**

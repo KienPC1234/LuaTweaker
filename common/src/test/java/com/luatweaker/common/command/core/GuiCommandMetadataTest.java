@@ -39,4 +39,10 @@ class GuiCommandMetadataTest {
         assertTrue(CoreCommandNames.RESERVED.contains("gui"),
                 "gui must be a reserved core command");
     }
+
+    @Test
+    void dimensionAndSpawnAreReservedCoreCommands() {
+        assertTrue(CoreCommandNames.RESERVED.containsAll(java.util.List.of("dimension", "tp", "spawn")),
+                "dimension, tp and spawn must be reserved now that they are registered core commands");
+    }
 }

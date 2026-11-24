@@ -63,6 +63,9 @@ public final class LuaTweakerCommandRegistry {
         register(new DebugCommand());
         register(new DoctorCommand());
         register(new GuiCommand());
+        register(new DimensionCommand());
+        register(new TeleportCommand());
+        register(new SpawnCommand());
         // Help must come last so the list snapshot it captures is complete
         register(new HelpCommand(Collections.unmodifiableList(commands)));
     }

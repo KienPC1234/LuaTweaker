@@ -27,10 +27,6 @@ public final class LuamodPaths {
             if (containsMods(luamods)) {
                 return luamods.toFile();
             }
-            Path platformLuamods = dir.resolve("neoforge-platform").resolve(LUAMODS_DIR_NAME);
-            if (containsMods(platformLuamods)) {
-                return platformLuamods.toFile();
-            }
             Path runLuamods = dir.resolve("run").resolve(LUAMODS_DIR_NAME);
             if (containsMods(runLuamods)) {
                 return runLuamods.toFile();

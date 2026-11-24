@@ -1,10 +1,11 @@
-### Gradle ###
+### Gradle & Architectury ###
 .gradle
+.architectury-transformer/
 build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/**/build/
 
-### IntelliJ IDEA ###
+### IntelliJ IDEA & VS Code ###
 .idea/
 *.iws
 *.iml
@@ -12,7 +13,6 @@ build/
 out/
 !**/src/**/out/
 .vscode/
-
 .run/
 
 ### Eclipse ###
@@ -27,8 +27,9 @@ out/
 bin/
 !**/src/**/bin/
 
-### Mac OS ###
+### OS ###
 .DS_Store
+Thumbs.db
 
 ### Minecraft Modding ###
 run/
@@ -36,14 +37,19 @@ run/
 **/src/generated/**/.cache/
 repo/
 !**/src/**/repo/
-
 neoforge-docs/
 
-### LuaTweaker runtime state (regenerated from default_config.json) ###
-neoforge-platform/luaconfig/
-neoforge-platform/config/luatweaker/
+### LuaTweaker runtime & test-generated state ###
+luaconfig/
+luamods/.luatweaker/
+config/luatweaker.json
+config/luatweaker/
+**/world_storage.bson
+**/player_storage.bson
+**/shader-cache/
+tools/__pycache__/
 
-### Stray javac args (manual verification leftovers) ###
+### Stray javac args ###
 javac.*.args
 
 ### Logs ###

@@ -22,20 +22,16 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class CommonNetworkHandler {
     private static final ChunkAssembler INBOUND_CHUNKS = new ChunkAssembler();
     private static final AtomicReference<NetworkServiceImpl> SERVER_NETWORK_SERVICE = new AtomicReference<>();
-    private static final AtomicReference<NetworkServiceImpl> CLIENT_NETWORK_SERVICE = new AtomicReference<>();
 
     private static final String SYNC_DATA_CHANNEL = "LuaTweaker:SyncData";
     private static final String CLOSE_SCREEN_CHANNEL = "LuaTweaker:CloseScreen";
+    public static final String ITEM_SWING_CHANNEL = "LuaTweaker:ItemSwing";
 
     private CommonNetworkHandler() {
     }
 
     public static void setServerNetworkService(NetworkServiceImpl service) {
         SERVER_NETWORK_SERVICE.set(service);
-    }
-
-    public static void setClientNetworkService(NetworkServiceImpl service) {
-        CLIENT_NETWORK_SERVICE.set(service);
     }
 
     public static NetworkServiceImpl getServerNetworkService() {
@@ -112,20 +108,33 @@ public final class CommonNetworkHandler {
                 INBOUND_CHUNKS.clear(connectionKey, channel);
                 return;
             }
-            if (data == null) {
-                return;
-            }
-
-            if (NetworkServiceImpl.RPC_CHANNEL.equals(channel)) {
-                handleRpcFrame(data, true, playerUuid);
-                return;
-            }
-
-            NetworkServiceImpl ns = SERVER_NETWORK_SERVICE.get();
-            if (ns != null) {
-                ns.OnClientFired(channel, playerUuid, data);
+            if (data != null) {
+                dispatchServerChannel(channel, player, playerUuid, data);
             }
         });
+    }
+
+    private static void dispatchServerChannel(String channel, Player player, String playerUuid, byte[] data) {
+        if (LuaTweakerCommon.modHelloChannel().equals(channel)) {
+            com.luatweaker.common.modsync.ServerModSync.handleClientHello(
+                    player, new String(data, StandardCharsets.UTF_8));
+            return;
+        }
+        if (ITEM_SWING_CHANNEL.equals(channel)) {
+            if (player instanceof ServerPlayer serverPlayer) {
+                com.luatweaker.common.content.registrar.ItemHooks.handleSwing(
+                        serverPlayer, serverPlayer.getMainHandItem());
+            }
+            return;
+        }
+        if (NetworkServiceImpl.RPC_CHANNEL.equals(channel)) {
+            handleRpcFrame(data, true, playerUuid);
+            return;
+        }
+        NetworkServiceImpl ns = SERVER_NETWORK_SERVICE.get();
+        if (ns != null) {
+            ns.OnClientFired(channel, playerUuid, data);
+        }
     }
 
     private static void handleLuaPayloadClient(LuaTweakerS2CPayload payload, NetworkManager.PacketContext context) {

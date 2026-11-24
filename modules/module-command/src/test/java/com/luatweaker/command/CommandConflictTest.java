@@ -13,7 +13,7 @@ class CommandConflictTest {
 
     private static final String HELLO = "hello";
     private static final String GREET = "greet";
-    private static final String SPAWN = "spawn";
+    private static final String SPAWN = "summon";
 
     private static final String GREET_ALIAS_DEF = "{ Aliases = { 'greet' }, Handler = function() end }";
     private static final String V1_DEF =

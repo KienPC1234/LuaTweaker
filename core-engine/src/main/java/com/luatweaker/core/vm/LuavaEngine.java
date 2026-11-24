@@ -1026,12 +1026,12 @@ public class LuavaEngine implements ILuaEngine {
 
     @Override
     public @NotNull ILuaTable getGlobalEnvironment() {
-        enterExecution();
-        try {
-            return new LuavaLuaTable(state.getGlobals());
-        } finally {
-            exitExecution();
-        }
+        // Pure factory, like createTable()/wrapString(): must NOT take executionGate.
+        // A render-thread Lua callback holds the gate while it runs; if this accessor
+        // also took the gate, a server-thread caller (e.g. EntitySpawn payload building)
+        // would block here while the render callback waits for a chunk load on the
+        // server thread -> circular deadlock with no logged error.
+        return new LuavaLuaTable(state.getGlobals());
     }
 
     @Override

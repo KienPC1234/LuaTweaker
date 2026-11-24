@@ -5,6 +5,7 @@ import com.luatweaker.api.content.IContentService;
 import com.luatweaker.api.content.IEntityBuilder;
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
+import com.luatweaker.common.LuaTweakerCommon;
 import com.luatweaker.common.client.LuaBlockEntityRenderer;
 import com.luatweaker.common.client.LuaMobRenderers;
 import com.luatweaker.common.container.CustomContainerRegistry;
@@ -13,7 +14,6 @@ import dev.architectury.registry.client.level.entity.EntityRendererRegistry;
 import dev.architectury.registry.client.rendering.BlockEntityRendererRegistry;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 
 import java.util.Locale;
@@ -36,61 +36,67 @@ public final class ContentRendererRegistrar {
     private static final String RAWTYPES = "rawtypes";
 
     @SuppressWarnings({UNCHECKED, RAWTYPES})
-    public static void register(IContentService contentService, Map<ResourceLocation, EntityType<?>> createdEntityTypes) {
+    public static void register(IContentService contentService,
+                                Map<ResourceLocation, java.util.function.Supplier<EntityType<?>>> createdEntitySuppliers) {
+        LuaMobRenderers.registerLayerDefinitions();
         for (IEntityBuilder builder : contentService.getRegisteredEntities()) {
-            CallbackFirewall.run(() -> registerEntityRenderer(builder, createdEntityTypes), LogStage.SYSTEM,
+            CallbackFirewall.run(() -> registerEntityRenderer(builder, createdEntitySuppliers), LogStage.SYSTEM,
                     () -> "Failed entity renderer registration for " + builder.getId());
         }
         registerPendingBlockRenderers(contentService);
     }
 
     @SuppressWarnings({UNCHECKED, RAWTYPES})
-    private static void registerEntityRenderer(IEntityBuilder builder, Map<ResourceLocation, EntityType<?>> createdEntityTypes) {
-        ResourceLocation id = ResourceLocation.tryParse(builder.getId());
+    private static void registerEntityRenderer(IEntityBuilder builder,
+                                               Map<ResourceLocation, java.util.function.Supplier<EntityType<?>>> createdEntitySuppliers) {
+        ResourceLocation id = LuaTweakerCommon.parseLocation(builder.getId());
         if (id == null) {
             return;
         }
-        EntityType<?> rawType = createdEntityTypes.get(id);
-        if (rawType == null) {
+        java.util.function.Supplier<EntityType<?>> typeSupplier = createdEntitySuppliers.get(id);
+        if (typeSupplier == null) {
             return;
         }
         if (builder.getGeoModel() != null) {
             var geoSpec = builder.getGeoModel();
-            EntityRendererRegistry.register(() -> (EntityType) rawType, ctx -> new com.luatweaker.common.integration.geckolib.LuaGeoEntityRenderer(ctx, geoSpec));
+            EntityRendererRegistry.register((java.util.function.Supplier) typeSupplier,
+                    ctx -> new com.luatweaker.common.integration.geckolib.LuaGeoEntityRenderer(ctx, geoSpec));
             LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered GeckoLib EntityRenderer for: " + id);
             return;
         }
         String rig = builder.getRig() == null ? RIG_PARENT : builder.getRig().strip().toLowerCase(Locale.ROOT);
         if (isGenericRig(rig)) {
-            registerGeneric(builder, id, (EntityType<Mob>) rawType, rig);
+            registerGeneric(builder, id, typeSupplier, rig);
             return;
         }
-        registerParentRenderer(builder, id, rawType);
+        registerParentRenderer(builder, id, typeSupplier);
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static void registerParentRenderer(IEntityBuilder builder, ResourceLocation id, EntityType<?> rawType) {
+    @SuppressWarnings({UNCHECKED, RAWTYPES})
+    private static void registerParentRenderer(IEntityBuilder builder, ResourceLocation id,
+                                               java.util.function.Supplier<EntityType<?>> typeSupplier) {
         ResourceLocation texture = builder.getTexture() != null
                 ? ResourceLocation.tryParse(builder.getTexture())
                 : ResourceLocation.fromNamespaceAndPath(ResourceLocation.DEFAULT_NAMESPACE, FALLBACK_ENTITY_TEXTURE);
         ClientMobParentRegistry.RendererFactory factory = ClientMobParentRegistry.getFactory(builder.getParentMob());
-        EntityRendererRegistry.register(() -> (EntityType) rawType, ctx -> factory.create(ctx, texture));
+        EntityRendererRegistry.register((java.util.function.Supplier) typeSupplier, ctx -> factory.create(ctx, texture));
         LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom EntityRenderer for: " + id);
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static void registerGeneric(IEntityBuilder builder, ResourceLocation id, EntityType<Mob> rawType, String rig) {
+    @SuppressWarnings({UNCHECKED, RAWTYPES})
+    private static void registerGeneric(IEntityBuilder builder, ResourceLocation id,
+                                        java.util.function.Supplier<EntityType<?>> typeSupplier, String rig) {
         ResourceLocation texture = builder.getTexture() != null && !builder.getTexture().isBlank()
                 ? ResourceLocation.tryParse(builder.getTexture())
                 : fallbackTexture(builder, rig);
         float shadow = Math.max(MIN_SHADOW, Math.min(MAX_SHADOW, builder.getWidth() * SHADOW_PER_BLOCK_WIDTH));
         double renderScale = builder.getRenderScale();
-        EntityType<com.luatweaker.common.entity.LuaCustomMob> customType = (EntityType<com.luatweaker.common.entity.LuaCustomMob>) (Object) rawType;
+        java.util.function.Supplier customTypeSupplier = typeSupplier;
         if (RIG_QUADRUPED.equals(rig)) {
-            EntityRendererRegistry.register(() -> customType,
+            EntityRendererRegistry.register(customTypeSupplier,
                     ctx -> LuaMobRenderers.createQuadruped(ctx, texture, shadow, renderScale));
         } else {
-            EntityRendererRegistry.register(() -> customType,
+            EntityRendererRegistry.register(customTypeSupplier,
                     ctx -> LuaMobRenderers.createHumanoid(ctx, texture, shadow, renderScale));
         }
         LuaTweakerLog.get().info(LogStage.SYSTEM,
@@ -108,7 +114,7 @@ public final class ContentRendererRegistrar {
 
     @SuppressWarnings({UNCHECKED, RAWTYPES})
     public static void registerBlockRenderer(IBlockBuilder builder, BlockEntityType<?> type) {
-        ResourceLocation id = ResourceLocation.tryParse(builder.getId());
+        ResourceLocation id = LuaTweakerCommon.parseLocation(builder.getId());
         if (id == null || type == null || !REGISTERED_BLOCK_RENDERERS.add(id)) {
             return;
         }
@@ -125,7 +131,7 @@ public final class ContentRendererRegistrar {
 
     public static void registerPendingBlockRenderers(IContentService contentService) {
         for (IBlockBuilder builder : contentService.getRegisteredBlocks()) {
-            ResourceLocation id = ResourceLocation.tryParse(builder.getId());
+            ResourceLocation id = LuaTweakerCommon.parseLocation(builder.getId());
             if (id != null) {
                 BlockEntityType<?> type = CustomContainerRegistry.CONTAINER_BE_TYPES.get(id);
                 if (type != null) {

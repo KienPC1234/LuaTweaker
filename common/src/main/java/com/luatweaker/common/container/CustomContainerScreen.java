@@ -1,38 +1,27 @@
 package com.luatweaker.common.container;
 
+import com.luatweaker.api.content.MachineBarSpec;
 import com.luatweaker.api.content.MachineButtonSpec;
+import com.luatweaker.common.client.luamods.LuamodLayouts;
+import com.luatweaker.common.network.ContainerButtonPayload;
+import dev.architectury.networking.NetworkManager;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
-import net.minecraft.world.inventory.Slot;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
 /**
- * Client screen for Lua-configured container blocks. The panel height follows the
- * container's row count (vanilla chest formula, {@link ContainerLayout}); the slot
- * cells are drawn on top at each slot's actual position (custom slot positions and
- * per-slot textures from the Lua builder are honored), and locked slots get a dark
- * overlay so players instantly see they cannot be used.
+ * Client screen for Lua-configured container blocks.
+ * Renders authentic 9-slice vanilla beveled borders for arbitrary row counts,
+ * clamps widgets/labels strictly inside the panel frame, and leaves full-screen
+ * background dimming, dragged items, and tooltips unclipped.
  */
 public class CustomContainerScreen extends AbstractContainerScreen<CustomContainerMenu> {
-    private static final ResourceLocation VANILLA_CONTAINER_BG =
-            ResourceLocation.withDefaultNamespace("textures/gui/container/generic_54.png");
-    private static final ResourceLocation SLOT_SPRITE =
-            ResourceLocation.withDefaultNamespace("container/slot");
-    private static final int TOP_STRIP = 17;
-    private static final int BOTTOM_INVENTORY_HEIGHT = 96;
-    private static final int TEXTURE_SHEET_SIZE = 256;
     private static final int LABEL_COLOR = 0x404040;
-    private static final int VANILLA_BG_COLOR = 0xFFC6C6C6;
-    private static final int BORDER_HIGHLIGHT = 0xFFFFFFFF;
-    private static final int BORDER_SHADOW = 0xFF373737;
-    private static final int SLOT_CELL_INSET = 1;
-    private static final int LOCKED_SLOT_OVERLAY = 0x7F1C1C1C;
+    private static final int INNER_CLIP_INSET = 4;
     private static final Component PLAYER_INV_LABEL = Component.translatable("container.inventory");
 
     public CustomContainerScreen(CustomContainerMenu menu, Inventory playerInventory, Component title) {
@@ -46,6 +35,8 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
     @Override
     protected void init() {
         super.init();
+        this.leftPos = (this.width - this.imageWidth) / 2;
+        this.topPos = Math.max(2, (this.height - this.imageHeight) / 2);
         addButtons();
     }
 
@@ -57,105 +48,78 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
         if (buttons == null) {
             return;
         }
-        int originX = (width - imageWidth) / 2;
-        int originY = (height - imageHeight) / 2;
         for (MachineButtonSpec spec : buttons) {
-            addRenderableWidget(createButton(spec, originX, originY));
+            addRenderableWidget(createButton(spec));
         }
     }
 
-    private Button createButton(MachineButtonSpec spec, int originX, int originY) {
-        int buttonX = originX + GuiAnchor.resolveX(spec.anchor(), imageWidth, spec.width(), spec.x());
-        int buttonY = originY + GuiAnchor.resolveY(spec.anchor(), imageHeight, spec.height(), spec.y());
-        return Button.builder(Component.literal(spec.label()), clicked -> {
+    private Button createButton(MachineButtonSpec spec) {
+        int btnW = ContainerBounds.clampWidth(spec.width(), imageWidth);
+        int btnH = ContainerBounds.clampHeight(spec.height(), imageHeight);
+        int relX = ContainerBounds.clampX(
+                GuiAnchor.resolveX(spec.anchor(), imageWidth, btnW, spec.x()), btnW, imageWidth);
+        int relY = ContainerBounds.clampY(
+                GuiAnchor.resolveY(spec.anchor(), imageHeight, btnH, spec.y()), btnH, imageHeight);
+        String trimmedLabel = LuamodLayouts.trim(this.font, spec.label(), Math.max(8, btnW - 8));
+        return Button.builder(Component.literal(trimmedLabel), clicked -> {
                     if (menu.getBlockPos() != null) {
-                        dev.architectury.networking.NetworkManager.sendToServer(
-                                new com.luatweaker.common.network.ContainerButtonPayload(
-                                        menu.getBlockPos(), spec.id()));
+                        NetworkManager.sendToServer(
+                                new ContainerButtonPayload(menu.getBlockPos(), spec.id()));
                     }
                 })
-                .bounds(buttonX, buttonY, spec.width(), spec.height())
+                .bounds(this.leftPos + relX, this.topPos + relY, btnW, btnH)
                 .build();
     }
 
     @Override
+    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        super.render(guiGraphics, mouseX, mouseY, partialTick);
+        this.renderTooltip(guiGraphics, mouseX, mouseY);
+    }
+
+    @Override
     protected void renderBg(GuiGraphics guiGraphics, float partialTick, int mouseX, int mouseY) {
-        int originX = (width - imageWidth) / 2;
-        int originY = (height - imageHeight) / 2;
-        renderPanel(guiGraphics, originX, originY);
-        renderSlotCells(guiGraphics, originX, originY);
-        if (menu.getType() != null) {
-            List<com.luatweaker.api.content.MachineBarSpec> bars =
-                    CustomContainerRegistry.CONTAINER_BARS.get(menu.getType());
-            if (bars != null) {
-                ContainerScreenDecor.renderBars(guiGraphics, menu, bars, originX, originY);
+        ContainerPanelRenderer.renderPanel(guiGraphics, menu, this.leftPos, this.topPos,
+                this.imageWidth, this.imageHeight);
+        guiGraphics.enableScissor(
+                this.leftPos + INNER_CLIP_INSET,
+                this.topPos + INNER_CLIP_INSET,
+                this.leftPos + this.imageWidth - INNER_CLIP_INSET,
+                this.topPos + this.imageHeight - INNER_CLIP_INSET);
+        try {
+            ContainerPanelRenderer.renderSlotCells(guiGraphics, menu, this.leftPos, this.topPos);
+            if (menu.getType() != null) {
+                List<MachineBarSpec> bars = CustomContainerRegistry.CONTAINER_BARS.get(menu.getType());
+                if (bars != null) {
+                    ContainerScreenDecor.renderBars(guiGraphics, menu, bars, this.leftPos, this.topPos);
+                }
             }
-        }
-    }
-
-    private void renderPanel(GuiGraphics guiGraphics, int originX, int originY) {
-        ResourceLocation custom = menu.getType() != null
-                ? customTexture(CustomContainerRegistry.CONTAINER_TEXTURES.get(menu.getType()))
-                : null;
-        if (custom != null) {
-            guiGraphics.blit(custom, originX, originY, 0, 0, imageWidth, imageHeight,
-                    TEXTURE_SHEET_SIZE, TEXTURE_SHEET_SIZE);
-            return;
-        }
-        int topH = menu.getContainerRows() * 18 + TOP_STRIP;
-        if (menu.isManualSlots()) {
-            guiGraphics.blit(VANILLA_CONTAINER_BG, originX, originY, 0, 0, imageWidth, TOP_STRIP);
-            guiGraphics.fill(originX + 1, originY + TOP_STRIP, originX + imageWidth - 1, originY + topH, VANILLA_BG_COLOR);
-            guiGraphics.fill(originX, originY + TOP_STRIP, originX + 1, originY + topH, BORDER_HIGHLIGHT);
-            guiGraphics.fill(originX + imageWidth - 1, originY + TOP_STRIP, originX + imageWidth, originY + topH, BORDER_SHADOW);
-            guiGraphics.blit(VANILLA_CONTAINER_BG, originX, originY + topH, 0, 126, imageWidth, BOTTOM_INVENTORY_HEIGHT);
-        } else {
-            guiGraphics.blit(VANILLA_CONTAINER_BG, originX, originY, 0, 0, imageWidth, topH);
-            guiGraphics.blit(VANILLA_CONTAINER_BG, originX, originY + topH, 0, 126, imageWidth, BOTTOM_INVENTORY_HEIGHT);
-        }
-    }
-
-    @Nullable
-    private static ResourceLocation customTexture(@Nullable String raw) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-        return ResourceLocation.tryParse(raw);
-    }
-
-    private void renderSlotCells(GuiGraphics guiGraphics, int originX, int originY) {
-        int cellSize = ContainerLayout.CELL;
-        boolean hasCustomSlot = menu.getType() != null
-                && CustomContainerRegistry.CONTAINER_SLOT_TEXTURES.containsKey(menu.getType());
-        ResourceLocation customSlotRl = hasCustomSlot
-                ? customTexture(CustomContainerRegistry.CONTAINER_SLOT_TEXTURES.get(menu.getType()))
-                : null;
-
-        for (Slot slot : menu.slots) {
-            if (!java.util.Objects.equals(slot.container, menu.getContainer())) {
-                continue;
-            }
-            int slotX = originX + slot.x - SLOT_CELL_INSET;
-            int slotY = originY + slot.y - SLOT_CELL_INSET;
-
-            if (customSlotRl != null) {
-                guiGraphics.blit(customSlotRl, slotX, slotY, 0, 0, cellSize, cellSize, cellSize, cellSize);
-            } else if (menu.isManualSlots()) {
-                guiGraphics.blitSprite(SLOT_SPRITE, slotX, slotY, cellSize, cellSize);
-            }
-
-            if (slot instanceof ContainerFilteredSlot filtered && filtered.isLocked()) {
-                guiGraphics.fill(slotX + 1, slotY + 1, slotX + 17, slotY + 17, LOCKED_SLOT_OVERLAY);
-            }
+        } finally {
+            guiGraphics.disableScissor();
         }
     }
 
     @Override
     protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
-        guiGraphics.drawString(this.font, this.title, this.titleLabelX, this.titleLabelY, LABEL_COLOR, false);
-        guiGraphics.drawString(this.font, PLAYER_INV_LABEL, this.inventoryLabelX, this.inventoryLabelY,
-                LABEL_COLOR, false);
-        ContainerScreenDecor.renderLabels(guiGraphics, this.font, menu);
+        int maxTitleW = ContainerBounds.maxLabelWidth(GuiAnchor.ALIGN_LEFT, this.titleLabelX, this.imageWidth);
+        int maxInvW = ContainerBounds.maxLabelWidth(GuiAnchor.ALIGN_LEFT, this.inventoryLabelX, this.imageWidth);
+        guiGraphics.drawString(this.font,
+                LuamodLayouts.trim(this.font, this.title.getString(), maxTitleW),
+                this.titleLabelX, this.titleLabelY, LABEL_COLOR, false);
+        guiGraphics.drawString(this.font,
+                LuamodLayouts.trim(this.font, PLAYER_INV_LABEL.getString(), maxInvW),
+                this.inventoryLabelX, this.inventoryLabelY, LABEL_COLOR, false);
+
+        guiGraphics.enableScissor(
+                this.leftPos + INNER_CLIP_INSET,
+                this.topPos + INNER_CLIP_INSET,
+                this.leftPos + this.imageWidth - INNER_CLIP_INSET,
+                this.topPos + this.imageHeight - INNER_CLIP_INSET);
+        try {
+            ContainerScreenDecor.renderLabels(guiGraphics, this.font, menu);
+        } finally {
+            guiGraphics.disableScissor();
+        }
     }
 
     @Override
@@ -164,13 +128,10 @@ public class CustomContainerScreen extends AbstractContainerScreen<CustomContain
         if (menu.getType() == null) {
             return;
         }
-        List<com.luatweaker.api.content.MachineBarSpec> bars =
-                CustomContainerRegistry.CONTAINER_BARS.get(menu.getType());
-        if (bars == null) {
-            return;
+        List<MachineBarSpec> bars = CustomContainerRegistry.CONTAINER_BARS.get(menu.getType());
+        if (bars != null) {
+            ContainerBarTooltip.render(guiGraphics, this.font, menu, bars, mouseX, mouseY,
+                    this.leftPos, this.topPos);
         }
-        ContainerBarTooltip.render(guiGraphics, this.font, menu, bars, mouseX, mouseY,
-                (width - imageWidth) / 2, (height - imageHeight) / 2);
     }
 }
-

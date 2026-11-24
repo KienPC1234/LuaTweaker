@@ -4,17 +4,19 @@ import com.luatweaker.core.serverpacks.BundleDownloader;
 import com.luatweaker.core.serverpacks.ServerBundleInfo;
 import org.jetbrains.annotations.NotNull;
 
+import java.nio.file.Path;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Consumer;
 
 /**
  * Single-flight background downloader for server mod bundles.
  *
- * <p>One daemon thread per bundle id at most: a second start while the first is
- * still fetching reports "already running" instead of doubling the traffic.
- * Results flow back through the caller-supplied sink (chat on the client).</p>
+ * <p>One daemon task per bundle id at most: claiming the in-flight slot happens
+ * synchronously before scheduling the async task so a second {@link #start} call
+ * immediately reports "already running" without racing worker startup.</p>
  */
 public final class ServerPackDownload {
 
@@ -37,26 +39,28 @@ public final class ServerPackDownload {
      * Downloads in the background, verifying before storing (see
      * {@link BundleDownloader}). Never blocks the calling thread.
      */
-    public static void start(@NotNull ServerBundleInfo bundle, @NotNull java.nio.file.Path serverDir,
+    public static void start(@NotNull ServerBundleInfo bundle, @NotNull Path serverDir,
             @NotNull BundleDownloader.Fetcher fetcher, @NotNull Consumer<String> sink) {
-        CompletableFuture.runAsync(() -> runDownload(bundle, serverDir, fetcher, sink))
-                .exceptionally(error -> {
-                    // Firewall for fetcher bugs: runDownload already sinks every declared
-                    // failure, so this only fires for unchecked programming errors, which
-                    // must still reach the player instead of dying silently in the pool.
-                    sink.accept("Download failed for '" + bundle.label() + "': "
-                            + error.getMessage());
-                    return null;
-                });
-    }
-
-    private static void runDownload(@NotNull ServerBundleInfo bundle,
-            @NotNull java.nio.file.Path serverDir, @NotNull BundleDownloader.Fetcher fetcher,
-            @NotNull Consumer<String> sink) {
         if (!tryAcquire(bundle.bundleId())) {
             sink.accept("Download for '" + bundle.label() + "' is already running.");
             return;
         }
+        try {
+            CompletableFuture.runAsync(() -> runAcquiredDownload(bundle, serverDir, fetcher, sink))
+                    .exceptionally(error -> {
+                        sink.accept("Download failed for '" + bundle.label() + "': "
+                                + error.getMessage());
+                        return null;
+                    });
+        } catch (RejectedExecutionException e) {
+            release(bundle.bundleId());
+            sink.accept("Download failed for '" + bundle.label() + "': " + e.getMessage());
+        }
+    }
+
+    private static void runAcquiredDownload(@NotNull ServerBundleInfo bundle,
+            @NotNull Path serverDir, @NotNull BundleDownloader.Fetcher fetcher,
+            @NotNull Consumer<String> sink) {
         try {
             BundleDownloader.Outcome outcome = BundleDownloader.download(bundle, serverDir, fetcher);
             if (outcome.fresh()) {

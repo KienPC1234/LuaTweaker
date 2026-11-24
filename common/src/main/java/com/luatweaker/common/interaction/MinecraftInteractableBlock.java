@@ -33,13 +33,6 @@ public class MinecraftInteractableBlock implements IInteractableBlock {
         this.z = z;
     }
 
-    /** Block accessor that runs on the server thread with a loaded chunk. */
-    @FunctionalInterface
-    private interface BlockRead<T> {
-        @Nullable
-        T read(@NotNull ServerLevel level, @NotNull BlockPos pos);
-    }
-
     @Nullable
     private ServerLevel getLevel() {
         return levelOf(com.luatweaker.common.CommonServerHolder.getServer(), dimension);
@@ -52,16 +45,9 @@ public class MinecraftInteractableBlock implements IInteractableBlock {
                 : server.getLevel(ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse(dimensionId)));
     }
 
-    /**
-     * Reads the block at this position, returning {@code fallback} when there is no live
-     * server level or the chunk is not loaded (never forces chunk generation).
-     */
     @Nullable
-    private <T> T readOr(@Nullable T fallback, @NotNull BlockRead<T> reader) {
-        return ServerLevels.map(getLevel(), fallback, level -> {
-            BlockPos pos = new BlockPos(x, y, z);
-            return level.hasChunkAt(pos) ? reader.read(level, pos) : fallback;
-        });
+    private <T> T readOr(@Nullable T fallback, @NotNull BlockReadSupport.BlockRead<T> reader) {
+        return BlockReadSupport.readOr(getLevel(), new BlockPos(x, y, z), fallback, reader);
     }
 
     @Override

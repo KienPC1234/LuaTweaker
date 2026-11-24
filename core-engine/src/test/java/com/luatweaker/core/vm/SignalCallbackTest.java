@@ -82,21 +82,21 @@ class SignalCallbackTest {
             """;
 
     private static final String[] RELATIVE_PATHS = {
-            "neoforge-platform/luamods/luatweaker_test/src/client/hud.lua",
-            "neoforge-platform/luamods/luatweaker_test/src/server/network_test.lua",
-            "neoforge-platform/luamods/luatweaker_test/src/server/storage_test.lua",
-            "neoforge-platform/luamods/luatweaker_test/src/server/events_test.lua",
-            "neoforge-platform/luamods/luatweaker_test/src/server/math_test.lua",
-            "neoforge-platform/luamods/luatweaker_test/src/server/world_test.lua",
-            "neoforge-platform/luamods/luatweaker_test/src/server/dynamic_bridge.lua",
-            "neoforge-platform/luamods/luatweaker_test/src/server/skills.lua",
-            "neoforge-platform/luamods/luatweaker_test/src/server/boss_ai.lua",
-            "neoforge-platform/luamods/luatweaker_test/src/server/recipes.lua",
-            "neoforge-platform/luamods/luatweaker_test/src/server/commands.lua",
-            "neoforge-platform/luamods/luatweaker_test/src/server/mana_system.lua",
-            "neoforge-platform/luamods/luatweaker_test/src/startup/content.lua",
-            "neoforge-platform/luamods/luatweaker_test/src/startup/dimension.lua",
-            "neoforge-platform/luamods/luatweaker_test/main.lua"
+            "luamods/luatweaker_test/src/client/hud.lua",
+            "luamods/luatweaker_test/src/server/network_test.lua",
+            "luamods/luatweaker_test/src/server/storage_test.lua",
+            "luamods/luatweaker_test/src/server/events_test.lua",
+            "luamods/luatweaker_test/src/server/math_test.lua",
+            "luamods/luatweaker_test/src/server/world_test.lua",
+            "luamods/luatweaker_test/src/server/dynamic_bridge.lua",
+            "luamods/luatweaker_test/src/server/skills.lua",
+            "luamods/luatweaker_test/src/server/boss_ai.lua",
+            "luamods/luatweaker_test/src/server/recipes.lua",
+            "luamods/luatweaker_test/src/server/commands.lua",
+            "luamods/luatweaker_test/src/server/mana_system.lua",
+            "luamods/luatweaker_test/src/startup/content.lua",
+            "luamods/luatweaker_test/src/startup/dimension.lua",
+            "luamods/luatweaker_test/main.lua"
     };
 
     @AfterAll
@@ -333,9 +333,12 @@ class SignalCallbackTest {
     class LuaScriptCatalog {
 
         private void validateLuaScriptSyntax(String rel) throws IOException {
-            File candidate = new File("../../" + rel);
+            File candidate = new File(rel);
             if (!candidate.exists()) {
                 candidate = new File("../" + rel);
+            }
+            if (!candidate.exists()) {
+                candidate = new File("../../" + rel);
             }
             assertTrue(candidate.exists(), "Script must be found: " + candidate.getAbsolutePath());
             String source = Files.readString(candidate.toPath());

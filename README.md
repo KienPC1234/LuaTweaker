@@ -2,7 +2,7 @@
 
 <img src="logo.png" alt="LuaTweaker Logo" />
 
-**Lua Scripting Engine & Modding Framework for Minecraft 1.21.1 (NeoForge)**
+**Lua Scripting Engine & Modding Framework for Minecraft 1.21.1 (NeoForge & Fabric)**
 
 [![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-brightgreen.svg?style=for-the-badge&logo=minecraft)](https://minecraft.net)
 [![PAL](https://img.shields.io/badge/Loader-Agnostic%20(PAL)-orange.svg?style=for-the-badge)](docs/ARCHITECTURE_AND_SECURITY.md)
@@ -14,8 +14,8 @@
 
 ## What it is
 
-**LuaTweaker** is a Lua 5.4 (luava) scripting engine for **Minecraft 1.21.1**.
-You write Lua in your game folder, run `/lt reload`, and see results —
+**LuaTweaker** is a Lua 5.4 (luava) scripting engine for **Minecraft 1.21.1** (NeoForge & Fabric).
+You write Lua in your game folder, run `/lt reload`, and see results -
 no Java compilation, no game restart.
 
 Design rules:
@@ -24,7 +24,7 @@ Design rules:
   (move, look, jump, raytrace, spawn); game logic lives in Lua.
   See `AGENTS.md` §1.
 - **Loader-agnostic.** `common-api` + `core-engine` + `modules/*` never touch
-  `net.minecraft.*` / `net.neoforged.*`. Only `neoforge-platform` does (PAL).
+  `net.minecraft.*` / `net.neoforged.*` / `net.fabricmc.*`. Shared Minecraft PAL lives in `common/`; loader entrypoints live in `neoforge/` and `fabric/`.
 - **One mod = one folder.** `luamods/<id>/` with `manifest.json` + `main.lua`
   + `src/{startup,server,client}` + `default_config.json`.
 
@@ -33,9 +33,10 @@ Design rules:
 ## Quick start
 
 ```sh
-./gradlew :neoforge-platform:runClient   # or :neoforge-platform:runServer
-./gradlew :neoforge-platform:classes :neoforge-platform:syncLua  # fast Lua-only iteration
-./gradlew test                            # all tests (no Minecraft needed, mocks only)
+./gradlew :neoforge:runClient     # or :neoforge:runServer
+./gradlew :fabric:runClient       # or :fabric:runServer
+./gradlew :neoforge:syncLuaMods   # sync root luamods/ into neoforge/run/luamods
+./gradlew test                    # all tests
 /lt reload   # in-game: reload scripts, regenerate stubs, re-apply recipes
 /lt doctor   # in-game: mods + load errors + engine/service status
 ```
@@ -134,13 +135,17 @@ Details: [`docs/COMMANDS.md`](docs/COMMANDS.md).
 ```text
 common-api/          Pure Java 21: PAL, VM interfaces, @LuaDoc / @LuaDefault
 core-engine/         Luava VM wrapper, LuaBinder, DynamicJavaProxy, logger, stubs
-modules/module-*     One domain each (content, recipes, events, entities, brain.lua,
-                     interaction, network, client, storage, tasks, math, ... )
-neoforge-platform/   ONLY runnable module: PAL impl, registrars, commands, luamods/
+modules/module-*     One domain each (content, recipes, events, entities, interaction,
+                     network, client, storage, tasks, math, command, worldgen, noise,
+                     dimensions, spawnrules, structures, loot, text, interception, update)
+common/              Shared Architectury Minecraft PAL, registrars, commands, mixins
+neoforge/            NeoForge 21.1.242 entrypoint, capabilities, fluids, JEI, events
+fabric/              Fabric Loader entrypoint, transfer/rendering hooks
+luamods/             Shared autonomous LuaMod workspace synced into loader run dirs
 ```
 
 `core-engine` and `modules/*` depend only on `common-api`.
-New loader = new platform module implementing PAL; no core changes.
+New loader = new platform module wiring `common`; no core changes.
 
 ---
 

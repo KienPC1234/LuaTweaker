@@ -2,15 +2,13 @@ package com.luatweaker.neoforge.event;
 
 import com.luatweaker.client.ShaderServiceImpl;
 import com.luatweaker.common.client.MinecraftWorldRenderEventListener;
-import com.luatweaker.common.content.registrar.ItemHooks;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 
 /**
- * NeoForge-specific gameplay, render-stage, and viewport listeners.
+ * NeoForge-specific render-stage and viewport listeners.
  */
 public final class NeoForgeGameEvents {
 
@@ -19,11 +17,6 @@ public final class NeoForgeGameEvents {
 
     public static void register() {
         NeoForge.EVENT_BUS.register(NeoForgeGameEvents.class);
-    }
-
-    @SubscribeEvent
-    public static void onLeftClickEmpty(PlayerInteractEvent.LeftClickEmpty event) {
-        ItemHooks.handleSwing(event.getEntity(), event.getItemStack());
     }
 
     @SubscribeEvent

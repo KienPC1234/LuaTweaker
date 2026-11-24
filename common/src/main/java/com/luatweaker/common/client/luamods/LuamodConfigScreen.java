@@ -1,7 +1,5 @@
 package com.luatweaker.common.client.luamods;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -16,8 +14,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Enhanced config editor: supports both Visual Form UI and clean Raw JSON editor
- * for {@code luaconfig/<mod>.json} with hot reloading and error handling.
+ * Enhanced config editor: supports both Visual Form UI and Raw JSON editor
+ * for {@code luaconfig/<mod>.json} with responsive header/footer wrapping
+ * and active-view input isolation.
  */
 public class LuamodConfigScreen extends Screen {
 
@@ -26,10 +25,9 @@ public class LuamodConfigScreen extends Screen {
         RAW
     }
 
-    private static final Gson PRETTY_GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String MODE_FORM_TEXT = "View: Form UI";
     private static final String MODE_RAW_TEXT = "View: Raw JSON";
-    private static final String DEFAULT_EMPTY_JSON = "{\n}";
+    private static final String BACK_LABEL = "Back";
 
     private final Screen parent;
     private final String modId;
@@ -55,78 +53,81 @@ public class LuamodConfigScreen extends Screen {
 
     @Override
     protected void init() {
-        mode = Mode.FORM;
-        String current = LuaModManager.readConfigFor(LuamodClientActions.luamodsDir(), modId);
-        if (current == null) {
-            current = DEFAULT_EMPTY_JSON;
+        LuamodConfigJson.LoadedConfig loaded = LuamodConfigJson.parseInitial(
+                LuaModManager.readConfigFor(LuamodClientActions.luamodsDir(), modId));
+        if (loaded.missingOnDisk()) {
             status = "No config yet - saving creates luaconfig/" + modId + ".json.";
-        } else {
-            current = LuamodConfigJson.normalizeLineEndings(current);
         }
+        rootJson = loaded.root();
+        mode = rootJson != null ? Mode.FORM : Mode.RAW;
 
-        try {
-            JsonElement parsed = JsonParser.parseString(current);
-            if (parsed != null && parsed.isJsonObject()) {
-                rootJson = parsed.getAsJsonObject();
-                current = LuamodConfigJson.normalizeLineEndings(PRETTY_GSON.toJson(rootJson));
-            } else {
-                mode = Mode.RAW;
-            }
-        } catch (JsonSyntaxException | IllegalStateException e) {
-            mode = Mode.RAW;
-        }
-
-        int listTop = 46;
-        int listHeight = Math.max(60, height - listTop - 56);
-
+        int modeBtnW = width >= 320 ? 116 : 84;
         modeButton = Button.builder(Component.literal(MODE_FORM_TEXT), pressed -> toggleMode())
-                .bounds(width - 145, 8, 130, 20).build();
+                .bounds(width - modeBtnW - 12, 6, modeBtnW, 18).build();
         addRenderableWidget(modeButton);
 
-        formList = new LuamodConfigFormList(minecraft, width, listHeight, listTop, 26, this::onDirty);
+        boolean singleFooterRow = LuamodLayouts.fitsRow(width, 4);
+        int bottomRowY = height - LuamodLayouts.FOOTER_BOTTOM_OFFSET;
+        int footerTopY = singleFooterRow ? bottomRowY : bottomRowY - LuamodLayouts.BUTTON_ROW_STEP;
+        int listTop = 40;
+        int listHeight = Math.max(36, footerTopY - listTop - 6);
+
+        formList = new LuamodConfigFormList(minecraft, width, listHeight, listTop, 24, this::onDirty);
         formList.updateSizeAndPosition(width, listHeight, listTop);
         if (rootJson != null) {
             formList.populate(rootJson);
         }
         addRenderableWidget(formList);
 
-        int editWidth = Math.max(120, width - 40);
+        int editWidth = Math.max(100, width - 32);
         editor = new MultiLineEditBox(font, width / 2 - editWidth / 2, listTop, editWidth, listHeight,
                 Component.literal("Config JSON"), Component.literal("Config JSON"));
         editor.setCharacterLimit(128_000);
-        editor.setValue(current);
-        openedValue = current;
+        editor.setValue(loaded.text());
+        openedValue = loaded.text();
         editor.setValueListener(ignored -> onDirty());
         addRenderableWidget(editor);
 
+        buildFooterButtons(singleFooterRow, footerTopY, bottomRowY);
         updateModeVisibility();
+    }
 
-        int row = height - 52;
-        int bw = LuamodLayouts.buttonWidth(width, 4);
-        int left = LuamodLayouts.rowLeft(width, 4, bw);
-        addRenderableWidget(Button.builder(Component.literal("Save"), pressed -> onSave(false))
-                .bounds(LuamodLayouts.buttonX(left, 0, bw), row, bw, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Save & Reload"), pressed -> onSave(true))
-                .bounds(LuamodLayouts.buttonX(left, 1, bw), row, bw, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Reload Mods"), pressed -> LuamodClientActions.requestReload())
-                .bounds(LuamodLayouts.buttonX(left, 2, bw), row, bw, 20).build());
-        backButton = Button.builder(Component.literal("Back"), pressed -> onBack())
-                .bounds(LuamodLayouts.buttonX(left, 3, bw), row, bw, 20).build();
-        addRenderableWidget(backButton);
+    private void buildFooterButtons(boolean singleRow, int topRowY, int bottomRowY) {
+        if (singleRow) {
+            int bw = LuamodLayouts.buttonWidth(width, 4);
+            int left = LuamodLayouts.rowLeft(width, 4, bw);
+            addFooterButton("Save", LuamodLayouts.buttonX(left, 0, bw), bottomRowY, bw, () -> onSave(false));
+            addFooterButton("Save & Reload", LuamodLayouts.buttonX(left, 1, bw), bottomRowY, bw, () -> onSave(true));
+            addFooterButton("Reload Mods", LuamodLayouts.buttonX(left, 2, bw), bottomRowY, bw, LuamodClientActions::requestReload);
+            backButton = addFooterButton(BACK_LABEL, LuamodLayouts.buttonX(left, 3, bw), bottomRowY, bw, this::onBack);
+            return;
+        }
+        int bw2 = LuamodLayouts.buttonWidth(width, 2);
+        int left2 = LuamodLayouts.rowLeft(width, 2, bw2);
+        addFooterButton("Save", LuamodLayouts.buttonX(left2, 0, bw2), topRowY, bw2, () -> onSave(false));
+        addFooterButton("Save & Reload", LuamodLayouts.buttonX(left2, 1, bw2), topRowY, bw2, () -> onSave(true));
+        addFooterButton("Reload Mods", LuamodLayouts.buttonX(left2, 0, bw2), bottomRowY, bw2, LuamodClientActions::requestReload);
+        backButton = addFooterButton(BACK_LABEL, LuamodLayouts.buttonX(left2, 1, bw2), bottomRowY, bw2, this::onBack);
+    }
+
+    private Button addFooterButton(String label, int x, int y, int bw, Runnable action) {
+        String fit = LuamodLayouts.trim(font, label, Math.max(20, bw - 8));
+        Button btn = Button.builder(Component.literal(fit), pressed -> action.run())
+                .bounds(x, y, bw, 20)
+                .build();
+        addRenderableWidget(btn);
+        return btn;
     }
 
     private void toggleMode() {
         if (mode == Mode.FORM) {
-            String pretty = LuamodConfigJson.normalizeLineEndings(
-                    rootJson != null ? PRETTY_GSON.toJson(rootJson) : DEFAULT_EMPTY_JSON);
-            editor.setValue(pretty);
+            editor.setValue(LuamodConfigJson.formatObject(rootJson));
             mode = Mode.RAW;
             status = "Switched to Raw JSON editor.";
             statusColor = 0xFFAAAAAA;
         } else {
-            String raw = editor.getValue();
             try {
-                JsonElement el = JsonParser.parseString(raw);
+                JsonElement el = JsonParser.parseString(editor.getValue());
                 if (el != null && el.isJsonObject()) {
                     rootJson = el.getAsJsonObject();
                     formList.populate(rootJson);
@@ -150,22 +151,33 @@ public class LuamodConfigScreen extends Screen {
     private void updateModeVisibility() {
         boolean isForm = mode == Mode.FORM;
         formList.visible = isForm;
+        formList.active = isForm;
         editor.visible = !isForm;
-        modeButton.setMessage(Component.literal(isForm ? MODE_FORM_TEXT : MODE_RAW_TEXT));
+        editor.active = !isForm;
+        setFocused(isForm ? formList : editor);
+        String rawModeLabel = isForm ? MODE_FORM_TEXT : MODE_RAW_TEXT;
+        modeButton.setMessage(Component.literal(
+                LuamodLayouts.trim(font, rawModeLabel, Math.max(24, modeButton.getWidth() - 8))));
     }
 
     private void onDirty() {
         dirtyArmed = false;
-        updateBackLabel();
+        if (backButton != null) {
+            backButton.setMessage(Component.literal(BACK_LABEL));
+        }
     }
 
     @Override
     public void render(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
-        graphics.drawCenteredString(font, LuamodLayouts.trim(font, title.getString(), width - 160),
-                width / 2, 12, 0xFFFFFF);
-        graphics.drawCenteredString(font, LuamodLayouts.trim(font, status, width - 20),
-                width / 2, 30, statusColor);
+        int rightReserved = modeButton != null ? (width - modeButton.getX() + 8) : 140;
+        int maxTitleWidth = Math.max(40, width - rightReserved - 16);
+        graphics.drawString(font, LuamodLayouts.trim(font, title.getString(), maxTitleWidth),
+                16, 11, 0xFFFFFF);
+        if (!status.isEmpty()) {
+            graphics.drawCenteredString(font, LuamodLayouts.trim(font, status, Math.max(40, width - 24)),
+                    width / 2, 27, statusColor);
+        }
     }
 
     @Override
@@ -173,17 +185,10 @@ public class LuamodConfigScreen extends Screen {
         minecraft.setScreen(parent);
     }
 
-    private void updateBackLabel() {
-        if (backButton != null) {
-            backButton.setMessage(Component.literal(dirtyArmed ? "Confirm discard" : "Back"));
-        }
-    }
-
     private void onSave(boolean andReload) {
         String contentToSave = (mode == Mode.FORM && rootJson != null)
-                ? PRETTY_GSON.toJson(rootJson)
-                : editor.getValue();
-        contentToSave = LuamodConfigJson.normalizeLineEndings(contentToSave);
+                ? LuamodConfigJson.formatObject(rootJson)
+                : LuamodConfigJson.normalizeLineEndings(editor.getValue());
         String error = LuaModManager.writeConfigFor(
                 LuamodClientActions.luamodsDir(), modId, contentToSave);
         if (error == null) {
@@ -192,7 +197,9 @@ public class LuamodConfigScreen extends Screen {
             dirtyArmed = false;
             openedValue = contentToSave;
             editor.setValue(contentToSave);
-            updateBackLabel();
+            if (backButton != null) {
+                backButton.setMessage(Component.literal(BACK_LABEL));
+            }
             if (andReload) {
                 LuamodClientActions.requestReload();
             }
@@ -204,12 +211,15 @@ public class LuamodConfigScreen extends Screen {
 
     private void onBack() {
         String currentContent = (mode == Mode.FORM && rootJson != null)
-                ? PRETTY_GSON.toJson(rootJson)
-                : editor.getValue();
+                ? LuamodConfigJson.formatObject(rootJson)
+                : LuamodConfigJson.normalizeLineEndings(editor.getValue());
         if (!currentContent.equals(openedValue) && !dirtyArmed) {
             dirtyArmed = true;
-            updateBackLabel();
-            status = "Unsaved edits will be lost - press again to discard.";
+            if (backButton != null) {
+                backButton.setMessage(Component.literal(
+                        LuamodLayouts.trim(font, "Discard?", Math.max(20, backButton.getWidth() - 8))));
+            }
+            status = "Unsaved edits will be lost - press Discard again to exit.";
             statusColor = 0xFFFFAA00;
             return;
         }

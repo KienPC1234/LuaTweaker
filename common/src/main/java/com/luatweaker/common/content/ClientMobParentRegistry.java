@@ -58,8 +58,31 @@ public final class ClientMobParentRegistry {
         register("cow", (ctx, tex) -> new net.minecraft.client.renderer.entity.CowRenderer(ctx) {
             @Override public ResourceLocation getTextureLocation(net.minecraft.world.entity.animal.Cow entity) { return tex; }
         });
-        register("iron_golem", (ctx, tex) -> new net.minecraft.client.renderer.entity.IronGolemRenderer(ctx) {
+        RendererFactory ironGolemFactory = (ctx, tex) -> new net.minecraft.client.renderer.entity.IronGolemRenderer(ctx) {
             @Override public ResourceLocation getTextureLocation(net.minecraft.world.entity.animal.IronGolem entity) { return tex; }
+        };
+        register("iron_golem", ironGolemFactory);
+        register("golem", ironGolemFactory);
+        register("spider", (ctx, tex) -> new net.minecraft.client.renderer.entity.SpiderRenderer<>(ctx) {
+            @Override public ResourceLocation getTextureLocation(net.minecraft.world.entity.monster.Spider entity) { return tex; }
+        });
+        register("snow_golem", (ctx, tex) -> new net.minecraft.client.renderer.entity.SnowGolemRenderer(ctx) {
+            @Override public ResourceLocation getTextureLocation(net.minecraft.world.entity.animal.SnowGolem entity) { return tex; }
+        });
+        register("slime", (ctx, tex) -> new net.minecraft.client.renderer.entity.SlimeRenderer(ctx) {
+            @Override public ResourceLocation getTextureLocation(net.minecraft.world.entity.monster.Slime entity) { return tex; }
+        });
+        register("blaze", (ctx, tex) -> new net.minecraft.client.renderer.entity.BlazeRenderer(ctx) {
+            @Override public ResourceLocation getTextureLocation(net.minecraft.world.entity.monster.Blaze entity) { return tex; }
+        });
+        register("enderman", (ctx, tex) -> new net.minecraft.client.renderer.entity.EndermanRenderer(ctx) {
+            @Override public ResourceLocation getTextureLocation(net.minecraft.world.entity.monster.EnderMan entity) { return tex; }
+        });
+        register("chicken", (ctx, tex) -> new net.minecraft.client.renderer.entity.ChickenRenderer(ctx) {
+            @Override public ResourceLocation getTextureLocation(net.minecraft.world.entity.animal.Chicken entity) { return tex; }
+        });
+        register("sheep", (ctx, tex) -> new net.minecraft.client.renderer.entity.SheepRenderer(ctx) {
+            @Override public ResourceLocation getTextureLocation(net.minecraft.world.entity.animal.Sheep entity) { return tex; }
         });
     }
 }

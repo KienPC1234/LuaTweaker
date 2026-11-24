@@ -1,6 +1,9 @@
 package com.luatweaker.common.worldgen;
 
 import com.luatweaker.api.pal.IPlatformWorldgen;
+import com.luatweaker.common.CommonServerHolder;
+import dev.architectury.hooks.level.biome.BiomeHooks;
+import dev.architectury.hooks.level.biome.ClimateProperties;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -9,7 +12,6 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.MobSpawnSettings;
-import com.luatweaker.common.CommonServerHolder;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -20,11 +22,8 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Reads live worldgen data from the running server's registries.
- *
- * <p>Biome values come from {@link Biome#getModifiedClimateSettings()} and
- * {@link Biome#getModifiedSpecialEffects()}, so datapack/biome-modifier changes are reflected
- * instead of the raw JSON defaults.</p>
+ * Reads live worldgen data from the running server's biome registry using
+ * Architectury {@link BiomeHooks} so no internal field access widener is needed.
  */
 public final class MinecraftWorldgenPlatform implements IPlatformWorldgen {
 
@@ -50,11 +49,12 @@ public final class MinecraftWorldgenPlatform implements IPlatformWorldgen {
     @NotNull
     private static Map<String, Object> describe(Biome biome, ResourceLocation id) {
         var info = new LinkedHashMap<String, Object>();
+        ClimateProperties climate = BiomeHooks.getBiomeProperties(biome).getClimateProperties();
         info.put("id", id.toString());
-        info.put("hasPrecipitation", biome.hasPrecipitation());
-        info.put("temperature", (double) biome.getBaseTemperature());
-        info.put("downfall", 0.5);
-        info.put("temperatureModifier", "none");
+        info.put("hasPrecipitation", climate.hasPrecipitation());
+        info.put("temperature", (double) climate.getTemperature());
+        info.put("downfall", (double) climate.getDownfall());
+        info.put("temperatureModifier", climate.getTemperatureModifier().getSerializedName());
         var effects = biome.getSpecialEffects();
         info.put("skyColor", biome.getSkyColor());
         info.put("fogColor", biome.getFogColor());

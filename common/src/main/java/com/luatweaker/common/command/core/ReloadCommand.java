@@ -73,9 +73,10 @@ public class ReloadCommand implements ILuaTweakerCommand {
         return 1;
     }
 
-    /** Reloads server DataPack (loot tables, recipes, tags). Triggers AddReloadListenerEvent -> Lua re-executes. */
+    /** Reloads Lua runtime, stubs, virtual datapack, and server DataPack resources. */
     private void reloadDatapack(@NotNull MinecraftServer server, @NotNull ICommandSender sender,
                                 @Nullable Runnable afterDatapack) {
+        com.luatweaker.common.LuaTweakerCommon.reloadLuaRuntime(server);
         // thenRun/exceptionally fire on a background thread: route every sender
         // call (chat packets are thread-confined) back onto the server thread.
         server.reloadResources(server.getPackRepository().getSelectedIds())

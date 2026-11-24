@@ -216,7 +216,26 @@ public class ShaderServiceImpl implements IShaderService {
                 + "}\n";
     }
 
-static String buildProgramJson(String id) {
+    static String buildProgramJson(String id, boolean useInSize,
+                                   boolean useScreenSize, boolean useTime,
+                                   List<String> customUniforms) {
+        StringBuilder uniforms = new StringBuilder(640);
+        uniforms.append("    {\"name\": \"ProjMat\", \"type\": \"matrix4x4\", \"count\": 16,"
+                + " \"values\": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,"
+                + " 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]},\n"
+                + "    {\"name\": \"OutSize\", \"type\": \"float\", \"count\": 2, \"values\": [1.0, 1.0]}");
+        if (useInSize) {
+            uniforms.append(",\n    {\"name\": \"InSize\", \"type\": \"float\", \"count\": 2, \"values\": [1.0, 1.0]}");
+        }
+        if (useScreenSize) {
+            uniforms.append(",\n    {\"name\": \"ScreenSize\", \"type\": \"float\", \"count\": 2, \"values\": [1.0, 1.0]}");
+        }
+        if (useTime) {
+            uniforms.append(",\n    {\"name\": \"Time\", \"type\": \"float\", \"count\": 1, \"values\": [0.0]}");
+        }
+        for (String custom : customUniforms) {
+            uniforms.append(",\n    ").append(custom);
+        }
         return "{\n"
                 + "  \"blend\": {\"func\": \"add\", \"srcrgb\": \"srcalpha\", \"dstrgb\": \"1-srcalpha\"},\n"
                 + "  \"vertex\": \"minecraft:blit\",\n"
@@ -224,15 +243,14 @@ static String buildProgramJson(String id) {
                 + "  \"attributes\": [\"Position\"],\n"
                 + "  \"samplers\": [{\"name\": \"DiffuseSampler\"}],\n"
                 + "  \"uniforms\": [\n"
-                + "    {\"name\": \"ProjMat\", \"type\": \"matrix4x4\", \"count\": 16,"
-                + " \"values\": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,"
-                + " 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]},\n"
-                + "    {\"name\": \"InSize\", \"type\": \"float\", \"count\": 2,"
-                + " \"values\": [1.0, 1.0]},\n"
-                + "    {\"name\": \"OutSize\", \"type\": \"float\", \"count\": 2,"
-                + " \"values\": [1.0, 1.0]}\n"
+                + uniforms + "\n"
                 + "  ]\n"
                 + "}\n";
+    }
+
+    /** True when the authored fragment body actually reads the named size uniform. */
+    static boolean usesSizeUniform(@NotNull String body, @NotNull String uniform) {
+        return Pattern.compile("\\b" + Pattern.quote(uniform) + "\\b").matcher(body).find();
     }
 
     boolean readCacheMarker(String id, String sha) {
@@ -268,10 +286,17 @@ static String buildProgramJson(String id) {
         }
     }
 
-    void publishPass(String id, String fragmentFile, String sha) {
+    void publishPass(String id, String fragmentFile, String sha, String fragmentBody) {
         boolean cacheHit = readCacheMarker(id, sha);
         String chainJson = buildChainJson(id);
-        String programJson = buildProgramJson(id);
+        // OutSize is always emitted because minecraft:blit.vsh divides Position.xy by OutSize;
+        // optional engine globals and declared user uniforms are bound in EffectInstance.
+        List<String> customUniforms = GlslUniformExtractor.extractJsonEntries(fragmentBody);
+        String programJson = buildProgramJson(id,
+                usesSizeUniform(fragmentBody, "InSize"),
+                usesSizeUniform(fragmentBody, "ScreenSize"),
+                usesSizeUniform(fragmentBody, "Time"),
+                customUniforms);
         writeCacheMarker(id, sha);
         datapackService.addData("assets/luatweaker/shaders/post/lt_" + id + JSON_SUFFIX, chainJson);
         datapackService.addData("assets/luatweaker/shaders/program/lt_" + id + JSON_SUFFIX, programJson);
@@ -330,8 +355,8 @@ static String sha256Hex(String input) {
         // is still looking at the source. Driver-side type errors surface later
         // through the post-activation check, which points at the driver info log.
         GlslLint.lintFragmentBody(id, normalized);
-        String sha = sha256Hex(id + "\nbody\n" + normalized);
-        publishPass(id, buildFragmentFile(id, sha, normalized), sha);
+        String sha = sha256Hex("v2\n" + id + "\nbody\n" + normalized);
+        publishPass(id, buildFragmentFile(id, sha, normalized), sha, normalized);
     }
 
     @Override
@@ -638,10 +663,10 @@ static int readColor(@Nullable ILuaTable params, String key, int def, String eff
         String trimmed = validateSpirvBase64(id, spirvBase64);
         String fullGlsl = translateSpirv(id, decodeSpirv(id, trimmed));
         requireVoidMain(id, fullGlsl);
-        String sha = sha256Hex(id + "\nspirv\n" + trimmed);
+        String sha = sha256Hex("v2\n" + id + "\nspirv\n" + trimmed);
         // Translated output is a complete shader (own #version and declarations),
         // so it is published verbatim — no header injection.
-        publishPass(id, fullGlsl, sha);
+        publishPass(id, fullGlsl, sha, fullGlsl);
     }
 
     private static String validateSpirvBase64(String id, String spirvBase64) {

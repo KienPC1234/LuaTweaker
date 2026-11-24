@@ -25,7 +25,6 @@ public class RecipeManagerMixin {
                                 ProfilerFiller profiler, CallbackInfo ci) {
         Object rawRecipeManager = LuaServiceRegistry.get(InterceptionServiceImpl.RECIPE_SERVICE_KEY);
         if (rawRecipeManager instanceof CommonRecipeManager recipeManager) {
-            InterceptionHelper.populatePendingEvents(recipeManager.getModifications());
             InterceptionHelper.applyModifications((RecipeManager) (Object) this, recipeManager.getModifications());
         }
     }

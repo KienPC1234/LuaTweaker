@@ -9,8 +9,9 @@ import java.util.Set;
  * <ul>
  *   <li>{@code lt} / {@code luatweaker} - the built-in command roots.</li>
  *   <li>{@code reload}, {@code hand}, {@code syntax}, {@code list},
- *       {@code debug}, {@code doctor}, {@code help} - built-in {@code /lt}
- *       sub-commands, most of which also exist as vanilla root commands
+ *       {@code debug}, {@code doctor}, {@code help}, {@code gui},
+ *       {@code dimension}, {@code tp}, {@code spawn} - built-in {@code /lt} sub-commands,
+ *       most of which also exist as vanilla root commands
  *       ({@code /reload}, {@code /list}, {@code /debug}, {@code /help}).</li>
  * </ul>
  *
@@ -22,7 +23,8 @@ public final class CoreCommandNames {
     /** Command roots and names owned by LuaTweaker or by vanilla Minecraft. */
     public static final Set<String> RESERVED = Set.of(
             "lt", "luatweaker",
-            "reload", "hand", "syntax", "list", "debug", "doctor", "help", "gui"
+            "reload", "hand", "syntax", "list", "debug", "doctor", "help", "gui",
+            "dimension", "tp", "spawn"
     );
 
     private CoreCommandNames() {}

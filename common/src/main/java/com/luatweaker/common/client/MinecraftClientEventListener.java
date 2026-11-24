@@ -14,8 +14,10 @@ import com.luatweaker.core.service.LuaServiceRegistry;
 import dev.architectury.event.events.client.ClientGuiEvent;
 import dev.architectury.event.events.client.ClientRawInputEvent;
 import dev.architectury.event.events.client.ClientTickEvent;
+import dev.architectury.event.events.common.InteractionEvent;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.world.InteractionHand;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -38,6 +40,17 @@ public final class MinecraftClientEventListener {
         ClientRawInputEvent.MOUSE_CLICKED_PRE.register((client, button, action, mods) -> {
             onMouseButton(button, action, mods);
             return dev.architectury.event.EventResult.pass();
+        });
+        InteractionEvent.CLIENT_LEFT_CLICK_AIR.register((player, hand) -> {
+            if (hand == InteractionHand.MAIN_HAND && player != null) {
+                net.minecraft.world.item.ItemStack held = player.getMainHandItem();
+                if (!held.isEmpty()
+                        && com.luatweaker.common.content.registrar.ItemRegistrar.BUILDER_BY_ITEM.containsKey(held.getItem())
+                        && Platform.isInitialized()) {
+                    Platform.getNetwork().sendPayloadPacketToServer(
+                            com.luatweaker.common.network.CommonNetworkHandler.ITEM_SWING_CHANNEL, "");
+                }
+            }
         });
     }
 
@@ -118,6 +131,10 @@ public final class MinecraftClientEventListener {
         ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
         if (engine == null) {
             return;
+        }
+        IPlatformClient client = Platform.getClientOrNull();
+        if (client instanceof MinecraftClientPlatform platform) {
+            platform.updateShaderGlobals();
         }
         MinecraftGuiService.setGraphics(guiGraphics);
         try {

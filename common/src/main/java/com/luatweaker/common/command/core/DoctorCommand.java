@@ -37,7 +37,7 @@ public class DoctorCommand implements ILuaTweakerCommand {
     public String getDescription() { return "Health diagnostics: mods, engine, services, load errors"; }
 
     @Override
-    public int getPermissionLevel() { return 2; }
+    public int getPermissionLevel() { return 0; }
 
     @Override
     public int execute(ICommandSender sender, String[] args) {

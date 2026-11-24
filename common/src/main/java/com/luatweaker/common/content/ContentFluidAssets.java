@@ -55,6 +55,19 @@ final class ContentFluidAssets {
                 + ContentAssetPaths.MODELS_BLOCK_DIR + id + ContentAssetPaths.JSON_EXTENSION, blockModelJson);
         datapackService.addData(ContentAssetPaths.ASSETS_PREFIX + namespace
                 + ContentAssetPaths.MODELS_BLOCK_DIR + blockId + ContentAssetPaths.JSON_EXTENSION, blockModelJson);
+
+        String bucketId = id + "_bucket";
+        String bucketKey = ContentAssetPaths.ASSETS_PREFIX + namespace
+                + ContentAssetPaths.MODELS_ITEM_DIR + bucketId + ContentAssetPaths.JSON_EXTENSION;
+        if (!datapackService.hasData(bucketKey)) {
+            String bucketJson = "{\n"
+                    + "  \"parent\": \"minecraft:item/generated\",\n"
+                    + "  \"textures\": {\n"
+                    + "    \"layer0\": \"minecraft:item/bucket\"\n"
+                    + "  }\n"
+                    + "}";
+            datapackService.addData(bucketKey, bucketJson);
+        }
     }
 
     private static String fluidTextureMcmetaKey(@NotNull String textureId) {

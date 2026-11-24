@@ -31,14 +31,18 @@ public final class EntityRegistrar {
 
     private final IContentService contentService;
     private final Map<ResourceLocation, EntityType<?>> createdEntityTypes;
+    private final Map<ResourceLocation, java.util.function.Supplier<EntityType<?>>> createdEntitySuppliers;
     private final Map<ResourceLocation, Item> createdItems;
     private final Function<String, ResourceLocation> locationParser;
 
-    public EntityRegistrar(IContentService contentService, Map<ResourceLocation, EntityType<?>> createdEntityTypes,
+    public EntityRegistrar(IContentService contentService,
+                           Map<ResourceLocation, EntityType<?>> createdEntityTypes,
+                           Map<ResourceLocation, java.util.function.Supplier<EntityType<?>>> createdEntitySuppliers,
                            Map<ResourceLocation, Item> createdItems,
                            Function<String, ResourceLocation> locationParser) {
         this.contentService = contentService;
         this.createdEntityTypes = createdEntityTypes;
+        this.createdEntitySuppliers = createdEntitySuppliers;
         this.createdItems = createdItems;
         this.locationParser = locationParser;
     }
@@ -79,6 +83,7 @@ public final class EntityRegistrar {
             createdEntityTypes.put(rl, built);
             return built;
         });
+        createdEntitySuppliers.put(rl, typeHolder);
 
         if (isGenericRig(rig)) {
             LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom EntityType (Rig: " + rig + "): " + rl);
@@ -125,13 +130,19 @@ public final class EntityRegistrar {
                                   RegistrySupplier<EntityType<?>> typeHolder) {
         if (builder.hasSpawnEgg()) {
             ResourceLocation eggId = locationParser.apply(builder.getId() + "_spawn_egg");
-            itemRegistrar.register(eggId, () -> {
-                EntityType<Mob> resolved = (EntityType<Mob>) typeHolder.get();
-                Item eggItem = new SpawnEggItem(resolved, builder.getPrimaryColor(), builder.getSecondaryColor(),
+            RegistrySupplier<Item> eggHolder = itemRegistrar.register(eggId, () -> {
+                Item eggItem = new com.luatweaker.common.item.LuaSpawnEggItem(
+                        () -> (EntityType<Mob>) typeHolder.get(),
+                        builder.getPrimaryColor(), builder.getSecondaryColor(),
                         new Item.Properties());
                 createdItems.put(eggId, eggItem);
                 return eggItem;
             });
+            if (dev.architectury.platform.Platform.getEnvironment() == dev.architectury.utils.Env.CLIENT) {
+                dev.architectury.registry.client.rendering.ColorHandlerRegistry.registerItemColors(
+                        (stack, layer) -> net.minecraft.util.FastColor.ARGB32.opaque(((SpawnEggItem) stack.getItem()).getColor(layer)),
+                        eggHolder);
+            }
             LuaTweakerLog.get().info(LogStage.SYSTEM, "Registered Custom Entity Spawn Egg Item: " + eggId);
         }
     }

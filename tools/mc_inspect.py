@@ -201,6 +201,29 @@ class JarIndex:
         # 4. Search global Gradle cache for Fabric / Forge / NeoForge if not yet found
         gradle_home = os.environ.get("GRADLE_USER_HOME", os.path.expanduser("~/.gradle"))
         if not self.sources_jar or not self.merged_jar:
+            pref_lower = (self.platform_pref or "neoforge").lower()
+            loom_maven = Path(gradle_home) / "caches" / "fabric-loom" / "minecraftMaven"
+            if loom_maven.is_dir():
+                maven_jars = [
+                    p for p in loom_maven.rglob("*.jar")
+                    if "intermediary" not in p.name.lower() and "resource" not in p.name.lower()
+                ]
+                src_candidates = [p for p in maven_jars if p.name.lower().endswith("-sources.jar")]
+                merged_candidates = [
+                    p for p in maven_jars
+                    if not p.name.lower().endswith("-sources.jar")
+                    and ("merged" in p.name.lower() or "mapped" in p.name.lower())
+                ]
+                if not self.sources_jar and src_candidates:
+                    preferred_src = [p for p in src_candidates if pref_lower in str(p).lower()]
+                    self.sources_jar = (preferred_src or src_candidates)[0]
+                if not self.merged_jar and merged_candidates:
+                    preferred_merged = [p for p in merged_candidates if pref_lower in str(p).lower()]
+                    self.merged_jar = (preferred_merged or merged_candidates)[0]
+                    if self.merged_jar not in self.all_jars:
+                        self.all_jars.insert(0, self.merged_jar)
+
+        if not self.sources_jar or not self.merged_jar:
             cache_roots = [
                 os.path.join(gradle_home, "caches", "fabric-loom", "**", "*.jar"),
                 os.path.join(gradle_home, "caches", "forge_gradle", "**", "*.jar"),
@@ -210,9 +233,11 @@ class JarIndex:
                 for match in glob.glob(croots, recursive=True):
                     p = Path(match)
                     name_l = p.name.lower()
+                    if "intermediary" in name_l or "fancymodloader" in name_l:
+                        continue
                     if not self.sources_jar and "sources" in name_l and "resource" not in name_l and ("minecraft" in name_l or "neoforge" in name_l or "fabric" in name_l):
                         self.sources_jar = p
-                    elif not self.merged_jar and ("merged" in name_l or "mapped" in name_l) and ("sources" not in name_l or "resource" in name_l):
+                    elif not self.merged_jar and ("merged" in name_l or "mapped" in name_l) and "loom.mappings" in name_l and ("sources" not in name_l or "resource" in name_l):
                         self.merged_jar = p
                         self.all_jars.append(p)
 

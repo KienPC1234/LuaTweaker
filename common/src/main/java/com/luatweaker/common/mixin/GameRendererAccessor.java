@@ -8,6 +8,11 @@ import org.spongepowered.asm.mixin.gen.Invoker;
 @FunctionalInterface
 @Mixin(GameRenderer.class)
 public interface GameRendererAccessor {
+    /**
+     * Must NOT be named {@code loadEffect}: an invoker with the same name as its
+     * target generates a bridge that calls itself, causing infinite recursion
+     * (StackOverflowError) the first time a shader pass is activated.
+     */
     @Invoker("loadEffect")
-    void loadEffect(ResourceLocation location);
+    void callLoadEffect(ResourceLocation location);
 }

@@ -6,12 +6,17 @@
     "PackRepositoryMixin",
     "EntityDataMixin",
     "RecipeManagerMixin",
-    "MobAccessor"
+    "MobAccessor",
+    "AnvilMenuMixin"
   ],
   "client": [
     "ItemInHandRendererMixin",
     "GameRendererAccessor",
-    "ItemPropertiesAccessor"
+    "GameRendererFovMixin",
+    "CameraMixin",
+    "EntityRenderDispatcherMixin",
+    "PostChainAccessor",
+    "PostChainMixin"
   ],
   "injectors": {
     "defaultRequire": 1

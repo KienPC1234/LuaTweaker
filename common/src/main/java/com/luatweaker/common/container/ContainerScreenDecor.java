@@ -23,29 +23,32 @@ final class ContainerScreenDecor {
 
     static void renderBars(GuiGraphics guiGraphics, CustomContainerMenu menu, List<MachineBarSpec> bars,
                            int originX, int originY) {
+        int panelW = ContainerLayout.PANEL_WIDTH;
         int panelH = ContainerLayout.imageHeight(menu.getContainerRows());
         for (MachineBarSpec bar : bars) {
-            int barX = originX + GuiAnchor.resolveX(bar.anchor(), ContainerLayout.PANEL_WIDTH,
-                    bar.width(), bar.x());
-            int barY = originY + GuiAnchor.resolveY(bar.anchor(), panelH, bar.height(), bar.y());
-            int color = bar.color() > 0 ? bar.color() : defaultBarColor(bar.source());
-            guiGraphics.fill(barX, barY, barX + bar.width(), barY + bar.height(), BAR_BACKGROUND);
+            int barW = ContainerBounds.clampWidth(bar.width(), panelW);
+            int barH = ContainerBounds.clampHeight(bar.height(), panelH);
+            int relX = ContainerBounds.clampX(GuiAnchor.resolveX(bar.anchor(), panelW, barW, bar.x()), barW, panelW);
+            int relY = ContainerBounds.clampY(GuiAnchor.resolveY(bar.anchor(), panelH, barH, bar.y()), barH, panelH);
+            int barX = originX + relX;
+            int barY = originY + relY;
+            int color = bar.color() == 0 ? defaultBarColor(bar.source()) : (bar.color() | 0xFF000000);
+            guiGraphics.fill(barX, barY, barX + barW, barY + barH, BAR_BACKGROUND);
             float ratio = barRatio(menu, bar);
             if (ratio > MIN_FILL_RATIO) {
-                fillBar(guiGraphics, bar, barX, barY, ratio, color);
+                fillClampedBar(guiGraphics, barX, barY, barW, barH, ratio, color);
             }
         }
     }
 
-    private static void fillBar(GuiGraphics guiGraphics, MachineBarSpec bar, int barX, int barY,
-                                float ratio, int color) {
-        if (bar.width() >= bar.height()) {
-            int fillWidth = Math.round(bar.width() * ratio);
-            guiGraphics.fill(barX, barY, barX + fillWidth, barY + bar.height(), color);
+    private static void fillClampedBar(GuiGraphics guiGraphics, int barX, int barY,
+                                       int barW, int barH, float ratio, int color) {
+        if (barW >= barH) {
+            int fillWidth = Math.round(barW * ratio);
+            guiGraphics.fill(barX, barY, barX + fillWidth, barY + barH, color);
         } else {
-            int fillHeight = Math.round(bar.height() * ratio);
-            guiGraphics.fill(barX, barY + bar.height() - fillHeight, barX + bar.width(),
-                    barY + bar.height(), color);
+            int fillHeight = Math.round(barH * ratio);
+            guiGraphics.fill(barX, barY + barH - fillHeight, barX + barW, barY + barH, color);
         }
     }
 

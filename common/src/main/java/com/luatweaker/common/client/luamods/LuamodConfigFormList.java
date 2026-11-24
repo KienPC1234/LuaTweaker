@@ -22,6 +22,7 @@ import java.util.Map;
 
 /**
  * Visual Form list for editing mod configuration properties directly without writing raw JSON.
+ * Clamps indentation, category headers, and input controls strictly inside {@link #getRowWidth()}.
  */
 public class LuamodConfigFormList extends ContainerObjectSelectionList<LuamodConfigFormList.ConfigEntry> {
 
@@ -29,6 +30,7 @@ public class LuamodConfigFormList extends ContainerObjectSelectionList<LuamodCon
     private static final String FALSE_LITERAL = "false";
     private static final String TRUE_DISPLAY = "§aTRUE";
     private static final String FALSE_DISPLAY = "§cFALSE";
+    private static final int INDENT_STEP = 10;
 
     private final Runnable onDirty;
 
@@ -40,7 +42,35 @@ public class LuamodConfigFormList extends ContainerObjectSelectionList<LuamodCon
 
     @Override
     public int getRowWidth() {
-        return Math.max(160, Math.min(500, width - 40));
+        return Math.max(120, Math.min(480, width - 36));
+    }
+
+    static int clampedIndent(int depth, int rowWidth) {
+        return Math.min(Math.max(0, depth) * INDENT_STEP, Math.max(0, rowWidth / 4));
+    }
+
+    static int responsiveEditWidth(int rowWidth) {
+        return Math.clamp(rowWidth * 2 / 5, 60, 160);
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        return this.visible && this.active && super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        return this.visible && this.active && super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        return this.visible && this.active && super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        return this.visible && this.active && super.charTyped(codePoint, modifiers);
     }
 
     public void populate(JsonObject root) {
@@ -110,8 +140,8 @@ public class LuamodConfigFormList extends ContainerObjectSelectionList<LuamodCon
                            int rowWidth, int rowHeight, int mouseX, int mouseY,
                            boolean hovering, float partialTick) {
             Font font = Minecraft.getInstance().font;
-            String text = "§7(Empty configuration object)";
-            graphics.drawCenteredString(font, text, left + rowWidth / 2, top + (rowHeight - 8) / 2, 0x888888);
+            String text = LuamodLayouts.trim(font, "(Empty configuration object)", Math.max(20, rowWidth - 12));
+            graphics.drawCenteredString(font, text, left + rowWidth / 2, top + (rowHeight - 8) / 2, 0xFF888888);
         }
     }
 
@@ -138,18 +168,22 @@ public class LuamodConfigFormList extends ContainerObjectSelectionList<LuamodCon
                            int rowWidth, int rowHeight, int mouseX, int mouseY,
                            boolean hovering, float partialTick) {
             Font font = Minecraft.getInstance().font;
-            String text = "§6[ §b" + title + " §6]";
+            String trimmedTitle = LuamodLayouts.trim(font, title, Math.max(24, rowWidth - 36));
+            String text = "§6[ §b" + trimmedTitle + " §6]";
             int textWidth = font.width(text);
             int centerX = left + rowWidth / 2;
             int textY = top + (rowHeight - 8) / 2;
-
             int lineY = top + rowHeight / 2;
-            int lineLeftEnd = Math.max(left + 8, centerX - textWidth / 2 - 6);
-            int lineRightStart = Math.min(left + rowWidth - 8, centerX + textWidth / 2 + 6);
 
-            graphics.hLine(left + 8, lineLeftEnd, lineY, 0xFF555555);
+            int lineLeftEnd = centerX - textWidth / 2 - 6;
+            int lineRightStart = centerX + textWidth / 2 + 6;
+            if (lineLeftEnd > left + 6) {
+                graphics.hLine(left + 6, lineLeftEnd, lineY, 0xFF555555);
+            }
             graphics.drawCenteredString(font, text, centerX, textY, 0xFFFFFFFF);
-            graphics.hLine(lineRightStart, left + rowWidth - 8, lineY, 0xFF555555);
+            if (lineRightStart < left + rowWidth - 6) {
+                graphics.hLine(lineRightStart, left + rowWidth - 6, lineY, 0xFF555555);
+            }
         }
     }
 
@@ -172,7 +206,7 @@ public class LuamodConfigFormList extends ContainerObjectSelectionList<LuamodCon
             this.value = initialValue;
             this.onDirty = onDirty;
             this.button = Button.builder(Component.literal(value ? TRUE_LITERAL : FALSE_LITERAL), b -> toggle())
-                    .bounds(0, 0, 60, 20)
+                    .bounds(0, 0, 56, 18)
                     .build();
             updateButtonText();
         }
@@ -205,18 +239,19 @@ public class LuamodConfigFormList extends ContainerObjectSelectionList<LuamodCon
                            int rowWidth, int rowHeight, int mouseX, int mouseY,
                            boolean hovering, float partialTick) {
             Font font = Minecraft.getInstance().font;
-            int indent = depth * 12;
+            int indent = clampedIndent(depth, rowWidth);
             int textX = left + 6 + indent;
             int textY = top + (rowHeight - 8) / 2;
-            int buttonWidth = 60;
-            int buttonX = left + rowWidth - buttonWidth - 8;
-            int buttonY = top + (rowHeight - 20) / 2;
+            int buttonWidth = Math.min(56, Math.max(40, rowWidth / 3));
+            int buttonX = left + rowWidth - buttonWidth - 6;
+            int buttonY = top + (rowHeight - 18) / 2;
 
             button.setX(buttonX);
             button.setY(buttonY);
+            button.setWidth(buttonWidth);
             button.render(graphics, mouseX, mouseY, partialTick);
 
-            int maxLabelWidth = buttonX - textX - 6;
+            int maxLabelWidth = Math.max(0, buttonX - textX - 6);
             graphics.drawString(font, LuamodLayouts.trim(font, label, maxLabelWidth), textX, textY, 0xFFFFFFFF);
         }
     }
@@ -239,7 +274,7 @@ public class LuamodConfigFormList extends ContainerObjectSelectionList<LuamodCon
             this.key = key;
             this.isNumber = isNumber;
             this.onDirty = onDirty;
-            this.editBox = new EditBox(font, 0, 0, 140, 18, Component.literal(label));
+            this.editBox = new EditBox(font, 0, 0, 120, 18, Component.literal(label));
             this.editBox.setMaxLength(1024);
             this.editBox.setValue(initialValue);
             this.editBox.setResponder(this::onTextChanged);
@@ -259,11 +294,9 @@ public class LuamodConfigFormList extends ContainerObjectSelectionList<LuamodCon
         private void updateNumber(String text) {
             try {
                 if (text.contains(".")) {
-                    double val = Double.parseDouble(text);
-                    parent.addProperty(key, val);
+                    parent.addProperty(key, Double.parseDouble(text));
                 } else {
-                    long val = Long.parseLong(text);
-                    parent.addProperty(key, val);
+                    parent.addProperty(key, Long.parseLong(text));
                 }
                 editBox.setTextColor(0xFFFFFFFF);
             } catch (NumberFormatException e) {
@@ -286,11 +319,11 @@ public class LuamodConfigFormList extends ContainerObjectSelectionList<LuamodCon
                            int rowWidth, int rowHeight, int mouseX, int mouseY,
                            boolean hovering, float partialTick) {
             Font font = Minecraft.getInstance().font;
-            int indent = depth * 12;
+            int indent = clampedIndent(depth, rowWidth);
             int textX = left + 6 + indent;
             int textY = top + (rowHeight - 8) / 2;
-            int editWidth = Math.min(160, Math.max(90, rowWidth / 3));
-            int editX = left + rowWidth - editWidth - 8;
+            int editWidth = responsiveEditWidth(rowWidth);
+            int editX = left + rowWidth - editWidth - 6;
             int editY = top + (rowHeight - 18) / 2;
 
             editBox.setX(editX);
@@ -298,7 +331,7 @@ public class LuamodConfigFormList extends ContainerObjectSelectionList<LuamodCon
             editBox.setWidth(editWidth);
             editBox.render(graphics, mouseX, mouseY, partialTick);
 
-            int maxLabelWidth = editX - textX - 6;
+            int maxLabelWidth = Math.max(0, editX - textX - 6);
             graphics.drawString(font, LuamodLayouts.trim(font, label, maxLabelWidth), textX, textY, 0xFFFFFFFF);
         }
     }
@@ -319,7 +352,7 @@ public class LuamodConfigFormList extends ContainerObjectSelectionList<LuamodCon
             this.parent = parent;
             this.key = key;
             this.onDirty = onDirty;
-            this.editBox = new EditBox(font, 0, 0, 160, 18, Component.literal(label));
+            this.editBox = new EditBox(font, 0, 0, 120, 18, Component.literal(label));
             this.editBox.setMaxLength(2048);
             this.editBox.setValue(initialValue.toString());
             this.editBox.setResponder(this::onTextChanged);
@@ -357,11 +390,11 @@ public class LuamodConfigFormList extends ContainerObjectSelectionList<LuamodCon
                            int rowWidth, int rowHeight, int mouseX, int mouseY,
                            boolean hovering, float partialTick) {
             Font font = Minecraft.getInstance().font;
-            int indent = depth * 12;
+            int indent = clampedIndent(depth, rowWidth);
             int textX = left + 6 + indent;
             int textY = top + (rowHeight - 8) / 2;
-            int editWidth = Math.min(160, Math.max(90, rowWidth / 3));
-            int editX = left + rowWidth - editWidth - 8;
+            int editWidth = responsiveEditWidth(rowWidth);
+            int editX = left + rowWidth - editWidth - 6;
             int editY = top + (rowHeight - 18) / 2;
 
             editBox.setX(editX);
@@ -369,7 +402,7 @@ public class LuamodConfigFormList extends ContainerObjectSelectionList<LuamodCon
             editBox.setWidth(editWidth);
             editBox.render(graphics, mouseX, mouseY, partialTick);
 
-            int maxLabelWidth = editX - textX - 6;
+            int maxLabelWidth = Math.max(0, editX - textX - 6);
             graphics.drawString(font, LuamodLayouts.trim(font, label, maxLabelWidth), textX, textY, 0xFFFFFFFF);
         }
     }

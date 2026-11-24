@@ -116,11 +116,13 @@ dependencies {
 
     testImplementation "org.junit.jupiter:junit-jupiter-api:${rootProject.junit_version}"
     testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:${rootProject.junit_version}"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
 }
 
 shadowJar {
     configurations = [project.configurations.shadowBundle]
     archiveClassifier = 'dev-shadow'
+    from(sourceSets.main.output)
 }
 
 remapJar {
@@ -133,11 +135,10 @@ test {
     useJUnitPlatform()
 }
 
-// Test-mod sync: the shared Lua test mods live in neoforge-platform/luamods
-// (tracked in git); sync them into this loader's game dir before every run,
-// mirroring the old :neoforge-platform:syncLuaMods workflow.
-def sharedLuaModsDir = rootProject.file('neoforge-platform/luamods')
-def sharedLuaConfigDir = rootProject.file('neoforge-platform/luaconfig')
+// Test-mod sync: the shared Lua test mods live in root luamods/ (tracked in git);
+// sync them into this loader's game dir before every run.
+def sharedLuaModsDir = rootProject.file('luamods')
+def sharedLuaConfigDir = rootProject.file('luaconfig')
 
 tasks.register('syncLuaMods', Sync) {
     from sharedLuaModsDir
@@ -147,7 +148,8 @@ tasks.register('syncLuaMods', Sync) {
     }
 }
 
-tasks.register('syncLuaConfig', Sync) {
+tasks.register('syncLuaConfig', Copy) {
+    onlyIf { sharedLuaConfigDir.exists() }
     from sharedLuaConfigDir
     into file('run/luaconfig')
 }

@@ -32,6 +32,10 @@ final class ConcurrentEngineSupport {
             boolean finished, Throwable failure) {
     }
 
+    /** Result of the getGlobalEnvironment-during-held-gate regression scenario. */
+    record GlobalsAccessRun(boolean globalsAcquired, boolean holderFinished, String failure) {
+    }
+
     private record Outcome(boolean finished, Throwable failure) {
     }
 
@@ -118,6 +122,71 @@ final class ConcurrentEngineSupport {
             }
         }, null);
         return runScenario(engine, incrementFn, setupError, scriptWork, functionWork);
+    }
+
+    /**
+     * Holds the VM gate on one worker via a blocking Lua binding, then asks a second
+     * worker for the global environment. If getGlobalEnvironment() took the gate, the
+     * second worker hangs until the holder is released - the exact deadlock seen when
+     * a render callback waits on a chunk load while the server thread builds a payload.
+     */
+    static GlobalsAccessRun runGlobalsDuringHeldGate() {
+        ILuaEngine engine = LuaEngineFactory.create(false);
+        CountDownLatch gateHeld = new CountDownLatch(1);
+        CountDownLatch releaseGate = new CountDownLatch(1);
+        CountDownLatch globalsAcquired = new CountDownLatch(1);
+
+        engine.registerGlobal("holdGate", args -> {
+            gateHeld.countDown();
+            try {
+                releaseGate.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+                return engine.wrapString("interrupted: " + interrupted.getMessage());
+            }
+            return engine.nilValue();
+        });
+
+        FutureTask<?> holder = new FutureTask<>(() -> {
+            ILuaValue function = engine.getGlobalEnvironment().rawget("holdGate");
+            engine.callFunction(function);
+        }, null);
+        FutureTask<?> reader = new FutureTask<>(() -> {
+            try {
+                if (!gateHeld.await(5, TimeUnit.SECONDS)) {
+                    throw new AssertionError("gate holder never entered the Lua binding");
+                }
+            } catch (InterruptedException interrupted) {
+                throw new AssertionError("globals reader was interrupted", interrupted);
+            }
+            engine.getGlobalEnvironment();
+            globalsAcquired.countDown();
+        }, null);
+
+        // Separate timers: a single Timer runs its tasks sequentially, which would
+        // never reproduce the overlap between a gated render callback and a server read.
+        CountDownLatch done = new CountDownLatch(2);
+        Timer holderTimer = new Timer(true);
+        Timer readerTimer = new Timer(true);
+        holderTimer.schedule(deferredWork(done, holder), 0);
+        readerTimer.schedule(deferredWork(done, reader), 0);
+        boolean acquired = false;
+        String failure = null;
+        try {
+            acquired = globalsAcquired.await(3, TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            failure = interrupted.getMessage();
+        } finally {
+            releaseGate.countDown();
+        }
+        boolean finished = false;
+        try {
+            finished = done.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            failure = interrupted.getMessage();
+        }
+        holderTimer.cancel();
+        readerTimer.cancel();
+        return new GlobalsAccessRun(acquired, finished, failure);
     }
 
     static EngineRun runSharedCounterScenario() {

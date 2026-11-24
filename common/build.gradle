@@ -59,6 +59,9 @@ dependencies {
     compileOnly "io.github.kienpc1234:luava:${rootProject.luava_version}"
     compileOnly "io.github.spair:imgui-java-binding:${rootProject.imgui_version}"
     compileOnly "io.github.spair:imgui-java-lwjgl3:${rootProject.imgui_version}"
+    // GeckoLib 4.7.x ships no geckolib-common artifact; geckolib-neoforge provides
+    // the Mojang-mapped software.bernie.geckolib.* API headers for compilation only
+    // (common never imports net.neoforged.*, and each loader bundles its own GeckoLib runtime).
     compileOnly "software.bernie.geckolib:geckolib-neoforge-${rootProject.minecraft_version}:${rootProject.geckolib_version}"
 
     testImplementation "org.junit.jupiter:junit-jupiter-api:${rootProject.junit_version}"

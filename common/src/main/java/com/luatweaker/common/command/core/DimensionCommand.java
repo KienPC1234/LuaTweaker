@@ -2,21 +2,25 @@ package com.luatweaker.common.command.core;
 
 import com.luatweaker.api.command.ICommandSender;
 import com.luatweaker.api.command.ILuaTweakerCommand;
+import com.luatweaker.common.CommonServerHolder;
 import com.luatweaker.dimension.DimensionBenchmark;
 import com.luatweaker.dimension.DimensionConfig;
 import com.luatweaker.dimension.DimensionServiceImpl;
 import com.luatweaker.common.command.MinecraftCommandSender;
-import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
- * /luatweaker dimension list | info &lt;id&gt; | tp &lt;id&gt; | bench &lt;id&gt; [radius]
+ * /luatweaker dimension list | info &lt;id&gt; | tp &lt;id&gt; [playerName] | bench &lt;id&gt; [radius]
  *
  * <p>Lists the Lua-registered dimensions, prints a dimension's parsed config,
- * teleports the executing player into a dimension and measures the Lua terrain
- * pipeline (Lua calls per chunk and milliseconds per chunk).</p>
+ * teleports a player into a dimension and measures the Lua terrain pipeline
+ * (Lua calls per chunk and milliseconds per chunk). Console callers must name
+ * an online player as the teleport target.</p>
  */
 public class DimensionCommand implements ILuaTweakerCommand {
     private static final int MIN_ARGS_FOR_ID = 2;
@@ -35,7 +39,7 @@ public class DimensionCommand implements ILuaTweakerCommand {
     @Override
     public int execute(ICommandSender sender, String[] args) {
         if (args.length == 0) {
-            sender.sendError("Usage: /lt dimension <list|info <id>|tp <id>|bench <id> [radius]>");
+            sender.sendError("Usage: /lt dimension <list|info <id>|tp <id> [playerName]|bench <id> [radius]>");
             return 0;
         }
         DimensionServiceImpl service = currentService();
@@ -138,35 +142,60 @@ public class DimensionCommand implements ILuaTweakerCommand {
 
     private int teleport(ICommandSender sender, DimensionServiceImpl service, String... args) {
         if (args.length < MIN_ARGS_FOR_ID) {
-            sender.sendError("Usage: /lt dimension tp <dimensionId>");
+            sender.sendError("Usage: /lt dimension tp <dimensionId> [playerName]");
             return 0;
         }
-        if (!(sender instanceof MinecraftCommandSender neoforgeSender)) {
-            sender.sendError("Only in-game players can use /lt dimension tp.");
+        String dimensionId = args[1];
+        if (service.getConfig(dimensionId) == null) {
+            sender.sendError("Unknown dimension '" + dimensionId + "'.");
             return 0;
         }
-        CommandSourceStack source = neoforgeSender.getSource();
-        if (!(source.getEntity() instanceof ServerPlayer player)) {
-            sender.sendError("Only in-game players can use /lt dimension tp.");
-            return 0;
-        }
-        if (service.getConfig(args[1]) == null) {
-            sender.sendError("Unknown dimension '" + args[1] + "'.");
+        ServerPlayer player = resolveTarget(sender, args);
+        if (player == null) {
             return 0;
         }
         try {
             boolean teleported = com.luatweaker.api.pal.Platform.getDimension()
-                    .teleportToDimension(player, args[1]);
+                    .teleportToDimension(player, dimensionId);
             if (!teleported) {
-                sender.sendError("Could not teleport to dimension '" + args[1]
+                sender.sendError("Could not teleport to dimension '" + dimensionId
                         + "': the server refused (see the log for the safe-spawn check).");
                 return 0;
             }
-            sender.sendSuccess("Teleported to dimension '" + args[1] + "'.");
+            sender.sendSuccess("Teleported to dimension '" + dimensionId + "'.");
             return 1;
         } catch (IllegalStateException e) {
             sender.sendError(e.getMessage());
             return 0;
+        }
+    }
+
+    private static @Nullable ServerPlayer resolveTarget(ICommandSender sender, String... args) {
+        if (args.length >= MIN_ARGS_FOR_VALUE) {
+            MinecraftServer server = CommonServerHolder.get();
+            if (server == null) {
+                sender.sendError("Server is not running.");
+                return null;
+            }
+            ServerPlayer player = findPlayer(server, args[2]);
+            if (player == null) {
+                sender.sendError("Player '" + args[2] + "' is not online.");
+            }
+            return player;
+        }
+        if (sender instanceof MinecraftCommandSender neoforgeSender
+                && neoforgeSender.getSource().getEntity() instanceof ServerPlayer executing) {
+            return executing;
+        }
+        sender.sendError("Console needs a player name: /lt dimension tp <dimensionId> <playerName>");
+        return null;
+    }
+
+    private static @Nullable ServerPlayer findPlayer(MinecraftServer server, String nameOrUuid) {
+        try {
+            return server.getPlayerList().getPlayer(UUID.fromString(nameOrUuid));
+        } catch (IllegalArgumentException notUuid) {
+            return server.getPlayerList().getPlayerByName(nameOrUuid);
         }
     }
 

@@ -11,13 +11,12 @@ vanilla biomes**, one per terrain pipeline:
 
 ## How to test
 
-This workspace uses **NeoForge 21.1.242 + ModDevGradle** (not Forge/ForgeGradle). The run tasks
-are defined in `neoforge-platform/build.gradle` and both use the shared game directory
-`<repo>/run` (`gameDirectory = file("../run")`).
+This workspace uses **Architectury Loom (NeoForge 21.1.242 & Fabric)**. The run tasks
+are defined in `neoforge/build.gradle` and `fabric/build.gradle`, using `<loader>/run`:
 
 1. Launch the client from the repo root:
-   - Windows PowerShell / cmd: `.\gradlew.bat :neoforge-platform:runClient`
-   - Git Bash / WSL / Linux / macOS: `./gradlew :neoforge-platform:runClient`
+   - Windows PowerShell / cmd: `.\gradlew.bat :neoforge:runClient` (or `:fabric:runClient`)
+   - Git Bash / WSL / Linux / macOS: `./gradlew :neoforge:runClient` (or `:fabric:runClient`)
    First launch downloads the Minecraft/NeoForge artifacts (`createMinecraftArtifacts`).
 2. Open a world (a **new** world is best - dimension levels are created at server start).
 3. `/lt dimension list` - the three ids above must be listed.
@@ -82,7 +81,7 @@ dimension folders).
 
 ### Dedicated server
 
-`.\gradlew.bat :neoforge-platform:runServer` uses the same `run/` directory. The first launch
+`.\gradlew.bat :neoforge:runServer` (or `:fabric:runServer`) uses the loader's `run/` directory. The first launch
 stops until you accept the Minecraft EULA: create `run/eula.txt` containing `eula=true`.
 To join from the dev client, also set `online-mode=false` in `run/server.properties` (the
 offline dev player cannot authenticate), as described in the NeoForge 1.21.1 docs.

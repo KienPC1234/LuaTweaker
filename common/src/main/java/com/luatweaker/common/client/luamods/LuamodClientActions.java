@@ -90,23 +90,26 @@ public final class LuamodClientActions {
                 minecraft.player.displayClientMessage(
                         Component.literal("§e[LuaTweaker] Reloading LuaMods..."), false);
             }
-            server.reloadResources(server.getPackRepository().getSelectedIds())
-                    .thenRun(() -> server.execute(() -> {
-                        if (minecraft.player != null) {
-                            minecraft.player.displayClientMessage(
-                                    Component.literal("§a[LuaTweaker] Reload complete. Reopen the manager to refresh."),
-                                    false);
-                        }
-                    }))
-                    .exceptionally(ex -> {
-                        server.execute(() -> {
+            server.execute(() -> {
+                com.luatweaker.common.LuaTweakerCommon.reloadLuaRuntime(server);
+                server.reloadResources(server.getPackRepository().getSelectedIds())
+                        .thenRun(() -> server.execute(() -> {
                             if (minecraft.player != null) {
                                 minecraft.player.displayClientMessage(
-                                        Component.literal("§c[LuaTweaker] Reload failed: " + ex.getMessage()), false);
+                                        Component.literal("§a[LuaTweaker] Reload complete. Reopen the manager to refresh."),
+                                        false);
                             }
+                        }))
+                        .exceptionally(ex -> {
+                            server.execute(() -> {
+                                if (minecraft.player != null) {
+                                    minecraft.player.displayClientMessage(
+                                            Component.literal("§c[LuaTweaker] Reload failed: " + ex.getMessage()), false);
+                                }
+                            });
+                            return null;
                         });
-                        return null;
-                    });
+            });
             return;
         }
         if (minecraft.player != null) {

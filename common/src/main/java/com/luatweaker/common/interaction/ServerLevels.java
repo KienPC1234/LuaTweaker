@@ -2,6 +2,7 @@ package com.luatweaker.common.interaction;
 
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -72,9 +73,19 @@ public final class ServerLevels {
         return false;
     }
 
+    /**
+     * Non-blocking check for a fully loaded chunk. getChunkNow() returns null when
+     * called off the server thread, unlike hasChunkAt + getBlockState which dispatches
+     * to the main thread and joins (a deadlock risk for render callbacks).
+     */
+    public static boolean hasLoadedChunk(@Nullable ServerLevel level, @NotNull BlockPos pos) {
+        return level != null
+                && level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4) != null;
+    }
+
     /** Runs {@code action} on a non-null level, or returns {@code fallback}. */
     public static <T> T map(@Nullable ServerLevel level, @Nullable T fallback,
-                           @NotNull Function<ServerLevel, T> action) {
+                            @NotNull Function<ServerLevel, T> action) {
         return level == null ? fallback : action.apply(level);
     }
 

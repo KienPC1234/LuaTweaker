@@ -25,13 +25,17 @@ final class ContainerBarTooltip {
     static boolean render(GuiGraphics guiGraphics, Font font, CustomContainerMenu menu,
                           List<MachineBarSpec> bars, int mouseX, int mouseY,
                           int originX, int originY) {
+        int panelW = ContainerLayout.PANEL_WIDTH;
         int panelH = ContainerLayout.imageHeight(menu.getContainerRows());
         for (MachineBarSpec bar : bars) {
-            int barX = originX + GuiAnchor.resolveX(bar.anchor(), ContainerLayout.PANEL_WIDTH,
-                    bar.width(), bar.x());
-            int barY = originY + GuiAnchor.resolveY(bar.anchor(), panelH, bar.height(), bar.y());
-            if (mouseX >= barX && mouseX <= barX + bar.width()
-                    && mouseY >= barY && mouseY <= barY + bar.height()) {
+            int barW = ContainerBounds.clampWidth(bar.width(), panelW);
+            int barH = ContainerBounds.clampHeight(bar.height(), panelH);
+            int barX = originX + ContainerBounds.clampX(
+                    GuiAnchor.resolveX(bar.anchor(), panelW, barW, bar.x()), barW, panelW);
+            int barY = originY + ContainerBounds.clampY(
+                    GuiAnchor.resolveY(bar.anchor(), panelH, barH, bar.y()), barH, panelH);
+            if (mouseX >= barX && mouseX <= barX + barW
+                    && mouseY >= barY && mouseY <= barY + barH) {
                 Component tooltip = formatTooltip(menu, bar);
                 if (tooltip != null) {
                     guiGraphics.renderTooltip(font, tooltip, mouseX, mouseY);

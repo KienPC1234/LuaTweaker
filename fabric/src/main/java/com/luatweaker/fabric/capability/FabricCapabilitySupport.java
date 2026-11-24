@@ -1,5 +1,6 @@
 package com.luatweaker.fabric.capability;
 
+import net.fabricmc.fabric.api.transfer.v1.fluid.FluidVariant;
 import net.fabricmc.fabric.api.transfer.v1.item.ItemVariant;
 import net.fabricmc.fabric.api.transfer.v1.storage.Storage;
 import net.fabricmc.fabric.api.transfer.v1.storage.StorageView;
@@ -10,6 +11,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.Fluids;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -20,7 +23,8 @@ import java.util.Map;
 /** Helper methods supporting {@link FabricCapabilityPlatform}. */
 final class FabricCapabilitySupport {
 
-    private FabricCapabilitySupport() {}
+    private FabricCapabilitySupport() {
+    }
 
     @Nullable
     static Direction parseSide(@Nullable String side) {
@@ -67,8 +71,26 @@ final class FabricCapabilitySupport {
 
     @Nullable
     static Item resolveItem(String itemId) {
-        ResourceLocation rl = itemId.contains(":") ? ResourceLocation.tryParse(itemId) : ResourceLocation.fromNamespaceAndPath("minecraft", itemId);
+        ResourceLocation rl = itemId.contains(":")
+                ? ResourceLocation.tryParse(itemId)
+                : ResourceLocation.fromNamespaceAndPath("minecraft", itemId);
         return rl == null ? null : BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+    }
+
+    @Nullable
+    static Fluid resolveFluid(@Nullable String fluidId) {
+        if (fluidId == null || fluidId.isBlank()) {
+            return null;
+        }
+        String trimmed = fluidId.trim();
+        ResourceLocation rl = trimmed.contains(":")
+                ? ResourceLocation.tryParse(trimmed)
+                : ResourceLocation.fromNamespaceAndPath("minecraft", trimmed);
+        if (rl == null) {
+            return null;
+        }
+        Fluid fluid = BuiltInRegistries.FLUID.getOptional(rl).orElse(null);
+        return fluid == Fluids.EMPTY ? null : fluid;
     }
 
     static int insertIntoContainer(Container container, Item item, int count) {
@@ -100,5 +122,47 @@ final class FabricCapabilitySupport {
             tx.commit();
             return (int) inserted;
         }
+    }
+
+    @Nullable
+    static Map<String, Object> readFluidStorage(Storage<FluidVariant> storage) {
+        java.util.Iterator<StorageView<FluidVariant>> iterator = storage.iterator();
+        if (!iterator.hasNext()) {
+            return null;
+        }
+        StorageView<FluidVariant> view = iterator.next();
+        String fluidId = view.isResourceBlank()
+                ? ""
+                : BuiltInRegistries.FLUID.getKey(view.getResource().getFluid()).toString();
+        int amountMb = (int) Math.min(view.getAmount() / FabricFluidStorage.DROPLETS_PER_MB, Integer.MAX_VALUE);
+        int capacityMb = (int) Math.min(view.getCapacity() / FabricFluidStorage.DROPLETS_PER_MB, Integer.MAX_VALUE);
+        return Map.of("Id", fluidId, "Amount", amountMb, "Capacity", capacityMb);
+    }
+
+    static int insertFluidIntoStorage(Storage<FluidVariant> storage, Fluid fluid, int amountMb) {
+        long droplets = amountMb * FabricFluidStorage.DROPLETS_PER_MB;
+        try (Transaction tx = Transaction.openOuter()) {
+            long inserted = storage.insert(FluidVariant.of(fluid), droplets, tx);
+            tx.commit();
+            return (int) (inserted / FabricFluidStorage.DROPLETS_PER_MB);
+        }
+    }
+
+    static int drainFluidFromStorage(Storage<FluidVariant> storage, @Nullable Fluid wanted, int amountMb) {
+        long droplets = amountMb * FabricFluidStorage.DROPLETS_PER_MB;
+        for (StorageView<FluidVariant> view : storage) {
+            if (view.isResourceBlank() || view.getAmount() <= 0) {
+                continue;
+            }
+            Fluid current = view.getResource().getFluid();
+            if (wanted == null || current.isSame(wanted)) {
+                try (Transaction tx = Transaction.openOuter()) {
+                    long extracted = storage.extract(view.getResource(), droplets, tx);
+                    tx.commit();
+                    return (int) (extracted / FabricFluidStorage.DROPLETS_PER_MB);
+                }
+            }
+        }
+        return 0;
     }
 }

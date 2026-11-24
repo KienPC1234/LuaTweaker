@@ -123,7 +123,6 @@ public final class LuaServiceBootstrap {
         // 9b5. Structures Service (single-template NBT structures, validated registry)
         com.luatweaker.structures.StructureServiceImpl structureService = new com.luatweaker.structures.StructureServiceImpl();
         com.luatweaker.structures.StructureLuaBinding.registerBindings(engine, structureService);
-        engine.registerService("StructureServiceImpl", structureService);
 
         // 9b. Server-side command registration (Commands:Register for /lt sub-commands)
         com.luatweaker.command.CommandLuaBinding.registerBindings(engine);
@@ -151,7 +150,6 @@ public final class LuaServiceBootstrap {
                 : new com.luatweaker.common.client.MinecraftGuiService();
 
         ClientLuaBinding.registerBindings(engine, clientService, keyBindService, guiService);
-        engine.registerService("KeyBindService", keyBindService);
 
         // 10c. Screen-space shader effects (named camera/overlay effects + custom
         // GLSL post passes). The disk cache lives next to the storage directory:

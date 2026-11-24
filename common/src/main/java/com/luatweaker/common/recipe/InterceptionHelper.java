@@ -94,11 +94,13 @@ public final class InterceptionHelper {
                 }
             }
         }
+        CommonInterceptionApplier.notifyPostPopulateHooks();
     }
 
     @SuppressWarnings("unchecked")
     public static void applyModifications(RecipeManager recipeManager,
                                           List<CommonRecipeManager.RecipeModification> modifications) {
+        populatePendingEvents(modifications);
         try {
             applyReflectively(recipeManager, modifications);
         } catch (ReflectiveOperationException e) {
@@ -161,8 +163,10 @@ public final class InterceptionHelper {
                     dispatchCrafting(mod, recipes, byName, registries);
             case ADD_SMELTING, ADD_BLASTING, ADD_SMOKING, ADD_CAMPFIRE, ADD_STONECUTTING, ADD_SMITHING ->
                     dispatchCooking(mod, recipes, byName);
-            case ADD_ANVIL, ADD_BREWING, ADD_TRADE -> dispatchEvent(mod);
-            default -> LOGGER.warn("[LuaTweaker] Unhandled recipe modification type {}", mod.type());
+            case ADD_ANVIL, ADD_BREWING, ADD_TRADE, ADD_CUSTOM -> {
+                // ADD_ANVIL/ADD_BREWING/ADD_TRADE are populated once in populatePendingEvents;
+                // ADD_CUSTOM is written directly to DatapackService.
+            }
         }
     }
 
@@ -211,15 +215,6 @@ public final class InterceptionHelper {
                     (CommonRecipeManager.StonecuttingData) mod.data());
             case ADD_SMITHING -> addSmithing(recipes, byName, (CommonRecipeManager.SmithingData) mod.data());
             default -> LOGGER.warn("[LuaTweaker] Unhandled cooking type {}", mod.type());
-        }
-    }
-
-    private static void dispatchEvent(CommonRecipeManager.RecipeModification mod) {
-        switch (mod.type()) {
-            case ADD_ANVIL -> schedulePendingAnvil((CommonRecipeManager.AnvilData) mod.data());
-            case ADD_BREWING -> schedulePendingBrewing((CommonRecipeManager.BrewingData) mod.data());
-            case ADD_TRADE -> schedulePendingTrade((CommonRecipeManager.TradeData) mod.data());
-            default -> LOGGER.warn("[LuaTweaker] Unhandled event type {}", mod.type());
         }
     }
 

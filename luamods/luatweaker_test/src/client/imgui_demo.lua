@@ -69,16 +69,10 @@ if Network then
     end
 end
 
--- Client-side item use trigger
-local Events = require("LuaTweaker.Events")
-if Events and Events.Listen then
-    Events:Listen("ItemRightClick", function(event)
-        local id = event.itemId or event.item or (event.itemStack and event.itemStack.id)
-        if id == "luatweaker_test:arcane_device" then
-            togglePanel()
-        end
-    end)
-end
+-- The arcane_device right-click already fires ToggleArcanePanel through the
+-- network event above. Do not also listen to a raw item-click event here: the
+-- engine posts RightClickItem (not ItemRightClick), and wiring both would toggle
+-- the panel twice per click.
 
 ImGui.OnFrame:Connect(function()
     if not showPanel then

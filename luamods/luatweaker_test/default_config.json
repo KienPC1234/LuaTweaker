@@ -80,8 +80,8 @@
   },
   "crystal_realm": {
     "dimension_id": "luatweaker:crystal_realm",
-    "sky_color": 0xFF88FF,
-    "fog_color": 0xAADDFF,
+    "sky_color": 16746751,
+    "fog_color": 11197951,
     "ambient_light": 0.12,
     "sea_level": 63,
     "min_height": -64,
@@ -97,10 +97,10 @@
     "ridge_amplitude": 35,
     "ridge_octaves": 5,
     "detail_scale": 0.03,
-      "erosion_scale": 0.0022,
-      "erosion_strength": 0.45,
-      "hill_scale": 0.009,
-      "hill_amp": 12,
+    "erosion_scale": 0.0022,
+    "erosion_strength": 0.45,
+    "hill_scale": 0.009,
+    "hill_amp": 12,
     "detail_amplitude": 3,
     "spire_threshold": 0.05,
     "spire_height": 20,
@@ -121,8 +121,8 @@
   },
   "crystal_skylands": {
     "dimension_id": "luatweaker:crystal_skylands",
-    "sky_color": 0xBDE0FF,
-    "fog_color": 0xE0F0FF,
+    "sky_color": 12443903,
+    "fog_color": 14741759,
     "scale": 0.012,
     "threshold": 0.5,
     "base_y": 180,
@@ -201,7 +201,7 @@
           "y": [62, 142], "light": [0, 7], "time": "night", "solidGround": true },
         { "entity": "minecraft:bat", "category": "ambient", "weight": 8, "minGroup": 1, "maxGroup": 3,
           "y": [-60, 57], "skyLight": [0, 4] }
-      ],
+      ]
     },
     "alpine_spec": {
       "dimension_id": "luatweaker:alpine_spec",
@@ -227,7 +227,8 @@
       "cave_detail_amp": 0.4,
       "cave_threshold": 0.75,
       "cave_cell_size": 4,
-      "cave_cell_height": 8,      "spawn_radius": 20,
+      "cave_cell_height": 8,
+      "spawn_radius": 20,
       "spawn_lift": 4,
       "spawn_rules": [
         { "entity": "minecraft:goat", "category": "creature", "weight": 10, "minGroup": 1, "maxGroup": 3,
@@ -235,12 +236,12 @@
           "blockBelow": ["minecraft:stone", "minecraft:grass_block", "minecraft:snow_block"] },
         { "entity": "minecraft:stray", "category": "monster", "weight": 8, "minGroup": 1, "maxGroup": 2,
           "y": [70, 210], "light": [0, 7], "time": "night", "solidGround": true }
-      ],
+      ]
     },
     "sky_isles": {
       "dimension_id": "luatweaker:sky_isles",
-      "sky_color": 0xBDE0FF,
-      "fog_color": 0xE8F4FF,
+      "sky_color": 12443903,
+      "fog_color": 15267071,
       "sea_level": 63,
       "band_y": 180,
       "spawn_radius": 14,
@@ -284,8 +285,7 @@
     "flee_hp_fraction": 0.3,
     "flee_radius": 8.0,
     "flee_timeout_ticks": 100,
-    "hop_cooldown_ticks": 60,
-    "tick_interval_ticks": 2
+    "hop_cooldown_ticks": 60
   },
   "radar_demo": {
     "enabled": true,
@@ -311,8 +311,8 @@
     "mana_bar_y": 50,
     "mana_bar_width": 120,
     "mana_bar_height": 10,
-    "mana_bar_color": 0x4488FF,
-    "mana_bar_bg": 0x222244,
+    "mana_bar_color": 4491519,
+    "mana_bar_bg": 2236996,
     "skill_icon_size": 24,
     "skill_icon_spacing": 4,
     "show_debug": false,
