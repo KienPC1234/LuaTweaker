@@ -32,10 +32,20 @@ public final class EventDispatcher {
             Map.entry("ContainerClose", List.of("PlayerContainerClose")),
             Map.entry("EntitySpawn", List.of("EntityJoinLevel")),
             Map.entry("ItemPickup", List.of("ItemPickupPost")),
-            Map.entry("ItemToss", List.of("ItemDrop"))
+            Map.entry("ItemToss", List.of("ItemDrop")),
+            Map.entry("LootTableModify", List.of("ModifyLootTable")),
+            Map.entry("CommandPerform", List.of("CommandExecute")),
+            Map.entry("ItemCrafted", List.of("PlayerCraftItem")),
+            Map.entry("ItemSmelted", List.of("PlayerSmeltItem")),
+            Map.entry("ChatReceived", List.of("PlayerChat"))
     );
 
     private EventDispatcher() {
+    }
+
+    public static boolean hasListenersFor(@NotNull String eventName) {
+        IEventService events = currentEventService();
+        return events != null && hasAnyListener(events, eventName);
     }
 
     public static void post(@NotNull String eventName, @Nullable ILuaTable payload) {

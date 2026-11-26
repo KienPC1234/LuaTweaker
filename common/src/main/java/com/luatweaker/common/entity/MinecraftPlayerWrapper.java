@@ -552,4 +552,9 @@ public class MinecraftPlayerWrapper extends MinecraftEntityWrapper implements IP
             }
         }
     }
+
+    @Override
+    public boolean isFake() {
+        return player != null && dev.architectury.hooks.level.entity.PlayerHooks.isFake(player);
+    }
 }

@@ -42,6 +42,7 @@ public final class UniversalEventForwarder {
         registerInteractionEvents();
         registerExplosionEvents();
         registerLifecycleEvents();
+        CommonExtraEventForwarder.registerAll();
     }
 
     private static void registerBlockEvents() {

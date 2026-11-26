@@ -190,3 +190,41 @@ LuaTweaker automatically detects whether the runtime is executing on a **Dedicat
   - Client keybind inputs (`UserInputService:IsKeyDown`) cleanly return `false`.
 * **On Client Instances (`Dist.CLIENT`):**
   - Visual shaders, screen flashes, camera shakes, and keybind listeners render directly to OpenGL / Minecraft pose stack.
+
+---
+
+## 7. Full Architectury Cross-Loader Events (`Events:Listen`)
+
+All Architectury common and client events below are bridged to `Events:Listen(eventName, callback)` across both NeoForge and Fabric. Events marked cancellable allow any listener to cancel vanilla execution by returning `false`.
+
+### Common Events (`src/server` / `src/startup`)
+
+| Event Name | Aliases | Payload Fields | Cancellable |
+| :--- | :--- | :--- | :--- |
+| `ChatDecorate` | | `{ Player, Message, SetMessage(text) }` | No |
+| `ChatReceived` | `PlayerChat` | `{ Player, Message }` | Yes |
+| `CommandPerform` | `CommandExecute` | `{ Command, SourceName, Player? }` | Yes |
+| `ChunkLoad` / `ChunkSave` | | `{ ChunkX, ChunkZ, Dimension? }` | No |
+| `LootTableModify` | `ModifyLootTable` | `{ Id, Builtin, AddPool(itemId, count, weight, minRolls, maxRolls) }` | No |
+| `LightningStrike` | | `{ X, Y, Z, Dimension, AffectedEntities? }` | No |
+| `BlockFallingLand` | | `{ Block, LandedOn, Dimension, X, Y, Z, Entity? }` | No |
+| `FarmlandTrample` | | `{ Block, Distance, Dimension, X, Y, Z, Player?, Entity? }` | Yes |
+| `EntitySpawnCheck` | | `{ Entity, Dimension?, X, Y, Z, SpawnReason }` | Yes |
+| `AnimalTame` | | `{ Entity, Player }` | Yes |
+| `EntityEnterSection` | | `{ Entity, SectionX, SectionY, SectionZ, PrevX, PrevY, PrevZ }` | No |
+| `ItemCrafted` / `ItemSmelted` | `PlayerCraftItem`, `PlayerSmeltItem` | `{ Player, Item }` | No |
+| `ItemPickupPre` / `FillBucket` | | `{ Player, Item }` | Yes |
+| `PlayerClone` | | `{ OldPlayer, NewPlayer, ConqueredEnd }` | No |
+| `ServerBeforeStart` / `ServerStarting` / `ServerStarted` / `ServerStopping` / `ServerStopped` | | `{}` | No |
+| `LevelSave` / `DataPackReload` | | `{ Dimension }` / `{}` | No |
+
+### Client Events (`src/client`)
+
+| Event Name | Payload Fields | Cancellable |
+| :--- | :--- | :--- |
+| `ClientChatSend` / `ClientChatReceived` / `ClientSystemMessage` | `{ Message }` | Yes |
+| `ClientPlayerJoin` / `ClientPlayerQuit` / `ClientPlayerRespawn` | `{ Player? }` | No |
+| `ItemTooltip` | `{ Item, Lines, AddLine(text), ClearLines() }` | No |
+| `ScreenInitPre` / `ScreenInitPost` | `{ ScreenClass, Width, Height }` | Pre only |
+| `ClientLeftClickAir` / `ClientRightClickAir` | `{ Player, Item?, Hand }` | No |
+| `ClientStarted` / `ClientStopping` / `ClientLevelLoad` / `ClientRecipesUpdated` / `ResourcePackReload` | `{ Dimension? }` | No |

@@ -52,6 +52,7 @@ public final class MinecraftClientEventListener {
                 }
             }
         });
+        ClientExtraEventForwarder.init();
     }
 
     public static void onClientTick() {

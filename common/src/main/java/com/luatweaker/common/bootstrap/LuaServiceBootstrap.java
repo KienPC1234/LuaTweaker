@@ -41,6 +41,9 @@ public final class LuaServiceBootstrap {
         com.luatweaker.core.bind.LuaBinder.bind(engine, "ModSync",
                 new com.luatweaker.common.modsync.ModSyncServiceImpl(),
                 com.luatweaker.api.modsync.IModSyncService.class, "ModSyncService");
+        com.luatweaker.core.bind.LuaBinder.bind(engine, "Architectury",
+                new com.luatweaker.common.platform.ArchitecturyServiceImpl(),
+                com.luatweaker.api.platform.IArchitecturyService.class, "ArchitecturyService");
     }
 
     /**

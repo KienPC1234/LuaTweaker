@@ -118,4 +118,7 @@ public interface IPlayer extends IEntity, IPlayerExtras {
 
     @LuaDoc(description = "Sets item stack in player inventory slot (0-based).", params = {"slot: integer", LuaDocFragments.Content.ITEM_ID, "[count: integer]"})
     default void setInventorySlot(int slot, @NotNull String itemId, @LuaDefault("1") int count) {}
+
+    @LuaDoc(description = "Returns true when this player is a fake/simulated player (via Architectury PlayerHooks).", returnType = "boolean")
+    default boolean isFake() { return false; }
 }

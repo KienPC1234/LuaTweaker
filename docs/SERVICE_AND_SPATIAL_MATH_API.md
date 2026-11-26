@@ -190,4 +190,20 @@ All runtime world-environment, gamerule, world-border, and player lookup calls a
 | `Server:GetWorldBorder([dim])` | `[dim]` | `table \| nil` | World border state for `dim` (`"minecraft:overworld"` default). |
 | `Server:SetWorldBorder(cx, cz, size[, lerpMs[, dim]])` | `number...[, string]` | `void` | Sets or interpolates world border for `dim`. |
 | `Players:GetPlayer(nameOrUuid)` | `string` | `Player \| nil` | Finds an online player by UUID, exact name, or case-insensitive name. |
+| `player:IsFake()` | | `boolean` | Returns true for simulated/fake players via Architectury `PlayerHooks`. |
+
+### `Architectury` Cross-Loader Service (`require("LuaTweaker.Architectury")`)
+
+| Method | Parameters | Return | Description |
+| :--- | :--- | :--- | :--- |
+| `Architectury:GetLoader()` | | `string` | Active loader id (`"neoforge"`, `"fabric"`, or `"architectury"`). |
+| `Architectury:GetMinecraftVersion()` | | `string` | Running Minecraft version string (e.g. `"1.21.1"`). |
+| `Architectury:IsDevelopmentEnvironment()` | | `boolean` | True in a dev workspace. |
+| `Architectury:IsModLoaded(modId)` | `string` | `boolean` | Checks if a mod is loaded via Architectury `Platform`. |
+| `Architectury:GetLoadedMods()` | | `string[]` | All loaded mod IDs. |
+| `Architectury:GetModInfo(modId)` | `string` | `table \| nil` | Metadata `{ Id, Name, Version, Description, Authors, License, Homepage?, Sources?, IssueTracker? }`. |
+| `Architectury:RegisterFuel(itemId, ticks)` | `string, integer` | `boolean` | Registers furnace burn time in ticks for any vanilla or modded item via `FuelRegistry`. |
+| `Architectury:GetBurnTime(itemId)` | `string` | `integer` | Returns burn time in ticks for `itemId`. |
+| `Architectury:AddToolTransform(kind, inBlock, outBlock)` | `string, string, string` | `boolean` | Registers `"strip"`/`"axe"`, `"flatten"`/`"shovel"`, or `"till"`/`"hoe"` block transforms cross-loader. |
+| `Architectury:AddWanderingTrade(buyId, sellId[, options])` | `string, string[, table]` | `boolean` | Adds Wandering Trader offers (`BuyCount`, `SellCount`, `MaxTrades`, `Xp`, `PriceMultiplier`, `Rare`, `Buy2`, `Buy2Count`). |
 
