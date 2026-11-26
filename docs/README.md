@@ -34,7 +34,7 @@ pick a system below.
 | :--- | :--- |
 | [EVENTS](EVENTS.md) | `Events:Listen`, `Signal`, threading (`Fire` vs `FireSync`), built-in events. |
 | [BEHAVIOR_TREES](BEHAVIOR_TREES.md) | Pure-Lua `Brain`: Selector/Sequence/Parallel/Utility, decorators, blackboards, Squad packs. |
-| [SERVICE_AND_SPATIAL_MATH_API](SERVICE_AND_SPATIAL_MATH_API.md) | `Task` (spawn/delay/wait), `TweenService`, `Vector3/Vector2/Color3`, math extensions. |
+| [SERVICE_AND_SPATIAL_MATH_API](SERVICE_AND_SPATIAL_MATH_API.md) | `Task` (spawn/delay/wait), `TweenService`, `Vector3/Vector2/Color3`, math, `World` env, `Server`/`Players`. |
 | [NETWORK](NETWORK.md) | RemoteEvent/RemoteFunction wire format, budgets, byte contract. |
 | [SERVER_MOD_PACKS](SERVER_MOD_PACKS.md) | Server-advertised LuaMod zips: per-bundle folders, prompt + consent, hash-pinned download (never auto-loaded). |
 

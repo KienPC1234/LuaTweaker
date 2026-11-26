@@ -17,9 +17,7 @@ final class InteractionParse {
     static InteractionBindingSupport.CoordinateArgs readCoordinates(ILuaValue[] args, String call) {
         int off = LuaBinder.getOffset(args);
         int dimOff = -1;
-        if (InteractionBindingSupport.hasMinArgs(args, off, 2)
-                && args[off].toJavaObject() instanceof String
-                && args[off + 1].isNumber()) {
+        if (isLeadingDimension(args, off)) {
             dimOff = off;
             off++;
         }
@@ -35,6 +33,12 @@ final class InteractionParse {
             return null;
         }
         return numberArgs;
+    }
+
+    private static boolean isLeadingDimension(ILuaValue[] args, int off) {
+        return InteractionBindingSupport.hasMinArgs(args, off, 2)
+                && args[off].toJavaObject() instanceof String
+                && (args[off + 1].isNumber() || args[off + 1].isTable());
     }
 
     private static boolean allNumbers(ILuaValue[] args, int off) {

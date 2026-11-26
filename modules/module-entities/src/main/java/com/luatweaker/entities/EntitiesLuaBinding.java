@@ -24,7 +24,9 @@ public final class EntitiesLuaBinding {
     private EntitiesLuaBinding() {}
 
     static {
-        // Any IEntity returned from a bound method becomes a full entity Lua table.
+        // Any IEntity/IPlayer returned from a bound method becomes a full entity/player Lua table.
+        LuaBinder.registerReturnConverter(IPlayer.class, (engine, value) ->
+                value instanceof IPlayer player ? createPlayerLuaTable(engine, player) : engine.nilValue());
         LuaBinder.registerReturnConverter(IEntity.class, (engine, value) ->
                 value instanceof IEntity entity ? createEntityLuaTable(engine, entity) : engine.nilValue());
     }
@@ -147,16 +149,7 @@ public final class EntitiesLuaBinding {
 
     public static void registerBindings(ILuaEngine engine) {
         ILuaTable playersTable = engine.createTable();
-        ILuaFunction getPlayersFn = args -> {
-            List<IPlayer> players = Platform.getEntity().getAllPlayers();
-            ILuaTable result = engine.createTable();
-            for (int i = 0; i < players.size(); i++) {
-                result.rawset(i + 1, createPlayerLuaTable(engine, players.get(i)));
-            }
-            return result;
-        };
-        playersTable.rawset("GetPlayers", getPlayersFn);
-        playersTable.rawset("getPlayers", getPlayersFn);
+        bindPlayerLookupMethods(engine, playersTable);
 
         ILuaFunction getLocalPlayerFn = args -> {
             IPlayer localPlayer = Platform.getEntity().getLocalPlayer();
@@ -178,5 +171,48 @@ public final class EntitiesLuaBinding {
 
         engine.registerService("Players", playersTable);
         engine.registerGlobal("Players", playersTable);
+    }
+
+    private static void bindPlayerLookupMethods(ILuaEngine engine, ILuaTable playersTable) {
+        ILuaFunction getPlayersFn = args -> {
+            List<IPlayer> players = Platform.getEntity().getAllPlayers();
+            ILuaTable result = engine.createTable();
+            for (int i = 0; i < players.size(); i++) {
+                result.rawset(i + 1, createPlayerLuaTable(engine, players.get(i)));
+            }
+            return result;
+        };
+        playersTable.rawset("GetPlayers", getPlayersFn);
+        playersTable.rawset("getPlayers", getPlayersFn);
+
+        ILuaFunction getPlayerFn = args -> {
+            int off = LuaBinder.getOffset(args);
+            if (args.length <= off || args[off].isNil()) {
+                return engine.nilValue();
+            }
+            String identifier = args[off].asString().trim();
+            IPlayer found = identifier.isEmpty() ? null : findPlayer(identifier);
+            return found != null ? createPlayerLuaTable(engine, found) : engine.nilValue();
+        };
+        playersTable.rawset("GetPlayer", getPlayerFn);
+        playersTable.rawset("getPlayer", getPlayerFn);
+    }
+
+    @Nullable
+    private static IPlayer findPlayer(String identifier) {
+        IPlayer byUuid = Platform.getEntity().getPlayer(identifier);
+        if (byUuid != null) {
+            return byUuid;
+        }
+        IPlayer caseInsensitiveMatch = null;
+        for (IPlayer player : Platform.getEntity().getAllPlayers()) {
+            if (player.getUuid().equalsIgnoreCase(identifier) || player.getName().equals(identifier)) {
+                return player;
+            }
+            if (caseInsensitiveMatch == null && player.getName().equalsIgnoreCase(identifier)) {
+                caseInsensitiveMatch = player;
+            }
+        }
+        return caseInsensitiveMatch;
     }
 }

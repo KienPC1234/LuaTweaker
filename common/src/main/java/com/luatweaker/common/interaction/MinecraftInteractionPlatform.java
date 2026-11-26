@@ -370,5 +370,104 @@ public class MinecraftInteractionPlatform implements IPlatformInteraction {
         return com.luatweaker.common.integration.geckolib.GeckoLibAnimationBridge.stopAnimation(
                 target, controllerName, animName);
     }
+
+    @Override
+    public long getDayTime(@NotNull String dimension) {
+        return WorldEnvOps.getDayTime(dimension);
+    }
+
+    @Override
+    public boolean setDayTime(@NotNull String dimension, long dayTime) {
+        return WorldEnvOps.applyDayTime(dimension, dayTime);
+    }
+
+    @Override
+    public long getGameTime(@NotNull String dimension) {
+        return WorldEnvOps.getGameTime(dimension);
+    }
+
+    @Override
+    @Nullable
+    public Map<String, Object> getWeather(@NotNull String dimension) {
+        return WorldEnvOps.getWeather(dimension);
+    }
+
+    @Override
+    public boolean setWeather(@NotNull String dimension, @NotNull String kind, int durationTicks) {
+        return WorldEnvOps.applyWeather(dimension, kind, durationTicks);
+    }
+
+    @Override
+    @Nullable
+    public String getBiome(@NotNull String dimension, int x, int y, int z) {
+        return WorldEnvOps.getBiome(dimension, x, y, z);
+    }
+
+    @Override
+    public int getLightLevel(@NotNull String dimension, int x, int y, int z, @NotNull String kind) {
+        return WorldEnvOps.getLightLevel(dimension, x, y, z, kind);
+    }
+
+    @Override
+    public boolean canSeeSky(@NotNull String dimension, int x, int y, int z) {
+        return WorldEnvOps.canSeeSky(dimension, x, y, z);
+    }
+
+    @Override
+    public int getHighestBlockY(@NotNull String dimension, int x, int z, @NotNull String kind) {
+        return WorldEnvOps.getHighestBlockY(dimension, x, z, kind);
+    }
+
+    @Override
+    public boolean isChunkLoaded(@NotNull String dimension, int x, int z) {
+        return ServerLevels.map(ServerLevels.resolve(dimension), false,
+                level -> BlockStateCodec.isChunkLoaded(level, x, z));
+    }
+
+    @Override
+    @Nullable
+    public String getDifficulty(@NotNull String dimension) {
+        return ServerLevels.map(ServerLevels.resolve(dimension), null,
+                level -> level.getDifficulty().name());
+    }
+
+    @Override
+    public long getSeed(@NotNull String dimension) {
+        return ServerLevels.map(ServerLevels.resolve(dimension), 0L, ServerLevel::getSeed);
+    }
+
+    @Override
+    @Nullable
+    public Map<String, Object> getWorldSpawn(@NotNull String dimension) {
+        return WorldBorderOps.getWorldSpawn(dimension);
+    }
+
+    @Override
+    public boolean setWorldSpawn(@NotNull String dimension, int x, int y, int z, float angle) {
+        return WorldBorderOps.applyWorldSpawn(dimension, x, y, z, angle);
+    }
+
+    @Override
+    @Nullable
+    public Map<String, Object> getWorldBorder(@NotNull String dimension) {
+        return WorldBorderOps.getWorldBorder(dimension);
+    }
+
+    @Override
+    public boolean setWorldBorder(@NotNull String dimension, double centerX, double centerZ,
+                                  double size, long lerpMillis) {
+        return WorldBorderOps.applyWorldBorder(dimension, centerX, centerZ, size, lerpMillis);
+    }
+
+    @Override
+    @Nullable
+    public Object getGameRule(@NotNull String ruleName) {
+        return GameRuleAccess.get(ruleName);
+    }
+
+    @Override
+    public boolean setGameRule(@NotNull String ruleName, @NotNull Object value) {
+        return GameRuleAccess.set(ruleName, value);
+    }
 }
 

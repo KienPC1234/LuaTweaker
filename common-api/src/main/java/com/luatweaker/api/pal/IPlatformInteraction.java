@@ -239,4 +239,83 @@ public interface IPlatformInteraction {
     default boolean stopGeoAnimation(@NotNull Object target, @NotNull String controllerName, @NotNull String animName) {
         return false;
     }
+
+    default long getDayTime(@NotNull String dimension) {
+        return -1L;
+    }
+
+    default boolean setDayTime(@NotNull String dimension, long dayTime) {
+        return false;
+    }
+
+    default long getGameTime(@NotNull String dimension) {
+        return -1L;
+    }
+
+    @Nullable
+    default java.util.Map<String, Object> getWeather(@NotNull String dimension) {
+        return null;
+    }
+
+    default boolean setWeather(@NotNull String dimension, @NotNull String kind, int durationTicks) {
+        return false;
+    }
+
+    @Nullable
+    default String getBiome(@NotNull String dimension, int x, int y, int z) {
+        return null;
+    }
+
+    default int getLightLevel(@NotNull String dimension, int x, int y, int z, @NotNull String kind) {
+        return -1;
+    }
+
+    default boolean canSeeSky(@NotNull String dimension, int x, int y, int z) {
+        return false;
+    }
+
+    default int getHighestBlockY(@NotNull String dimension, int x, int z, @NotNull String kind) {
+        return Integer.MIN_VALUE;
+    }
+
+    default boolean isChunkLoaded(@NotNull String dimension, int x, int z) {
+        return false;
+    }
+
+    @Nullable
+    default String getDifficulty(@NotNull String dimension) {
+        return null;
+    }
+
+    default long getSeed(@NotNull String dimension) {
+        return 0L;
+    }
+
+    @Nullable
+    default java.util.Map<String, Object> getWorldSpawn(@NotNull String dimension) {
+        return null;
+    }
+
+    default boolean setWorldSpawn(@NotNull String dimension, int x, int y, int z, float angle) {
+        return false;
+    }
+
+    @Nullable
+    default java.util.Map<String, Object> getWorldBorder(@NotNull String dimension) {
+        return null;
+    }
+
+    default boolean setWorldBorder(@NotNull String dimension, double centerX, double centerZ,
+                                   double size, long lerpMillis) {
+        return false;
+    }
+
+    @Nullable
+    default Object getGameRule(@NotNull String ruleName) {
+        return null;
+    }
+
+    default boolean setGameRule(@NotNull String ruleName, @NotNull Object value) {
+        return false;
+    }
 }

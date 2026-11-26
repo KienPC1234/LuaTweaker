@@ -1,15 +1,19 @@
 package com.luatweaker.common.server;
 
+import com.luatweaker.api.entity.IPlayer;
 import com.luatweaker.api.server.IServerService;
+import com.luatweaker.common.CommonServerHolder;
+import com.luatweaker.common.interaction.WorldBorderOps;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import com.luatweaker.common.CommonServerHolder;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.UUID;
+import java.util.List;
+import java.util.Map;
 
-/** NeoForge-backed {@link IServerService}. */
+/** Architectury common {@link IServerService}. */
 public final class ServerServiceImpl implements IServerService {
 
     private static final int FULL_TPS = 20;
@@ -55,7 +59,7 @@ public final class ServerServiceImpl implements IServerService {
         if (message == null) {
             throw new IllegalArgumentException("Server:Broadcast requires a message");
         }
-        requireServer().getPlayerList()
+        ServerOps.requireServer().getPlayerList()
                 .broadcastSystemMessage(Component.literal(message), false);
     }
 
@@ -64,8 +68,8 @@ public final class ServerServiceImpl implements IServerService {
         if (playerNameOrUuid == null || playerNameOrUuid.isBlank() || reason == null) {
             throw new IllegalArgumentException("Server:Kick requires a player name/UUID and a reason");
         }
-        MinecraftServer server = requireServer();
-        ServerPlayer player = findPlayer(server, playerNameOrUuid);
+        MinecraftServer server = ServerOps.requireServer();
+        ServerPlayer player = ServerOps.findPlayer(server, playerNameOrUuid);
         if (player == null) {
             return false;
         }
@@ -73,19 +77,21 @@ public final class ServerServiceImpl implements IServerService {
         return true;
     }
 
-    private static ServerPlayer findPlayer(MinecraftServer server, String nameOrUuid) {
-        try {
-            return server.getPlayerList().getPlayer(UUID.fromString(nameOrUuid));
-        } catch (IllegalArgumentException notUuid) {
-            return server.getPlayerList().getPlayerByName(nameOrUuid);
-        }
+    @Override
+    @NotNull
+    public List<IPlayer> getPlayers() {
+        return ServerOps.getOnlinePlayers();
     }
 
-    private static MinecraftServer requireServer() {
-        MinecraftServer server = CommonServerHolder.get();
-        if (server == null) {
-            throw new IllegalStateException("No server is running");
-        }
-        return server;
+    @Override
+    @Nullable
+    public Map<String, Object> getWorldBorder(@NotNull String dimension) {
+        return WorldBorderOps.getWorldBorder(dimension);
+    }
+
+    @Override
+    public void setWorldBorder(double centerX, double centerZ, double size,
+                               long lerpMillis, @NotNull String dimension) {
+        WorldBorderOps.applyWorldBorder(dimension, centerX, centerZ, size, lerpMillis);
     }
 }

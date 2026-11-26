@@ -34,6 +34,9 @@ public final class InteractionLuaBinding {
         WorldCapabilityBinding.bindWorkspaceCapabilities(engine, workspaceTable);
         WorldUtilityBinding.bindWorkspaceUtility(engine, workspaceTable);
         WorldAnimationBinding.bindWorkspaceAnimation(engine, workspaceTable);
+        WorldEnvTimeWeatherBinding.bind(engine, workspaceTable);
+        WorldEnvSpatialBinding.bind(engine, workspaceTable);
+        WorldEnvMetaBinding.bind(engine, workspaceTable);
 
         // 2. EntityService Service
         ILuaTable entityServiceTable = EntityServiceBinding.bindEntityService(engine, workspaceTable);

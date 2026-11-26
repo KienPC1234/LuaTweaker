@@ -153,3 +153,41 @@ if island > 0.35 then
     -- solid ground, else carve air
 end
 ```
+
+---
+
+## 7. Server & World Runtime Environment (`World`, `Server`, `Players`)
+
+All runtime world-environment, gamerule, world-border, and player lookup calls are low-level server primitives running through Architectury PAL (`ServerLevel` on both NeoForge and Fabric). Spatial queries (`GetBiome`, `GetLightLevel`, `CanSeeSky`, `GetHighestBlockY`) return `nil` / `false` cleanly if the target chunk is not loaded instead of force-loading chunks.
+
+### `World` Runtime Environment
+
+| Method | Parameters | Return | Description |
+| :--- | :--- | :--- | :--- |
+| `World:GetDayTime` | `[dim]` | `number \| nil` | Current day time in ticks (`"minecraft:overworld"` default). |
+| `World:SetDayTime` | `[dim,] ticks` | `boolean` | Sets non-negative dimension day time in ticks. |
+| `World:GetGameTime` | `[dim]` | `number \| nil` | Total elapsed world ticks. |
+| `World:GetWeather` | `[dim]` | `table \| nil` | `{ Raining, Thundering, RainLevel, ThunderLevel }`. |
+| `World:IsRaining` / `IsThundering` | `[dim]` | `boolean` | Quick weather flags for the dimension. |
+| `World:SetWeather` | `[dim,] kind[, duration]` | `boolean` | Sets `"clear"`, `"rain"`, or `"thunder"` (`duration` defaults to 6000 ticks). |
+| `World:GetBiome` | `[dim,] x, y, z \| pos` | `string \| nil` | Live biome registry ID at block coordinates. |
+| `World:GetLightLevel` | `[dim,] pos[, kind]` | `number \| nil` | Light level `0..15` (`"all"`, `"sky"`, `"block"`). |
+| `World:CanSeeSky` | `[dim,] x, y, z \| pos` | `boolean` | True when position has direct sky access in a loaded chunk. |
+| `World:GetHighestBlockY` | `[dim,] x, z \| pos[, kind]` | `number \| nil` | Heightmap Y (`"motion_blocking"`, `"world_surface"`, `"ocean_floor"`, `"motion_blocking_no_leaves"`). |
+| `World:IsChunkLoaded` | `[dim,] x, z \| pos` | `boolean` | Non-blocking chunk-loaded check. |
+| `World:GetWorldSpawn` | `[dim]` | `table \| nil` | `{ X, Y, Z, Angle }` shared spawn position and facing angle. |
+| `World:SetWorldSpawn` | `[dim,] x, y, z \| pos[, angle]` | `boolean` | Updates shared world spawn coordinates and angle. |
+| `World:GetDifficulty` / `GetSeed` | `[dim]` | `string \| number` | Dimension difficulty name or 64-bit world seed. |
+| `World:GetWorldBorder` | `[dim]` | `table \| nil` | `{ CenterX, CenterZ, Size, DamagePerBlock, DamageSafeZone, WarningTime, WarningBlocks }`. |
+| `World:SetWorldBorder` | `[dim,] cx, cz, size[, lerpMs]` | `boolean` | Clamps and updates border center and diameter (instant or interpolated). |
+| `World:GetGameRule` / `SetGameRule` | `ruleName[, value]` | `boolean \| number \| nil` | Reads or sets vanilla/modded boolean or integer `GameRules` dynamically. |
+
+### `Server` & `Players` Runtime Access
+
+| Method | Parameters | Return | Description |
+| :--- | :--- | :--- | :--- |
+| `Server:GetPlayers()` | | `Player[]` | All online players converted to full `Player` Lua tables. |
+| `Server:GetWorldBorder([dim])` | `[dim]` | `table \| nil` | World border state for `dim` (`"minecraft:overworld"` default). |
+| `Server:SetWorldBorder(cx, cz, size[, lerpMs[, dim]])` | `number...[, string]` | `void` | Sets or interpolates world border for `dim`. |
+| `Players:GetPlayer(nameOrUuid)` | `string` | `Player \| nil` | Finds an online player by UUID, exact name, or case-insensitive name. |
+

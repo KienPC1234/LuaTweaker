@@ -6,8 +6,12 @@ import com.luatweaker.api.vm.ILuaValue;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayDeque;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -49,11 +53,54 @@ final class LuaResultConverter {
         if (result instanceof List<?> list) {
             return toLuaList(engine, list);
         }
-        LuaBinder.ValueConverter converter = RETURN_CONVERTERS.get(returnType);
+        LuaBinder.ValueConverter converter = findConverter(returnType);
+        if (converter == null) {
+            converter = findConverter(result.getClass());
+        }
         if (converter != null) {
             return converter.toLua(engine, result);
         }
         return engine.wrapUserdata(result);
+    }
+
+    /**
+     * Finds the most specific converter for {@code type} via breadth-first search
+     * over direct interfaces and superclasses so sub-interfaces (such as {@code IPlayer}
+     * extending {@code IEntity}) win cleanly over broader parent converters.
+     */
+    private static @Nullable LuaBinder.ValueConverter findConverter(@Nullable Class<?> type) {
+        if (type == null) {
+            return null;
+        }
+        LuaBinder.ValueConverter exact = RETURN_CONVERTERS.get(type);
+        if (exact != null || RETURN_CONVERTERS.isEmpty()) {
+            return exact;
+        }
+        Queue<Class<?>> queue = new ArrayDeque<>();
+        Set<Class<?>> visited = new HashSet<>();
+        queue.add(type);
+        visited.add(type);
+        while (!queue.isEmpty()) {
+            Class<?> current = queue.poll();
+            LuaBinder.ValueConverter hit = RETURN_CONVERTERS.get(current);
+            if (hit != null) {
+                return hit;
+            }
+            enqueueHierarchy(current, queue, visited);
+        }
+        return null;
+    }
+
+    private static void enqueueHierarchy(Class<?> current, Queue<Class<?>> queue, Set<Class<?>> visited) {
+        for (Class<?> iface : current.getInterfaces()) {
+            if (visited.add(iface)) {
+                queue.add(iface);
+            }
+        }
+        Class<?> parent = current.getSuperclass();
+        if (parent != null && visited.add(parent)) {
+            queue.add(parent);
+        }
     }
 
     /**
