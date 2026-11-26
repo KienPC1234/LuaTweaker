@@ -5,7 +5,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Global accessor for the active {@link ILuaTweakerLog} implementation.
  *
- * <p>Platform modules (neoforge-platform, etc.) call {@link #set(ILuaTweakerLog)}
+ * <p>The platform bootstrap ({@code LuaTweakerCommon}) calls {@link #set(ILuaTweakerLog)}
  * during mod init. All subsystems then call {@link #get()} freely - never
  * importing a concrete class.</p>
  *

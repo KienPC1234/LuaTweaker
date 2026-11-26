@@ -1,6 +1,6 @@
 # LuaTweaker READ THIS FIRST (SUPREME DIRECTIVE - DO NOT DO THE WORK FOR THE USER)
 
-Minecraft 1.21.1 NeoForge mod — Lua scripting engine with runtime recipe/content patching.
+Minecraft 1.21.1 Multi-Loader (Architectury: NeoForge & Fabric) mod — Lua scripting engine with runtime recipe/content patching.
 
 > **LEVEL 0 RED ALERT: LOW-LEVEL API PHILOSOPHY (ANTI-LOOPHOLING)**
 > **Your mission is to PROVIDE TOOLS, NOT TO DO THE WORK FOR THEM.**
@@ -93,7 +93,7 @@ Never commit or embed API keys, tokens, passwords, database URLs — even "place
 
 - Read the surrounding code, dependencies, imports, and existing implementations before editing.
 - Respect existing patterns: module/builder architecture, Roblox-style Lua conventions, LuaBinder auto-binding (Section 5).
-- Check environment parity: Java 21, NeoForge 21.1.242, luava 0.2.7 (Lua 5.4), Luau-style Lua.
+- Check environment parity: Java 21, Architectury 13.0.8 (NeoForge 21.1.242 & Fabric 0.16.10), luava 0.2.7 (Lua 5.4), Luau-style Lua.
 
 ## 0.10 — NO Silent Errors — Loud, Honest Failure Reporting
 
@@ -268,7 +268,7 @@ public class ExampleModuleLuaBinding {
 ```
 `LuaBinder` (core-engine) automatically: converts parameters (String/int/double/boolean/table/IEntity), strips `self` from colon calls, generates PascalCase aliases, applies `@LuaDefault`, throws clear errors when required arguments are missing, and converts return values. Writing manual glue (`getOffset` + `args[i].asInt()` + delegate) in new bindings is STRICTLY BANNED.
 
-### Step 4: Register in `LuaServiceBootstrap` (+ stub in `LuaTweakerMod.generateStubs`)
+### Step 4: Register in `LuaServiceBootstrap` (+ stub in `LuaStubSynchronizer`)
 ```java
 ExampleModuleLuaBinding.registerBindings(engine, exampleService);
 stubGen.registerService("ExampleModule", IExampleModuleService.class);
@@ -287,11 +287,11 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 
 | Principle | Enforcement |
 |---|---|
-| **S**ingle Responsibility | Every class/module/method has EXACTLY ONE reason to change. `common-api` = pure abstraction; `core-engine` = VM wrapper + LuaBinder + logger + stubs; `modules/*` = exactly one domain; `neoforge-platform` = bootstrap + PAL implementation. |
+| **S**ingle Responsibility | Every class/module/method has EXACTLY ONE reason to change. `common-api` = pure abstraction; `core-engine` = VM wrapper + LuaBinder + logger + stubs; `modules/*` = exactly one domain; `common` = shared Architectury Minecraft PAL + registrars; `neoforge` / `fabric` = loader entrypoints + native capabilities. |
 | **O**pen/Closed | Adding features = adding code (new bindings, new services), NOT modifying running code. `InterceptionHelper` is closed; `LuaServiceRegistry` is extended via `register()`. |
 | **L**iskov Substitution | Every PAL implementation is substitutable for its base type. Tests with `Mock*` MUST pass alongside the real implementation. |
 | **I**nterface Segregation | Small, focused interfaces tailored to client needs. If an implementation has to stub a method → SPLIT the interface immediately. |
-| **D**ependency Inversion | Only `neoforge-platform` imports NeoForge/Minecraft. `common-api` has zero dependencies. The module graph is a strict DAG. |
+| **D**ependency Inversion | Only `common`, `neoforge`, and `fabric` import Minecraft/loader APIs. `common-api` has zero dependencies. The module graph is a strict DAG. |
 
 ---
 
@@ -308,9 +308,9 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 
 # CRITICAL SECTION 4 — Cross-Platform Architecture (PAL)
 
-- `core-engine` + `modules/*` **MUST NOT** import `net.minecraft.*` or `net.neoforged.*` — violations are REJECTED.
+- `core-engine` + `modules/*` **MUST NOT** import `net.minecraft.*`, `net.neoforged.*`, or `net.fabricmc.*` — violations are REJECTED.
 - All platform calls route through `Platform.getInstance().<method>()` or `Platform.getX()`.
-- Adding a capability → add to `Platform` interface + implement in `NeoForgePlatform` — zero changes for consumers.
+- Adding a capability → add to `Platform` interface + implement shared logic in `common` (`Minecraft*Platform`) and loader-specific hooks in `neoforge` / `fabric` — zero changes for consumers.
 - Tests do not require a Minecraft runtime (mock through interfaces).
 
 ---
@@ -328,10 +328,10 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 
 ## 5.2 — ONE Unified Entity API (Dual Parallel Wrappers BANNED)
 
-- `IEntity` is the sole wrapper. `NeoForgeEntityWrapper` + `NeoForgePlayerWrapper` are implementations; `NeoForgeInteractableEntity implements IEntity` (no secondary view).
+- `IEntity` is the sole wrapper. `MinecraftEntityWrapper` + `MinecraftPlayerWrapper` are implementations; `MinecraftInteractableEntity implements IEntity` (no secondary view).
 - Lua entity/player tables: `EntitiesLuaBinding.createEntityLuaTable` / `createPlayerLuaTable` — method style + property aliases (Health, MaxHealth, Type, CustomName, Velocity, Position) via metatable.
 - Creating a second entity API (like the old `wrapEntity` with mismatched method names: `ShootProjectile` vs `shootProjectile`) is STRICTLY BANNED.
-- Projectiles: **EXACTLY ONE place** to fire — `EntityInteractionHelper.shootProjectile/shootProjectileAt` + `NeoForgeInteractableEntity` overrides delegating to the helper. Dual independent switch tables are BANNED.
+- Projectiles: **EXACTLY ONE place** to fire — `EntityInteractionHelper.shootProjectile/shootProjectileAt` + `MinecraftInteractableEntity` overrides delegating to the helper. Dual independent switch tables are BANNED.
 
 ## 5.3 — Event Bus: Shared + Replace Semantics
 
@@ -525,5 +525,5 @@ Dev workspace: `luamods/` -> synced to `neoforge/run/luamods/` and `fabric/run/l
 
 - Tests use `Mock*` interfaces — no Minecraft runtime required.
 - `AsyncFileLogger` shuts down in `@AfterAll`.
-- `EngineTest.findScriptFile()` — relative path + fallback `../../` for IDE vs CLI parity.
+- `RecipeScriptFixture.findScriptFile()` — resolves test Lua fixtures from `modules/module-recipes/src/test/resources/`.
 - Every module has its own `build.gradle` with JUnit dependencies; new modules must add test dependencies if needed.

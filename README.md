@@ -41,7 +41,7 @@ Design rules:
 /lt doctor   # in-game: mods + load errors + engine/service status
 ```
 
-Requirements: **Java 21 (Temurin)**, Gradle wrapper, NeoForge 21.1.242.
+Requirements: **Java 21 (Temurin)**, Gradle wrapper, NeoForge 21.1.242 or Fabric Loader 0.16.10.
 Full setup: [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md).
 
 Game-folder layout (generated on launch):
@@ -155,10 +155,6 @@ Start here: [`docs/README.md`](docs/README.md) (full index) ·
 [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) ·
 [`docs/SCRIPTING_GUIDE.md`](docs/SCRIPTING_GUIDE.md) ·
 [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)
-
-> Some docs under `docs/` describe older API surfaces and are marked
-> `stale` at the top. The `docs/README.md` index labels them —
-> do not implement from stale files.
 
 ---
 

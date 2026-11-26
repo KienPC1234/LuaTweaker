@@ -1,10 +1,10 @@
 # Addon Developer Guide for LuaTweaker
 
-> **Target:** Minecraft 1.21.1 (NeoForge) | **Java:** 21 | **Runtime:** luava 0.2.7 (`org.luava.*`)
+> **Target:** Minecraft 1.21.1 (NeoForge & Fabric) | **Java:** 21 | **Runtime:** luava 0.2.7 (`org.luava.*`)
 
 This guide is for Java mod developers who want to expose APIs, callbacks and events to Lua scripts.
 LuaTweaker keeps a thin SPI: addons bind against `ILuaEngine` and `LuaBinder`. Do not import
-`org.luava.*`, `net.minecraft.*` or `net.neoforged.*` outside the platform layer.
+`org.luava.*`, `net.minecraft.*`, `net.neoforged.*` or `net.fabricmc.*` outside the platform layer.
 
 ---
 
@@ -100,8 +100,8 @@ LuaBinder.bind(engine, "MyAddon", new MyAddonApiImpl(engine), IMyAddonApi.class)
 ```
 
 > **No fork required (plugin runtime hook).** Do NOT patch `LuaServiceBootstrap`,
-> `LuaTweakerMod`, `settings.gradle` or `neoforge-platform/build.gradle`. Instead wrap the
-> binding above in an `ILuaTweakerPlugin` and expose it once — the engine discovers it on
+> `LuaTweakerCommon`, `settings.gradle` or the loader `build.gradle` files. Instead wrap the
+> binding above in an `ILuaTweakerPlugin` and expose it once - the engine discovers it on
 > every reload (see section 6):
 
 ```java
@@ -191,16 +191,23 @@ The engine calls every discovered plugin at the end of `LuaServiceBootstrap.regi
 (on every `/lt reload`), after all built-in services. A plugin that throws only fails itself —
 the reload continues and the error is logged with the plugin id.
 
-**Path A — separate NeoForge mod (recommended for Minecraft API access).**
-Your mod depends on LuaTweaker and registers once from its own mod constructor:
+**Path A - separate NeoForge or Fabric mod (recommended for Minecraft API access).**
+Your mod depends on LuaTweaker and registers once from its own mod constructor / initializer:
 
 ```java
+// NeoForge (@Mod)
 public MyAddonMod(IEventBus bus, ModContainer container) {
+    LuaTweakerPluginRegistry.register(new MyAddonPlugin());
+}
+
+// Fabric (ModInitializer)
+@Override
+public void onInitialize() {
     LuaTweakerPluginRegistry.register(new MyAddonPlugin());
 }
 ```
 
-**Path B — plain jar via ServiceLoader (no NeoForge mod needed).**
+**Path B - plain jar via ServiceLoader (no loader mod needed).**
 Ship a jar containing the plugin class plus:
 
 ```

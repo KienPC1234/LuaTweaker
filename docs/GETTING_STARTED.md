@@ -1,12 +1,14 @@
 # Getting Started
 
-Target: **Minecraft 1.21.1 (NeoForge)** · **Java 21 (Temurin)** · **Lua 5.4 (luava 0.2.7)**.
+Target: **Minecraft 1.21.1 (NeoForge & Fabric)** · **Java 21 (Temurin)** · **Lua 5.4 (luava 0.2.7)**.
 
 ## 1. Run it
 
 ```sh
-./gradlew :neoforge-platform:runClient   # or :neoforge-platform:runServer
-./gradlew :neoforge-platform:classes :neoforge-platform:syncLua  # fast Lua-only iteration
+./gradlew :neoforge:runClient             # or :neoforge:runServer
+./gradlew :fabric:runClient               # or :fabric:runServer
+./gradlew :neoforge:classes :neoforge:syncLuaMods   # fast Lua-only iteration (NeoForge)
+./gradlew :fabric:classes :fabric:syncLuaMods       # fast Lua-only iteration (Fabric)
 ./gradlew test                            # all tests (mocks only, no Minecraft needed)
 ./gradlew build                           # full CI build
 ```
@@ -27,7 +29,7 @@ logs/luatweaker/        engine log + per-mod logs
 also cover the startup load phase. All caps ship disabled (`0`); see
 [TROUBLESHOOTING](TROUBLESHOOTING.md#-4-runaway-script-protection) for recommended values.
 
-Dev workspace `neoforge-platform/luamods/` syncs to `run/luamods/` via `syncLuaMods`.
+Dev workspace `luamods/` at the repository root syncs to `neoforge/run/luamods/` and `fabric/run/luamods/` via `syncLuaMods`.
 The shipped example mod is `luatweaker_test` (content + recipes + brain demos).
 
 ## 2. Your first mod (5 minutes)

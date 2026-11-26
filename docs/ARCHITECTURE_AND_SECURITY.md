@@ -1,6 +1,6 @@
 # Engine Architecture, Isolation Security & Technical Specification
 
-LuaTweaker is a modular, multi-tier Lua 5.1/Luau execution engine for Minecraft 1.21.1 (NeoForge).
+LuaTweaker is a modular, multi-loader Lua 5.4 (Luava) execution engine for Minecraft 1.21.1 (Architectury: NeoForge & Fabric).
 
 ---
 
@@ -35,11 +35,13 @@ LuaTweaker enforces strict Single Responsibility Principle (SRP) and Dependency 
 ```
 common-api (Pure Java 21 Interfaces, zero external dependencies)
     ^
-core-engine (Luava 0.2.7 VM wrapper, Logger, EmmyLua Stub Generator)
+core-engine (Luava 0.2.7 VM wrapper, LuaBinder, Logger, EmmyLua Stub Generator)
     ^
-modules/module-* (Domain-specific bindings: recipes, entities, events, tasks, math, client, network)
+modules/module-* (Domain-specific bindings: recipes, entities, events, tasks, math, client, network, ...)
     ^
-neoforge-platform (NeoForge Bootstrap launcher, concrete PAL implementations)
+common (Shared Architectury Minecraft PAL, registrars, commands, mixins)
+    ^
+neoforge / fabric (Loader entrypoints, native capabilities/transfer, loader events)
 ```
 
 ---
@@ -50,7 +52,7 @@ To prevent cross-script variable pollution and global environment corruption:
 
 1. **Isolated Table Environments:** Each script file (`.lua`) is executed within its own local environment table. Global variable definitions in one script do not pollute or mutate globals in sibling scripts.
 2. **Read-Only System Metatables (`__newindex`):** Core system objects are locked with protected metatables. Mutation attempts trigger security exceptions without crashing the VM.
-3. **Headless Dedicated Server Protection (`Dist.DEDICATED_SERVER`):** Client-only visual APIs evaluate runtime environment state via `FMLEnvironment.dist`. On dedicated servers, calls safely log diagnostic info and operate as non-blocking no-ops.
+3. **Headless Dedicated Server Protection (`Env.SERVER`):** Client-only visual APIs evaluate runtime environment state via `Platform.getClientOrNull()` and Architectury `Platform.getEnvironment()`. On dedicated servers, calls safely log diagnostic info and operate as non-blocking no-ops.
 4. **File sandbox:** the VM exposes no `io`/`os` file functions. `mod:Files()` reads only the owning mod's folder or `.zip`; `mod:Exports()` writes only `<gameDir>/luatweaker/exports/<mod_id>/`. Every path is normalized and containment-checked (including symlink escapes) by `LuaModPathSecurity`; reads/writes are size-capped and writes are atomic. Exports are local files and are never synced to clients or servers.
 
 ---

@@ -5,10 +5,10 @@ package com.luatweaker.api.command;
  *
  * <h3>Extension guide</h3>
  * <ol>
- *   <li>Create a new class in {@code neoforge-platform} (or any platform module)
+ *   <li>Create a new class in {@code common} (or a loader-specific platform module)
  *       that implements {@code ILuaTweakerCommand}.</li>
- *   <li>Register it via {@code LuaTweakerCommandRegistry.register(myCmd)} inside
- *       a {@code RegisterCommandsEvent} handler.</li>
+ *   <li>Register it via {@code LuaTweakerCommandRegistry.register(myCmd)} during
+ *       command registration ({@code CommandRegistrationEvent}).</li>
  *   <li>The command will be reachable as
  *       {@code /luatweaker <getName()> [args…]}.</li>
  * </ol>

@@ -96,9 +96,18 @@ class RecipeScriptFixture {
     }
 
     File findScriptFile(String path) {
-        File file = new File(path);
+        ClassLoader loader = Thread.currentThread().getContextClassLoader();
+        java.net.URL resource = loader != null ? loader.getResource(path) : null;
+        if (resource != null) {
+            try {
+                return new File(resource.toURI());
+            } catch (java.net.URISyntaxException e) {
+                throw new IllegalStateException("Invalid test resource URI: " + resource, e);
+            }
+        }
+        File file = new File("src/test/resources/" + path);
         if (!file.exists()) {
-            file = new File("../../" + path);
+            file = new File("modules/module-recipes/src/test/resources/" + path);
         }
         return file;
     }

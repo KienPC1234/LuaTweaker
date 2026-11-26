@@ -201,7 +201,7 @@ re-call `activatePass` — the chain is re-read from the virtual pack then.
 
 Right-click the Crystal Detector and the screen becomes a radar: range rings,
 a rotating sweep with trail, and orange blips toward real scanned ores.
-`neoforge-platform/luamods/luatweaker_test/src/client/radar_demo.lua`
+`luamods/luatweaker_test/src/client/radar_demo.lua`
 (listen on the existing `HighlightOres` event, no item changes needed):
 
 ```lua

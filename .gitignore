@@ -1,7 +1,10 @@
 ### Gradle & Architectury ###
-.gradle
+.gradle/
+**/.gradle/
 .architectury-transformer/
+**/.architectury-transformer/
 build/
+**/build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/**/build/
 
@@ -27,12 +30,15 @@ out/
 bin/
 !**/src/**/bin/
 
-### OS ###
+### OS & Python ###
 .DS_Store
 Thumbs.db
+**/__pycache__/
+*.py[cod]
 
 ### Minecraft Modding ###
 run/
+**/run/
 !**/src/**/run/
 **/src/generated/**/.cache/
 repo/
@@ -41,13 +47,14 @@ neoforge-docs/
 
 ### LuaTweaker runtime & test-generated state ###
 luaconfig/
+**/luaconfig/
 luamods/.luatweaker/
-config/luatweaker.json
-config/luatweaker/
+**/luamods/.luatweaker/
+**/config/luatweaker.json
+**/config/luatweaker/
 **/world_storage.bson
 **/player_storage.bson
 **/shader-cache/
-tools/__pycache__/
 
 ### Stray javac args ###
 javac.*.args
@@ -55,3 +62,4 @@ javac.*.args
 ### Logs ###
 *.log
 logs/
+**/logs/

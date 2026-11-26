@@ -8,10 +8,10 @@ LuaTweaker provides health diagnostics and hot-reloading for modpack creators, p
 
 | Command | Permission | Description |
 | :--- | :--- | :--- |
-| `/lt reload [data\|resources\|all]` | op (2) | Reloads datapack/resources through the server. Lua scripts are **not** re-executed and new Lua command paths are **not** registered until a full datapack reload/restart. |
+| `/lt reload [data\|resources\|all]` | op (2) | Hot-reloads LuaMods, regenerates EmmyLua stubs, syncs newly declared Lua commands to online players, and triggers server datapack reload. |
 | `/lt hand` | op (2), players only | Inspects main-hand item (ID, count, NBT, tags). Empty hand inspects the targeted block (ID, state, tags) with clickable Lua snippets. |
-| `/lt syntax [path]` | op (2) | Syntax-checks Lua files without executing (default: `lua/server/`). Paths are contained to `lua/`. |
-| `/lt list [folder]` | all (0) | Lists `.lua` scripts in a folder (default: `server`). Paths are contained to `lua/`. |
+| `/lt syntax [path\|<mod_id>]` | op (2) | Syntax-checks Lua files without executing (defaults to `luamods/`). Paths are contained inside `luamods/`. |
+| `/lt list [server\|client\|startup\|<mod_id>]` | all (0) | Lists discovered LuaMods (default) or `.lua` scripts inside a phase/mod folder under `luamods/`. |
 | `/lt debug [on\|off]` | owner (4) | Toggles debug mode (no arg prints state). |
 | `/lt doctor` | all (0) | Health diagnostics: engine, loaded mods, per-mod load errors, update checks, services, Lua tasks, Lua-registered commands. |
 | `/lt dimension <list\|info <id>\|tp <id> [playerName]\|bench <id> [radius]>` | op (2) | Lists Lua-registered dimensions, prints config, teleports the executing player or a named online player (console must supply `playerName`), and measures the Lua terrain pipeline (`bench`, radius 0-8). |

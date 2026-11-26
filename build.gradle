@@ -13,6 +13,79 @@ tasks.named('jar') {
     enabled = false
 }
 
+ext {
+    pureJavaModules = [
+        ':common-api',
+        ':core-engine',
+        ':modules:module-recipes',
+        ':modules:module-content',
+        ':modules:module-entities',
+        ':modules:module-interaction',
+        ':modules:module-events',
+        ':modules:module-math',
+        ':modules:module-storage',
+        ':modules:module-network',
+        ':modules:module-client',
+        ':modules:module-interception',
+        ':modules:module-command',
+        ':modules:module-tasks',
+        ':modules:module-loot',
+        ':modules:module-worldgen',
+        ':modules:module-noise',
+        ':modules:module-dimensions',
+        ':modules:module-spawnrules',
+        ':modules:module-structures',
+        ':modules:module-update',
+        ':modules:module-integration-api',
+        ':modules:module-text'
+    ]
+
+    addEmbeddedRuntimeDeps = { org.gradle.api.artifacts.dsl.DependencyHandler deps, String conf ->
+        deps.add(conf, "io.github.kienpc1234:luava:${luava_version}")
+        deps.add(conf, "org.mongodb:bson:${bson_version}")
+        deps.add(conf, "io.github.spair:imgui-java-binding:${imgui_version}")
+        deps.add(conf, "io.github.spair:imgui-java-lwjgl3:${imgui_version}") {
+            exclude group: 'org.lwjgl'
+        }
+        deps.add(conf, "io.github.spair:imgui-java-natives-windows:${imgui_version}")
+        deps.add(conf, "io.github.spair:imgui-java-natives-linux:${imgui_version}")
+        deps.add(conf, "io.github.spair:imgui-java-natives-macos:${imgui_version}")
+        deps.add(conf, "org.lwjgl:lwjgl-spvc:${lwjgl_version}") {
+            exclude group: 'org.lwjgl'
+        }
+        deps.add(conf, "org.lwjgl:lwjgl-spvc:${lwjgl_version}:natives-windows")
+        deps.add(conf, "org.lwjgl:lwjgl-spvc:${lwjgl_version}:natives-linux")
+        deps.add(conf, "org.lwjgl:lwjgl-spvc:${lwjgl_version}:natives-macos")
+    }
+
+    registerLoaderLuaSync = { Project loaderProject ->
+        def sharedLuaModsDir = rootProject.file('luamods')
+        def sharedLuaConfigDir = rootProject.file('luaconfig')
+
+        loaderProject.tasks.register('syncLuaMods', Sync) {
+            from sharedLuaModsDir
+            into loaderProject.file('run/luamods')
+            preserve {
+                include '.luatweaker/**'
+            }
+        }
+
+        loaderProject.tasks.register('syncLuaConfig', Copy) {
+            onlyIf { sharedLuaConfigDir.exists() }
+            from sharedLuaConfigDir
+            into loaderProject.file('run/luaconfig')
+        }
+
+        loaderProject.tasks.named('runClient') {
+            dependsOn 'syncLuaMods', 'syncLuaConfig'
+        }
+
+        loaderProject.tasks.named('runServer') {
+            dependsOn 'syncLuaMods', 'syncLuaConfig'
+        }
+    }
+}
+
 pmd {
     toolVersion = pmd_version
     ruleSetFiles = files(rootProject.file('config/pmd/ruleset.xml'))
@@ -49,12 +122,6 @@ allprojects {
 // PMD static analysis (dirty-code scan, see config/pmd/ruleset.xml).
 // Run: ./gradlew pmdMain pmdTest   (reports: <module>/build/reports/pmd/)
 // Both are enforced (ignoreFailures = false): a new finding fails the build.
-// The Gradle PMD task swallows "Cannot load ruleset" and reports ZERO violations,
-// which would silently disable the entire gate (verified with a broken rule ref).
-// This canary analysis runs the same ruleset over one file that intentionally
-// trips exactly one rule. If the ruleset stops loading (or the rule disappears),
-// the report comes back empty and the build fails with a clear message instead
-// of passing with a green but meaningless result.
 tasks.register('pmdCanary', org.gradle.api.plugins.quality.Pmd) {
     group = 'verification'
     description = 'Proves config/pmd/ruleset.xml really loads and runs (fails otherwise).'
@@ -69,10 +136,6 @@ tasks.register('pmdCanary', org.gradle.api.plugins.quality.Pmd) {
     }
 }
 
-// The assertion lives in its own task on purpose: when the probe directory has no
-// *.java file, Gradle skips the Pmd task as NO-SOURCE and `doLast` never runs, so a
-// deleted/renamed probe would make the canary pass while proving nothing. This task
-// always runs and verifies both that the analysis executed and what it reported.
 def canaryProbe = rootProject.file('config/pmd/probe/Probe.java')
 def canaryReportFile = rootProject.layout.buildDirectory.file('reports/pmd/canary.xml').get().asFile
 tasks.register('pmdCanaryVerify') {
@@ -80,7 +143,6 @@ tasks.register('pmdCanaryVerify') {
     description = 'Asserts the PMD canary analysis ran and reported the expected finding.'
     dependsOn 'pmdCanary'
     doLast {
-        // A missing probe makes the Pmd task NO-SOURCE, which silently proves nothing.
         if (!canaryProbe.isFile()) {
             throw new GradleException(
                     "PMD canary failed: ${canaryProbe} is missing, so the gate would prove nothing.")
@@ -119,17 +181,26 @@ subprojects {
         }
     }
 
-    // PMD runs as part of `check` / `build` in every module.
     plugins.withId('java') {
         tasks.named('check') {
             dependsOn('pmdMain', 'pmdTest')
         }
+
+        tasks.withType(Test).configureEach {
+            useJUnitPlatform()
+            // Purge transient logs/config directories written to module CWD after the forked TestWorker exits.
+            doLast {
+                project.delete(
+                    project.file('logs'),
+                    project.file('luaconfig'),
+                    project.file('config/luatweaker.json')
+                )
+            }
+        }
     }
 }
 
-
 // Ensure all subproject jars exist before the IDE sync task runs.
-// This prevents "archive does not exist" classpath errors after a clean build.
 gradle.projectsEvaluated {
     def neoforgeProject = findProject(':neoforge')
     if (neoforgeProject != null) {

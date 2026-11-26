@@ -27,32 +27,6 @@ loom {
     }
 }
 
-def pureJavaModules = [
-    ':common-api',
-    ':core-engine',
-    ':modules:module-recipes',
-    ':modules:module-content',
-    ':modules:module-entities',
-    ':modules:module-interaction',
-    ':modules:module-events',
-    ':modules:module-math',
-    ':modules:module-storage',
-    ':modules:module-network',
-    ':modules:module-client',
-    ':modules:module-interception',
-    ':modules:module-command',
-    ':modules:module-tasks',
-    ':modules:module-loot',
-    ':modules:module-worldgen',
-    ':modules:module-noise',
-    ':modules:module-dimensions',
-    ':modules:module-spawnrules',
-    ':modules:module-structures',
-    ':modules:module-update',
-    ':modules:module-integration-api',
-    ':modules:module-text'
-]
-
 configurations {
     common {
         canBeResolved = true
@@ -86,36 +60,14 @@ dependencies {
     common(project(path: ':common', configuration: 'namedElements')) { transitive false }
     shadowBundle(project(path: ':common', configuration: 'transformProductionNeoForge')) { transitive false }
 
-    pureJavaModules.each { dep ->
+    rootProject.ext.pureJavaModules.each { dep ->
         implementation project(dep)
         shadowBundle(project(dep)) { transitive false }
         developmentNeoForge(project(dep)) { transitive false }
     }
 
-    developmentNeoForge "io.github.kienpc1234:luava:${rootProject.luava_version}"
-    developmentNeoForge "org.mongodb:bson:${rootProject.bson_version}"
-    developmentNeoForge "io.github.spair:imgui-java-binding:${rootProject.imgui_version}"
-    developmentNeoForge("io.github.spair:imgui-java-lwjgl3:${rootProject.imgui_version}") { exclude group: 'org.lwjgl' }
-    developmentNeoForge "io.github.spair:imgui-java-natives-windows:${rootProject.imgui_version}"
-    developmentNeoForge "io.github.spair:imgui-java-natives-linux:${rootProject.imgui_version}"
-    developmentNeoForge "io.github.spair:imgui-java-natives-macos:${rootProject.imgui_version}"
-    developmentNeoForge("org.lwjgl:lwjgl-spvc:${rootProject.lwjgl_version}") { exclude group: 'org.lwjgl' }
-    developmentNeoForge "org.lwjgl:lwjgl-spvc:${rootProject.lwjgl_version}:natives-windows"
-    developmentNeoForge "org.lwjgl:lwjgl-spvc:${rootProject.lwjgl_version}:natives-linux"
-    developmentNeoForge "org.lwjgl:lwjgl-spvc:${rootProject.lwjgl_version}:natives-macos"
-
-    shadowBundle "io.github.kienpc1234:luava:${rootProject.luava_version}"
-    shadowBundle "org.mongodb:bson:${rootProject.bson_version}"
-    shadowBundle("org.lwjgl:lwjgl-spvc:${rootProject.lwjgl_version}") { exclude group: 'org.lwjgl', module: 'lwjgl' }
-    shadowBundle "org.lwjgl:lwjgl-spvc:${rootProject.lwjgl_version}:natives-windows"
-    shadowBundle "org.lwjgl:lwjgl-spvc:${rootProject.lwjgl_version}:natives-linux"
-    shadowBundle "org.lwjgl:lwjgl-spvc:${rootProject.lwjgl_version}:natives-macos"
-
-    shadowBundle "io.github.spair:imgui-java-binding:${rootProject.imgui_version}"
-    shadowBundle("io.github.spair:imgui-java-lwjgl3:${rootProject.imgui_version}") { exclude group: 'org.lwjgl' }
-    shadowBundle "io.github.spair:imgui-java-natives-windows:${rootProject.imgui_version}"
-    shadowBundle "io.github.spair:imgui-java-natives-linux:${rootProject.imgui_version}"
-    shadowBundle "io.github.spair:imgui-java-natives-macos:${rootProject.imgui_version}"
+    rootProject.ext.addEmbeddedRuntimeDeps(dependencies, 'developmentNeoForge')
+    rootProject.ext.addEmbeddedRuntimeDeps(dependencies, 'shadowBundle')
 
     modImplementation "software.bernie.geckolib:geckolib-neoforge-${rootProject.minecraft_version}:${rootProject.geckolib_version}"
     compileOnly "mezz.jei:jei-${rootProject.minecraft_version}-neoforge-api:${rootProject.jei_version}"
@@ -137,37 +89,4 @@ remapJar {
     archiveClassifier = null
 }
 
-test {
-    useJUnitPlatform()
-}
-
-// Test-mod sync: the shared Lua test mods live in root luamods/ (tracked in git);
-// sync them into this loader's game dir before every run.
-def sharedLuaModsDir = rootProject.file('luamods')
-def sharedLuaConfigDir = rootProject.file('luaconfig')
-
-tasks.register('syncLuaMods', Sync) {
-    from sharedLuaModsDir
-    into file('run/luamods')
-    preserve {
-        include '.luatweaker/**'
-    }
-}
-
-tasks.register('syncLuaConfig', Copy) {
-    onlyIf { sharedLuaConfigDir.exists() }
-    from sharedLuaConfigDir
-    into file('run/luaconfig')
-}
-
-tasks.named('runClient') {
-    dependsOn 'syncLuaMods'
-    dependsOn 'syncLuaConfig'
-}
-
-tasks.named('runServer') {
-    dependsOn 'syncLuaMods'
-    dependsOn 'syncLuaConfig'
-}
-
-
+rootProject.ext.registerLoaderLuaSync(project)

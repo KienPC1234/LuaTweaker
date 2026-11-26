@@ -8,6 +8,8 @@ java {
 
 repositories {
     mavenLocal()
+    maven { url = 'https://maven.architectury.dev/' }
+    maven { url = 'https://maven.fabricmc.net/' }
     maven { url = 'https://maven.neoforged.net/releases' }
 }
 
@@ -19,5 +21,5 @@ dependencies {
 }
 
 // Path B (plain jar): ServiceLoader file above is packaged automatically.
-// Path A (NeoForge mod): add your mods.toml + call
-// LuaTweakerPluginRegistry.register(new MyAddonPlugin()) from the mod constructor.
+// Path A (NeoForge / Fabric mod): add neoforge.mods.toml or fabric.mod.json + call
+// LuaTweakerPluginRegistry.register(new MyAddonPlugin()) during mod initialization.

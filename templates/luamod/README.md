@@ -1,6 +1,6 @@
 # LuaTweaker LuaMod template
 
-Copy this folder to `run/luamods/<your_id>/` (dev: `neoforge-platform/luamods/<your_id>/`).
+Copy this folder to `<game-dir>/luamods/<your_id>/` (dev workspace: `luamods/<your_id>/` at the repository root, synced into `neoforge/run/luamods/` and `fabric/run/luamods/`).
 
 ## Files
 

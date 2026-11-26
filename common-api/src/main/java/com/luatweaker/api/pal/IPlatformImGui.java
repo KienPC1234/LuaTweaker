@@ -5,8 +5,8 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Immediate-mode GUI bridge (Dear ImGui) that only exists on a client process.
  *
- * <p>Extended by {@link IPlatformClient}; the only implementation lives in
- * {@code neoforge-platform} (the sole module allowed to touch {@code imgui.*}).
+ * <p>Extended by {@link IPlatformClient}; the concrete implementation lives in
+ * {@code common} ({@code MinecraftClientPlatform}, the sole bridge touching {@code imgui.*}).
  * Every method must be safe to call from Lua on the render thread during the
  * {@code ImGui.OnFrame} signal; called anywhere else it throws
  * {@link IllegalStateException} with a message naming the signal.</p>
