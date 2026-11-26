@@ -3,6 +3,7 @@ package com.luatweaker.core.vm;
 import com.luatweaker.api.vm.ILuaEngine;
 import com.luatweaker.core.logger.AsyncFileLogger;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -69,5 +70,26 @@ class LuaEngineLimitsWiringTest {
         ILuaEngine engine = LuaEngineFactory.create(false, new LuaEngineLimits(0L, 321, 0));
         assertEquals(321, ((LuavaEngine) engine).rawState().getMaxCallDepth(),
                 "factoryForwardsLimits: factory must forward the call depth cap");
+    }
+
+    @Nested
+    class GuardedJitWiring {
+
+        @Test
+        void appliesCancellableGuardArmsLoopGuard() {
+            LuavaEngine engine = new LuavaEngine(false, new LuaEngineLimits(0L, 0, 0, 0L, 0L, 0L, true));
+            assertNotNull(engine.rawState().loopGuard,
+                    "appliesCancellableGuardArmsLoopGuard: cancellable must arm a loopGuard on the luava state");
+            engine.shutdown();
+        }
+
+        @Test
+        void appliesCancellableGuardAllowsCancel() {
+            LuavaEngine engine = new LuavaEngine(false, new LuaEngineLimits(0L, 0, 0, 0L, 0L, 0L, true));
+            engine.rawState().cancel();
+            assertTrue(engine.rawState().isCancelled(),
+                    "appliesCancellableGuardAllowsCancel: cancelling the state must mark it cancelled");
+            engine.shutdown();
+        }
     }
 }

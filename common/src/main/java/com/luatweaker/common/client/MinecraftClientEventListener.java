@@ -5,11 +5,10 @@ import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.api.pal.IPlatformClient;
 import com.luatweaker.api.pal.Platform;
 import com.luatweaker.api.vm.ILuaEngine;
-import com.luatweaker.api.vm.ILuaTable;
-import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.client.ClientEffectsServiceImpl;
 import com.luatweaker.client.ClientServiceImpl;
 import com.luatweaker.common.LuaTweakerCommon;
+import com.luatweaker.core.signal.LuaSignalDispatcher;
 import com.luatweaker.core.service.LuaServiceRegistry;
 import dev.architectury.event.events.client.ClientGuiEvent;
 import dev.architectury.event.events.client.ClientRawInputEvent;
@@ -19,14 +18,11 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.world.InteractionHand;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import static org.lwjgl.glfw.GLFW.GLFW_PRESS;
 import static org.lwjgl.glfw.GLFW.GLFW_RELEASE;
 
 public final class MinecraftClientEventListener {
-    private static final String SIGNAL_FIRE_SYNC = "FireSync";
-
     private MinecraftClientEventListener() {
     }
 
@@ -161,20 +157,7 @@ public final class MinecraftClientEventListener {
     }
 
     private static void fireHudSignal(@NotNull ILuaEngine engine, float deltaTicks) {
-        ILuaTable globals = engine.getGlobalEnvironment();
-        ILuaValue guiServiceValue = globals.rawget("GuiService");
-        if (guiServiceValue == null || !guiServiceValue.isTable()) {
-            return;
-        }
-        ILuaValue onRender = guiServiceValue.asTable().rawget("OnRenderHUD");
-        if (onRender == null || !onRender.isTable()) {
-            return;
-        }
-        ILuaTable signal = onRender.asTable();
-        ILuaValue fireFn = resolveFireSync(globals, signal);
-        if (fireFn != null) {
-            engine.callFunction(fireFn, signal, engine.wrapNumber(deltaTicks));
-        }
+        LuaSignalDispatcher.fireNumber(engine, "GuiService", "OnRenderHUD", deltaTicks);
     }
 
     public static void renderImGuiFrameFromScreen(@NotNull ILuaEngine engine, @NotNull GuiGraphics graphics) {
@@ -206,32 +189,6 @@ public final class MinecraftClientEventListener {
     }
 
     private static void fireImGuiSignal(@NotNull ILuaEngine engine) {
-        ILuaTable globals = engine.getGlobalEnvironment();
-        ILuaValue imguiValue = globals.rawget("ImGui");
-        if (imguiValue == null || !imguiValue.isTable()) {
-            return;
-        }
-        ILuaValue onFrame = imguiValue.asTable().rawget("OnFrame");
-        if (onFrame == null || !onFrame.isTable()) {
-            return;
-        }
-        ILuaTable signal = onFrame.asTable();
-        ILuaValue fireFn = resolveFireSync(globals, signal);
-        if (fireFn != null) {
-            engine.callFunction(fireFn, signal);
-        }
-    }
-
-    private static @Nullable ILuaValue resolveFireSync(@NotNull ILuaTable globals, @NotNull ILuaTable signal) {
-        ILuaValue fireFn = signal.rawget(SIGNAL_FIRE_SYNC);
-        if (fireFn != null && fireFn.isFunction()) {
-            return fireFn;
-        }
-        ILuaValue signalClass = globals.rawget("Signal");
-        if (signalClass == null || !signalClass.isTable()) {
-            return null;
-        }
-        ILuaValue classFire = signalClass.asTable().rawget(SIGNAL_FIRE_SYNC);
-        return classFire != null && classFire.isFunction() ? classFire : null;
+        LuaSignalDispatcher.fire(engine, "ImGui", "OnFrame");
     }
 }

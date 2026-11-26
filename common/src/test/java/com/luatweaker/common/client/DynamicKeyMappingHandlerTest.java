@@ -16,6 +16,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class DynamicKeyMappingHandlerTest {
 
+    private static final String PAYLOAD_ONE = "cast:1";
+    private static final String PAYLOAD_TWO = "cast:2";
+
     private static IKeyBindService.KeyBindEntry entry(String id) {
         return new IKeyBindService.KeyBindEntry(id, id, "LuaTweaker", 32, "payload:" + id, "key", "none");
     }
@@ -47,5 +50,42 @@ class DynamicKeyMappingHandlerTest {
                 withNulls, Set.of());
         assertEquals(List.of("a"), result.stream().map(IKeyBindService.KeyBindEntry::id).toList(),
                 "null entries and null ids must never reach the mapping sync");
+    }
+
+    @Test
+    void parseModifierResolvesExpectedEnumVariants() {
+        assertEquals(List.of(
+                        DynamicKeyMappingHandler.KeyModifier.NONE,
+                        DynamicKeyMappingHandler.KeyModifier.NONE,
+                        DynamicKeyMappingHandler.KeyModifier.SHIFT,
+                        DynamicKeyMappingHandler.KeyModifier.CTRL,
+                        DynamicKeyMappingHandler.KeyModifier.ALT),
+                List.of(
+                        DynamicKeyMappingHandler.parseModifier(null),
+                        DynamicKeyMappingHandler.parseModifier("none"),
+                        DynamicKeyMappingHandler.parseModifier(" Shift "),
+                        DynamicKeyMappingHandler.parseModifier("CTRL"),
+                        DynamicKeyMappingHandler.parseModifier("alt")),
+                "parseModifier must normalize whitespace and casing into enum values");
+    }
+
+    @Test
+    void shouldRefreshExistingDetectsPayloadAndModifierChanges() {
+        assertEquals(
+                List.of(false, true, true, true),
+                List.of(
+                        DynamicKeyMappingHandler.shouldRefreshExisting(
+                                PAYLOAD_ONE, DynamicKeyMappingHandler.KeyModifier.SHIFT,
+                                PAYLOAD_ONE, DynamicKeyMappingHandler.KeyModifier.SHIFT),
+                        DynamicKeyMappingHandler.shouldRefreshExisting(
+                                PAYLOAD_ONE, DynamicKeyMappingHandler.KeyModifier.NONE,
+                                PAYLOAD_TWO, DynamicKeyMappingHandler.KeyModifier.NONE),
+                        DynamicKeyMappingHandler.shouldRefreshExisting(
+                                PAYLOAD_ONE, DynamicKeyMappingHandler.KeyModifier.NONE,
+                                PAYLOAD_ONE, DynamicKeyMappingHandler.KeyModifier.CTRL),
+                        DynamicKeyMappingHandler.shouldRefreshExisting(
+                                null, DynamicKeyMappingHandler.KeyModifier.NONE,
+                                PAYLOAD_ONE, DynamicKeyMappingHandler.KeyModifier.NONE)),
+                "hot-reload must refresh existing keybind states whenever payload or modifier changes");
     }
 }

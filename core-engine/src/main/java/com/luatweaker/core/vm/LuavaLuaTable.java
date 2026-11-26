@@ -19,6 +19,7 @@ import java.util.function.BiConsumer;
  * Adapts a luava {@link LuaTable} to the engine-neutral {@link ILuaTable} SPI.
  */
 public class LuavaLuaTable extends LuavaLuaValue implements ILuaTable {
+    private static final ILuaValue[] EMPTY_ARGS = new ILuaValue[0];
     private final LuaTable table;
 
     /**
@@ -78,9 +79,14 @@ public class LuavaLuaTable extends LuavaLuaValue implements ILuaTable {
     @Override
     public void rawset(@NotNull String key, @NotNull ILuaFunction function) {
         table.rawset(LuaValue.valueOf(key), LuaFunction.of(args -> {
-            ILuaValue[] wrappedArgs = new ILuaValue[args.length];
-            for (int i = 0; i < args.length; i++) {
-                wrappedArgs[i] = wrap(args[i]);
+            ILuaValue[] wrappedArgs;
+            if (args.length == 0) {
+                wrappedArgs = EMPTY_ARGS;
+            } else {
+                wrappedArgs = new ILuaValue[args.length];
+                for (int i = 0; i < args.length; i++) {
+                    wrappedArgs[i] = wrap(args[i]);
+                }
             }
             try {
                 ILuaValue result = function.invoke(wrappedArgs);

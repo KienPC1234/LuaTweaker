@@ -1,6 +1,6 @@
 # Addon Developer Guide for LuaTweaker
 
-> **Target:** Minecraft 1.21.1 (NeoForge & Fabric) | **Java:** 21 | **Runtime:** luava 0.2.7 (`org.luava.*`)
+> **Target:** Minecraft 1.21.1 (NeoForge & Fabric) | **Java:** 21 | **Runtime:** luava 0.3.0 (`org.luava.*`)
 
 This guide is for Java mod developers who want to expose APIs, callbacks and events to Lua scripts.
 LuaTweaker keeps a thin SPI: addons bind against `ILuaEngine` and `LuaBinder`. Do not import

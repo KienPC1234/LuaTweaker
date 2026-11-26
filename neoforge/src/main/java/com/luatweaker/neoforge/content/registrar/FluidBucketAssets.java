@@ -39,8 +39,8 @@ public final class FluidBucketAssets {
         }
     }
 
-    private static void injectBucketAssets(@NotNull IDatapackService datapackService,
-                                           @NotNull IFluidBuilder builder) {
+    static void injectBucketAssets(@NotNull IDatapackService datapackService,
+                                   @NotNull IFluidBuilder builder) {
         String[] parts = parseId(builder.getId());
         String namespace = parts[0];
         String id = parts[1];

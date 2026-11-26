@@ -76,6 +76,12 @@ public interface ILuaEngine {
     default void shutdown() { }
 
     /**
+     * Returns a concise, human-readable snapshot of VM diagnostics (JIT status, call/cache
+     * counters, memory), or {@code null} when the engine does not report diagnostics.
+     */
+    default String describeDiagnostics() { return null; }
+
+    /**
      * Runs a Java-side operation that touches Lua state under the engine's execution lock.
      * Render-thread code that mutates Lua tables must use this instead of touching them directly.
      * The default runs inline for engine-neutral test doubles.

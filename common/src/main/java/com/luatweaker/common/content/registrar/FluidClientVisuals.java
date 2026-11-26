@@ -4,12 +4,21 @@ import dev.architectury.event.events.client.ClientLifecycleEvent;
 import dev.architectury.registry.client.rendering.ColorHandlerRegistry;
 import dev.architectury.registry.client.rendering.RenderTypeRegistry;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.world.level.material.Fluid;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 final class FluidClientVisuals {
 
     private FluidClientVisuals() {
+    }
+
+    static void forEachFluid(List<FluidRegistrar.RegisteredFluidEntry> entries, Consumer<Fluid> consumer) {
+        for (FluidRegistrar.RegisteredFluidEntry entry : entries) {
+            entry.still().toOptional().ifPresent(consumer);
+            entry.flowing().toOptional().ifPresent(consumer);
+        }
     }
 
     @SuppressWarnings("unchecked")

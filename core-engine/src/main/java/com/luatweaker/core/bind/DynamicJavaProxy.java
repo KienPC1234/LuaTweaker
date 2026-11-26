@@ -4,6 +4,7 @@ import org.luava.runtime.LuaException;
 import org.luava.runtime.LuaFunction;
 import org.luava.runtime.LuaNil;
 import org.luava.runtime.LuaState;
+import org.luava.runtime.LuaString;
 import org.luava.runtime.LuaTable;
 import org.luava.runtime.LuaUserdata;
 import org.luava.runtime.LuaValue;
@@ -51,7 +52,7 @@ public final class DynamicJavaProxy {
             return userdata.getJavaInstance() == instance;
         }
         if (arg instanceof LuaTable table) {
-            LuaValue entityVal = table.rawget(LuaValue.valueOf("__entity"));
+            LuaValue entityVal = table.rawget(LuaString.interned("__entity"));
             return entityVal instanceof LuaUserdata userdata
                     && matchesInstance(userdata.getJavaInstance(), instance);
         }

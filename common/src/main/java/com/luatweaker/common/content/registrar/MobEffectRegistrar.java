@@ -10,6 +10,7 @@ import com.luatweaker.content.EffectRegistry;
 import com.luatweaker.core.service.LuaServiceRegistry;
 import dev.architectury.registry.registries.Registrar;
 import dev.architectury.registry.registries.RegistrarManager;
+import dev.architectury.registry.registries.RegistrySupplier;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -23,18 +24,38 @@ import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.item.alchemy.Potion;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiConsumer;
+
 public final class MobEffectRegistrar {
+
+    private record RegisteredEffectTexture(
+            @NotNull RegistrySupplier<MobEffect> effect,
+            @NotNull ResourceLocation textureLocation) {
+    }
 
     private static final String TEXTURES_PREFIX = "textures/";
     private static final String MOB_EFFECT_TEXTURE_DIR = "textures/mob_effect/";
     private static final String PNG_EXT = ".png";
+    private static final List<RegisteredEffectTexture> EFFECT_TEXTURES = new CopyOnWriteArrayList<>();
 
     public void registerMobEffects() {
         Registrar<MobEffect> registrar = RegistrarManager.get("luatweaker").get(Registries.MOB_EFFECT);
         EffectRegistry.getMobEffects().forEach((name, definition) -> {
             ResourceLocation id = requireLocation(name);
-            registrar.register(id, () -> new CustomMobEffect(id, definition));
+            RegistrySupplier<MobEffect> supplier = registrar.register(id, () -> new CustomMobEffect(id, definition));
+            if (definition.texture() != null && !definition.texture().isBlank()) {
+                EFFECT_TEXTURES.add(new RegisteredEffectTexture(
+                        supplier, resolveTextureLocation(definition.texture(), id)));
+            }
         });
+    }
+
+    public static void forEachCustomEffectTexture(@NotNull BiConsumer<MobEffect, ResourceLocation> consumer) {
+        for (RegisteredEffectTexture entry : EFFECT_TEXTURES) {
+            entry.effect().toOptional().ifPresent(effect -> consumer.accept(effect, entry.textureLocation()));
+        }
     }
 
     public void registerPotions() {

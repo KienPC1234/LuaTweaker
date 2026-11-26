@@ -19,13 +19,45 @@ public final class MinecraftLuaGoal extends Goal {
     private static final int FIRST_LUA_INDEX = 1;
     private static final String FALLBACK_GOAL_NAME = "LuaGoal";
 
+    private record GoalCallbacks(
+            @Nullable ILuaValue canUse,
+            @Nullable ILuaValue canContinue,
+            @Nullable ILuaValue interruptible,
+            @Nullable ILuaValue start,
+            @Nullable ILuaValue stop,
+            @Nullable ILuaValue tick) {
+
+        static GoalCallbacks resolve(@NotNull ILuaTable table) {
+            return new GoalCallbacks(
+                    findFunction(table, "canUse"),
+                    findFunction(table, "canContinueToUse"),
+                    findFunction(table, "isInterruptable", "isInterruptible"),
+                    findFunction(table, "start"),
+                    findFunction(table, "stop"),
+                    findFunction(table, "tick"));
+        }
+
+        private static @Nullable ILuaValue findFunction(@NotNull ILuaTable table, String... keys) {
+            for (String key : keys) {
+                ILuaValue val = table.rawget(key);
+                if (val != null && val.isFunction()) {
+                    return val;
+                }
+            }
+            return null;
+        }
+    }
+
     private final ILuaTable goalTable;
     private final ILuaEngine engine;
+    private final GoalCallbacks callbacks;
+    private boolean engineClosed;
 
     public MinecraftLuaGoal(@NotNull ILuaTable goalTable, @NotNull ILuaEngine engine) {
         super();
         this.goalTable = goalTable;
         this.engine = engine;
+        this.callbacks = GoalCallbacks.resolve(goalTable);
         applyFlags(goalTable.rawget("flags"));
     }
 
@@ -94,29 +126,28 @@ public final class MinecraftLuaGoal extends Goal {
      * this goal belong to the old VM, so once that VM is shut down the goal must become inert
      * instead of throwing from {@code canUse}/{@code tick} on the server thread.
      */
-    private ILuaValue call(ILuaValue function) {
+    private @Nullable ILuaValue call(@Nullable ILuaValue function) {
+        if (function == null || engineClosed) {
+            return null;
+        }
         try {
             return engine.callFunction(function, goalTable);
         } catch (IllegalStateException e) {
+            engineClosed = true;
             return null;
         }
     }
 
     @Override
     public boolean canUse() {
-        ILuaValue func = goalTable.rawget("canUse");
-        if (func != null && func.isFunction()) {
-            ILuaValue res = call(func);
-            return res != null && res.asBoolean();
-        }
-        return false;
+        ILuaValue res = call(callbacks.canUse());
+        return res != null && res.asBoolean();
     }
 
     @Override
     public boolean canContinueToUse() {
-        ILuaValue func = goalTable.rawget("canContinueToUse");
-        if (func != null && func.isFunction()) {
-            ILuaValue res = call(func);
+        if (callbacks.canContinue() != null) {
+            ILuaValue res = call(callbacks.canContinue());
             return res != null && res.asBoolean();
         }
         return super.canContinueToUse();
@@ -124,12 +155,8 @@ public final class MinecraftLuaGoal extends Goal {
 
     @Override
     public boolean isInterruptable() {
-        ILuaValue func = goalTable.rawget("isInterruptable");
-        if (func == null || func.isNil()) {
-            func = goalTable.rawget("isInterruptible");
-        }
-        if (func != null && func.isFunction()) {
-            ILuaValue res = call(func);
+        if (callbacks.interruptible() != null) {
+            ILuaValue res = call(callbacks.interruptible());
             return res != null && res.asBoolean();
         }
         return super.isInterruptable();
@@ -137,25 +164,16 @@ public final class MinecraftLuaGoal extends Goal {
 
     @Override
     public void start() {
-        ILuaValue func = goalTable.rawget("start");
-        if (func != null && func.isFunction()) {
-            call(func);
-        }
+        call(callbacks.start());
     }
 
     @Override
     public void stop() {
-        ILuaValue func = goalTable.rawget("stop");
-        if (func != null && func.isFunction()) {
-            call(func);
-        }
+        call(callbacks.stop());
     }
 
     @Override
     public void tick() {
-        ILuaValue func = goalTable.rawget("tick");
-        if (func != null && func.isFunction()) {
-            call(func);
-        }
+        call(callbacks.tick());
     }
 }

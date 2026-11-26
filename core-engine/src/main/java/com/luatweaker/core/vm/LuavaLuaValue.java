@@ -4,7 +4,9 @@ import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.luava.runtime.LuaBoolean;
 import org.luava.runtime.LuaException;
+import org.luava.runtime.LuaNil;
 import org.luava.runtime.LuaTable;
 import org.luava.runtime.LuaUserdata;
 import org.luava.runtime.LuaValue;
@@ -13,9 +15,16 @@ import org.luava.runtime.LuaValue;
  * Adapts a luava {@link LuaValue} to the engine-neutral {@link ILuaValue} SPI.
  *
  * <p>String conversion uses {@link LuaValue#toLuaString()} directly: luava already stores
- * strings as proper UTF-8, so no ISO-8859-1 re-decoding is required.
+ * strings as proper UTF-8, so no ISO-8859-1 re-decoding is required.</p>
  */
 public class LuavaLuaValue implements ILuaValue {
+    /** Shared immutable wrapper for Lua {@code nil}. */
+    public static final LuavaLuaValue NIL = new LuavaLuaValue(LuaNil.NIL);
+    /** Shared immutable wrapper for Lua {@code true}. */
+    public static final LuavaLuaValue TRUE = new LuavaLuaValue(LuaBoolean.TRUE);
+    /** Shared immutable wrapper for Lua {@code false}. */
+    public static final LuavaLuaValue FALSE = new LuavaLuaValue(LuaBoolean.FALSE);
+
     protected final LuaValue value;
 
     /**
@@ -37,6 +46,12 @@ public class LuavaLuaValue implements ILuaValue {
      * @return the SPI wrapper with the matching concrete type
      */
     public static @NotNull ILuaValue wrap(@NotNull LuaValue value) {
+        if (value.isNil()) {
+            return NIL;
+        }
+        if (value.isBoolean()) {
+            return value.toBoolean() ? TRUE : FALSE;
+        }
         if (value instanceof LuaTable table) {
             return new LuavaLuaTable(table);
         }

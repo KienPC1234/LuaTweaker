@@ -2,14 +2,14 @@ package com.luatweaker.entities;
 
 import com.luatweaker.api.entity.IEntity;
 import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.api.vm.ILuaFunction;
 import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.core.bind.LuaBinder;
 
 /**
- * Position helpers for entity Lua tables ({@code getPos}/{@code setPos} plus
- * PascalCase aliases). Teleport argument parsing lives here so the table
- * factory stays thin.
+ * Position helpers bound once onto the shared entity/player prototype table
+ * ({@code getPos}/{@code setPos} plus PascalCase aliases).
  */
 final class EntityPositionHelpers {
 
@@ -18,24 +18,36 @@ final class EntityPositionHelpers {
 
     private EntityPositionHelpers() {}
 
-    static void addPositionHelpers(ILuaEngine engine, ILuaTable table, IEntity entity) {
-        table.rawset("getPos", args -> {
+    static void addPrototypePositionHelpers(ILuaEngine engine, ILuaTable prototype) {
+        ILuaFunction getPosFn = args -> {
+            IEntity entity = args.length > 0 ? EntitiesLuaBinding.getEntityFromTable(args[0]) : null;
+            if (entity == null) {
+                return engine.nilValue();
+            }
             ILuaTable pos = engine.createTable();
-            pos.rawset("x", engine.wrapNumber(entity.getX()));
-            pos.rawset("y", engine.wrapNumber(entity.getY()));
-            pos.rawset("z", engine.wrapNumber(entity.getZ()));
-            pos.rawset("X", pos.rawget("x"));
-            pos.rawset("Y", pos.rawget("y"));
-            pos.rawset("Z", pos.rawget("z"));
+            ILuaValue vx = engine.wrapNumber(entity.getX());
+            ILuaValue vy = engine.wrapNumber(entity.getY());
+            ILuaValue vz = engine.wrapNumber(entity.getZ());
+            pos.rawset("x", vx);
+            pos.rawset("y", vy);
+            pos.rawset("z", vz);
+            pos.rawset("X", vx);
+            pos.rawset("Y", vy);
+            pos.rawset("Z", vz);
             return pos;
-        });
-        table.rawset("GetPos", table.rawget("getPos"));
+        };
+        prototype.rawset("getPos", getPosFn);
+        prototype.rawset("GetPos", getPosFn);
 
-        table.rawset("setPos", args -> {
-            teleportFromArgs(entity, args, LuaBinder.getOffset(args));
+        ILuaFunction setPosFn = args -> {
+            IEntity entity = args.length > 0 ? EntitiesLuaBinding.getEntityFromTable(args[0]) : null;
+            if (entity != null) {
+                teleportFromArgs(entity, args, LuaBinder.getOffset(args));
+            }
             return engine.nilValue();
-        });
-        table.rawset("SetPos", table.rawget("setPos"));
+        };
+        prototype.rawset("setPos", setPosFn);
+        prototype.rawset("SetPos", setPosFn);
     }
 
     private static void teleportFromArgs(IEntity entity, ILuaValue[] args, int off) {

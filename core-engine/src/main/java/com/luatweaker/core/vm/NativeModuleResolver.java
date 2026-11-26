@@ -9,11 +9,10 @@ import org.luava.runtime.LuaNil;
 import org.luava.runtime.LuaValue;
 
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -66,13 +65,14 @@ public final class NativeModuleResolver {
     }
 
     private static String[] dedupeKeys(String primaryName, String... aliases) {
-        List<String> keys = new ArrayList<>();
+        if (aliases == null) {
+            return new String[]{primaryName};
+        }
+        Set<String> keys = new java.util.LinkedHashSet<>();
         keys.add(primaryName);
-        if (aliases != null) {
-            for (String alias : aliases) {
-                if (alias != null && !alias.isBlank() && !keys.contains(alias)) {
-                    keys.add(alias);
-                }
+        for (String alias : aliases) {
+            if (alias != null && !alias.isBlank()) {
+                keys.add(alias);
             }
         }
         return keys.toArray(new String[0]);
@@ -173,19 +173,13 @@ public final class NativeModuleResolver {
     }
 
     private static String[] lookupKeys(String modName) {
-        String[] keys = MODULE_GLOBALS.get(modName);
-        if (keys == null) {
-            keys = DYNAMIC_ALIASES.get(modName);
-        }
+        String[] keys = MODULE_GLOBALS.getOrDefault(modName, DYNAMIC_ALIASES.get(modName));
         if (keys != null) {
             return keys;
         }
         if (modName.startsWith(LUA_TWEAKER_PREFIX)) {
             String shortName = modName.substring(LUA_TWEAKER_PREFIX.length());
-            keys = MODULE_GLOBALS.get(shortName);
-            if (keys == null) {
-                keys = DYNAMIC_ALIASES.get(shortName);
-            }
+            keys = MODULE_GLOBALS.getOrDefault(shortName, DYNAMIC_ALIASES.get(shortName));
             return keys != null ? keys : new String[]{shortName};
         }
         return new String[]{modName};
@@ -197,6 +191,9 @@ public final class NativeModuleResolver {
      * keeps this resolver independent of the wrapper class name.
      */
     private static LuaValue toLuavaValue(ILuaValue value) {
+        if (value instanceof LuavaLuaValue wrapper) {
+            return wrapper.getLuavaValue();
+        }
         for (Method method : value.getClass().getMethods()) {
             if (method.getParameterCount() != 0
                     || !LuaValue.class.isAssignableFrom(method.getReturnType())) {

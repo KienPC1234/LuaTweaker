@@ -10,6 +10,7 @@ import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,10 +27,13 @@ final class LuaResultConverter {
 
     private static final Map<Class<?>, LuaBinder.ValueConverter> RETURN_CONVERTERS =
         new ConcurrentHashMap<>();
+    private static final Map<Class<?>, Optional<LuaBinder.ValueConverter>> RESOLVED_CONVERTER_CACHE =
+        new ConcurrentHashMap<>();
 
     /** Registers a custom converter used when a bound method returns {@code type}. */
     static void registerReturnConverter(@NotNull Class<?> type, @NotNull LuaBinder.ValueConverter converter) {
         RETURN_CONVERTERS.put(type, converter);
+        RESOLVED_CONVERTER_CACHE.clear();
     }
 
     /**
@@ -69,13 +73,19 @@ final class LuaResultConverter {
      * extending {@code IEntity}) win cleanly over broader parent converters.
      */
     private static @Nullable LuaBinder.ValueConverter findConverter(@Nullable Class<?> type) {
-        if (type == null) {
+        if (type == null || RETURN_CONVERTERS.isEmpty()) {
             return null;
         }
         LuaBinder.ValueConverter exact = RETURN_CONVERTERS.get(type);
-        if (exact != null || RETURN_CONVERTERS.isEmpty()) {
+        if (exact != null) {
             return exact;
         }
+        return RESOLVED_CONVERTER_CACHE
+                .computeIfAbsent(type, LuaResultConverter::resolveConverterBfs)
+                .orElse(null);
+    }
+
+    private static @NotNull Optional<LuaBinder.ValueConverter> resolveConverterBfs(@NotNull Class<?> type) {
         Queue<Class<?>> queue = new ArrayDeque<>();
         Set<Class<?>> visited = new HashSet<>();
         queue.add(type);
@@ -84,11 +94,11 @@ final class LuaResultConverter {
             Class<?> current = queue.poll();
             LuaBinder.ValueConverter hit = RETURN_CONVERTERS.get(current);
             if (hit != null) {
-                return hit;
+                return Optional.of(hit);
             }
             enqueueHierarchy(current, queue, visited);
         }
-        return null;
+        return Optional.empty();
     }
 
     private static void enqueueHierarchy(Class<?> current, Queue<Class<?>> queue, Set<Class<?>> visited) {

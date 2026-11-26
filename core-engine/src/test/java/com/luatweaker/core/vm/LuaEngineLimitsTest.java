@@ -2,6 +2,7 @@ package com.luatweaker.core.vm;
 
 import com.luatweaker.core.logger.AsyncFileLogger;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -94,5 +95,68 @@ class LuaEngineLimitsTest {
         LuavaEngine engine = new LuavaEngine(false);
         assertEquals(0, engine.rawState().getMaxCoroutines(),
                 "unlimitedLeavesMaxCoroutinesUntouched: default coroutine cap must be zero");
+    }
+
+    @Nested
+    class GuardedJitLimits {
+
+        private static final String EXPECTED_ILLEGAL_ARGUMENT =
+                "expected IllegalArgumentException for negative cap";
+
+        @Test
+        void rejectsNegativeInstructionLimit() {
+            IllegalArgumentException error;
+            try {
+                new LuaEngineLimits(0L, 0, 0, -1L, 0L, 0L, false);
+                throw new AssertionError(EXPECTED_ILLEGAL_ARGUMENT);
+            } catch (IllegalArgumentException expected) {
+                error = expected;
+            }
+            assertTrue(error != null && error.getMessage().contains("instructionLimit"),
+                    "error message must name instructionLimit: " + error.getMessage());
+        }
+
+        @Test
+        void rejectsNegativeTimeoutMillis() {
+            IllegalArgumentException error;
+            try {
+                new LuaEngineLimits(0L, 0, 0, 0L, -5L, 0L, false);
+                throw new AssertionError(EXPECTED_ILLEGAL_ARGUMENT);
+            } catch (IllegalArgumentException expected) {
+                error = expected;
+            }
+            assertTrue(error != null && error.getMessage().contains("timeoutMillis"),
+                    "error message must name timeoutMillis: " + error.getMessage());
+        }
+
+        @Test
+        void rejectsNegativeMaxAllocationBytes() {
+            IllegalArgumentException error;
+            try {
+                new LuaEngineLimits(0L, 0, 0, 0L, 0L, -10L, false);
+                throw new AssertionError(EXPECTED_ILLEGAL_ARGUMENT);
+            } catch (IllegalArgumentException expected) {
+                error = expected;
+            }
+            assertTrue(error != null && error.getMessage().contains("maxAllocationBytes"),
+                    "error message must name maxAllocationBytes: " + error.getMessage());
+        }
+
+        @Test
+        void cancellableAloneMarksLimitsSet() {
+            LuaEngineLimits limits = new LuaEngineLimits(0L, 0, 0, 0L, 0L, 0L, true);
+            assertTrue(limits.isAnyLimitSet(), "cancellable flag must mark limits as active");
+        }
+
+        @Test
+        void describeIncludesGuardedJitFieldsWhenConfigured() {
+            LuaEngineLimits limits = new LuaEngineLimits(0L, 0, 0, 10_000L, 500L, 4096L, true);
+            String described = limits.describe();
+            assertTrue(described.contains("instructionLimit=10000")
+                            && described.contains("timeoutMillis=500")
+                            && described.contains("maxAllocationBytes=4096")
+                            && described.contains("cancellable=true"),
+                    "describe must include configured guarded-JIT limits: " + described);
+        }
     }
 }

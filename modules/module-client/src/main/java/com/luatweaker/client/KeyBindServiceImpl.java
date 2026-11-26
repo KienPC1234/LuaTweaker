@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 
@@ -20,6 +21,7 @@ public class KeyBindServiceImpl implements IKeyBindService {
     private final Map<String, KeyBindEntry> keyBinds = new ConcurrentHashMap<>();
     private final AtomicReference<BiConsumer<String, String>> listener = new AtomicReference<>();
     private final AtomicReference<BiConsumer<String, String>> releaseListener = new AtomicReference<>();
+    private final AtomicLong registrationVersion = new AtomicLong();
 
     @Override
     public void registerKeyBind(String id, String displayName, String category, int defaultKey,
@@ -39,6 +41,12 @@ public class KeyBindServiceImpl implements IKeyBindService {
         String payload = onPressPayload == null ? "" : onPressPayload;
         String mod = KeyNames.parseModifier(modifier);
         keyBinds.put(id, new KeyBindEntry(id, name, cat, defaultKey, payload, type, mod));
+        registrationVersion.incrementAndGet();
+    }
+
+    @Override
+    public long getRegistrationVersion() {
+        return registrationVersion.get();
     }
 
     private static String defaultName(String id, String displayName) {

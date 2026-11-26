@@ -5,6 +5,7 @@ import com.luatweaker.api.vm.ILuaTable;
 import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.core.bind.LuaBinder;
 import com.luatweaker.common.LuaTweakerCommon;
+import com.luatweaker.core.signal.LuaSignalDispatcher;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Camera;
@@ -21,7 +22,9 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Client-side world-space rendering primitives.
@@ -44,9 +47,27 @@ public final class MinecraftWorldRenderEventListener {
     /** On-screen margin (in NDC) beyond which a projected point is treated as off-screen. */
     private static final float NDC_MARGIN = 1.5f;
 
+    private static final String RENDER_CLIENT_SERVICE = "Client";
+    private static final String ON_RENDER_WORLD_SIGNAL = "OnRenderWorld";
+    private static final int MATRIX_FLOAT_COUNT = 16;
+
     private static final ThreadLocal<List<Object>> PENDING_OPS = ThreadLocal.withInitial(ArrayList::new);
     private static final ThreadLocal<Camera> CURRENT_CAMERA = new ThreadLocal<>();
-    private static final ThreadLocal<float[]> CURRENT_PROJECTION = new ThreadLocal<>();
+    private static final ThreadLocal<float[]> PROJECTION_BUFFER =
+            ThreadLocal.withInitial(() -> new float[MATRIX_FLOAT_COUNT]);
+    private static final ThreadLocal<Boolean> HAS_PROJECTION = ThreadLocal.withInitial(() -> Boolean.FALSE);
+    private static final ThreadLocal<org.joml.Vector3f> SCRATCH_VEC3 =
+            ThreadLocal.withInitial(org.joml.Vector3f::new);
+    private static final ThreadLocal<org.joml.Quaternionf> SCRATCH_QUAT =
+            ThreadLocal.withInitial(org.joml.Quaternionf::new);
+    private static final ThreadLocal<org.joml.Vector4f> SCRATCH_VEC4 =
+            ThreadLocal.withInitial(org.joml.Vector4f::new);
+    private static final ThreadLocal<org.joml.Matrix4f> SCRATCH_MAT4 =
+            ThreadLocal.withInitial(org.joml.Matrix4f::new);
+    private static final ThreadLocal<Map<UUID, Entity>> FRAME_ENTITY_INDEX =
+            ThreadLocal.withInitial(ConcurrentHashMap::new);
+    private static final ThreadLocal<Boolean> FRAME_ENTITY_INDEX_READY =
+            ThreadLocal.withInitial(() -> Boolean.FALSE);
 
     private MinecraftWorldRenderEventListener() {
     }
@@ -175,10 +196,10 @@ public final class MinecraftWorldRenderEventListener {
             return result;
         }
         Camera camera = CURRENT_CAMERA.get();
-        float[] projection = CURRENT_PROJECTION.get();
-        if (camera == null || projection == null) {
+        if (camera == null || !Boolean.TRUE.equals(HAS_PROJECTION.get())) {
             return result;
         }
+        float[] projection = PROJECTION_BUFFER.get();
         org.joml.Vector4f clip = projectToClip(camera, projection,
                 args[offset].asDouble(), args[offset + 1].asDouble(), args[offset + 2].asDouble());
         if (clip.w <= CLIP_W_EPSILON) {
@@ -200,12 +221,12 @@ public final class MinecraftWorldRenderEventListener {
     private static @NotNull org.joml.Vector4f projectToClip(@NotNull Camera camera,
                                                             float @NotNull [] projection,
                                                             double worldX, double worldY, double worldZ) {
-        org.joml.Vector3f camPos = camera.getPosition().toVector3f();
-        org.joml.Vector3f relative = new org.joml.Vector3f(
-                (float) worldX - camPos.x, (float) worldY - camPos.y, (float) worldZ - camPos.z);
-        org.joml.Vector3f view = camera.rotation().conjugate().transform(relative);
-        org.joml.Vector4f clip = new org.joml.Vector4f(view.x, view.y, view.z, 1.0f);
-        new org.joml.Matrix4f().set(projection).transform(clip);
+        net.minecraft.world.phys.Vec3 camPos = camera.getPosition();
+        org.joml.Vector3f view = SCRATCH_VEC3.get().set(
+                (float) (worldX - camPos.x), (float) (worldY - camPos.y), (float) (worldZ - camPos.z));
+        camera.rotation().conjugate(SCRATCH_QUAT.get()).transform(view);
+        org.joml.Vector4f clip = SCRATCH_VEC4.get().set(view.x, view.y, view.z, 1.0f);
+        SCRATCH_MAT4.get().set(projection).transform(clip);
         return clip;
     }
 
@@ -230,75 +251,54 @@ public final class MinecraftWorldRenderEventListener {
         if (level == null) {
             return null;
         }
-        for (Entity entity : level.entitiesForRendering()) {
-            if (entity.getUUID().equals(id)) {
-                return entity;
+        Map<UUID, Entity> index = FRAME_ENTITY_INDEX.get();
+        if (!Boolean.TRUE.equals(FRAME_ENTITY_INDEX_READY.get())) {
+            index.clear();
+            for (Entity entity : level.entitiesForRendering()) {
+                index.put(entity.getUUID(), entity);
             }
+            FRAME_ENTITY_INDEX_READY.set(Boolean.TRUE);
         }
-        return null;
+        return index.get(id);
+    }
+
+    private static void clearFrameEntityIndex() {
+        if (Boolean.TRUE.equals(FRAME_ENTITY_INDEX_READY.get())) {
+            FRAME_ENTITY_INDEX.get().clear();
+            FRAME_ENTITY_INDEX_READY.set(Boolean.FALSE);
+        }
     }
 
     public static void onRenderLevel(@NotNull PoseStack poseStack, @NotNull Camera camera,
                                      @NotNull org.joml.Matrix4f projectionMatrix, float deltaTicks) {
         ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
+        List<Object> ops = PENDING_OPS.get();
         if (engine == null) {
-            PENDING_OPS.get().clear();
+            ops.clear();
             return;
         }
-        List<Object> ops = PENDING_OPS.get();
-        CURRENT_CAMERA.set(camera);
-        CURRENT_PROJECTION.set(projectionMatrix.get(new float[16]));
+        if (LuaSignalDispatcher.hasListeners(engine, RENDER_CLIENT_SERVICE, ON_RENDER_WORLD_SIGNAL)) {
+            CURRENT_CAMERA.set(camera);
+            projectionMatrix.get(PROJECTION_BUFFER.get());
+            HAS_PROJECTION.set(Boolean.TRUE);
 
-        // Fire the Lua signal first (scripts queue DrawLine/DrawBox during it).
-        RenderFirewall.run(() -> fireOnRenderWorld(engine, deltaTicks),
-                () -> "Client.OnRenderWorld dispatch failed");
+            // Fire the Lua signal first (scripts queue DrawLine/DrawBox during it).
+            try {
+                RenderFirewall.run(() -> LuaSignalDispatcher.fireNumber(
+                        engine, RENDER_CLIENT_SERVICE, ON_RENDER_WORLD_SIGNAL, deltaTicks),
+                        () -> "Client.OnRenderWorld dispatch failed");
+            } finally {
+                clearFrameEntityIndex();
+            }
+        }
 
         // Render queued primitives. The stage pose stack only carries the camera
         // rotation (LevelRenderer renders everything camera-relative), so world
         // coordinates must be shifted by -cameraPosition before drawing.
         if (!ops.isEmpty()) {
             RenderFirewall.runLoud(() -> drawPendingOps(ops, poseStack, camera), () -> "[RenderService] Render failed");
+            ops.clear();
         }
-        PENDING_OPS.get().clear();
-    }
-
-    private static void fireOnRenderWorld(@NotNull ILuaEngine engine, float deltaTicks) {
-        ILuaTable globals = engine.getGlobalEnvironment();
-        ILuaTable signal = renderSignal(globals);
-        if (signal == null || !hasListeners(signal)) {
-            return;
-        }
-        ILuaValue fireFn = fireSync(globals);
-        if (fireFn == null) {
-            return;
-        }
-        engine.callFunction(fireFn, signal,
-                engine.wrapNumber(deltaTicks));
-    }
-
-    /** The {@code Client.OnRenderWorld} signal table, or {@code null} before Lua built it. */
-    private static @Nullable ILuaTable renderSignal(@NotNull ILuaTable globals) {
-        ILuaValue client = globals.rawget("Client");
-        if (client == null || !client.isTable()) {
-            return null;
-        }
-        ILuaValue signal = client.asTable().rawget("OnRenderWorld");
-        return signal != null && signal.isTable() ? signal.asTable() : null;
-    }
-
-    /** Skip the per-frame VM round trip when nothing is connected to the signal. */
-    private static boolean hasListeners(@NotNull ILuaTable signal) {
-        ILuaValue listeners = signal.rawget("_listeners");
-        return listeners != null && listeners.isTable() && listeners.asTable().length() > 0;
-    }
-
-    private static @Nullable ILuaValue fireSync(@NotNull ILuaTable globals) {
-        ILuaValue signalClass = globals.rawget("Signal");
-        if (signalClass == null || !signalClass.isTable()) {
-            return null;
-        }
-        ILuaValue fireFn = signalClass.asTable().rawget("FireSync");
-        return fireFn != null && fireFn.isFunction() ? fireFn : null;
     }
 
     private static void drawPendingOps(@NotNull List<Object> ops, @NotNull PoseStack poseStack,

@@ -39,6 +39,8 @@ final class LuaArgConverter {
         Map.entry(Boolean.class, Boolean::valueOf),
         Map.entry(ILuaValue.class, def -> null),
         Map.entry(ILuaTable.class, def -> null),
+        Map.entry(Map.class, def -> Map.of()),
+        Map.entry(List.class, def -> List.of()),
         Map.entry(Object.class, def -> null),
         Map.entry(IEntity.class, def -> null)
     );
@@ -117,12 +119,13 @@ final class LuaArgConverter {
         return list;
     }
 
+    /** Sentinel indicating a malformed {@code @LuaDefault} that must fail lazily at invocation. */
+    static final Object INVALID_DEFAULT = new Object();
+
     /** Map parameters arrive as Lua tables. */
     private static @NotNull Map<String, Object> convertMap(@NotNull ILuaTable tbl) {
         Map<String, Object> map = new ConcurrentHashMap<>();
-        for (Map.Entry<ILuaValue, ILuaValue> entry : tbl.asMap().entrySet()) {
-            map.put(entry.getKey().asString(), entry.getValue().toJavaObject());
-        }
+        tbl.forEach((key, value) -> map.put(key.asString(), value.toJavaObject()));
         return map;
     }
 
@@ -156,6 +159,19 @@ final class LuaArgConverter {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException(
                 "Invalid @LuaDefault for " + methodName + " argument " + index + ": " + def, e);
+        }
+    }
+
+    /** Pre-parses a {@code @LuaDefault} at bind time, returning {@link #INVALID_DEFAULT} if malformed. */
+    static @Nullable Object tryPreparseDefault(@NotNull String def, @NotNull Class<?> type) {
+        Function<String, Object> parser = DEFAULT_PARSERS.get(type);
+        if (parser == null) {
+            return null;
+        }
+        try {
+            return parser.apply(def);
+        } catch (NumberFormatException e) {
+            return INVALID_DEFAULT;
         }
     }
 }

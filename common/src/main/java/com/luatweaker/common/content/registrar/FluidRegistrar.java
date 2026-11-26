@@ -4,22 +4,15 @@ import com.luatweaker.api.content.IContentService;
 import com.luatweaker.api.content.IFluidBuilder;
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
-import com.luatweaker.common.LuaTweakerCommon;
 import com.luatweaker.common.util.CallbackFirewall;
-import dev.architectury.core.block.ArchitecturyLiquidBlock;
-import dev.architectury.core.fluid.ArchitecturyFlowingFluid;
 import dev.architectury.core.fluid.ArchitecturyFluidAttributes;
-import dev.architectury.core.item.ArchitecturyBucketItem;
 import dev.architectury.registry.registries.DeferredRegister;
 import dev.architectury.registry.registries.RegistrySupplier;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LiquidBlock;
-import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.level.material.Fluid;
 import org.jetbrains.annotations.NotNull;
@@ -28,11 +21,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
- * Cross-loader custom fluid registrar powered by Architectury Fluid API
- * ({@link ArchitecturyFlowingFluid}, {@link ArchitecturyLiquidBlock}, {@link ArchitecturyBucketItem}).
+ * Cross-loader custom fluid registrar powered by Architectury Fluid API.
  */
 public final class FluidRegistrar {
 
@@ -43,12 +36,14 @@ public final class FluidRegistrar {
             @NotNull RegistrySupplier<Item> bucket) {
     }
 
+    private static final String MOD_ID = "luatweaker";
+
     private static final DeferredRegister<Fluid> FLUIDS =
-            DeferredRegister.create(LuaTweakerCommon.MOD_ID, Registries.FLUID);
+            DeferredRegister.create(MOD_ID, Registries.FLUID);
     private static final DeferredRegister<Block> FLUID_BLOCKS =
-            DeferredRegister.create(LuaTweakerCommon.MOD_ID, Registries.BLOCK);
+            DeferredRegister.create(MOD_ID, Registries.BLOCK);
     private static final DeferredRegister<Item> FLUID_ITEMS =
-            DeferredRegister.create(LuaTweakerCommon.MOD_ID, Registries.ITEM);
+            DeferredRegister.create(MOD_ID, Registries.ITEM);
 
     private static final List<RegisteredFluidEntry> ENTRIES = new CopyOnWriteArrayList<>();
 
@@ -81,6 +76,10 @@ public final class FluidRegistrar {
         FluidClientVisuals.register(ENTRIES);
     }
 
+    public static void forEachRegisteredFluid(@NotNull Consumer<Fluid> consumer) {
+        FluidClientVisuals.forEachFluid(ENTRIES, consumer);
+    }
+
     private void queueFluid(@NotNull IFluidBuilder builder) {
         ResourceLocation stillId = locationParser.apply(builder.getId());
         String basePath = stillId.getPath();
@@ -99,25 +98,21 @@ public final class FluidRegistrar {
                 builder, locationParser, stillRef, flowRef, blockRef, bucketRef);
 
         RegistrySupplier<FlowingFluid> stillSupplier = FLUIDS.register(basePath,
-                () -> new ArchitecturyFlowingFluid.Source(attributes));
+                () -> FluidAttributesFactory.createSource(attributes));
         RegistrySupplier<FlowingFluid> flowSupplier = FLUIDS.register(flowingPath,
-                () -> new ArchitecturyFlowingFluid.Flowing(attributes));
+                () -> FluidAttributesFactory.createFlowing(attributes));
         stillRef.set(stillSupplier);
         flowRef.set(flowSupplier);
 
         RegistrySupplier<LiquidBlock> blockSupplier = FLUID_BLOCKS.register(blockPath, () -> {
-            LiquidBlock block = new ArchitecturyLiquidBlock(stillSupplier,
-                    BlockBehaviour.Properties.ofFullCopy(Blocks.WATER)
-                            .lightLevel(state -> builder.getLightLevel()));
+            LiquidBlock block = LuaLiquidBlock.create(stillSupplier, builder);
             createdBlocks.put(blockId, block);
             return block;
         });
         blockRef.set(blockSupplier);
 
         RegistrySupplier<Item> bucketSupplier = FLUID_ITEMS.register(bucketPath, () -> {
-            Item bucket = new ArchitecturyBucketItem(stillSupplier,
-                    new Item.Properties().craftRemainder(Items.BUCKET).stacksTo(1)
-                            .rarity(FluidAttributesFactory.parseRarity(builder.getRarity())));
+            Item bucket = FluidAttributesFactory.createBucket(stillSupplier, builder);
             createdItems.put(bucketId, bucket);
             return bucket;
         });

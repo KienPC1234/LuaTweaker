@@ -1,11 +1,14 @@
 package com.luatweaker.common.content.registrar;
 
 import com.luatweaker.api.content.IFluidBuilder;
+import dev.architectury.core.fluid.ArchitecturyFlowingFluid;
 import dev.architectury.core.fluid.ArchitecturyFluidAttributes;
 import dev.architectury.core.fluid.SimpleArchitecturyFluidAttributes;
+import dev.architectury.core.item.ArchitecturyBucketItem;
 import dev.architectury.registry.registries.RegistrySupplier;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.Rarity;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.material.FlowingFluid;
@@ -48,6 +51,20 @@ final class FluidAttributesFactory {
                 .tickDelay(builder.getTickRate())
                 .explosionResistance(builder.getExplosionResistance())
                 .rarity(parseRarity(builder.getRarity()));
+    }
+
+    static FlowingFluid createSource(ArchitecturyFluidAttributes attributes) {
+        return new ArchitecturyFlowingFluid.Source(attributes);
+    }
+
+    static FlowingFluid createFlowing(ArchitecturyFluidAttributes attributes) {
+        return new ArchitecturyFlowingFluid.Flowing(attributes);
+    }
+
+    static Item createBucket(RegistrySupplier<FlowingFluid> stillSupplier, IFluidBuilder builder) {
+        return new ArchitecturyBucketItem(stillSupplier,
+                new Item.Properties().craftRemainder(Items.BUCKET).stacksTo(1)
+                        .rarity(parseRarity(builder.getRarity())));
     }
 
     static Rarity parseRarity(String rawRarity) {

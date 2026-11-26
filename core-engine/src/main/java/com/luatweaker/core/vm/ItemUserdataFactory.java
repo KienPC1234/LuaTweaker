@@ -6,6 +6,7 @@ import org.luava.runtime.LuaException;
 import org.luava.runtime.LuaFunction;
 import org.luava.runtime.LuaNil;
 import org.luava.runtime.LuaState;
+import org.luava.runtime.LuaString;
 import org.luava.runtime.LuaTable;
 import org.luava.runtime.LuaUserdata;
 import org.luava.runtime.LuaValue;
@@ -51,9 +52,9 @@ public final class ItemUserdataFactory {
         setMethod(meta, "withNbt", withNbt);           setMethod(meta, "nbt", withNbt);
 
         LuaTable indexTable = new LuaTable();
-        indexTable.rawset(LuaValue.valueOf("id"), LuaValue.valueOf(ic.itemId()));
-        indexTable.rawset(LuaValue.valueOf("count"), LuaValue.valueOf(ic.count()));
-        indexTable.rawset(LuaValue.valueOf("damage"), LuaValue.valueOf(ic.damage()));
+        indexTable.rawset(LuaString.interned("id"), LuaValue.valueOf(ic.itemId()));
+        indexTable.rawset(LuaString.interned("count"), LuaValue.valueOf(ic.count()));
+        indexTable.rawset(LuaString.interned("damage"), LuaValue.valueOf(ic.damage()));
 
         meta.rawset(LuaValue.Meta.INDEX, indexHandler(meta, indexTable));
 
@@ -129,7 +130,7 @@ public final class ItemUserdataFactory {
         setMethod(meta, "orIngredient", orFunction);
         setMethod(meta, "alt", orFunction);
         setMethod(meta, "otherwise", orFunction);
-        meta.rawset(LuaValue.valueOf("descriptor"), LuaValue.valueOf(ing.descriptor()));
+        meta.rawset(LuaString.interned("descriptor"), LuaValue.valueOf(ing.descriptor()));
         meta.rawset(LuaValue.Meta.INDEX, meta);
 
         LuaUserdata userdata = new LuaUserdata(ing);
@@ -161,6 +162,6 @@ public final class ItemUserdataFactory {
     }
 
     private static void setMethod(LuaTable meta, String name, LuaFunction function) {
-        meta.rawset(LuaValue.valueOf(name), function);
+        meta.rawset(LuaString.interned(name), function);
     }
 }

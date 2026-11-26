@@ -57,4 +57,12 @@ public interface IKeyBindService {
     void setKeyBindListener(java.util.function.BiConsumer<String, String> listener);
 
     void setKeyBindReleaseListener(java.util.function.BiConsumer<String, String> listener);
+
+    /**
+     * Monotonically incrementing version bumped on each keybind registration so
+     * client tick polling can skip scanning {@link #getRegisteredKeyBinds()} when unchanged.
+     */
+    default long getRegistrationVersion() {
+        return -1L;
+    }
 }

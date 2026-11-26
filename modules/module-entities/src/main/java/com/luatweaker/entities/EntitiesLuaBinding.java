@@ -14,12 +14,20 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.luava.runtime.LuaException;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 public final class EntitiesLuaBinding {
 
     private static final String DYNAMIC_GET_GLOBAL = "__luatweaker_dynamic_get";
     private static final String DYNAMIC_SET_GLOBAL = "__luatweaker_dynamic_set";
+
+    private record PrototypeMetatables(ILuaTable entityMeta, ILuaTable playerMeta) {}
+
+    private static final Map<ILuaEngine, PrototypeMetatables> PROTOTYPE_CACHE =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     private EntitiesLuaBinding() {}
 
@@ -31,25 +39,35 @@ public final class EntitiesLuaBinding {
                 value instanceof IEntity entity ? createEntityLuaTable(engine, entity) : engine.nilValue());
     }
 
+    private static PrototypeMetatables buildPrototypeMetatables(@NotNull ILuaEngine engine) {
+        ILuaTable entityProto = LuaBinder.bindPrototype(engine, IEntity.class, EntitiesLuaBinding::getEntityFromTable);
+        EntityPositionHelpers.addPrototypePositionHelpers(engine, entityProto);
+        ILuaTable entityMeta = EntityPropertyAliases.createSharedMetatable(engine, entityProto, false);
+
+        ILuaTable playerProto = LuaBinder.bindPrototype(engine, IPlayer.class, EntitiesLuaBinding::getEntityFromTable);
+        playerProto.rawset("actionText", playerProto.rawget("sendActionBar"));
+        EntityPositionHelpers.addPrototypePositionHelpers(engine, playerProto);
+        ILuaTable playerMeta = EntityPropertyAliases.createSharedMetatable(engine, playerProto, true);
+
+        return new PrototypeMetatables(entityMeta, playerMeta);
+    }
+
     public static ILuaTable createPlayerLuaTable(ILuaEngine engine, IPlayer player) {
-        ILuaTable table = LuaBinder.bindTable(engine, player, IPlayer.class);
+        ILuaTable table = engine.createTable();
         table.rawset("__entity", engine.wrapUserdata(player));
-        table.rawset("actionText", table.rawget("sendActionBar"));
-        EntityPositionHelpers.addPositionHelpers(engine, table, player);
-        EntityPropertyAliases.addPlayerPropertyAliases(engine, table, player);
+        table.setMetatable(PROTOTYPE_CACHE.computeIfAbsent(engine, EntitiesLuaBinding::buildPrototypeMetatables).playerMeta());
         return table;
     }
 
     public static ILuaTable createEntityLuaTable(ILuaEngine engine, IEntity entity) {
-        ILuaTable table = LuaBinder.bindTable(engine, entity, IEntity.class);
+        ILuaTable table = engine.createTable();
         table.rawset("__entity", engine.wrapUserdata(entity));
-        EntityPositionHelpers.addPositionHelpers(engine, table, entity);
-        EntityPropertyAliases.addPropertyAliases(engine, table, entity);
+        table.setMetatable(PROTOTYPE_CACHE.computeIfAbsent(engine, EntitiesLuaBinding::buildPrototypeMetatables).entityMeta());
         return table;
     }
 
-    public static IEntity getEntityFromTable(ILuaValue tableVal) {
-        if (!tableVal.isTable()) {
+    public static IEntity getEntityFromTable(@Nullable ILuaValue tableVal) {
+        if (tableVal == null || !tableVal.isTable()) {
             return null;
         }
         ILuaValue entityVal = tableVal.asTable().rawget("__entity");

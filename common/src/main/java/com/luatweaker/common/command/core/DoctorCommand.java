@@ -54,8 +54,15 @@ public class DoctorCommand implements ILuaTweakerCommand {
     }
 
     private void reportEngine(@NotNull ICommandSender sender) {
-        boolean engineOk = LuaTweakerCommon.getActiveEngine() != null;
+        com.luatweaker.api.vm.ILuaEngine engine = LuaTweakerCommon.getActiveEngine();
+        boolean engineOk = engine != null;
         sender.sendMessage("§7Engine: §" + (engineOk ? "aACTIVE" : "cMISSING"));
+        if (engineOk) {
+            String diagnostics = engine.describeDiagnostics();
+            if (diagnostics != null && !diagnostics.isBlank()) {
+                sender.sendMessage("§7VM: §f" + diagnostics);
+            }
+        }
     }
 
     private void reportMods(@NotNull ICommandSender sender) {

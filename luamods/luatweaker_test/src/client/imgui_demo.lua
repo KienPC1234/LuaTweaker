@@ -141,10 +141,10 @@ ImGui.OnFrame:Connect(function()
                 ImGui:TableSetupColumn("Item")
                 ImGui:TableHeadersRow()
                 local kit = {
-                    { icon = "luatweaker_test:crystal_sword", name = "Crystal Sword x1" },
-                    { icon = "luatweaker_test:mana_potion", name = "Mana Potion x3" },
-                    { icon = "luatweaker_test:crystal_detector", name = "Crystal Detector x1" },
-                    { icon = "luatweaker_test:arcane_device", name = "Arcane Device x1" }
+                    { icon = "luatweaker:crystal_sword", name = "Crystal Sword x1" },
+                    { icon = "luatweaker:mana_potion", name = "Mana Potion x3" },
+                    { icon = "luatweaker:crystal_detector", name = "Crystal Detector x1" },
+                    { icon = "luatweaker:arcane_device", name = "Arcane Device x1" }
                 }
                 for i = 1, #kit do
                     ImGui:TableNextRow()

@@ -93,7 +93,7 @@ Never commit or embed API keys, tokens, passwords, database URLs — even "place
 
 - Read the surrounding code, dependencies, imports, and existing implementations before editing.
 - Respect existing patterns: module/builder architecture, Roblox-style Lua conventions, LuaBinder auto-binding (Section 5).
-- Check environment parity: Java 21, Architectury 13.0.8 (NeoForge 21.1.242 & Fabric 0.16.10), luava 0.2.7 (Lua 5.4), Luau-style Lua.
+- Check environment parity: Java 21, Architectury 13.0.8 (NeoForge 21.1.242 & Fabric 0.16.10), luava 0.3.0 (Lua 5.4), Luau-style Lua.
 
 ## 0.10 — NO Silent Errors — Loud, Honest Failure Reporting
 
@@ -321,7 +321,7 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 
 ## 5.1 — Bindings Mandatory via LuaBinder (Manual Glue BANNED)
 
-- Every NEW service binding: `LuaBinder.bind(engine, name, impl, apiClass, aliases...)` or `LuaBinder.bindTable(...)` for wrapper tables.
+- Every NEW service binding: `LuaBinder.bind(engine, name, impl, apiClass, aliases...)`. For per-instance wrapper tables created in hot paths (entities, players, or new recurring handle types), use `LuaBinder.bindPrototype(engine, apiClass, receiverExtractor)` cached once per engine in a `WeakHashMap<ILuaEngine, ...>` with a shared metatable — NEVER per-instance `bindTable(...)`.
 - Optional parameters → `@LuaDefault` on interface — DO NOT write manual fallback logic in bindings.
 - Copying old patterns (`int off = (args.length > 0 && args[0].isTable()) ? 1 : 0;` + `args[off].asInt()` + delegate) is STRICTLY BANNED.
 - Exceptions (with valid rationale): builder DSL (`ContentLuaBinding`), complex parsing (`RecipesLuaBinding`), wrappers with custom lifecycle (`StorageLuaBinding`, `NetworkLuaBinding`).
@@ -329,7 +329,7 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 ## 5.2 — ONE Unified Entity API (Dual Parallel Wrappers BANNED)
 
 - `IEntity` is the sole wrapper. `MinecraftEntityWrapper` + `MinecraftPlayerWrapper` are implementations; `MinecraftInteractableEntity implements IEntity` (no secondary view).
-- Lua entity/player tables: `EntitiesLuaBinding.createEntityLuaTable` / `createPlayerLuaTable` — method style + property aliases (Health, MaxHealth, Type, CustomName, Velocity, Position) via metatable.
+- Lua entity/player tables: `EntitiesLuaBinding.createEntityLuaTable` / `createPlayerLuaTable` wrap `{ __entity = userdata }` onto shared per-engine prototypes (`LuaBinder.bindPrototype` + `EntityPropertyAliases`). Direct property aliases dispatch to Java lambdas in `EntityPropertyTable` (with prototype method precedence so methods like `CanFly`/`IsPassenger` are never shadowed) and cache `Vector3.new` per engine — re-entering `engine.callFunction` for known properties is BANNED.
 - Creating a second entity API (like the old `wrapEntity` with mismatched method names: `ShootProjectile` vs `shootProjectile`) is STRICTLY BANNED.
 - Projectiles: **EXACTLY ONE place** to fire — `EntityInteractionHelper.shootProjectile/shootProjectileAt` + `MinecraftInteractableEntity` overrides delegating to the helper. Dual independent switch tables are BANNED.
 
@@ -350,8 +350,8 @@ ExampleModule:ExecuteFeature("custom_id", 100)
 - Coroutine threads (created by `task._run_deferred`) **do not acquire the gate** — they belong to the operation that resumed them, and the resuming thread is parked waiting for them. This prevents deadlocks when Java callbacks call back into the engine (e.g. `task.getTimeClock` → `engine.wrapNumber`).
 - Adding gate/synchronization to `wrapString/wrapNumber/wrapBoolean/nilValue/createTable` is BANNED: these are pure factories called from coroutine threads; adding locks will cause deadlocks.
 - Render callbacks (`OnRenderHUD`) MUST use `Signal:FireSync` (synchronous, on the render thread with GuiGraphics context) — async Fire for render is BANNED.
-- Coroutines/deferred tasks: execute via `task._run_deferred` (Java virtual thread, resumes synchronously until yield/termination) — calling `coroutine.resume` directly inside `task._tick` is BANNED.
-- `ILuaEngine.shutdown()` cancels pending coroutines before replacing the engine during reloads.
+- Coroutines/deferred tasks: execute via `task._run_deferred` (`luava 0.3.0` stackless `new LuaCoroutine(LuaClosure)` when the argument is a Lua closure, promoting to virtual threads only when yielding across Java frames; calls execute inline within the caller's execution gate) — calling `coroutine.resume` directly inside `task._tick` is BANNED.
+- `ILuaEngine.shutdown()` closes the underlying `LuaState`, releases coroutine/proxy caches, and cancels pending tasks before replacing the engine during reloads.
 
 ## 5.6 — Network: Clientbound → Network Service of ACTIVE Engine
 
@@ -404,6 +404,17 @@ ExampleModule:ExecuteFeature("custom_id", 100)
   - Arbitrary Java objects from cross-mod interop (GregTech, Create, Mekanism)
   - NOT for core APIs with manual wrappers (Entity/Player/Block/Item hot paths)
 - **Performance:** Cached via `ConcurrentHashMap<Class<?>, Map<String, Method>>`. Target benchmark: < 2x manual wrapper overhead.
+
+## 5.11 — Hot-Path & Allocation Discipline (Anti-Fragmentation Rules)
+
+- **Shared per-engine prototypes for wrapper instances:** Any recurring Lua object backed by a Java interface (`IEntity`, `IPlayer`, future handle types) MUST bind methods once per `ILuaEngine` via `LuaBinder.bindPrototype` (`WeakHashMap<ILuaEngine, ...>`) and attach a shared metatable to lightweight instance tables. Rebuilding method closures per entity/event/scan is STRICTLY BANNED.
+- **One synchronous signal dispatcher (`LuaSignalDispatcher`):** Every `common` and module hook firing bootstrap signals (`RunService.*`, `GuiService.OnRenderHUD`, `ImGui.OnFrame`, `UserInputService.InputBegan/InputEnded`, `Client.OnRenderWorld`, `Client.OnKeyBindPressed/Released`) MUST route through `com.luatweaker.core.signal.LuaSignalDispatcher` (`core-engine`). Copy-pasting `globals -> service -> signal -> _listeners -> FireSync` lookup code is BANNED. `LuaSignalDispatcher` caches `(signal, FireSync)` per engine and MUST skip wrapping arguments when `_listeners` is empty.
+- **Fast-exit before VM entry on empty queues/listeners & version-gated polling:**
+  - Game events in `common` MUST use `EventDispatcher.postLazy` / `EventDispatcher.postCancellable` (or check `EventDispatcher.hasListenersFor(...)` first) so tables/wrappers are never allocated when zero listeners exist.
+  - Tick task pumping (`LuaTweakerCommon.tickActiveEngineTasks`) caches `task` table handles per engine (`TaskPumpCache`), skips `task._tick` when `task._hasPending == false`, and invokes `TaskServiceImpl.tick(engine)` directly only when `getQueuedTaskCount() > 0` instead of bouncing Java -> Lua `_java_tick` -> Java on idle ticks.
+  - Keybind polling (`DynamicKeyMappingHandler`) uses `IKeyBindService.getRegistrationVersion()` to skip per-tick resyncs when no keybinds were added, pre-parses `KeyModifier` enums, and keeps edge state (`wasDown`) inside `KeyMappingState`.
+- **Long-lived AI/callback bridges cache and latch shutdown:** Objects ticked every tick per entity (e.g., `MinecraftLuaGoal`) MUST resolve function references (`GoalCallbacks`) once at construction and latch an `engineClosed` flag after the first `IllegalStateException` from a reloaded engine instead of repeating `rawget` and exception catches every tick.
+- **Render-thread scratch reuse & per-frame indices:** Per-frame hooks (`MinecraftWorldRenderEventListener.onRenderLevel` / `projectToClip` / `findInLevel`) MUST check listener presence before copying matrices, reuse `ThreadLocal` scratch buffers (`float[16]`, JOML `Vector3f`, `Quaternionf`, `Vector4f`, `Matrix4f`), and index `level.entitiesForRendering()` once per frame in a cleared `ThreadLocal<Map<UUID, Entity>>` instead of O(N) linear scans per `GetEntity(uuid)` call.
 
 ---
 
@@ -510,11 +521,11 @@ Dev workspace: `luamods/` -> synced to `neoforge/run/luamods/` and `fabric/run/l
 # Runtime Architecture Notes
 
 - **PAL** (`Platform`) — singleton abstraction, set once at mod initialization.
-- **LuaBinder** — auto-binding from interfaces; interface is the single source of truth (bindings + stubs + docs).
-- **Event bus** — shared map, replace semantics, cross-engine dispatch.
+- **LuaBinder** — auto-binding from interfaces (`bind` for services, `bindPrototype` + shared metatables for high-frequency instance wrappers); interface is the single source of truth (bindings + stubs + docs).
+- **Event bus** — shared map, replace semantics, cross-engine dispatch (`EventDispatcher.postLazy` / `postCancellable` short-circuit on 0 listeners).
 - **Item/Block handlers** — server-side only dispatch.
-- **`LuavaEngine`** — luava 0.2.7 (Lua 5.4) implementation of `ILuaEngine`; synchronized VM entry points; `getAndClearLastExecutionError()` for per-mod load error tracking; `task._run_deferred` creates `LuaCoroutine` on virtual threads and waits bounded (2s) to avoid tick stalling.
-- **`Signal:FireSync`** — synchronous, for render; `Signal:Fire` — asynchronous via task scheduler.
+- **`LuavaEngine`** — luava 0.3.0 (Lua 5.4) implementation of `ILuaEngine`; `StateScope` / `Semaphore` execution gate; `describeDiagnostics()` wired into `/lt doctor`; `task._run_deferred` uses stackless `LuaCoroutine(LuaClosure)` (virtual threads only for Java-frame yields); `task._hasPending` + `TaskPumpCache` skip idle tick entries.
+- **`Signal:FireSync`** — synchronous via `LuaSignalDispatcher` (cached per-engine signal lookups + `hasListeners` fast-exit) for render/input/RunService; `Signal:Fire` — asynchronous via task scheduler.
 - **Clientbound network** — dispatched through the network service of the active engine.
 - **ProjectileRegistry** — real custom projectile definitions (damage/explosionPower applied).
 - **Lua execution stages**: `startup` (content registration) → `server` (runtime) → `client` (HUD/keybind) — all required via `main.lua`; reload instantiates a fresh engine + re-loads mods.

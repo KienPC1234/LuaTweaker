@@ -3,7 +3,7 @@
 -- Autonomous Lua Runtime Libraries (Task, Signal, Roblox APIs)
 -- ===================================================================
 
-local task = {}
+local task = { _hasPending = false }
 local deferred = {}
 local delays = {}
 
@@ -55,6 +55,7 @@ function task.defer(...)
     end
     local entry = makeTaskEntry(fn, args, 0)
     table.insert(deferred, entry)
+    task._hasPending = true
     return entry
 end
 
@@ -107,6 +108,7 @@ function task.delay(...)
     end
     local entry = makeTaskEntry(fn, passArgs, monotonicNow() + sec)
     table.insert(delays, entry)
+    task._hasPending = true
     return entry
 end
 
@@ -160,6 +162,7 @@ function task._tick()
     -- before allocating the snapshot tables and hitting the Java wall clock.
     if #deferred == 0 and #delays == 0 then
         task._lastTickExecuted = 0
+        task._hasPending = false
         return
     end
     -- Snapshot both queues up front. A wait() scheduled by a deferred task during
@@ -175,12 +178,14 @@ function task._tick()
     end
     local executed = 0
 
-    for _, item in ipairs(def) do
+    local defCount = #def
+    for i = 1, defCount do
+        local item = def[i]
         if item.cancelled then
             -- dropped: task.cancel() ran before it started
         elseif executed >= budget then
             -- carried over; it has not started, so task.cancel() still works on it
-            table.insert(deferred, item)
+            deferred[#deferred + 1] = item
         else
             item.started = true
             executed = executed + 1
@@ -189,20 +194,23 @@ function task._tick()
     end
 
     local now = monotonicNow()
-    for _, item in ipairs(due) do
+    local dueCount = #due
+    for i = 1, dueCount do
+        local item = due[i]
         if item.cancelled then
             -- dropped: task.cancel() ran before the deadline
         elseif executed >= budget then
-            table.insert(delays, item)
+            delays[#delays + 1] = item
         elseif now >= item.time then
             item.started = true
             executed = executed + 1
             runDeferred(item.fn, item.args)
         else
-            table.insert(delays, item)
+            delays[#delays + 1] = item
         end
     end
     task._lastTickExecuted = executed
+    task._hasPending = (#deferred > 0 or #delays > 0)
 end
 
 -- Queue snapshot used by /lt doctor. The deferral/delay queues live in this closure,
@@ -268,15 +276,31 @@ function Signal:Once(fn)
 end
 
 function Signal:Fire(...)
-    self._listeners = self._listeners or {}
-    local args = {...}
+    local listeners = self._listeners
+    if not listeners then
+        return
+    end
+    local n = #listeners
+    if n == 0 then
+        return
+    end
+    if n == 1 then
+        local l = listeners[1]
+        if l.connected and type(l.fn) == 'function' then
+            task.spawn(l.fn, ...)
+        end
+        return
+    end
     -- Iterate a snapshot: a listener may Disconnect itself (Once) or another
     -- listener while the automatically-dispatched tasks run.
     local snapshot = {}
-    for i = 1, #self._listeners do snapshot[i] = self._listeners[i] end
-    for _, l in ipairs(snapshot) do
+    for i = 1, n do
+        snapshot[i] = listeners[i]
+    end
+    for i = 1, n do
+        local l = snapshot[i]
         if l.connected and type(l.fn) == 'function' then
-            task.spawn(l.fn, table.unpack(args))
+            task.spawn(l.fn, ...)
         end
     end
 end
@@ -286,15 +310,35 @@ Signal.fire = Signal.Fire
 -- Required for render-time callbacks (e.g. GuiService.OnRenderHUD) that must
 -- draw during the render event while the GuiGraphics context is available.
 function Signal:FireSync(...)
-    self._listeners = self._listeners or {}
-    local args = {...}
+    local listeners = self._listeners
+    if not listeners then
+        return
+    end
+    local n = #listeners
+    if n == 0 then
+        return
+    end
+    if n == 1 then
+        local l = listeners[1]
+        if l.connected and type(l.fn) == 'function' then
+            local ok, err = pcall(l.fn, ...)
+            if not ok and err then
+                local tb = debug and debug.traceback and debug.traceback(err, 2)
+                print('[ERROR][Signal] Listener error: ' .. tostring(err) .. (tb and ('\n' .. tb) or ''))
+            end
+        end
+        return
+    end
     -- Snapshot first: Disconnect removes from the live array, which would skip
     -- the listener that shifts into the current index during iteration.
     local snapshot = {}
-    for i = 1, #self._listeners do snapshot[i] = self._listeners[i] end
-    for _, l in ipairs(snapshot) do
+    for i = 1, n do
+        snapshot[i] = listeners[i]
+    end
+    for i = 1, n do
+        local l = snapshot[i]
         if l.connected and type(l.fn) == 'function' then
-            local ok, err = pcall(l.fn, table.unpack(args))
+            local ok, err = pcall(l.fn, ...)
             if not ok and err then
                 local tb = debug and debug.traceback and debug.traceback(err, 2)
                 print('[ERROR][Signal] Listener error: ' .. tostring(err) .. (tb and ('\n' .. tb) or ''))

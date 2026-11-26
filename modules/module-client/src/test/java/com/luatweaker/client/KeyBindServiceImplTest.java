@@ -85,4 +85,15 @@ class KeyBindServiceImplTest {
                 "triggerKeyBindRelease must notify the listener with id and payload");
     }
 
+    @Test
+    void registrationVersionIncrementsPerBind() {
+        long initial = service.getRegistrationVersion();
+        service.registerKeyBind("a", "A", CATEGORY, 71, PAYLOAD);
+        long afterFirst = service.getRegistrationVersion();
+        service.registerKeyBind("b", "B", CATEGORY, 72, PAYLOAD);
+        assertEquals(List.of(initial + 1L, initial + 2L),
+                List.of(afterFirst, service.getRegistrationVersion()),
+                "registrationVersion must increment once per keybind registration");
+    }
+
 }

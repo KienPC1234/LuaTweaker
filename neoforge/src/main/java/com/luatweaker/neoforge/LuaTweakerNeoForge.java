@@ -52,11 +52,11 @@ public class LuaTweakerNeoForge {
 
         if (dev.architectury.platform.Platform.getEnvironment() == dev.architectury.utils.Env.CLIENT) {
             NeoForgeClientExtensions.register(modBus);
+            NeoForgeGameEvents.register();
         }
 
         NeoForgeRecipeHandler.register();
         NeoForgeRuntimeLootHandler.register();
-        NeoForgeGameEvents.register();
     }
 
     private void registerCapabilities(RegisterCapabilitiesEvent event) {

@@ -126,4 +126,7 @@ Worldgen:ClearAll()
 local afterClear = Worldgen:GetModifications()
 check("ClearAll returns table", type(afterClear) == "table")
 
+-- Restore showcase crystal_ore generation registered during startup
+Worldgen:AddOre("luatweaker:crystal_ore", "minecraft:overworld", -64, 48, 8, 12)
+
 print("[Test][Worldgen] Worldgen service verified")

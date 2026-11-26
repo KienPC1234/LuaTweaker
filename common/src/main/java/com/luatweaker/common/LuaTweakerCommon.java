@@ -3,7 +3,10 @@ package com.luatweaker.common;
 import com.luatweaker.api.log.LogStage;
 import com.luatweaker.api.log.LuaTweakerLog;
 import com.luatweaker.api.pal.Platform;
+import com.luatweaker.api.task.ITaskService;
 import com.luatweaker.api.vm.ILuaEngine;
+import com.luatweaker.api.vm.ILuaTable;
+import com.luatweaker.api.vm.ILuaValue;
 import com.luatweaker.common.bootstrap.LuaRuntimeReloader;
 import com.luatweaker.common.command.LuaTweakerCommandRegistry;
 import com.luatweaker.common.content.BowItemProperties;
@@ -32,6 +35,7 @@ import com.luatweaker.common.worldgen.MinecraftWorldgenPlatform;
 import com.luatweaker.content.ContentServiceImpl;
 import com.luatweaker.content.DatapackServiceImpl;
 import com.luatweaker.core.logger.AsyncFileLogger;
+import com.luatweaker.tasks.TaskServiceImpl;
 import dev.architectury.event.events.common.CommandRegistrationEvent;
 import dev.architectury.event.events.common.LifecycleEvent;
 import dev.architectury.event.events.common.TickEvent;
@@ -39,6 +43,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
@@ -63,6 +68,15 @@ public final class LuaTweakerCommon {
     private static final Map<ResourceLocation, EntityType<?>> CREATED_ENTITIES = new ConcurrentHashMap<>();
     private static final Map<ResourceLocation, java.util.function.Supplier<EntityType<?>>> CREATED_ENTITY_SUPPLIERS = new ConcurrentHashMap<>();
     private static final java.util.Set<ResourceLocation> CREATED_TABS = ConcurrentHashMap.newKeySet();
+
+    private record TaskPumpCache(
+            ILuaEngine engine,
+            ILuaTable taskTable,
+            @Nullable ILuaValue luaTick,
+            @Nullable ILuaValue javaTick,
+            @Nullable ITaskService javaTaskService) {}
+
+    private static final AtomicReference<TaskPumpCache> TASK_PUMP_CACHE = new AtomicReference<>();
 
     private LuaTweakerCommon() {
     }
@@ -115,6 +129,7 @@ public final class LuaTweakerCommon {
 
     public static void setActiveEngine(@Nullable ILuaEngine engine) {
         ACTIVE_ENGINE.set(engine);
+        TASK_PUMP_CACHE.set(null);
     }
 
     public static Map<ResourceLocation, Item> getCreatedItems() {
@@ -155,22 +170,71 @@ public final class LuaTweakerCommon {
         if (engine == null) {
             return;
         }
-        var taskVal = engine.getGlobalEnvironment().rawget("task");
-        if (taskVal == null || !taskVal.isTable()) {
+        TaskPumpCache pump = resolveTaskPump(engine);
+        if (pump == null) {
             return;
         }
-        var taskTbl = taskVal.asTable();
         try {
-            var luaTick = taskTbl.rawget("_tick");
-            if (luaTick != null && luaTick.isFunction()) {
-                engine.callFunction(luaTick);
-            }
-            var javaTick = taskTbl.rawget("_java_tick");
-            if (javaTick != null && javaTick.isFunction()) {
-                engine.callFunction(javaTick);
-            }
+            tickLuaDeferredTasks(engine, pump);
+            tickJavaScheduledTasks(engine, pump);
         } catch (IllegalStateException e) {
+            TASK_PUMP_CACHE.compareAndSet(pump, null);
             LuaTweakerLog.get().debug(LogStage.SYSTEM, "Lua task pump skipped: engine was shut down by reload");
+        }
+    }
+
+    private static @Nullable TaskPumpCache resolveTaskPump(@NotNull ILuaEngine engine) {
+        TaskPumpCache cached = TASK_PUMP_CACHE.get();
+        if (cached != null && engine.equals(cached.engine())) {
+            return cached;
+        }
+        ILuaValue taskVal = engine.getGlobalEnvironment().rawget("task");
+        if (taskVal == null || !taskVal.isTable()) {
+            return null;
+        }
+        ILuaTable taskTbl = taskVal.asTable();
+        ILuaValue luaTick = taskTbl.rawget("_tick");
+        ILuaValue javaTick = taskTbl.rawget("_java_tick");
+        boolean hasJavaTick = javaTick != null && javaTick.isFunction();
+        Object serviceObj = hasJavaTick
+                ? com.luatweaker.core.service.LuaServiceRegistry.get("TaskServiceImpl")
+                : null;
+        ITaskService taskService = serviceObj instanceof ITaskService ts ? ts : null;
+        TaskPumpCache fresh = new TaskPumpCache(
+                engine,
+                taskTbl,
+                luaTick != null && luaTick.isFunction() ? luaTick : null,
+                hasJavaTick ? javaTick : null,
+                taskService);
+        TASK_PUMP_CACHE.set(fresh);
+        return fresh;
+    }
+
+    private static void tickLuaDeferredTasks(@NotNull ILuaEngine engine, @NotNull TaskPumpCache pump) {
+        if (pump.luaTick() == null) {
+            return;
+        }
+        ILuaValue pendingFlag = pump.taskTable().rawget("_hasPending");
+        if (pendingFlag != null && pendingFlag.isBoolean() && !pendingFlag.asBoolean()) {
+            return;
+        }
+        engine.callFunction(pump.luaTick());
+    }
+
+    private static void tickJavaScheduledTasks(@NotNull ILuaEngine engine, @NotNull TaskPumpCache pump) {
+        ITaskService javaTaskService = pump.javaTaskService();
+        if (javaTaskService instanceof TaskServiceImpl impl) {
+            if (impl.getQueuedTaskCount() > 0) {
+                impl.tick(engine);
+            }
+            return;
+        }
+        if (javaTaskService != null) {
+            javaTaskService.tick(engine);
+            return;
+        }
+        if (pump.javaTick() != null) {
+            engine.callFunction(pump.javaTick());
         }
     }
 

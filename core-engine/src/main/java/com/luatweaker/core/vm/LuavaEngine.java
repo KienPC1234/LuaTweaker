@@ -20,12 +20,16 @@ import org.luava.runtime.LuaException;
 import org.luava.runtime.LuaFunction;
 import org.luava.runtime.LuaNil;
 import org.luava.runtime.LuaState;
+import org.luava.runtime.LuaString;
 import org.luava.runtime.LuaTable;
 import org.luava.runtime.LuaUserdata;
 import org.luava.runtime.LuaValue;
+import org.luava.runtime.Stats;
+import org.luava.runtime.Varargs;
 import org.luava.runtime.bytecode.BytecodeVM;
 import org.luava.runtime.bytecode.LuaClosure;
 import org.luava.runtime.concurrency.LuaCoroutine;
+import org.luava.runtime.eval.CallStack;
 
 import java.io.File;
 import java.io.IOException;
@@ -34,6 +38,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
@@ -50,7 +55,7 @@ import java.util.function.BiConsumer;
  * luava-backed implementation of {@link ILuaEngine}.
  *
  * <p>Provides the full engine contract: globals, print/log routing, recipe DSL userdata, native
- * require, deferred task runner and error tracking, all on the luava 0.2.7 runtime. Every VM
+ * require, deferred task runner and error tracking, all on the luava 0.3.0 runtime. Every VM
  * entry point is synchronized because the server thread and the render thread share one state.</p>
  */
 public class LuavaEngine implements ILuaEngine {
@@ -59,6 +64,9 @@ public class LuavaEngine implements ILuaEngine {
     private static final String DEFAULT_LUA_DIR = "lua";
     private static final String BOOTSTRAP_RESOURCE = "/lua/luatweaker_bootstrap.lua";
     private static final String BRAIN_RESOURCE = "/lua/luatweaker_brain.lua";
+    private static final String BOOTSTRAP_SOURCE_PREFIX = "/lua/";
+    private static final long MIN_JIT_INSTRUCTION_LIMIT = 8192L;
+    private static final long BYTES_PER_KIB = 1024L;
     private static final int MILLIS_PER_SECOND = 1000;
     private static final int OUTERMOST_EXECUTION_DEPTH = 1;
 
@@ -71,6 +79,8 @@ public class LuavaEngine implements ILuaEngine {
     private static final int PRINT_CAPACITY = 128;
     /** Index of the optional options argument in {@code item(id, count, options)}. */
     private static final int OPTIONS_ARG_INDEX = 2;
+    private static final ILuaValue[] EMPTY_SPI_VALUES = new ILuaValue[0];
+    private static final LuaValue[] EMPTY_LUAVA_VALUES = new LuaValue[0];
 
     private final LuaState state;
 
@@ -89,7 +99,7 @@ public class LuavaEngine implements ILuaEngine {
      * calls are tracked by {@link #externalDepth} so the gate is released only once.
      */
     private final Semaphore executionGate = new Semaphore(1, true);
-    private final ThreadLocal<Integer> externalDepth = new ThreadLocal<>();
+    private final ThreadLocal<int[]> externalDepth = ThreadLocal.withInitial(() -> new int[1]);
     private static final ThreadLocal<Boolean> COROUTINE_THREAD = new ThreadLocal<>();
 
     /** Suspended/dead coroutines created by deferred tasks, used to stop them on reload. */
@@ -148,6 +158,14 @@ public class LuavaEngine implements ILuaEngine {
      * keeps luava's defaults untouched.
      */
     private void applyLimits() {
+        applyResourceCaps();
+        applyExecutionGuards();
+        if (resourceLimits.isAnyLimitSet()) {
+            AsyncFileLogger.get().info(LogStage.SYSTEM, "Lua engine limits: " + resourceLimits.describe());
+        }
+    }
+
+    private void applyResourceCaps() {
         if (resourceLimits.maxMemoryBytes() > 0) {
             state.maxMemoryBytes(resourceLimits.maxMemoryBytes());
         }
@@ -162,8 +180,26 @@ public class LuavaEngine implements ILuaEngine {
         if (resourceLimits.maxCoroutines() > 0) {
             state.maxCoroutines(resourceLimits.maxCoroutines());
         }
-        if (resourceLimits.isAnyLimitSet()) {
-            AsyncFileLogger.get().info(LogStage.SYSTEM, "Lua engine limits: " + resourceLimits.describe());
+    }
+
+    private void applyExecutionGuards() {
+        if (resourceLimits.instructionLimit() > 0) {
+            state.instructionLimit(resourceLimits.instructionLimit());
+            if (resourceLimits.instructionLimit() < MIN_JIT_INSTRUCTION_LIMIT) {
+                AsyncFileLogger.get().warn(LogStage.SYSTEM,
+                        "instructionLimit=" + resourceLimits.instructionLimit()
+                                + " is below " + MIN_JIT_INSTRUCTION_LIMIT
+                                + "; luava disables JIT for sub-8192 instruction budgets");
+            }
+        }
+        if (resourceLimits.timeoutMillis() > 0) {
+            state.timeout(Duration.ofMillis(resourceLimits.timeoutMillis()));
+        }
+        if (resourceLimits.maxAllocationBytes() > 0) {
+            state.maxAllocationBytes(resourceLimits.maxAllocationBytes());
+        }
+        if (resourceLimits.cancellable()) {
+            state.cancellable();
         }
     }
 
@@ -202,13 +238,11 @@ public class LuavaEngine implements ILuaEngine {
         if (isCoroutineThread()) {
             return;
         }
-        Integer depth = externalDepth.get();
-        if (depth == null) {
+        int[] depth = externalDepth.get();
+        if (depth[0] == 0) {
             executionGate.acquireUninterruptibly();
-            externalDepth.set(1);
-        } else {
-            externalDepth.set(depth + 1);
         }
+        depth[0]++;
     }
 
     /** Leaves the operation, releasing the gate when the outermost call returns. */
@@ -216,15 +250,15 @@ public class LuavaEngine implements ILuaEngine {
         if (isCoroutineThread()) {
             return;
         }
-        Integer depth = externalDepth.get();
-        if (depth == null) {
+        int[] depth = externalDepth.get();
+        if (depth[0] <= 0) {
             return;
         }
-        if (depth <= OUTERMOST_EXECUTION_DEPTH) {
-            externalDepth.remove();
+        if (depth[0] <= OUTERMOST_EXECUTION_DEPTH) {
+            depth[0] = 0;
             executionGate.release();
         } else {
-            externalDepth.set(depth - 1);
+            depth[0]--;
         }
     }
 
@@ -502,17 +536,28 @@ public class LuavaEngine implements ILuaEngine {
         if (!(functionValue instanceof LuaFunction function)) {
             return LuaNil.NIL;
         }
-        LuaCoroutine coroutine = new LuaCoroutine(markCoroutine(function));
+        // Keep LuaClosures unwrapped so luava 0.3.0 runs pure-Lua coroutines on its
+        // stackless trampoline fast-path instead of spawning a VirtualThread per task.
+        LuaCoroutine coroutine = function instanceof LuaClosure
+                ? new LuaCoroutine(function)
+                : new LuaCoroutine(markCoroutine(function));
         if (liveCoroutines.size() >= COROUTINE_PRUNE_THRESHOLD) {
             pruneFinishedCoroutines();
         }
         liveCoroutines.add(coroutine);
+        String moduleHint = ModuleSourceHint.from(function);
+        if (moduleHint != null) {
+            activeModuleStack.get().push(moduleHint);
+        }
         try {
             coroutine.resume(toCallArgs(argAt(args, 1)));
         } catch (LuaException e) {
             AsyncFileLogger.get().error(LogStage.RUNTIME_ERROR,
                     "Deferred task failed: " + LuaErrorFormatter.describe(e));
         } finally {
+            if (moduleHint != null) {
+                activeModuleStack.get().pop();
+            }
             if (coroutine.getStatus() == LuaCoroutine.Status.DEAD) {
                 liveCoroutines.remove(coroutine);
             }
@@ -542,9 +587,12 @@ public class LuavaEngine implements ILuaEngine {
     /** Flattens the optional Lua argument table into a Java array for {@code coroutine.resume}. */
     private static @NotNull LuaValue[] toCallArgs(@NotNull LuaValue argsValue) {
         if (!(argsValue instanceof LuaTable argsTable)) {
-            return new LuaValue[0];
+            return EMPTY_LUAVA_VALUES;
         }
         int length = argsTable.rawlen();
+        if (length == 0) {
+            return EMPTY_LUAVA_VALUES;
+        }
         LuaValue[] callArgs = new LuaValue[length];
         for (int i = 1; i <= length; i++) {
             callArgs[i - 1] = argsTable.rawgetInt(i);
@@ -588,7 +636,7 @@ public class LuavaEngine implements ILuaEngine {
             throw new LuaException(
                     "Parent directory traversal ('..') is forbidden for Sibling Require security.");
         }
-        String currentModule = activeModuleStack.get().peek();
+        String currentModule = resolveActiveSourceId();
         if (currentModule == null || currentModule.isBlank()) {
             return modName.substring(1);
         }
@@ -915,34 +963,140 @@ public class LuavaEngine implements ILuaEngine {
         enterExecution();
         try {
             if (function.isNil()) {
-                return new ILuaValue[0];
+                return EMPTY_SPI_VALUES;
             }
             ILuaValue[] results = LuaInvocationGuard.call(
                     () -> invokeAndWrap(function, args),
-                    new ILuaValue[0],
+                    EMPTY_SPI_VALUES,
                     this::recordCallbackFailure);
-            return results == null ? new ILuaValue[0] : results;
+            return results == null ? EMPTY_SPI_VALUES : results;
         } finally {
             exitExecution();
         }
     }
 
-    /** Invokes the callback and wraps every Lua result back into the SPI value type. */
+    /** Invokes the callback inside {@link LuaState}'s execution scope and wraps every result. */
     private @NotNull ILuaValue[] invokeAndWrap(@NotNull ILuaValue function, @NotNull ILuaValue... args) {
         LuaValue rawFunction = function instanceof LuavaLuaValue luavaValue
                 ? luavaValue.getLuavaValue() : toLuavaValue(function);
-        LuaValue[] luaArgs = new LuaValue[args.length];
-        for (int i = 0; i < args.length; i++) {
-            luaArgs[i] = toLuavaValue(args[i]);
+        LuaValue[] luaArgs;
+        if (args.length == 0) {
+            luaArgs = EMPTY_LUAVA_VALUES;
+        } else {
+            luaArgs = new LuaValue[args.length];
+            for (int i = 0; i < args.length; i++) {
+                luaArgs[i] = toLuavaValue(args[i]);
+            }
         }
-        LuaValue[] results = rawFunction instanceof LuaClosure closure
-                ? BytecodeVM.execute(state, closure, luaArgs)
-                : new LuaValue[]{rawFunction.call(luaArgs)};
+        LuaValue[] results = executeInStateScope(rawFunction, luaArgs);
+        if (results.length == 0) {
+            return EMPTY_SPI_VALUES;
+        }
         ILuaValue[] wrapped = new ILuaValue[results.length];
         for (int i = 0; i < results.length; i++) {
             wrapped[i] = LuavaLuaValue.wrap(results[i] == null ? LuaNil.NIL : results[i]);
         }
         return wrapped;
+    }
+
+    /**
+     * Synchronizes luava's ThreadLocal state/policy/alloc/coroutine/frameLimit scope so
+     * callbacks invoked via {@code callFunction} enforce {@code maxCoroutines},
+     * {@code maxCallDepth}, {@code maxAllocationBytes}, and {@code instructionLimit}/
+     * {@code timeout} identically to {@code state.eval(...)}.
+     */
+    private @NotNull LuaValue[] executeInStateScope(@NotNull LuaValue rawFunction, @NotNull LuaValue... luaArgs) {
+        try (StateScope ignored = new StateScope(state, resourceLimits, isCoroutineThread())) {
+            if (rawFunction instanceof LuaClosure closure) {
+                return BytecodeVM.execute(state, closure, luaArgs);
+            }
+            LuaValue single = rawFunction.call(luaArgs);
+            if (single instanceof Varargs va) {
+                return va.getValuesUnsafe();
+            }
+            return new LuaValue[]{single};
+        }
+    }
+
+    /** Restores luava ThreadLocal execution context without closing the shared {@link LuaState}. */
+    private static final class StateScope implements AutoCloseable {
+        private final LuaState prevActive;
+        private final JavaAccessPolicy prevPolicy;
+        private final LuaState prevBasic;
+        private final boolean scopedMaxAlloc;
+        private final Long prevMaxAlloc;
+        private final LuaCoroutine prevCoro;
+        private final CallStack.CallStackState mainStack;
+        private final int prevFrameLimit;
+
+        StateScope(@NotNull LuaState state, @NotNull LuaEngineLimits limits, boolean inCoroutine) {
+            this.prevActive = LuaState.swapActiveState(state);
+            this.prevPolicy = JavaAccessPolicy.setActive(state.getJavaAccessPolicy());
+            this.prevBasic = LuaValue.pushBasicState(state);
+            this.scopedMaxAlloc = limits.maxAllocationBytes() > 0;
+            this.prevMaxAlloc = swapMaxAllocIfEnabled(limits);
+            this.prevCoro = LuaCoroutine.running();
+            if (this.prevCoro == null) {
+                LuaCoroutine.setCurrent(state.getMainThread());
+            }
+            this.mainStack = resolveLimitedStack(state, limits);
+            this.prevFrameLimit = applyFrameLimit(this.mainStack, limits);
+            rearmGuardsIfTopLevel(state, limits, this.prevActive, inCoroutine);
+        }
+
+        private static @Nullable Long swapMaxAllocIfEnabled(@NotNull LuaEngineLimits limits) {
+            if (limits.maxAllocationBytes() <= 0) {
+                return null;
+            }
+            return LuaState.swapActiveMaxAlloc(limits.maxAllocationBytes());
+        }
+
+        private static @Nullable CallStack.CallStackState resolveLimitedStack(
+                @NotNull LuaState state, @NotNull LuaEngineLimits limits) {
+            if (limits.maxCallDepth() <= 0) {
+                return null;
+            }
+            return state.getMainThread().getCallStackState();
+        }
+
+        private static int applyFrameLimit(
+                @Nullable CallStack.CallStackState mainStack, @NotNull LuaEngineLimits limits) {
+            if (mainStack == null) {
+                return 0;
+            }
+            int previous = mainStack.frameLimit;
+            mainStack.frameLimit = Math.min(limits.maxCallDepth(), CallStack.MAX_CALL_DEPTH);
+            return previous;
+        }
+
+        private static void rearmGuardsIfTopLevel(@NotNull LuaState state, @NotNull LuaEngineLimits limits,
+                @Nullable LuaState prevActive, boolean inCoroutine) {
+            if (Objects.equals(prevActive, state) || inCoroutine || state.isCancelled()) {
+                return;
+            }
+            if (limits.instructionLimit() > 0) {
+                state.instructionLimit(limits.instructionLimit());
+            }
+            if (limits.timeoutMillis() > 0) {
+                state.timeout(Duration.ofMillis(limits.timeoutMillis()));
+            }
+        }
+
+        @Override
+        public void close() {
+            if (mainStack != null) {
+                mainStack.frameLimit = prevFrameLimit;
+            }
+            if (prevCoro == null) {
+                LuaCoroutine.setCurrent(null);
+            }
+            if (scopedMaxAlloc) {
+                LuaState.restoreActiveMaxAlloc(prevMaxAlloc);
+            }
+            LuaValue.popBasicState(prevBasic);
+            JavaAccessPolicy.restoreActive(prevPolicy);
+            LuaState.restoreActiveState(prevActive);
+        }
     }
 
     private void recordCallbackFailure(@NotNull Throwable failure) {
@@ -996,9 +1150,14 @@ public class LuavaEngine implements ILuaEngine {
     /** Bridges a Java {@link ILuaFunction} into the VM, converting failures into Lua errors. */
     private @NotNull LuaValue invokeGlobalBinding(@NotNull String name, @NotNull ILuaFunction function,
                                                   @NotNull LuaValue... args) {
-        ILuaValue[] wrappedArgs = new ILuaValue[args.length];
-        for (int i = 0; i < args.length; i++) {
-            wrappedArgs[i] = LuavaLuaValue.wrap(args[i] == null ? LuaNil.NIL : args[i]);
+        ILuaValue[] wrappedArgs;
+        if (args.length == 0) {
+            wrappedArgs = EMPTY_SPI_VALUES;
+        } else {
+            wrappedArgs = new ILuaValue[args.length];
+            for (int i = 0; i < args.length; i++) {
+                wrappedArgs[i] = LuavaLuaValue.wrap(args[i] == null ? LuaNil.NIL : args[i]);
+            }
         }
         ILuaValue result = LuaInvocationGuard.<ILuaValue>call(
                 () -> function.invoke(wrappedArgs),
@@ -1056,12 +1215,12 @@ public class LuavaEngine implements ILuaEngine {
 
     @Override
     public @NotNull ILuaValue wrapBoolean(boolean value) {
-        return new LuavaLuaValue(LuaValue.valueOf(value));
+        return value ? LuavaLuaValue.TRUE : LuavaLuaValue.FALSE;
     }
 
     @Override
     public @NotNull ILuaValue nilValue() {
-        return new LuavaLuaValue(LuaNil.NIL);
+        return LuavaLuaValue.NIL;
     }
 
     @Override
@@ -1148,8 +1307,22 @@ public class LuavaEngine implements ILuaEngine {
     }
 
     @Override
+    public @NotNull String describeDiagnostics() {
+        Stats stats = state.stats();
+        return "luava 0.3.0 | JIT=" + (state.isJitEnabled() ? "ON" : "OFF")
+                + " | calls=" + stats.calls
+                + ", jitHits=" + stats.jitHits
+                + ", deopts=" + stats.deoptCount
+                + ", protos=" + state.cachedProtoCount()
+                + " (" + (state.cachedProtoBytes() / BYTES_PER_KIB) + " KB)"
+                + ", alloc=" + (stats.allocBytes / BYTES_PER_KIB) + " KB";
+    }
+
+    @Override
     public void shutdown() {
-        closed.set(true);
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
         pruneFinishedCoroutines();
         for (LuaCoroutine coroutine : liveCoroutines) {
             if (coroutine.getStatus() != LuaCoroutine.Status.SUSPENDED) {
@@ -1165,6 +1338,17 @@ public class LuavaEngine implements ILuaEngine {
                             "Failed to close deferred coroutine during shutdown: " + failure.getMessage()));
         }
         liveCoroutines.clear();
+        moduleCache.clear();
+        activeModuleStack.remove();
+        externalDepth.remove();
+        LuaInvocationGuard.call(
+                () -> {
+                    state.close();
+                    return null;
+                },
+                null,
+                failure -> AsyncFileLogger.get().warn(LogStage.RUNTIME_ERROR,
+                        "Failed to close LuaState during shutdown: " + failure.getMessage()));
     }
 
     /**
@@ -1211,7 +1395,7 @@ public class LuavaEngine implements ILuaEngine {
     }
 
     private static @NotNull LuaValue key(@NotNull String name) {
-        return LuaValue.valueOf(name);
+        return LuaString.interned(name);
     }
 
     private static @NotNull LuaValue argAt(@NotNull LuaValue[] args, int index) {
@@ -1231,8 +1415,30 @@ public class LuavaEngine implements ILuaEngine {
         return value.isNumber() ? (int) value.toLong() : fallback;
     }
 
+    /** Resolves the active chunk/mod source, falling back to the Lua call stack inside coroutines. */
+    private @Nullable String resolveActiveSourceId() {
+        String current = activeModuleStack.get().peek();
+        if (current != null && !current.isBlank() && !current.startsWith(BOOTSTRAP_SOURCE_PREFIX)) {
+            return current;
+        }
+        LuaCoroutine running = LuaCoroutine.running();
+        if (running != null) {
+            CallStack.CallStackState stack = running.getCallStackState();
+            for (int i = stack.top - 1; i >= 0; i--) {
+                CallStack.Frame frame = stack.stack[i];
+                if (frame != null && frame.function != null) {
+                    String hint = ModuleSourceHint.from(frame.function);
+                    if (hint != null && !hint.isBlank()) {
+                        return hint;
+                    }
+                }
+            }
+        }
+        return current;
+    }
+
     private @Nullable String getActiveModId() {
-        String currentModule = activeModuleStack.get().peek();
+        String currentModule = resolveActiveSourceId();
         if (currentModule == null || currentModule.isBlank()) {
             return null;
         }

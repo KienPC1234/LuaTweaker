@@ -35,7 +35,7 @@ LuaTweaker enforces strict Single Responsibility Principle (SRP) and Dependency 
 ```
 common-api (Pure Java 21 Interfaces, zero external dependencies)
     ^
-core-engine (Luava 0.2.7 VM wrapper, LuaBinder, Logger, EmmyLua Stub Generator)
+core-engine (Luava 0.3.0 VM wrapper, LuaBinder, Logger, EmmyLua Stub Generator)
     ^
 modules/module-* (Domain-specific bindings: recipes, entities, events, tasks, math, client, network, ...)
     ^
@@ -54,6 +54,18 @@ To prevent cross-script variable pollution and global environment corruption:
 2. **Read-Only System Metatables (`__newindex`):** Core system objects are locked with protected metatables. Mutation attempts trigger security exceptions without crashing the VM.
 3. **Headless Dedicated Server Protection (`Env.SERVER`):** Client-only visual APIs evaluate runtime environment state via `Platform.getClientOrNull()` and Architectury `Platform.getEnvironment()`. On dedicated servers, calls safely log diagnostic info and operate as non-blocking no-ops.
 4. **File sandbox:** the VM exposes no `io`/`os` file functions. `mod:Files()` reads only the owning mod's folder or `.zip`; `mod:Exports()` writes only `<gameDir>/luatweaker/exports/<mod_id>/`. Every path is normalized and containment-checked (including symlink escapes) by `LuaModPathSecurity`; reads/writes are size-capped and writes are atomic. Exports are local files and are never synced to clients or servers.
+
+---
+
+## 3.1 Hot-Path & Bridge Performance Invariants
+
+To keep 20 TPS server ticks and high-FPS client render loops free of wrapper allocation churn and repeated hash lookups, extensions across `core-engine`, `modules/*`, and `common` follow five invariants:
+
+1. **Shared Per-Engine Prototypes (`LuaBinder.bindPrototype`):** Recurring wrappers (`EntitiesLuaBinding` for `IEntity`/`IPlayer`) bind interface methods once per `ILuaEngine` in a `WeakHashMap` and share a single metatable across instances (`{ __entity = userdata }`). Property aliases (`EntityPropertyTable` / `EntityPropertyAliases`) dispatch straight to Java lambdas with cached `Vector3.new`, while prototype methods keep lookup precedence.
+2. **Centralized Synchronous Signal Dispatch (`LuaSignalDispatcher`):** Per-frame, per-tick, input, and keybind `Signal:FireSync` hooks (`RunServiceDispatcher`, `MinecraftClientEventListener`, `UserInputDispatcher`, `MinecraftWorldRenderEventListener`, `ClientKeyBindBinding`) share `LuaSignalDispatcher` (`core-engine`), which caches signal + fire references per engine and short-circuits before wrapping arguments when `_listeners` is empty.
+3. **Zero-Entry Idle Tick Pumping & Version-Gated Keybinds:** `LuaTweakerCommon.tickActiveEngineTasks()` caches `task` handles per engine (`TaskPumpCache`), skips `task._tick` when `task._hasPending == false`, and invokes `TaskServiceImpl.tick(engine)` directly only when `getQueuedTaskCount() > 0`. `DynamicKeyMappingHandler` gates keybind sync on `IKeyBindService.getRegistrationVersion()` and stores pre-parsed `KeyModifier` + `wasDown` per binding.
+4. **Cached Per-Entity Goal Callbacks:** `MinecraftLuaGoal` caches its Lua function values once in `GoalCallbacks` on construction and latches an `engineClosed` flag on reload shutdown.
+5. **Render-Thread Scratch Buffers & Frame Entity Index:** `MinecraftWorldRenderEventListener` skips projection copies when `Client.OnRenderWorld` has no listeners, reuses `ThreadLocal` `float[16]` and JOML math scratch objects in `projectToClip`, and indexes `ClientLevel` entities by `UUID` at most once per frame for `GetEntity(uuid)`.
 
 ---
 

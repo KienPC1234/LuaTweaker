@@ -94,21 +94,14 @@ public class EventServiceImpl implements IEventService {
 
     @Override
     public boolean fireCancellable(@NotNull String eventName, @NotNull ILuaTable payload) {
-        List<ListenerEntry> entries = LISTENERS.get(eventName);
-        if (entries == null) {
-            return true;
-        }
-        boolean cancelled = false;
-        for (ListenerEntry entry : entries) {
-            if (!isCallable(entry)) {
-                continue;
-            }
-            cancelled = invokeListener(eventName, entry, payload) || cancelled;
-        }
-        return !cancelled;
+        return dispatchCancellable(eventName, payload);
     }
 
     public boolean fireRawEvent(@NotNull String eventName, @NotNull ILuaValue payload) {
+        return dispatchCancellable(eventName, payload);
+    }
+
+    private boolean dispatchCancellable(@NotNull String eventName, @NotNull ILuaValue payload) {
         List<ListenerEntry> entries = LISTENERS.get(eventName);
         if (entries == null) {
             return true;
@@ -153,7 +146,7 @@ public class EventServiceImpl implements IEventService {
         try {
             ILuaValue result = entry.engine().callFunction(entry.function(), payload);
             // A listener returning Lua `false` cancels the event.
-            return result != null && Boolean.FALSE.equals(result.toJavaObject());
+            return result != null && result.isBoolean() && !result.asBoolean();
         } catch (LuaException e) {
             logListenerError(eventName, e);
             return false;

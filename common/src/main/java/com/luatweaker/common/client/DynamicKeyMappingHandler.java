@@ -9,25 +9,37 @@ import dev.architectury.registry.client.keymappings.KeyMappingRegistry;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class DynamicKeyMappingHandler {
     private static final String KEYBIND_SERVICE_NAME = "KeyBindService";
-    private static final String MODIFIER_SHIFT = "shift";
-    private static final String MODIFIER_CONTROL = "ctrl";
-    private static final String MODIFIER_ALT = "alt";
 
-    private DynamicKeyMappingHandler() {
+    private static final Map<String, KeyMappingState> REGISTERED_MAPPINGS = new ConcurrentHashMap<>();
+
+    enum KeyModifier {
+        NONE, SHIFT, CTRL, ALT
     }
 
-    private static final Map<String, KeyMappingRecord> REGISTERED_MAPPINGS = new ConcurrentHashMap<>();
-    private static final Map<String, Boolean> LAST_DOWN_STATE = new ConcurrentHashMap<>();
+    private static final class KeyMappingState {
+        final KeyMapping mapping;
+        String payload;
+        KeyModifier modifier;
+        boolean wasDown;
 
-    private record KeyMappingRecord(KeyMapping mapping, String payload, String modifier) {}
+        KeyMappingState(KeyMapping mapping, String payload, KeyModifier modifier) {
+            this.mapping = mapping;
+            this.payload = payload;
+            this.modifier = modifier;
+        }
+    }
 
     private static KeyMapping managerKey;
+    private static IKeyBindService syncedService;
+    private static long syncedVersion = -1L;
 
     private static final int GLFW_LEFT_SHIFT = 340;
     private static final int GLFW_RIGHT_SHIFT = 344;
@@ -37,6 +49,9 @@ public final class DynamicKeyMappingHandler {
     private static final int GLFW_RIGHT_ALT = 347;
     private static final long NO_WINDOW = 0L;
 
+    private DynamicKeyMappingHandler() {
+    }
+
     public static void init() {
         managerKey = new KeyMapping("key.luatweaker.manager", InputConstants.Type.KEYSYM,
                 InputConstants.UNKNOWN.getValue(), "key.categories.luatweaker");
@@ -45,20 +60,22 @@ public final class DynamicKeyMappingHandler {
         Object service = LuaServiceRegistry.get(KEYBIND_SERVICE_NAME);
         if (service instanceof IKeyBindService keyBindService) {
             for (IKeyBindService.KeyBindEntry entry : keyBindService.getRegisteredKeyBinds()) {
-                KeyMappingRecord record = createRecord(entry);
-                KeyMappingRegistry.register(record.mapping());
+                KeyMappingState state = createState(entry);
+                KeyMappingRegistry.register(state.mapping);
                 com.luatweaker.api.log.LuaTweakerLog.get().info(
                         com.luatweaker.api.log.LogStage.SYSTEM,
                         "[KeyMapping] Registered Dynamic KeyBinding with Minecraft Controls: '"
-                                + record.mapping().getName() + "' (ID: " + entry.id() + ")"
+                                + state.mapping.getName() + "' (ID: " + entry.id() + ")"
                 );
             }
+            syncedService = keyBindService;
+            syncedVersion = keyBindService.getRegistrationVersion();
         }
 
         ClientTickEvent.CLIENT_POST.register(mc -> onClientTick());
     }
 
-    private static KeyMappingRecord createRecord(IKeyBindService.KeyBindEntry entry) {
+    private static KeyMappingState createState(IKeyBindService.KeyBindEntry entry) {
         String descKey = (entry.displayName() != null && !entry.displayName().isBlank())
                 ? entry.displayName() : entry.id();
         String categoryKey = (entry.category() != null && !entry.category().isBlank())
@@ -71,32 +88,70 @@ public final class DynamicKeyMappingHandler {
                 entry.defaultKey(),
                 categoryKey
         );
-        KeyMappingRecord record = new KeyMappingRecord(keyMapping, entry.onPressPayload(), entry.modifier());
-        KeyMappingRecord previous = REGISTERED_MAPPINGS.put(entry.id(), record);
+        KeyMappingState state = new KeyMappingState(
+                keyMapping, entry.onPressPayload(), parseModifier(entry.modifier()));
+        KeyMappingState previous = REGISTERED_MAPPINGS.put(entry.id(), state);
         if (previous != null) {
             com.luatweaker.api.log.LuaTweakerLog.get().warn(
                     com.luatweaker.api.log.LogStage.SYSTEM,
-                    "[KeyMapping] Duplicate keybind id '" + entry.id() + "' overwritten — mods must use unique ids to avoid collisions"
+                    "[KeyMapping] Duplicate keybind id '" + entry.id()
+                            + "' overwritten - mods must use unique ids to avoid collisions"
             );
         }
-        return record;
+        return state;
     }
 
-    static void syncLateKeyBinds() {
-        Object service = LuaServiceRegistry.get(KEYBIND_SERVICE_NAME);
-        if (!(service instanceof IKeyBindService keyBindService)) {
+    static KeyModifier parseModifier(@Nullable String modifier) {
+        if (modifier == null || modifier.isBlank()) {
+            return KeyModifier.NONE;
+        }
+        return switch (modifier.strip().toLowerCase(Locale.ROOT)) {
+            case "shift" -> KeyModifier.SHIFT;
+            case "ctrl" -> KeyModifier.CTRL;
+            case "alt" -> KeyModifier.ALT;
+            default -> KeyModifier.NONE;
+        };
+    }
+
+    static void syncLateKeyBinds(@NotNull IKeyBindService keyBindService) {
+        long version = keyBindService.getRegistrationVersion();
+        if (keyBindService.equals(syncedService) && version >= 0 && version == syncedVersion) {
             return;
         }
-        for (IKeyBindService.KeyBindEntry entry : collectUnsynced(
-                keyBindService.getRegisteredKeyBinds(), REGISTERED_MAPPINGS.keySet())) {
-            createRecord(entry);
-            LAST_DOWN_STATE.remove(entry.id());
+        java.util.List<IKeyBindService.KeyBindEntry> registered = keyBindService.getRegisteredKeyBinds();
+        refreshExistingMappings(registered);
+        for (IKeyBindService.KeyBindEntry entry : collectUnsynced(registered, REGISTERED_MAPPINGS.keySet())) {
+            createState(entry);
             com.luatweaker.api.log.LuaTweakerLog.get().info(
                     com.luatweaker.api.log.LogStage.SYSTEM,
                     "[KeyMapping] Late keybind '" + entry.id() + "' active with default key "
                             + entry.defaultKey() + " (Controls GUI listing + rebinding needs a restart)"
             );
         }
+        syncedService = keyBindService;
+        syncedVersion = version;
+    }
+
+    private static void refreshExistingMappings(java.util.List<IKeyBindService.KeyBindEntry> entries) {
+        for (IKeyBindService.KeyBindEntry entry : entries) {
+            if (entry == null || entry.id() == null) {
+                continue;
+            }
+            KeyMappingState existing = REGISTERED_MAPPINGS.get(entry.id());
+            if (existing == null) {
+                continue;
+            }
+            KeyModifier updatedModifier = parseModifier(entry.modifier());
+            if (shouldRefreshExisting(existing.payload, existing.modifier, entry.onPressPayload(), updatedModifier)) {
+                existing.payload = entry.onPressPayload();
+                existing.modifier = updatedModifier;
+            }
+        }
+    }
+
+    static boolean shouldRefreshExisting(@Nullable String oldPayload, @NotNull KeyModifier oldModifier,
+                                         @Nullable String newPayload, @NotNull KeyModifier newModifier) {
+        return !java.util.Objects.equals(oldPayload, newPayload) || oldModifier != newModifier;
     }
 
     static java.util.List<IKeyBindService.KeyBindEntry> collectUnsynced(
@@ -111,12 +166,22 @@ public final class DynamicKeyMappingHandler {
     }
 
     public static void onClientTick() {
-        syncLateKeyBinds();
+        Object service = LuaServiceRegistry.get(KEYBIND_SERVICE_NAME);
+        IKeyBindService keyBindService = service instanceof IKeyBindService kbs ? kbs : null;
+        if (keyBindService != null) {
+            syncLateKeyBinds(keyBindService);
+        }
         pollManagerKey();
+        if (REGISTERED_MAPPINGS.isEmpty()) {
+            return;
+        }
         long window = windowHandle();
+        if (window == NO_WINDOW) {
+            return;
+        }
         boolean hasScreen = Minecraft.getInstance().screen != null;
-        for (Map.Entry<String, KeyMappingRecord> mapEntry : REGISTERED_MAPPINGS.entrySet()) {
-            handleMapping(window, hasScreen, mapEntry.getKey(), mapEntry.getValue());
+        for (Map.Entry<String, KeyMappingState> mapEntry : REGISTERED_MAPPINGS.entrySet()) {
+            handleMapping(window, hasScreen, keyBindService, mapEntry.getKey(), mapEntry.getValue());
         }
     }
 
@@ -125,44 +190,33 @@ public final class DynamicKeyMappingHandler {
         return mc.getWindow() != null ? mc.getWindow().getWindow() : NO_WINDOW;
     }
 
-    private static void handleMapping(long window, boolean hasScreen, @NotNull String keyBindId,
-                                      @NotNull KeyMappingRecord record) {
-        if (window == NO_WINDOW) { return; }
-        boolean physDown = isPhysicallyDown(record.mapping());
-        boolean wasDown = Boolean.TRUE.equals(LAST_DOWN_STATE.getOrDefault(keyBindId, false));
-        LAST_DOWN_STATE.put(keyBindId, physDown);
+    private static void handleMapping(long window, boolean hasScreen,
+                                      @Nullable IKeyBindService keyBindService,
+                                      @NotNull String keyBindId,
+                                      @NotNull KeyMappingState state) {
+        boolean physDown = state.mapping.isDown();
+        boolean wasDown = state.wasDown;
+        state.wasDown = physDown;
         if (!physDown) {
-            if (wasDown) {
-                triggerRelease(keyBindId, record);
+            if (wasDown && keyBindService != null) {
+                keyBindService.triggerKeyBindRelease(keyBindId, state.payload);
             }
             return;
         }
-        if (wasDown || hasScreen || !modifierHeld(window, record.modifier()) || !Platform.isInitialized()) {
+        if (wasDown || hasScreen || !modifierHeld(window, state.modifier) || !Platform.isInitialized()) {
             return;
         }
-        triggerPress(keyBindId, record);
+        triggerPress(keyBindService, keyBindId, state);
     }
 
-    private static void triggerRelease(@NotNull String keyBindId,
-                                       @NotNull KeyMappingRecord record) {
-        Object service = LuaServiceRegistry.get(KEYBIND_SERVICE_NAME);
-        if (service instanceof IKeyBindService keyBindService) {
-            keyBindService.triggerKeyBindRelease(keyBindId, record.payload());
+    private static void triggerPress(@Nullable IKeyBindService keyBindService,
+                                     @NotNull String keyBindId,
+                                     @NotNull KeyMappingState state) {
+        if (keyBindService != null) {
+            keyBindService.triggerKeyBind(keyBindId, state.payload);
         }
-    }
-
-    private static void triggerPress(@NotNull String keyBindId,
-                                     @NotNull KeyMappingRecord record) {
-        com.luatweaker.api.log.LuaTweakerLog.get().info(
-                com.luatweaker.api.log.LogStage.SYSTEM,
-                "[KeyMapping] KeyMapping Triggered: '" + keyBindId + "' (Payload: " + record.payload() + ")"
-        );
-        Object service = LuaServiceRegistry.get(KEYBIND_SERVICE_NAME);
-        if (service instanceof IKeyBindService keyBindService) {
-            keyBindService.triggerKeyBind(keyBindId, record.payload());
-        }
-        if (record.payload() != null && !record.payload().isEmpty()) {
-            Platform.getNetwork().sendPayloadPacketToServer(record.payload(), "[]");
+        if (state.payload != null && !state.payload.isEmpty()) {
+            Platform.getNetwork().sendPayloadPacketToServer(state.payload, "[]");
         }
     }
 
@@ -178,23 +232,15 @@ public final class DynamicKeyMappingHandler {
         }
     }
 
-    private static boolean isPhysicallyDown(KeyMapping mapping) {
-        return mapping.isDown();
-    }
-
-    private static boolean modifierHeld(long window, String modifier) {
-        if (MODIFIER_SHIFT.equalsIgnoreCase(modifier)) {
-            return InputConstants.isKeyDown(window, GLFW_LEFT_SHIFT)
+    private static boolean modifierHeld(long window, KeyModifier modifier) {
+        return switch (modifier) {
+            case SHIFT -> InputConstants.isKeyDown(window, GLFW_LEFT_SHIFT)
                     || InputConstants.isKeyDown(window, GLFW_RIGHT_SHIFT);
-        }
-        if (MODIFIER_CONTROL.equalsIgnoreCase(modifier) || "ctrl".equalsIgnoreCase(modifier)) {
-            return InputConstants.isKeyDown(window, GLFW_LEFT_CONTROL)
+            case CTRL -> InputConstants.isKeyDown(window, GLFW_LEFT_CONTROL)
                     || InputConstants.isKeyDown(window, GLFW_RIGHT_CONTROL);
-        }
-        if (MODIFIER_ALT.equalsIgnoreCase(modifier)) {
-            return InputConstants.isKeyDown(window, GLFW_LEFT_ALT)
+            case ALT -> InputConstants.isKeyDown(window, GLFW_LEFT_ALT)
                     || InputConstants.isKeyDown(window, GLFW_RIGHT_ALT);
-        }
-        return true;
+            case NONE -> true;
+        };
     }
 }
